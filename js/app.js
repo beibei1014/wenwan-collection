@@ -305,9 +305,9 @@
       if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showMsg("请输入正确的邮箱地址"); return; }
       if (pass.length < 6) { showMsg("密码至少 6 位"); return; }
       try {
-        await DB.signIn(email, pass);
+        const res = await DB.signIn(email, pass);
         showMsg("登录成功", true);
-        await enterApp();
+        await enterApp(res.session);
       } catch (err) {
         showMsg(translateAuthError(err.message));
       }
@@ -329,8 +329,8 @@
   }
 
   /* ---------- 进入应用（登录后） ---------- */
-  async function enterApp() {
-    const session = await DB.getSession();
+  async function enterApp(passedSession) {
+    const session = passedSession || await DB.getSession();
     if (!session || !session.user) { location.hash = "#/auth"; return false; }
     user = session.user;
     try {
@@ -881,7 +881,10 @@
   /* ---------- 路由 ---------- */
   function router() {
     const h = location.hash || "#/";
-    if (h === "#/auth") { renderAuth(); return; }
+    if (h === "#/auth") {
+      if (user) { location.hash = "#/"; return; }  // 已登录访问登录页 → 回首页
+      renderAuth(); return;
+    }
     if (!user) { renderAuth(); return; }
     if (h === "#/profile") { renderProfile(); return; }
     if (h === "#/" || h === "#") { renderHome(); }
