@@ -1,5 +1,6 @@
 -- ============================================================
--- 文玩手串收藏馆 - Supabase 建表脚本
+-- 文玩手串收藏馆 - Supabase 建表脚本（修正版 v2）
+-- 修复：storage.objects.owner_id 是 text 类型，比较时需 ::text 转换
 -- 用法：Supabase Dashboard → SQL Editor → New query → 粘贴全部 → Run
 -- ============================================================
 
@@ -62,9 +63,10 @@ create policy "bracelet_images_auth_insert"
   on storage.objects for insert
   with check (bucket_id = 'bracelet-images' and auth.role() = 'authenticated');
 
+-- 注意：owner_id 是 text 类型，auth.uid() 是 uuid，需显式转换
 drop policy if exists "bracelet_images_auth_delete" on storage.objects;
 create policy "bracelet_images_auth_delete"
   on storage.objects for delete
-  using (bucket_id = 'bracelet-images' and auth.uid() = owner_id);
+  using (bucket_id = 'bracelet-images' and auth.uid()::text = owner_id);
 
 -- 完成！可以在左侧 Table Editor 看到 bracelets 表。
