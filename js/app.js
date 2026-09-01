@@ -939,13 +939,22 @@
     const gameInfo = Game.computeXp(allItems);
     const lvInfo = Game.getLevel(gameInfo.xp);
 
+    // 今日任务完成情况
+    const tasks = Game.dailyTasks(allItems);
+    const taskDone = tasks.filter((t) => t.done).length;
+
     let html = "";
-    html += '<button class="level-bar" id="levelBar">' +
+    html += '<div class="level-row">' +
+      '<button class="level-bar" id="levelBar" style="flex:1;margin-bottom:0">' +
       '<span class="level-icon">' + lvInfo.icon + "</span>" +
       '<span class="level-info"><span class="level-name">' + esc(lvInfo.name) + ' · Lv.' + lvInfo.level + '</span>' +
       '<span class="xp-track"><span class="xp-fill" style="width:' + lvInfo.progress + '%"></span></span></span>' +
       '<span class="level-xp">' + lvInfo.xp + ' XP</span>' +
-      "</button>";
+      "</button>" +
+      '<button class="quest-hint" id="btnQuestHint" title="查看今日任务">' +
+      '<span class="quest-hint-icon">🎯</span>' +
+      '<span class="quest-hint-text">今日任务<br><b>' + taskDone + '/' + tasks.length + '</b></span>' +
+      "</button></div>";
 
     // 折叠筛选区：按钮 + 可展开面板
     html += '<button class="filter-toggle" id="filterToggle">' +
@@ -1023,6 +1032,8 @@
     // 等级条 → 任务页
     const lb = $("#levelBar");
     if (lb) lb.onclick = () => location.hash = "#/quest";
+    const qh = $("#btnQuestHint");
+    if (qh) qh.onclick = () => location.hash = "#/quest";
     // 折叠筛选面板
     const ft = $("#filterToggle");
     if (ft) ft.onclick = () => {
@@ -1106,6 +1117,25 @@
     if (f === "pieces" && it.pieceCount) return it.pieceCount + "片";
     if (f === "bead" && it.beadSize) return it.beadSize + "mm";
     return it.species || it.accessoryType || "";
+  }
+
+  /* ---------- 主题系统 ---------- */
+  const THEMES = [
+    { id: "light", name: "浅色", icon: "☀️", desc: "温暖原木风" },
+    { id: "dark", name: "深色", icon: "🌙", desc: "墨夜收藏" },
+    { id: "system", name: "跟随系统", icon: "📱", desc: "自动匹配设备" },
+    { id: "dopamine", name: "多巴胺", icon: "🍬", desc: "糖果活力" },
+    { id: "morandi", name: "莫兰迪", icon: "🎨", desc: "低饱和温柔" },
+  ];
+  function getTheme() {
+    try { return localStorage.getItem("ww_theme") || "light"; } catch (e) { return "light"; }
+  }
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem("ww_theme", theme); } catch (e) {}
+  }
+  function initTheme() {
+    applyTheme(getTheme());
   }
 
   /* ---------- 徽章（称号）系统 ---------- */
@@ -1651,15 +1681,20 @@
     html += '<div id="badgeLibrary" style="display:flex;flex-wrap:wrap;gap:8px;max-height:220px;overflow-y:auto"></div>';
     html += "</div>";
 
-    // ===== 3. 收藏统计 =====
-    html += '<div class="stats-card" style="margin-top:14px"><h3>收 藏 统 计</h3><div class="stats-nums">' +
-      '<div><div class="n">' + allItems.length + '</div><div class="l">全部宝贝</div></div>' +
-      '<div><div class="n">' + inStock + '</div><div class="l">在库</div></div>' +
-      '<div><div class="n">' + gifted + '</div><div class="l">已送人</div></div>' +
-      '<div><div class="n">' + played + '</div><div class="l">盘玩中</div></div>' +
-      "</div></div>";
+    // ===== 3. 外观主题 =====
+    html += '<div class="section-title">🎨 外观主题</div>';
+    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">';
+    html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px" id="themeList">';
+    THEMES.forEach((t) => {
+      const active = getTheme() === t.id;
+      html += '<button type="button" class="theme-opt' + (active ? " active" : "") + '" data-theme="' + t.id + '">' +
+        '<span class="theme-icon">' + t.icon + "</span>" +
+        '<span class="theme-name">' + t.name + "</span>" +
+        '<span class="theme-desc">' + t.desc + "</span></button>";
+    });
+    html += "</div></div>";
 
-    // ===== 收藏盒子管理（在数据与账户之前） =====
+    // ===== 4. 收藏盒子管理 =====
     html += '<div class="section-title">收藏盒子管理</div>';
     html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">';
     html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:8px">自定义收藏盒子（菩提 / 水晶 / 玉石 / 拼图 / 动漫周边…）</div>';
@@ -1743,6 +1778,13 @@
     }
     renderMyBadges();
     renderBadgeLibrary();
+
+    // 主题选择
+    document.querySelectorAll("#themeList .theme-opt").forEach((b) => b.onclick = () => {
+      applyTheme(b.dataset.theme);
+      document.querySelectorAll("#themeList .theme-opt").forEach((x) => x.classList.toggle("active", x === b));
+      toast("已切换主题");
+    });
 
     $("#btnExport").onclick = async () => {
       const json = await DB.exportBackup();
@@ -1951,6 +1993,7 @@
 
   async function init() {
     try {
+      initTheme();
       // 检查 Supabase 是否已配置
       const cfg = window.SUPABASE_CONFIG || {};
       if (!cfg.url || cfg.url.indexOf("PASTE_") === 0) {
