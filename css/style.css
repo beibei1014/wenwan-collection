@@ -665,3 +665,11 @@ img { display:block; }
 .list-status.g { background:#e8f5e9; color:var(--green); border-color:#c8e6c9; }
 .list-status.r { background:#fce4ec; color:var(--red); border-color:#f8bbd0; }
 .list-status.yl { background:#fff8e1; color:var(--gold); border-color:#ffecb3; }
+
+
+/* ============ 批量编辑面板 ============ */
+.batch-op {
+  background:var(--card); border:1px solid var(--line); border-radius:12px;
+  padding:12px; margin-bottom:10px;
+}
+.batch-op-title { font-size:14px; font-weight:600; color:var(--wood); margin-bottom:8px; }

@@ -120,7 +120,7 @@
   }
 
   /* ---------- 多选图鉴海报 ---------- */
-  async function galleryPoster(items) {
+  async function galleryPoster(items, opts) {
     const count = Math.min(items.length, 12);
     const cols = 3;
     const rows = Math.ceil(count / cols);

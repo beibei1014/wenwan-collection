@@ -462,17 +462,19 @@
   }
 
   /* ---------- 多选分享模式 ---------- */
+  /* ---------- 多选操作模式（分享 + 批量编辑） ---------- */
   function enterShareMode() {
     const selected = new Set();
     const list = filtered();
+    const MAX_SELECT = 20;
 
     function render() {
-      topbarTitle.textContent = "多选分享";
+      topbarTitle.textContent = "多选操作";
       btnBack.style.visibility = "visible";
       btnSettings.style.visibility = "hidden";
 
       let html = "";
-      html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:10px">已选 ' + selected.size + ' 条，点击卡片勾选（最多 12 条）</div>';
+      html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:10px">已选 ' + selected.size + ' 个，点击卡片勾选（最多 ' + MAX_SELECT + ' 个）</div>';
       html += '<div class="grid">';
       list.forEach((it) => {
         const p = it.photos && it.photos[0];
@@ -483,25 +485,31 @@
           '<span class="badge ' + (selected.has(it.id) ? "instock" : "gifted") + '" style="right:8px;left:auto">' + (selected.has(it.id) ? "✓ 已选" : "选择") + "</span>" +
           "</div>" +
           '<div class="card-body"><div class="card-name">' + esc(it.name || "未命名") + "</div>" +
-          '<div class="card-sub"><span>' + esc(it.beadSize ? it.beadSize + "mm" : it.species || "") + "</span></div>" +
+          '<div class="card-sub"><span>' + esc(cardSubText(it)) + "</span></div>" +
           "</div></div>";
       });
       html += "</div>";
 
       if (!list.length) {
-        html = '<div class="empty"><div class="empty-icon">📤</div><p>没有可分享的宝贝</p></div>';
+        html = '<div class="empty"><div class="empty-icon">📤</div><p>没有可操作的宝贝</p></div>';
       }
 
+      // 操作按钮：批量编辑 + 分享
       html += '<div class="detail-actions" style="margin-top:16px">';
       html += '<button class="btn ghost" id="sCancel" style="flex:1">取消</button>';
-      html += '<button class="btn primary" id="sShare" style="flex:2"' + (selected.size ? "" : " disabled") + '>生成图鉴海报 (' + selected.size + ')</button>';
+      html += '<button class="btn primary" id="sBatch" style="flex:2"' + (selected.size ? "" : " disabled") + '>⚙ 批量编辑 (' + selected.size + ')</button>';
       html += "</div>";
+      html += '<button class="btn ghost" id="sShare" style="width:100%;margin-top:10px"' + (selected.size ? "" : " disabled") + '>📤 生成图鉴海报 (' + selected.size + ')</button>';
 
       view.innerHTML = html;
 
       view.querySelectorAll(".card").forEach((c) => c.addEventListener("click", () => {
         const id = c.dataset.id;
-        if (selected.has(id)) selected.delete(id); else selected.add(id);
+        if (selected.has(id)) selected.delete(id);
+        else {
+          if (selected.size >= MAX_SELECT) { toast("最多选择 " + MAX_SELECT + " 个"); return; }
+          selected.add(id);
+        }
         render();
       }));
       $("#sCancel").onclick = () => location.hash = "#/";
@@ -513,20 +521,145 @@
         btn.disabled = true;
         try {
           const canvas = await Poster.galleryPoster(items, { username: user && user.displayName ? user.displayName : "" });
-          await Poster.shareCanvas(canvas, "文玩收藏图鉴.jpg");
+          await Poster.shareCanvas(canvas, "我的收藏图鉴.jpg");
           toast("图鉴海报已分享/保存");
           location.hash = "#/";
         } catch (err) {
           toast("生成失败：" + err.message);
-          btn.textContent = "生成图鉴海报 (" + selected.size + ")";
+          btn.textContent = "📤 生成图鉴海报";
           btn.disabled = false;
         }
       };
+      $("#sBatch").onclick = () => {
+        const items = allItems.filter((i) => selected.has(i.id));
+        if (!items.length) { toast("请先选择宝贝"); return; }
+        renderBatchEdit(items);
+      };
     }
+
+    /* ---------- 批量编辑面板 ---------- */
+    function renderBatchEdit(items) {
+      topbarTitle.textContent = "批量编辑 " + items.length + " 个宝贝";
+      btnBack.style.visibility = "visible";
+      btnSettings.style.visibility = "hidden";
+
+      let html = "";
+      html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:12px">对选中的 ' + items.length + ' 个宝贝执行以下操作：</div>';
+
+      // 批量转移分类
+      html += '<div class="batch-op">' +
+        '<div class="batch-op-title">📦 转移收藏盒子</div>' +
+        '<div style="display:flex;gap:8px">' +
+        '<select class="form-select" id="bCat" style="flex:1">' + categoryOptions("") + "</select>" +
+        '<button class="btn primary" id="bApplyCat" style="flex:none;padding:9px 14px;font-size:13px">应用</button></div></div>';
+
+      // 批量设置状态
+      html += '<div class="batch-op">' +
+        '<div class="batch-op-title">🚦 设置状态</div>' +
+        '<div style="display:flex;gap:8px">' +
+        '<select class="form-select" id="bStatus" style="flex:1">' +
+        '<option value="">不修改</option>' +
+        '<option value="idle">待盘玩</option>' +
+        '<option value="playing">在盘玩</option>' +
+        '<option value="puzzle_pending">待拼</option>' +
+        '<option value="puzzle_done">已拼</option>' +
+        '<option value="gifted">已送人</option>' +
+        "</select>" +
+        '<button class="btn primary" id="bApplyStatus" style="flex:none;padding:9px 14px;font-size:13px">应用</button></div></div>';
+
+      // 批量设置珠子大小/拼图片数（按分类自动判断）
+      html += '<div class="batch-op">' +
+        '<div class="batch-op-title">📏 设置大小（珠子mm / 拼图片数）</div>' +
+        '<div style="display:flex;gap:8px">' +
+        '<input class="form-input" id="bSize" type="number" placeholder="如 14 或 1000" style="flex:1">' +
+        '<button class="btn primary" id="bApplySize" style="flex:none;padding:9px 14px;font-size:13px">应用</button></div></div>';
+
+      // 批量设置品种/品牌
+      html += '<div class="batch-op">' +
+        '<div class="batch-op-title">🏷️ 设置品种 / 品牌</div>' +
+        '<div style="display:flex;gap:8px">' +
+        '<input class="form-input" id="bSpecies" placeholder="如：星月菩提 / HEYE" style="flex:1">' +
+        '<button class="btn primary" id="bApplySpecies" style="flex:none;padding:9px 14px;font-size:13px">应用</button></div></div>';
+
+      // 批量删除
+      html += '<div class="batch-op" style="border-color:#f8bbd0">' +
+        '<div class="batch-op-title" style="color:var(--red)">🗑️ 批量删除（' + items.length + ' 个）</div>' +
+        '<button class="btn danger" id="bDelete" style="width:100%">确认删除所选宝贝</button></div>';
+
+      html += '<button class="btn ghost" id="bDone" style="width:100%;margin-top:10px">完成</button>';
+
+      view.innerHTML = html;
+
+      // 转移分类
+      $("#bApplyCat").onclick = async () => {
+        const cat = $("#bCat").value;
+        if (!cat) { toast("请选择目标盒子"); return; }
+        await applyToItems(items, async (it) => { it.category = cat; });
+      };
+      // 设置状态
+      $("#bApplyStatus").onclick = async () => {
+        const st = $("#bStatus").value;
+        if (!st) { toast("请选择目标状态"); return; }
+        await applyToItems(items, async (it) => {
+          it.playStatus = st === "gifted" ? "" : st;
+          it.gifted = st === "gifted";
+          if (!it.gifted) it.giftedAt = null;
+          it.played = st === "playing";
+        });
+      };
+      // 设置大小
+      $("#bApplySize").onclick = async () => {
+        const v = parseFloat($("#bSize").value);
+        if (isNaN(v)) { toast("请输入数字"); return; }
+        await applyToItems(items, async (it) => {
+          const f = Categories.getSizeField(it.category || "");
+          if (f === "pieces") { it.pieceCount = v; it.beadSize = null; }
+          else if (f === "bead") { it.beadSize = v; it.pieceCount = null; }
+        });
+      };
+      // 设置品种/品牌
+      $("#bApplySpecies").onclick = async () => {
+        const v = $("#bSpecies").value.trim();
+        if (!v) { toast("请输入品种/品牌"); return; }
+        await applyToItems(items, async (it) => {
+          it.species = v;
+          if (it.category === "动漫周边") it.accessoryType = v;
+        });
+      };
+      // 批量删除
+      $("#bDelete").onclick = async () => {
+        const ok = await confirmModal("删除 " + items.length + " 个宝贝？", "删除后不可恢复！", "确认删除", true);
+        if (!ok) return;
+        for (const it of items) await DB.remove(it.id);
+        await loadItems();
+        toast("已删除 " + items.length + " 个宝贝");
+        location.hash = "#/";
+      };
+      $("#bDone").onclick = () => { render(); };
+
+      // 通用应用函数：逐条更新并保存
+      async function applyToItems(items, mutator) {
+        const btn = view.querySelector("button.active");
+        let n = 0;
+        try {
+          for (const it of items) {
+            mutator(it);
+            await DB.put(it);
+            n++;
+          }
+          await loadItems();
+          toast("已更新 " + n + " 个宝贝 ✅");
+          render();
+        } catch (err) {
+          toast("操作失败：" + translateAuthError(err.message));
+        }
+      }
+    }
+
     render();
   }
 
-  /* ---------- 批量录入模式 ---------- */
+  /* ---------- 批量录入模式 ---------- */  /* ---------- 批量录入模式 ---------- */
   function enterBatchMode(items, title) {
     const drafts = items.map((it) => JSON.parse(JSON.stringify(it)));
     const batchTitle = title || "批量录入 " + drafts.length + " 件宝贝";
