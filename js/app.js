@@ -717,9 +717,17 @@
         const add = grid.querySelector("label.upload-add");
         if (add) add.onclick = (e) => { e.preventDefault(); $("#dPhotoInput").click(); };
       }
-      $("#dPhotoInput").onchange = (e) => {
-        [...e.target.files].forEach((f) => it.photos.push(DB.fileToPhoto(f)));
+      $("#dPhotoInput").onchange = async (e) => {
+        const files = [...e.target.files];
         e.target.value = "";
+        for (const f of files) {
+          try {
+            const cf = await ImageUtil.compressFile(f, { maxSizeKB: 500, maxDim: 1920 });
+            it.photos.push(DB.fileToPhoto(cf));
+          } catch (err) {
+            it.photos.push(DB.fileToPhoto(f));
+          }
+        }
         renderPhotoGrid();
       };
       renderPhotoGrid();
@@ -1596,15 +1604,30 @@
       if (add) add.onclick = (e) => { e.preventDefault(); onPick(); };
     }
 
-    $("#photoInput").onchange = (e) => {
-      [...e.target.files].forEach((f) => photos.push(DB.fileToPhoto(f)));
+    $("#photoInput").onchange = async (e) => {
+      const files = [...e.target.files];
       e.target.value = "";
+      for (const f of files) {
+        try {
+          const cf = await ImageUtil.compressFile(f, { maxSizeKB: 500, maxDim: 1920 });
+          photos.push(DB.fileToPhoto(cf));
+        } catch (err) {
+          photos.push(DB.fileToPhoto(f));
+        }
+      }
       renderUploadGrid("#photoGrid", photos, () => $("#photoInput").click(), false);
     };
-    $("#shotInput").onchange = (e) => {
+    $("#shotInput").onchange = async (e) => {
       const files = [...e.target.files];
-      files.forEach((f) => shots.push(DB.fileToPhoto(f)));
       e.target.value = "";
+      for (const f of files) {
+        try {
+          const cf = await ImageUtil.compressFile(f, { maxSizeKB: 500, maxDim: 2000 });
+          shots.push(DB.fileToPhoto(cf));
+        } catch (err) {
+          shots.push(DB.fileToPhoto(f));
+        }
+      }
       renderUploadGrid("#shotGrid", shots, () => $("#shotInput").click(), true);
       if (files.length) runOcrOnShot(files[0]);
     };
