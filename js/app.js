@@ -283,9 +283,21 @@
     if (!facts.length) html += '<div style="padding:12px 0;font-size:13px;color:var(--text-2);text-align:center">还没有数据，先去收藏几件宝贝吧</div>';
     html += "</div>";
 
-    // 成就（分组递进展示）
+    // 成就（分组递进展示 + tier 进阶）
     const totalAch = achievements.reduce((s, g) => s + g.items.length, 0);
     const totalUnlocked = achievements.reduce((s, g) => s + g.unlockedCount, 0);
+
+    // 称号栏（等级称号 + 自选徽章）
+    const lvGame = Game.getLevel(Game.computeXp(allItems).xp);
+    const badgeIds = getBadgeIds();
+    const badgeAch = [];
+    achievements.forEach((g) => g.items.forEach((a) => { if (a.unlocked && badgeIds.includes(a.id)) badgeAch.push(a); }));
+    html += '<div class="title-bar">' +
+      '<div class="title-main">' + lvGame.icon + ' ' + esc(lvGame.name) + ' <small>Lv.' + lvGame.level + '</small></div>' +
+      '<div class="title-badges">' +
+      (badgeAch.length ? badgeAch.map((b) => '<span class="title-badge" title="' + esc(b.desc) + '">' + b.icon + " " + esc(tierName(b)) + "</span>").join("") : '<span class="title-badge-empty">点击成就设为徽章</span>') +
+      "</div></div>";
+
     html += '<div class="section-title">🏆 成就殿堂 <small style="color:var(--text-2);font-weight:400">' + totalUnlocked + "/" + totalAch + " 已解锁</small></div>";
 
     achievements.forEach((g, gi) => {
@@ -300,12 +312,29 @@
         '<div class="ach-group-body" data-gbody="' + gi + '"' + (gi === 0 ? "" : ' style="display:none"') + ">" +
         '<div class="ach-grid">';
       g.items.forEach((a) => {
-        html += '<div class="ach-card' + (a.unlocked ? " unlocked" : "") + '">' +
-          '<div class="ach-icon">' + a.icon + "</div>" +
-          '<div class="ach-name">' + esc(a.name) + "</div>" +
-          '<div class="ach-desc">' + esc(a.desc) + "</div>" +
-          (a.unlocked ? '<div class="ach-flag">已解锁</div>' : '<div class="ach-lock">🔒</div>') +
-          "</div>";
+        // tier 成就：显示当前称号 + 下一级
+        if (a.tierResolved) {
+          const tr = a.tierResolved;
+          const cur = tr.current;
+          const nxt = tr.next;
+          const isBadged = badgeIds.includes(a.id);
+          html += '<div class="ach-card' + (a.unlocked ? " unlocked" : "") + '" data-achid="' + a.id + '">' +
+            '<div class="ach-icon">' + (cur ? cur.icon : "🔒") + "</div>" +
+            '<div class="ach-name">' + esc(cur ? cur.name : (a.name || "未解锁")) + "</div>" +
+            '<div class="ach-desc">' + esc(cur ? cur.desc : (a.levels && a.levels[0] ? a.levels[0].desc : a.desc)) + "</div>" +
+            (nxt ? '<div class="ach-progress"><div class="xp-track"><div class="xp-fill" style="width:' + tr.progress + '%"></div></div>' +
+              '<div class="ach-next">下一阶：' + esc(nxt.name) + "（" + nxt.min + "）</div></div>" : '<div class="ach-max">已达最高阶 ✨</div>') +
+            (a.unlocked ? '<button class="ach-badge-btn' + (isBadged ? " active" : "") + '" data-achid="' + a.id + '">' + (isBadged ? "✓ 已设为徽章" : "设为徽章") + "</button>" : '<div class="ach-lock">🔒</div>') +
+            "</div>";
+        } else {
+          const isBadged = badgeIds.includes(a.id);
+          html += '<div class="ach-card' + (a.unlocked ? " unlocked" : "") + '" data-achid="' + a.id + '">' +
+            '<div class="ach-icon">' + a.icon + "</div>" +
+            '<div class="ach-name">' + esc(a.name) + "</div>" +
+            '<div class="ach-desc">' + esc(a.desc) + "</div>" +
+            (a.unlocked ? '<button class="ach-badge-btn' + (isBadged ? " active" : "") + '" data-achid="' + a.id + '">' + (isBadged ? "✓ 已设为徽章" : "设为徽章") + "</button>" : '<div class="ach-lock">🔒</div>') +
+            "</div>";
+        }
       });
       html += "</div></div>";
     });
@@ -321,6 +350,16 @@
       const open = body.style.display !== "none";
       body.style.display = open ? "none" : "";
       if (arrow) arrow.style.transform = open ? "" : "rotate(180deg)";
+    });
+    // 徽章点击（设为/取消展示）
+    view.querySelectorAll(".ach-badge-btn").forEach((b) => b.onclick = (e) => {
+      e.stopPropagation();
+      const id = b.dataset.achid;
+      let ids = getBadgeIds();
+      if (ids.includes(id)) { ids = ids.filter((x) => x !== id); }
+      else { if (ids.length >= 6) { toast("最多展示 6 个徽章"); return; } ids.push(id); }
+      saveBadgeIds(ids);
+      renderStatsPage();
     });
   }
 
@@ -1006,6 +1045,21 @@
     return it.species || it.accessoryType || "";
   }
 
+  /* ---------- 徽章（称号）系统 ---------- */
+  function getBadgeIds() {
+    try {
+      const raw = localStorage.getItem("ww_badges");
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) { return []; }
+  }
+  function saveBadgeIds(arr) {
+    try { localStorage.setItem("ww_badges", JSON.stringify(arr.slice(0, 6))); } catch (e) {}
+  }
+  // tier 成就的名称（当前称号）
+  function tierName(a) {
+    return a && a.tierResolved && a.tierResolved.current ? a.tierResolved.current.name : (a ? a.name : "");
+  }
+
   /* 拼图片数选项 */
   function pieceOptions(selected) {
     const opts = [500, 1000, 1500, 2000];
@@ -1529,6 +1583,10 @@
     html += '<div style="display:flex;gap:8px">' +
       '<input class="form-input" id="catInput" placeholder="新增盒子，如：盲盒" style="flex:1;padding:9px 10px;font-size:14px">' +
       '<button class="btn primary" id="catAdd" style="flex:none;padding:9px 16px;font-size:14px">添加</button></div>';
+
+    // 内置分类库（可一键恢复已删的内置分类）
+    html += '<div style="font-size:12px;color:var(--text-2);margin:10px 0 6px">🧰 内置收藏盒子（删除了可以点回来）</div>';
+    html += '<div id="builtinCatList" style="display:flex;flex-wrap:wrap;gap:8px"></div>';
     html += "</div>";
     html += '<p style="text-align:center;font-size:11px;color:#b0a290;margin-top:22px;line-height:1.8">数据存储于云端（Supabase）<br>登录同一账号即可在任何设备查看</p>';
 
@@ -1593,6 +1651,31 @@
       });
     }
     renderCatList();
+
+    // 内置分类库：显示所有内置分类，未添加的显示"添加"按钮
+    function renderBuiltinCats() {
+      const box = $("#builtinCatList");
+      if (!box) return;
+      const cur = getCategories();
+      const builtin = ["菩提", "水晶", "玉石", "拼图", "动漫周边", "盲盒"];
+      box.innerHTML = builtin.map((c) => {
+        const added = cur.includes(c);
+        return '<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:4px 8px 4px 12px;font-size:13px">' + esc(c) +
+          (added ? '<span style="color:var(--green);font-size:11px">✓</span>' :
+            '<button type="button" data-add="' + esc(c) + '" style="background:var(--wood);color:#f5f0e8;border-radius:12px;padding:2px 8px;font-size:11px">＋ 添加</button>') +
+          "</span>";
+      }).join("");
+      box.querySelectorAll("[data-add]").forEach((b) => b.onclick = () => {
+        const c = b.dataset.add;
+        const cats = getCategories();
+        if (!cats.includes(c)) { saveCategories(cats.concat([c])); }
+        renderBuiltinCats();
+        renderCatList();
+        renderSettings();
+        toast("已添加内置盒子：" + c);
+      });
+    }
+    renderBuiltinCats();
     $("#catAdd").onclick = () => {
       const v = $("#catInput").value.trim();
       if (!v) { toast("请输入盒子名"); return; }

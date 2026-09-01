@@ -373,3 +373,27 @@ img { display:block; }
   background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:2px 8px;
 }
 .ach-group-body { padding:2px 0 4px; }
+
+
+/* ============ 称号栏 & 徽章 ============ */
+.title-bar {
+  background:linear-gradient(135deg, var(--wood), var(--wood-2)); color:#f5f0e8;
+  border-radius:14px; padding:14px 16px; margin-bottom:12px; box-shadow:var(--shadow);
+}
+.title-main { font-size:18px; font-weight:800; }
+.title-main small { font-size:12px; font-weight:400; opacity:.8; }
+.title-badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.title-badge {
+  background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.25);
+  border-radius:14px; padding:3px 10px; font-size:12px;
+}
+.title-badge-empty { font-size:11px; opacity:.6; font-style:italic; }
+
+.ach-badge-btn {
+  width:100%; margin-top:8px; padding:6px; border-radius:10px;
+  background:var(--bg); border:1px solid var(--line); font-size:11px; color:var(--text-2);
+}
+.ach-badge-btn.active { background:#e8f5e9; color:var(--green); border-color:#c8e6c9; font-weight:600; }
+.ach-progress { margin-top:8px; }
+.ach-next { font-size:10px; color:var(--gold); margin-top:4px; }
+.ach-max { font-size:10px; color:var(--green); margin-top:6px; font-weight:600; }
