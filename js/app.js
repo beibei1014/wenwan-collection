@@ -522,7 +522,7 @@
         }
         render();
       }));
-      $("#sCancel").onclick = () => location.hash = "#/";
+      $("#sCancel").onclick = () => { renderHome(); };
       $("#sShare").onclick = async () => {
         const items = allItems.filter((i) => selected.has(i.id));
         if (!items.length) { toast("请先选择宝贝"); return; }
@@ -655,7 +655,7 @@
         location.hash = "#/";
       };
       $("#bDone").onclick = () => { render(); };
-      $("#bCancelBatch").onclick = () => { location.hash = "#/"; };
+      $("#bCancelBatch").onclick = () => { renderHome(); };
 
       // 通用应用函数：逐条更新并保存
       async function applyToItems(items, mutator) {
