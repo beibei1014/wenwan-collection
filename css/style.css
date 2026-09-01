@@ -673,3 +673,22 @@ img { display:block; }
   padding:12px; margin-bottom:10px;
 }
 .batch-op-title { font-size:14px; font-weight:600; color:var(--wood); margin-bottom:8px; }
+
+
+/* ============ 店铺记忆 chips ============ */
+.shop-memory { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.shop-chip {
+  display:inline-flex; align-items:center; gap:2px;
+  background:var(--bg); border:1px solid var(--line); border-radius:14px;
+  padding:2px 4px 2px 10px; font-size:12px;
+}
+.shop-chip-use { color:var(--text-2); padding:2px 2px; }
+.shop-chip.active .shop-chip-use { color:var(--gold); font-weight:600; }
+.shop-chip-del {
+  width:18px; height:18px; border-radius:50%; background:#fbe9e7; color:var(--red);
+  font-size:10px; display:flex; align-items:center; justify-content:center;
+}
+
+
+/* ============ 累计花费小眼睛 ============ */
+.eye-btn { font-size:12px; vertical-align:middle; margin-left:2px; opacity:.8; }

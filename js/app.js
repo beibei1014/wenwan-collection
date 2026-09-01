@@ -263,12 +263,14 @@
 
     let html = "";
 
-    // 顶部总览卡
+    // 顶部总览卡（累计花费带隐私小眼睛）
+    const hideSpend = getHideSpend();
     html += '<div class="stats-card"><h3>藏 品 总 览</h3><div class="stats-nums">' +
       '<div><div class="n">' + stats.total + '</div><div class="l">全部宝贝</div></div>' +
       '<div><div class="n">' + stats.owned + '</div><div class="l">在库</div></div>' +
       '<div><div class="n">' + stats.gifted + '</div><div class="l">已送人</div></div>' +
-      '<div><div class="n">¥' + (stats.totalSpent || 0) + '</div><div class="l">累计花费</div></div>' +
+      '<div><div class="n">' + (hideSpend ? "¥•••" : "¥" + (stats.totalSpent || 0)) + '</div>' +
+      '<div class="l">累计花费 <button class="eye-btn" id="btnEye">' + (hideSpend ? "👁️" : "🙈") + "</button></div></div>" +
       "</div></div>";
 
     // 月历
@@ -355,6 +357,14 @@
       });
     }
     renderCal(calY, calM);
+
+    // 累计花费小眼睛
+    const eyeBtn = $("#btnEye");
+    if (eyeBtn) eyeBtn.onclick = () => {
+      const next = !getHideSpend();
+      setHideSpend(next);
+      renderStatsPage();
+    };
 
     // 成就分组折叠
     view.querySelectorAll(".ach-group-head").forEach((h) => h.onclick = () => {
@@ -524,7 +534,14 @@
           await Poster.shareCanvas(canvas, "我的收藏图鉴.jpg");
           toast("图鉴海报已分享/保存");
           location.hash = "#/";
+          return;
         } catch (err) {
+          // 用户取消系统分享不算失败：也返回首页
+          if (String(err && err.message).includes("share")) {
+            toast("已取消分享");
+            location.hash = "#/";
+            return;
+          }
           toast("生成失败：" + err.message);
           btn.textContent = "📤 生成图鉴海报";
           btn.disabled = false;
@@ -586,7 +603,9 @@
         '<div class="batch-op-title" style="color:var(--red)">🗑️ 批量删除（' + items.length + ' 个）</div>' +
         '<button class="btn danger" id="bDelete" style="width:100%">确认删除所选宝贝</button></div>';
 
-      html += '<button class="btn ghost" id="bDone" style="width:100%;margin-top:10px">完成</button>';
+      html += '<div style="display:flex;gap:10px;margin-top:10px">' +
+        '<button class="btn ghost" id="bCancelBatch" style="flex:1">取消</button>' +
+        '<button class="btn primary" id="bDone" style="flex:1">完成</button></div>';
 
       view.innerHTML = html;
 
@@ -636,6 +655,7 @@
         location.hash = "#/";
       };
       $("#bDone").onclick = () => { render(); };
+      $("#bCancelBatch").onclick = () => { location.hash = "#/"; };
 
       // 通用应用函数：逐条更新并保存
       async function applyToItems(items, mutator) {
@@ -747,7 +767,8 @@
         statusButton("gifted", "已送人", it.playStatus || "") +
         "</div></div>";
       html += '<div class="form-group"><div class="form-label">店铺</div>' +
-        '<input class="form-input" id="dShop" value="' + esc(it.shop || "") + '"></div>';
+        '<input class="form-input" id="dShop" value="' + esc(it.shop || "") + '">' +
+        shopMemoryHtml(it.shop || "") + "</div>";
       html += '<div class="form-group"><div class="form-label">备注</div>' +
         '<textarea class="form-textarea" id="dNote" placeholder="可选">' + esc(it.note || "") + "</textarea></div>";
 
@@ -768,6 +789,17 @@
       });
 
       // 批量分类联动（简化：更新标签与拼图完成时间显隐）
+      // 店铺记忆交互
+      view.querySelectorAll(".shop-chip-use").forEach((b) => b.onclick = () => {
+        $("#dShop").value = b.dataset.shop;
+      });
+      view.querySelectorAll(".shop-chip-del").forEach((b) => b.onclick = () => {
+        removeShopMemory(b.dataset.shop);
+        const shopVal = $("#dShop").value;
+        const wrap = b.closest(".shop-memory");
+        if (wrap) wrap.outerHTML = shopMemoryHtml(shopVal);
+        toast("已删除店铺记忆");
+      });
       const dCat = $("#dCategory");
       const dStatusEl = document.querySelector("#dStatus");
       if (dStatusEl) {
@@ -874,6 +906,7 @@
         const pv = parseFloat($("#dPrice").value);
         it.price = isNaN(pv) ? null : pv;
         it.shop = $("#dShop").value.trim();
+        rememberShop(it.shop);
         it.category = $("#dCategory").value.trim();
         const dStatusBtn = document.querySelector("#dStatus button.active");
         if (dStatusBtn) {
@@ -1336,6 +1369,48 @@
     return it.species || it.accessoryType || "";
   }
 
+  /* ---------- 累计花费隐私 ---------- */
+  function getHideSpend() {
+    return localStorage.getItem("ww_hide_spend") === "1";
+  }
+  function setHideSpend(hide) {
+    localStorage.setItem("ww_hide_spend", hide ? "1" : "0");
+  }
+
+  /* ---------- 店铺输入记忆 ---------- */
+  function getShopMemory() {
+    try {
+      const raw = localStorage.getItem("ww_shops");
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) { return []; }
+  }
+  function rememberShop(shop) {
+    if (!shop || !shop.trim()) return;
+    let list = getShopMemory();
+    list = list.filter((s) => s !== shop);
+    list.unshift(shop);
+    try { localStorage.setItem("ww_shops", JSON.stringify(list.slice(0, 20))); } catch (e) {}
+  }
+  function removeShopMemory(shop) {
+    let list = getShopMemory().filter((s) => s !== shop);
+    try { localStorage.setItem("ww_shops", JSON.stringify(list)); } catch (e) {}
+  }
+  // 生成历史店铺 chips
+  function shopMemoryHtml(currentVal) {
+    const list = getShopMemory();
+    if (!list.length) return "";
+    let h = '<div class="shop-memory">';
+    list.forEach((s) => {
+      const active = s === currentVal ? " active" : "";
+      h += '<span class="shop-chip' + active + '">' +
+        '<button type="button" class="shop-chip-use" data-shop="' + esc(s) + '">' + esc(s) + "</button>" +
+        '<button type="button" class="shop-chip-del" data-shop="' + esc(s) + '">✕</button>' +
+        "</span>";
+    });
+    h += "</div>";
+    return h;
+  }
+
   /* ---------- 主题系统 ---------- */
   const THEMES = [
     { id: "light", name: "浅色", icon: "☀️" },
@@ -1591,7 +1666,8 @@
       '<select class="form-select" id="fSize">' + (curSizeField === "pieces" ? pieceOptions(it && it.pieceCount) : beadSizeOptions(it && it.beadSize)) + '</select></div>';
 
     html += '<div class="form-group"><div class="form-label">在哪家店买的</div>' +
-      '<input class="form-input" id="fShop" placeholder="店铺名 / 平台" value="' + esc(it ? it.shop : "") + '"></div>';
+      '<input class="form-input" id="fShop" placeholder="店铺名 / 平台" value="' + esc(it ? it.shop : "") + '">' +
+      shopMemoryHtml(it ? it.shop : "") + "</div>";
 
     // 状态（按分类联动：拼图→待拼/已拼，珠子→待盘玩/在盘玩）
     const curStatus = it ? (it.playStatus || "") : "";
@@ -1773,6 +1849,18 @@
     renderUploadGrid("#photoGrid", photos, () => $("#photoInput").click(), false);
     renderUploadGrid("#shotGrid", shots, () => $("#shotInput").click(), true);
 
+    // 店铺记忆交互
+    view.querySelectorAll(".shop-chip-use").forEach((b) => b.onclick = () => {
+      $("#fShop").value = b.dataset.shop;
+    });
+    view.querySelectorAll(".shop-chip-del").forEach((b) => b.onclick = () => {
+      removeShopMemory(b.dataset.shop);
+      const shopVal = $("#fShop").value;
+      const wrap = b.closest(".shop-memory");
+      if (wrap) wrap.outerHTML = shopMemoryHtml(shopVal);
+      toast("已删除店铺记忆");
+    });
+
     async function runOcrOnShot(file) {
       const hint = $("#ocrHint");
       const loading = $("#shotOcrLoading");
@@ -1838,6 +1926,7 @@
         const pv = parseFloat($("#fPrice").value);
         item.price = isNaN(pv) ? null : pv;
         item.shop = $("#fShop").value.trim();
+        rememberShop(item.shop);
         const sizeField = Categories.getSizeField(item.category);
         const sv = $("#fSize").value;
         if (sizeField === "pieces") {

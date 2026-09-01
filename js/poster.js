@@ -121,13 +121,18 @@
 
   /* ---------- 多选图鉴海报 ---------- */
   async function galleryPoster(items, opts) {
-    const count = Math.min(items.length, 12);
+    // 版式：固定 3:4 竖屏基准（1080x1440），宝贝多时扩展为 2-3 屏长图
+    const count = Math.min(items.length, 20);
+    const W = 1080;
     const cols = 3;
     const rows = Math.ceil(count / cols);
-    const cardW = 320, cardH = 430, gap = 36;
-    const padX = 60, padTop = 160, padBottom = 140;
-    const W = padX * 2 + cols * cardW + (cols - 1) * gap;
-    const H = padTop + rows * cardH + (rows - 1) * gap + padBottom;
+    const cardW = 300, cardH = 380, gap = 30;
+    const padX = 40;
+    const titleH = 190, footerH = 120;
+    // 基础高度按 3:4（W * 4/3 = 1440）；行数多时按行扩展
+    const baseH = 1440;
+    const contentH = rows * cardH + (rows - 1) * gap;
+    const H = Math.max(baseH, titleH + contentH + footerH);
     const canvas = document.createElement("canvas");
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext("2d");
@@ -138,30 +143,36 @@
     bg.addColorStop(1, "#ead9c0");
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
-
-    // 顶部标题
-    ctx.fillStyle = "#3d2b1f";
-    ctx.font = "bold 52px 'PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("我的文玩收藏图鉴", W / 2, 90);
     ctx.fillStyle = "#b8860b";
-    ctx.font = "30px 'PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText("共 " + count + " 件藏品 · " + (opts && opts.username ? opts.username + " @ " : "") + "我的收藏馆", W / 2, 138);
+    ctx.fillRect(0, 0, W, 14);
 
-    // 绘制每个卡片
+    // 顶部标题（居中）
+    ctx.fillStyle = "#3d2b1f";
+    ctx.font = "bold 50px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("我的收藏图鉴", W / 2, 85);
+    ctx.fillStyle = "#b8860b";
+    ctx.font = "28px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("共 " + count + " 件藏品 · " + (opts && opts.username ? opts.username + " @ " : "") + "我的收藏馆", W / 2, 132);
+
+    // 内容区水平居中：计算总宽
+    const totalW = cols * cardW + (cols - 1) * gap;
+    const startX = (W - totalW) / 2;   // 居中偏移
+
+    // 绘制卡片
     for (let i = 0; i < count; i++) {
       const item = items[i];
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const x = padX + col * (cardW + gap);
-      const y = padTop + row * (cardH + gap);
+      const x = startX + col * (cardW + gap);
+      const y = titleH + row * (cardH + gap);
 
-      // 卡片背景
+      // 卡片背景（圆角白卡）
       ctx.fillStyle = "#ffffff";
       roundRect(ctx, x, y, cardW, cardH, 18);
       ctx.fill();
 
-      // 照片（上半部分）
+      // 照片（居中方形区）
       const photo = item.photos && item.photos[0];
       if (photo) {
         try {
@@ -173,23 +184,29 @@
         roundRect(ctx, x + 14, y + 14, cardW - 28, cardW - 28, 12);
         ctx.fill();
         ctx.fillStyle = "#c9b89c";
-        ctx.font = "90px serif";
+        ctx.font = "80px serif";
         ctx.textAlign = "center";
-        ctx.fillText("📿", x + cardW / 2, y + 14 + (cardW - 28) / 2 + 35);
+        ctx.fillText("📿", x + cardW / 2, y + 14 + (cardW - 28) / 2 + 30);
       }
 
       // 名称
       ctx.fillStyle = "#3d2b1f";
-      ctx.font = "bold 30px 'PingFang SC','Microsoft YaHei',sans-serif";
+      ctx.font = "bold 28px 'PingFang SC','Microsoft YaHei',sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(escText(item.name || "未命名").slice(0, 8), x + cardW / 2, y + cardW + 8 + 34);
+      ctx.fillText(escText(item.name || "未命名").slice(0, 8), x + cardW / 2, y + cardW + 4 + 32);
 
-      // 珠子大小
+      // 副信息（大小/品种）
       ctx.fillStyle = "#b8860b";
-      ctx.font = "26px 'PingFang SC','Microsoft YaHei',sans-serif";
-      const bead = item.beadSize ? item.beadSize + "mm" : "";
-      ctx.fillText(bead || (item.species || "").slice(0, 6), x + cardW / 2, y + cardW + 8 + 74);
+      ctx.font = "24px 'PingFang SC','Microsoft YaHei',sans-serif";
+      const sub = item.beadSize ? item.beadSize + "mm" : (item.pieceCount ? item.pieceCount + "片" : (item.species || "").slice(0, 6));
+      ctx.fillText(sub, x + cardW / 2, y + cardW + 4 + 68);
     }
+
+    // 底部落款
+    ctx.fillStyle = "rgba(61,43,31,.45)";
+    ctx.font = "26px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText((opts && opts.username ? opts.username + " @ " : "") + "我的收藏馆", W / 2, H - 50);
 
     return canvas;
   }
