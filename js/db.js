@@ -221,6 +221,15 @@
     return { id: uid(), name: file.name || "photo", type: file.type || "image/jpeg", url: pub.publicUrl, path };
   }
 
+  /* ---------- 删除云端图片 ---------- */
+  async function deletePhoto(filePath) {
+    const sb = getSupabase();
+    const user = (await sb.auth.getUser()).data.user;
+    if (!user || !filePath) return;
+    const { error } = await sb.storage.from("bracelet-images").remove([filePath]);
+    if (error) { /* 忽略删除错误（如文件不存在） */ }
+  }
+
   /* ---------- 备份导出/导入 ---------- */
   async function exportBackup() {
     const items = await getAll();
@@ -287,7 +296,7 @@
     getSession, signUp, signIn, signOut, onAuthChange,
     getProfile, setDisplayName,
     getAll, getById, put, remove,
-    uploadPhoto,
+    uploadPhoto, deletePhoto,
     exportBackup, importBackup,
     fileToPhoto, daysWith, formatDays, uid,
   };

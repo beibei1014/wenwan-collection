@@ -1728,7 +1728,8 @@
 
         if (!item.name) { toast("请给宝贝起个名字"); return; }
 
-        // 上传新照片到云端
+        // 上传新照片到云端，并清理被移除的旧图
+        const oldPhotos = it && it.photos ? it.photos.slice() : [];
         item.photos = [];
         for (const p of photos) {
           if (p.url) { item.photos.push(p); continue; }
@@ -1738,6 +1739,19 @@
         for (const p of shots) {
           if (p.url) { item.screenshots.push(p); continue; }
           if (p.data) { item.screenshots.push(await DB.uploadPhoto(p.data, "screenshots")); }
+        }
+        // 删除编辑时被移除的旧云端图片（避免残留占空间）
+        if (isEdit) {
+          const kept = new Set(item.photos.map((p) => p.url));
+          const delTasks = [];
+          oldPhotos.forEach((op) => {
+            if (op.path && !kept.has(op.url)) delTasks.push(DB.deletePhoto(op.path));
+          });
+          const keptShots = new Set(item.screenshots.map((p) => p.url));
+          (it.screenshots || []).forEach((op) => {
+            if (op.path && !keptShots.has(op.url)) delTasks.push(DB.deletePhoto(op.path));
+          });
+          await Promise.all(delTasks);
         }
 
         await DB.put(item);

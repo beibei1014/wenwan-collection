@@ -37,10 +37,23 @@
       }
     }
 
-    const img = await loadImage(file);
+    let img;
+    try {
+      img = await loadImage(file);
+    } catch (e) {
+      // 尝试 createImageBitmap 兜底（HEIC 等格式）
+      try {
+        img = await createImageBitmap(file);
+      } catch (e2) {
+        return file; // 实在无法解码，返回原图
+      }
+    }
     // 计算缩放尺寸（保持比例）
-    let w = img.naturalWidth || img.width;
-    let h = img.naturalHeight || img.height;
+    let w = img.naturalWidth || img.width || 0;
+    let h = img.naturalHeight || img.height || 0;
+    if (!w || !h) return file;
+    // 如果原图本身小于目标尺寸，无需缩放
+    if (Math.max(w, h) <= maxDim && file.size <= maxSizeKB * 1024) return file;
     const scale = Math.min(1, maxDim / Math.max(w, h));
     if (scale < 1) { w = Math.round(w * scale); h = Math.round(h * scale); }
 
@@ -65,6 +78,7 @@
     // 转回 File（保留原名，改 .jpg）
     const name = (file.name || "photo").replace(/\.[^.]+$/, "") + ".jpg";
     const compressed = new File([blob], name, { type: "image/jpeg", lastModified: Date.now() });
+    console.log("[image] 压缩 " + (file.name || "photo") + ": " + Math.round(file.size / 1024) + "KB -> " + Math.round(compressed.size / 1024) + "KB (" + w + "x" + h + ", q=" + quality.toFixed(2) + ")");
     return compressed;
   }
 
