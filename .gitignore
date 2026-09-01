@@ -13,3 +13,5 @@
 # 系统文件
 Thumbs.db
 .DS_Store
+# 临时认证文件
+.askpass.bat

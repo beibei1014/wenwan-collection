@@ -67,6 +67,42 @@
     });
   }
 
+  /* ---------- 设置用户名页（首次登录引导 + 随时可改） ---------- */
+  function renderProfile() {
+    topbarTitle.textContent = "我的用户名";
+    btnBack.style.visibility = "hidden";
+    btnSettings.style.visibility = "hidden";
+    btnAdd.style.visibility = "hidden";
+
+    let html = "";
+    html += '<div style="text-align:center;padding:26px 0 14px">' +
+      '<div style="font-size:46px">👤</div>' +
+      '<div style="font-size:17px;font-weight:700;color:var(--wood);margin-top:8px">给收藏馆起个称呼</div>' +
+      '<div style="font-size:12px;color:var(--text-2);margin-top:5px">其他信息（手串数据）仍按账号隔离，用户名只用于显示</div></div>';
+
+    html += '<div class="form">';
+    html += '<div class="form-group"><div class="form-label">用户名 <small>1-20 字，可随时修改</small></div>' +
+      '<input class="form-input" id="pName" placeholder="如：盘串老张" maxlength="20" value="' + esc(user ? user.displayName : "") + '"></div>';
+    html += '<button class="btn primary" id="btnSaveProfile" style="width:100%">保 存</button>';
+    html += '<button class="btn ghost" id="btnSkipProfile" style="width:100%;margin-top:10px">跳过，稍后再说</button>';
+    html += "</div>";
+
+    view.innerHTML = html;
+
+    $("#btnSaveProfile").onclick = async () => {
+      const name = $("#pName").value.trim();
+      if (!name) { toast("请填写用户名"); return; }
+      try {
+        user.displayName = await DB.setDisplayName(user.id, name);
+        toast("用户名已保存：你好，" + user.displayName + " 👋");
+        location.hash = "#/";
+      } catch (err) {
+        toast("保存失败：" + err.message);
+      }
+    };
+    $("#btnSkipProfile").onclick = () => location.hash = "#/";
+  }
+
   /* ---------- 认证页 ---------- */
   function renderAuth() {
     topbarTitle.textContent = "登录 · 文玩手串收藏馆";
@@ -86,42 +122,30 @@
     html += '<div class="form-group"><div class="form-label">密码</div>' +
       '<input class="form-input" id="aPass" type="password" placeholder="至少 6 位" autocomplete="current-password"></div>';
     html += '<button class="btn primary" id="btnLogin" style="width:100%">登 录</button>';
-    html += '<button class="btn ghost" id="btnSignup" style="width:100%;margin-top:10px">没有账号？注册一个</button>';
     html += '<p id="authMsg" style="text-align:center;font-size:13px;color:var(--red);margin-top:12px;min-height:18px"></p>';
-    html += '<p style="text-align:center;font-size:11px;color:#b0a290;line-height:1.8;margin-top:8px">数据存储于 Supabase 云端<br>每个账号的数据互相隔离</p>';
+    html += '<p style="text-align:center;font-size:11px;color:#b0a290;line-height:1.8;margin-top:8px">邀请制 · 账号由管理员开通<br>没有账号？请联系管理员获取</p>';
     html += "</div>";
 
     view.innerHTML = html;
 
     const emailEl = $("#aEmail"), passEl = $("#aPass"), msgEl = $("#authMsg");
     const showMsg = (m, ok) => { msgEl.textContent = m; msgEl.style.color = ok ? "var(--green)" : "var(--red)"; };
-    const doAuth = async (mode) => {
+    const doAuth = async () => {
       const email = emailEl.value.trim();
       const pass = passEl.value;
       if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showMsg("请输入正确的邮箱地址"); return; }
       if (pass.length < 6) { showMsg("密码至少 6 位"); return; }
       try {
-        if (mode === "login") {
-          await DB.signIn(email, pass);
-          showMsg("登录成功", true);
-        } else {
-          const res = await DB.signUp(email, pass);
-          if (res.session) {
-            showMsg("注册成功，正在进入…", true);
-          } else {
-            showMsg("注册成功！请到邮箱点击确认链接后再登录", true);
-            return;
-          }
-        }
+        await DB.signIn(email, pass);
+        showMsg("登录成功", true);
         await enterApp();
       } catch (err) {
         showMsg(translateAuthError(err.message));
       }
     };
-    $("#btnLogin").onclick = () => doAuth("login");
-    $("#btnSignup").onclick = () => doAuth("signup");
-    emailEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doAuth("login"); });
-    passEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doAuth("login"); });
+    $("#btnLogin").onclick = doAuth;
+    emailEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doAuth(); });
+    passEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doAuth(); });
   }
 
   function translateAuthError(msg) {
@@ -141,8 +165,14 @@
     if (!session || !session.user) { location.hash = "#/auth"; return false; }
     user = session.user;
     try {
+      const prof = await DB.getProfile(user.id);
+      user.displayName = prof.display_name || "";
       await loadItems();
     } catch (e) { /* 表未建好时显示错误 */ }
+    // 首次登录：无显示名则引导设置
+    if (user && !user.displayName && location.hash !== "#/profile") {
+      location.hash = "#/profile";
+    }
     router();
     return true;
   }
@@ -591,7 +621,7 @@
 
     html += '<div class="settings-list">';
     if (user) {
-      html += '<div class="setting-item"><div><div class="t">👤 ' + esc(user.email || "") + '</div><div class="d">当前登录账号</div></div></div>';
+      html += '<button class="setting-item" id="btnProfile"><div><div class="t">👤 ' + esc(user.displayName || user.email || "") + '</div><div class="d">修改用户名 · ' + esc(user.email || "") + '</div></div><span class="arrow">›</span></button>';
     }
     html += '<button class="setting-item" id="btnExport"><div><div class="t">📤 导出备份</div><div class="d">下载全部数据为备份文件（含图片链接）</div></div><span class="arrow">›</span></button>';
     html += '<button class="setting-item" id="btnImport"><div><div class="t">📥 导入备份</div><div class="d">从备份文件恢复数据（会覆盖当前数据）</div></div><span class="arrow">›</span></button>';
@@ -602,6 +632,8 @@
 
     view.innerHTML = html;
 
+    const bp = $("#btnProfile");
+    if (bp) bp.onclick = () => location.hash = "#/profile";
     $("#btnExport").onclick = async () => {
       const json = await DB.exportBackup();
       const blob = new Blob([json], { type: "application/json" });
@@ -655,6 +687,7 @@
     const h = location.hash || "#/";
     if (h === "#/auth") { renderAuth(); return; }
     if (!user) { renderAuth(); return; }
+    if (h === "#/profile") { renderProfile(); return; }
     if (h === "#/" || h === "#") { renderHome(); }
     else if (h.startsWith("#/item/")) { renderDetail(h.slice(7)); }
     else if (h.startsWith("#/edit/")) { renderForm(h.slice(7)); }

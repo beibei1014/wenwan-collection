@@ -100,6 +100,29 @@
     if (error) throw error;
   }
 
+  /* ---------- 用户档案（显示名） ---------- */
+  async function getProfile(userId) {
+    const sb = getSupabase();
+    const { data, error } = await sb.from("profiles").select("display_name").eq("id", userId).maybeSingle();
+    if (error && error.code !== "PGRST116") {
+      // PGRST116 = 无匹配行（表可能未建），静默返回空
+      if (error.message && error.message.includes("Could not find the table")) return { display_name: "" };
+      throw error;
+    }
+    return { display_name: data ? (data.display_name || "") : "" };
+  }
+
+  async function setDisplayName(userId, name) {
+    const sb = getSupabase();
+    const display_name = (name || "").trim().slice(0, 20);
+    const { data, error } = await sb.from("profiles").upsert(
+      { id: userId, display_name, updated_at: new Date().toISOString() },
+      { onConflict: "id" }
+    );
+    if (error) throw error;
+    return display_name;
+  }
+
   function onAuthChange(cb) {
     const sb = getSupabase();
     sb.auth.onAuthStateChange((event, session) => cb(event, session));
@@ -234,6 +257,7 @@
   window.DB = {
     getSupabase,
     getSession, signUp, signIn, signOut, onAuthChange,
+    getProfile, setDisplayName,
     getAll, getById, put, remove,
     uploadPhoto,
     exportBackup, importBackup,
