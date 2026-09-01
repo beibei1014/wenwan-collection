@@ -26,10 +26,18 @@
     });
 
     // 拼图完成
-    const puzzles = [1, 5, 10];
-    const puzzleXp = [100, 300, 600];
+    const puzzles = [1, 5, 15, 50, 100, 300];
+    const puzzleXp = [100, 300, 600, 1200, 2500, 6000];
     puzzles.forEach((c, i) => {
       if (puzzleDone >= c) { xp += puzzleXp[i]; milestones.push({ icon: "🧩", name: "完成 " + c + " 幅拼图", xp: puzzleXp[i] }); }
+    });
+
+    // 菩提类收藏（菩提之道经验）
+    const beadCount = items.filter((i) => /菩提|金刚|凤眼|星月/.test((i.name || "") + (i.species || ""))).length;
+    const beads = [5, 15, 50, 100, 300];
+    const beadXp = [100, 250, 600, 1200, 3000];
+    beads.forEach((c, i) => {
+      if (beadCount >= c) { xp += beadXp[i]; milestones.push({ icon: "📿", name: "菩提收藏 " + c + " 件", xp: beadXp[i] }); }
     });
 
     // 送出

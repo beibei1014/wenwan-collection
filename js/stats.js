@@ -105,9 +105,10 @@
       desc: "菩提类收藏的修行",
       items: [
         { id: "bead5", icon: "🌱", name: "菩提新芽", desc: "收藏 5 件菩提类宝贝", check: (s, items) => countSpecies(items, /菩提|金刚|凤眼|星月/) >= 5 },
-        { id: "bead10", icon: "🌿", name: "菩提小成", desc: "收藏 10 件菩提类宝贝", check: (s, items) => countSpecies(items, /菩提|金刚|凤眼|星月/) >= 10 },
-        { id: "bead30", icon: "🧘", name: "菩提老祖", desc: "收藏 30 件菩提类宝贝（你就是菩提老祖！）", check: (s, items) => countSpecies(items, /菩提|金刚|凤眼|星月/) >= 30 },
-        { id: "bead50", icon: "👴", name: "菩提祖师", desc: "收藏 50 件菩提类宝贝，祖师爷驾到", check: (s, items) => countSpecies(items, /菩提|金刚|凤眼|星月/) >= 50 },
+        { id: "bead15", icon: "🌿", name: "菩提小成", desc: "收藏 15 件菩提类宝贝", check: (s, items) => countSpecies(items, /菩提|金刚|凤眼|星月/) >= 15 },
+        { id: "bead50", icon: "🌳", name: "菩提老树", desc: "收藏 50 件菩提类宝贝", check: (s, items) => countSpecies(items, /菩提|金刚|凤眼|星月/) >= 50 },
+        { id: "bead100", icon: "🧘", name: "菩提老祖", desc: "收藏 100 件菩提类宝贝，百串修为，道法自然（你就是菩提老祖！）", check: (s, items) => countSpecies(items, /菩提|金刚|凤眼|星月/) >= 100 },
+        { id: "bead300", icon: "👴", name: "菩提祖师", desc: "收藏 300 件菩提类宝贝，祖师爷驾到，受徒儿一拜", check: (s, items) => countSpecies(items, /菩提|金刚|凤眼|星月/) >= 300 },
       ],
     },
     {
@@ -116,9 +117,10 @@
       items: [
         { id: "puzzle1", icon: "🧩", name: "拼图学徒", desc: "完成第 1 幅拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 1 },
         { id: "puzzle5", icon: "🎯", name: "拼图达人", desc: "完成 5 幅拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 5 },
-        { id: "puzzle10", icon: "🎪", name: "拼图大师", desc: "完成 10 幅拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 10 },
-        { id: "puzzle30", icon: "🧠", name: "拼图宗师", desc: "完成 30 幅拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 30 },
-        { id: "puzzle70", icon: "👑", name: "拼图の支配者", desc: "完成 70 幅拼图，拼图界无人能敌", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 70 },
+        { id: "puzzle15", icon: "🎪", name: "拼图大师", desc: "完成 15 幅拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 15 },
+        { id: "puzzle50", icon: "🎡", name: "拼图高手", desc: "完成 50 幅拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 50 },
+        { id: "puzzle100", icon: "🧠", name: "拼图宗师", desc: "完成 100 幅拼图，百幅修为", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 100 },
+        { id: "puzzle300", icon: "👑", name: "拼图の支配者", desc: "完成 300 幅拼图，拼图界至尊，无人能敌", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 300 },
       ],
     },
     {
