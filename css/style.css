@@ -65,6 +65,15 @@ img { display:block; }
 }
 .search-box::before { content:"🔍"; position:absolute; left:12px; top:50%; transform:translateY(-50%); font-size:14px; opacity:.6; }
 
+.batch-entry {
+  width:100%; margin-bottom:12px; padding:11px; border-radius:12px;
+  background:linear-gradient(135deg, var(--wood), var(--wood-2)); color:#f5f0e8;
+  font-size:14px; font-weight:600; letter-spacing:1px;
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  box-shadow:var(--shadow);
+}
+.batch-entry:active { opacity:.9; }
+
 .grid { display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; }
 @media (min-width:560px){ .grid { grid-template-columns:repeat(3, 1fr); } }
 .card {

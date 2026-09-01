@@ -67,6 +67,175 @@
     });
   }
 
+  /* ---------- 批量录入模式 ---------- */
+  function enterBatchMode(items, title) {
+    const drafts = items.map((it) => JSON.parse(JSON.stringify(it)));
+    const batchTitle = title || "批量录入 " + drafts.length + " 条手串";
+    let current = null; // 当前编辑中的草稿
+
+    function renderList() {
+      topbarTitle.textContent = batchTitle;
+      btnBack.style.visibility = "visible";
+      btnSettings.style.visibility = "hidden";
+      btnAdd.style.visibility = "hidden";
+
+      let html = "";
+      html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:10px">共 ' + drafts.length + ' 条，点击卡片可编辑详情；照片随各条保存</div>';
+      html += '<div class="grid">';
+      drafts.forEach((it, i) => {
+        const p = it.photos && it.photos[0];
+        const img = p ? '<img src="' + photoUrl(p) + '" alt="">' : '<div class="placeholder">📿</div>';
+        html += '<div class="card" data-i="' + i + '">' +
+          '<div class="card-thumb">' + img + "</div>" +
+          '<div class="card-body">' +
+          '<div class="card-name">' + esc(it.name || "未命名·第" + (i + 1) + "条") + "</div>" +
+          '<div class="card-sub"><span>' + esc(it.shop || "") + '</span><span class="days">' + (it.price != null ? "¥" + it.price : "") + "</span></div>" +
+          "</div></div>";
+      });
+      html += "</div>";
+
+      html += '<div class="detail-actions" style="margin-top:16px">';
+      html += '<button class="btn ghost" id="bAddRow" style="flex:1">＋ 添加一行</button>';
+      html += '<button class="btn primary" id="bSaveAll" style="flex:2">保存全部 ' + drafts.length + ' 条</button>';
+      html += "</div>";
+
+      view.innerHTML = html;
+
+      view.querySelectorAll(".card").forEach((c) => c.addEventListener("click", () => {
+        current = drafts[+c.dataset.i];
+        renderDraftEditor(+c.dataset.i);
+      }));
+      $("#bAddRow").onclick = () => {
+        drafts.push({ name: "", species: "", craft: "", arrivedAt: null, price: null, shop: "", gifted: false, giftedAt: null, played: false, playedNote: "", note: "", photos: [], screenshots: [] });
+        renderList();
+      };
+      $("#bSaveAll").onclick = () => saveAllDrafts();
+    }
+
+    function renderDraftEditor(idx) {
+      const it = drafts[idx];
+      topbarTitle.textContent = "编辑第 " + (idx + 1) + " 条";
+      btnBack.style.visibility = "visible";
+      btnSettings.style.visibility = "hidden";
+      btnAdd.style.visibility = "hidden";
+
+      let html = "";
+      html += '<div class="form">';
+      html += '<div class="form-group"><div class="form-label">串的名字</div>' +
+        '<input class="form-input" id="dName" value="' + esc(it.name || "") + '" placeholder="如：星月菩提·老念珠"></div>';
+      html += '<div class="form-row">';
+      html += '<div class="form-group"><div class="form-label">品种/材质</div>' +
+        '<input class="form-input" id="dSpecies" list="speciesListB" value="' + esc(it.species || "") + '" placeholder="如：星月菩提">' +
+        '<datalist id="speciesListB">' + ["星月菩提","金刚菩提","凤眼菩提","菩提根","小叶紫檀","黄花梨","沉香","绿松石","南红玛瑙","蜜蜡","和田玉","橄榄核","核桃手串","椰壳","紫金鼠","千眼菩提","崖柏","血檀"].map((s) => '<option value="' + s + '">').join("") + "</datalist></div>";
+      html += '<div class="form-group"><div class="form-label">工艺</div>' +
+        '<div class="seg" id="dCraft">' +
+        '<button type="button" data-v="干磨" class="' + (it.craft === "干磨" || !it.craft ? "active" : "") + '">干磨</button>' +
+        '<button type="button" data-v="水磨" class="' + (it.craft === "水磨" ? "active" : "") + '">水磨</button>' +
+        '<button type="button" data-v="" class="' + (it.craft && it.craft !== "干磨" && it.craft !== "水磨" ? "active" : "") + '">其他</button>' +
+        "</div></div>";
+      html += "</div>";
+      html += '<div class="form-row">';
+      html += '<div class="form-group"><div class="form-label">到货时间</div>' +
+        '<input class="form-input" id="dDate" type="date" value="' + (it.arrivedAt ? fmtDateInput(it.arrivedAt) : "") + '"></div>';
+      html += '<div class="form-group"><div class="form-label">价格 <small>元</small></div>' +
+        '<input class="form-input" id="dPrice" type="number" inputmode="decimal" value="' + (it.price != null ? it.price : "") + '"></div>';
+      html += "</div>";
+      html += '<div class="form-group"><div class="form-label">店铺</div>' +
+        '<input class="form-input" id="dShop" value="' + esc(it.shop || "") + '"></div>';
+      html += '<div class="form-group"><div class="form-label">备注</div>' +
+        '<textarea class="form-textarea" id="dNote" placeholder="可选">' + esc(it.note || "") + "</textarea></div>";
+
+      html += '<div class="form-group"><div class="form-label">照片 <small>最多 9 张</small></div>' +
+        '<div class="upload-grid" id="dPhotoGrid"></div>' +
+        '<input type="file" id="dPhotoInput" accept="image/*" multiple hidden></div>';
+
+      html += '<div class="detail-actions">';
+      html += '<button class="btn ghost" id="dDel" style="flex:1">删除这条</button>';
+      html += '<button class="btn primary" id="dBack" style="flex:1">返回列表</button>';
+      html += "</div></div>";
+
+      view.innerHTML = html;
+
+      view.querySelectorAll("#dCraft button").forEach((b) => b.onclick = () => {
+        view.querySelectorAll("#dCraft button").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+      });
+
+      function renderPhotoGrid() {
+        const grid = $("#dPhotoGrid");
+        let h = "";
+        (it.photos || []).forEach((p, i) => {
+          h += '<div class="upload-cell has">' + (photoUrl(p) ? '<img src="' + photoUrl(p) + '" alt="">' : "") +
+            '<button type="button" class="upload-del" data-i="' + i + '">✕</button></div>';
+        });
+        if ((it.photos || []).length < 9) {
+          h += '<label class="upload-cell upload-add" style="cursor:pointer"><span class="plus">＋</span><span>照片</span></label>';
+        }
+        grid.innerHTML = h;
+        grid.querySelectorAll(".upload-del").forEach((b) => b.onclick = () => {
+          it.photos.splice(+b.dataset.i, 1);
+          renderPhotoGrid();
+        });
+        const add = grid.querySelector("label.upload-add");
+        if (add) add.onclick = (e) => { e.preventDefault(); $("#dPhotoInput").click(); };
+      }
+      $("#dPhotoInput").onchange = (e) => {
+        [...e.target.files].forEach((f) => it.photos.push(DB.fileToPhoto(f)));
+        e.target.value = "";
+        renderPhotoGrid();
+      };
+      renderPhotoGrid();
+
+      $("#dBack").onclick = () => {
+        it.name = $("#dName").value.trim();
+        it.species = $("#dSpecies").value.trim();
+        it.craft = view.querySelector("#dCraft button.active").dataset.v;
+        const dv = $("#dDate").value;
+        it.arrivedAt = dv ? new Date(dv + "T12:00:00").getTime() : null;
+        const pv = parseFloat($("#dPrice").value);
+        it.price = isNaN(pv) ? null : pv;
+        it.shop = $("#dShop").value.trim();
+        it.note = $("#dNote").value.trim();
+        renderList();
+      };
+      $("#dDel").onclick = () => {
+        drafts.splice(idx, 1);
+        if (!drafts.length) { location.hash = "#/"; return; }
+        renderList();
+      };
+    }
+
+    async function saveAllDrafts() {
+      const valid = drafts.filter((it) => it.name && it.name.trim());
+      if (!valid.length) { toast("请至少给一条手串填上名字"); return; }
+      const btn = $("#bSaveAll");
+      btn.textContent = "正在保存…";
+      btn.disabled = true;
+      try {
+        let n = 0;
+        for (const it of valid) {
+          // 上传照片
+          it.photos = [];
+          for (const p of drafts[valid.indexOf(it)].photos) {
+            if (p.url) { it.photos.push(p); continue; }
+            if (p.data) it.photos.push(await DB.uploadPhoto(p.data, "photos"));
+          }
+          await DB.put(it);
+          n++;
+        }
+        await loadItems();
+        toast("批量保存成功：" + n + " 条 🎉");
+        location.hash = "#/";
+      } catch (err) {
+        toast("保存失败：" + translateAuthError(err.message));
+        btn.textContent = "保存全部 " + valid.length + " 条";
+        btn.disabled = false;
+      }
+    }
+
+    renderList();
+  }
+
   /* ---------- 设置用户名页（首次登录引导 + 随时可改） ---------- */
   function renderProfile() {
     topbarTitle.textContent = "我的用户名";
@@ -201,7 +370,7 @@
 
   /* ---------- 首页 ---------- */
   function renderHome() {
-    topbarTitle.textContent = "文玩手串收藏馆";
+    topbarTitle.textContent = (user && user.displayName ? user.displayName : "文玩手串") + "收藏馆";
     btnBack.style.visibility = "hidden";
     btnSettings.style.visibility = "visible";
     btnAdd.style.visibility = "visible";
@@ -223,6 +392,8 @@
       '</div>';
 
     html += '<div class="search-box"><input id="searchInput" placeholder="搜索名字 / 品种 / 店铺…" value="' + esc(search) + '"></div>';
+
+    html += '<button class="batch-entry" id="btnBatch">🗂 批量录入</button>';
 
     html += '<div id="gridHolder"></div>';
 
@@ -263,6 +434,10 @@
   }
 
   function bindHomeEvents() {
+    const bb = $("#btnBatch");
+    if (bb) bb.onclick = () => {
+      enterBatchMode([], "批量录入（空列表，点击＋添加一行）");
+    };
     const si = $("#searchInput");
     if (si) si.addEventListener("input", () => { search = si.value.trim(); updateGrid(); });
     view.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => {
@@ -527,7 +702,28 @@
         const text = await OCR.recognize(file, (p) => {
           loading.querySelector("span").textContent = "正在识别订单截图… " + Math.round(p * 100) + "%";
         });
-        const parsed = OCR.parseOrder(text);
+        const orders = OCR.parseOrders(text);
+
+        // 多订单 → 批量创建
+        if (orders.length > 1) {
+          const items = orders.map((o) => ({
+            name: o.name || "",
+            species: "",
+            craft: "",
+            arrivedAt: o.date ? new Date(o.date + "T12:00:00").getTime() : null,
+            price: o.price,
+            shop: o.shop || "",
+            gifted: false, giftedAt: null,
+            played: false, playedNote: "",
+            note: "",
+            photos: [], screenshots: [{ ...DB.fileToPhoto(file) }],
+          }));
+          enterBatchMode(items, "从截图识别到 " + orders.length + " 个订单，请核对后批量保存");
+          return;
+        }
+
+        // 单订单 → 填入当前表单
+        const parsed = orders[0] || { shop: "", price: null, date: "", name: "" };
         const filled = [];
         if (parsed.shop && !$("#fShop").value) { $("#fShop").value = parsed.shop; filled.push("店铺：" + parsed.shop); }
         if (parsed.price != null && !$("#fPrice").value) { $("#fPrice").value = parsed.price; filled.push("价格：¥" + parsed.price); }
