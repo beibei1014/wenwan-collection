@@ -159,12 +159,17 @@
     const totalW = cols * cardW + (cols - 1) * gap;
     const startX = (W - totalW) / 2;   // 居中偏移
 
-    // 绘制卡片
+    // 绘制卡片（每行按实际数量居中，最后一行不满也居中）
     for (let i = 0; i < count; i++) {
       const item = items[i];
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const x = startX + col * (cardW + gap);
+      // 本行宝贝数（最后一行可能不满 cols）
+      const rowStart = row * cols;
+      const rowCount = Math.min(cols, count - rowStart);
+      const rowWidth = rowCount * cardW + (rowCount - 1) * gap;
+      const rowStartX = (W - rowWidth) / 2;   // 本行居中偏移
+      const x = rowStartX + col * (cardW + gap);
       const y = titleH + row * (cardH + gap);
 
       // 卡片背景（圆角白卡）
@@ -227,7 +232,16 @@
     const facts = window.Stats.funFacts(items, stats);
     const lv = window.Game.getLevel(window.Game.computeXp(items).xp);
     const username = opts.username || "";
-    const W = 1080, H = 1920;
+    const W = 1080;
+    const badgeIds2 = opts.badgeIds || [];
+    const badgeCount2 = Math.min(achievements.reduce((s, g) => s + g.items.filter((a) => a.unlocked && badgeIds2.includes(a.id)).length, 0), 12);
+    const factsCount = Math.min(facts.length, 6);
+    const badgeRows = badgeCount2 ? Math.ceil(badgeCount2 / 5) : 0;
+    const baseH = 1920;
+    // 徽章行数越多越高，发现越多越高
+    const extraH = badgeRows > 1 ? (badgeRows - 1) * 220 : 0;
+    const factsH = factsCount > 5 ? (factsCount - 5) * 78 : 0;
+    const H = baseH + extraH + factsH;
     const canvas = document.createElement("canvas");
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext("2d");
@@ -272,53 +286,85 @@
     ctx.font = "20px 'PingFang SC','Microsoft YaHei',sans-serif";
     ctx.fillText("已解锁成就 " + achievements.reduce((s,g)=>s+g.unlockedCount,0) + " 个", 285, 296);
 
-    // 徽章区
+    // 徽章区（加大 + 居中）
     const badgeIds = opts.badgeIds || [];
     const badgeAch = [];
     achievements.forEach((g) => g.items.forEach((a) => { if (a.unlocked && badgeIds.includes(a.id)) badgeAch.push(a); }));
+    let factsY = 620;
     if (badgeAch.length) {
-      ctx.fillStyle = "#8a7a68";
-      ctx.font = "26px 'PingFang SC','Microsoft YaHei',sans-serif";
-      ctx.textAlign = "left";
-      ctx.fillText("我的徽章", 90, 400);
-      let bx = 90;
-      badgeAch.slice(0, 8).forEach((b, bi) => {
-        // 徽章卡：渐变底 + 大图标 + 名称
-        const bg2 = ctx.createLinearGradient(bx, 0, bx + 120, 0);
+      // 板块标题
+      ctx.fillStyle = "#3d2b1f";
+      ctx.font = "bold 34px 'PingFang SC','Microsoft YaHei',sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("我 的 徽 章", W / 2, 420);
+
+      // 徽章卡加大：140 宽，每行 5 个（5*140+4*16=764 < 940），居中
+      const badgeW = 140, badgeH = 200, bGap = 16;
+      const perRow = 5;
+      const showCount = Math.min(badgeAch.length, 12);
+      const rows2 = Math.ceil(showCount / perRow);
+      const rowW = Math.min(badgeAch.length, perRow) * badgeW + (Math.min(badgeAch.length, perRow) - 1) * bGap;
+      let startBX = (W - rowW) / 2;
+      badgeAch.slice(0, 12).forEach((b, bi) => {
+        const col = bi % perRow;
+        const row = Math.floor(bi / perRow);
+        // 本行宝贝数（最后一行居中）
+        const inRow = Math.min(perRow, badgeAch.length - row * perRow);
+        const thisRowW = inRow * badgeW + (inRow - 1) * bGap;
+        const rowBX = (W - thisRowW) / 2;
+        const bx = rowBX + col * (badgeW + bGap);
+        const by = 455 + row * (badgeH + 20);
+
+        // 徽章卡：渐变底
+        const bg2 = ctx.createLinearGradient(bx, 0, bx + badgeW, 0);
         bg2.addColorStop(0, bi % 2 ? "#b8860b" : "#a06b2c");
         bg2.addColorStop(1, bi % 2 ? "#d4a96a" : "#c9a15a");
         ctx.fillStyle = bg2;
-        roundRect(ctx, bx, 425, 118, 150, 18);
+        roundRect(ctx, bx, by, badgeW, badgeH, 20);
         ctx.fill();
-        // 圆形图标区
-        ctx.fillStyle = "rgba(255,255,255,.2)";
+        // 圆形图标区（更大）
+        ctx.fillStyle = "rgba(255,255,255,.22)";
         ctx.beginPath();
-        ctx.arc(bx + 59, 475, 34, 0, Math.PI * 2);
+        ctx.arc(bx + badgeW / 2, by + 60, 42, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = "#fff";
-        ctx.font = "38px serif";
+        ctx.font = "46px serif";
         ctx.textAlign = "center";
         const icon = b.tierResolved && b.tierResolved.current ? b.tierResolved.current.icon : b.icon;
-        ctx.fillText(icon, bx + 59, 488);
+        ctx.fillText(icon, bx + badgeW / 2, by + 76);
+        // 名称（大）
         const name = b.tierResolved && b.tierResolved.current ? b.tierResolved.current.name : b.name;
-        ctx.font = "bold 20px 'PingFang SC','Microsoft YaHei',sans-serif";
-        ctx.fillText(String(name).slice(0, 5), bx + 59, 545);
-        bx += 130;
+        ctx.font = "bold 24px 'PingFang SC','Microsoft YaHei',sans-serif";
+        ctx.fillText(String(name).slice(0, 6), bx + badgeW / 2, by + 130);
+        ctx.font = "18px 'PingFang SC','Microsoft YaHei',sans-serif";
+        ctx.fillStyle = "rgba(255,255,255,.75)";
+        ctx.fillText("已解锁", bx + badgeW / 2, by + 162);
       });
+      // 徽章区高度
+      factsY = 455 + rows2 * (badgeH + 20) + 30;
+    } else {
+      ctx.fillStyle = "#8a7a68";
+      ctx.font = "26px 'PingFang SC','Microsoft YaHei',sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("（在设置里选择要展示的徽章）", W / 2, 480);
     }
 
-    // 有趣发现
-    const factsY = badgeAch.length ? 650 : 450;
-    ctx.fillStyle = "#8a7a68";
-    ctx.font = "26px 'PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillText("有趣发现", 90, factsY);
-    let fy = factsY + 45;
-    facts.slice(0, 5).forEach((f) => {
+    // 有趣发现（居中卡片式）
+    ctx.fillStyle = "#3d2b1f";
+    ctx.font = "bold 34px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("有 趣 发 现", W / 2, factsY);
+    let fy = factsY + 55;
+    facts.slice(0, 6).forEach((f) => {
+      // 发现条目卡片
+      ctx.fillStyle = "#ffffff";
+      roundRect(ctx, 60, fy - 32, W - 120, 58, 12);
+      ctx.fill();
       ctx.fillStyle = "#3d2b1f";
-      ctx.font = "24px 'PingFang SC','Microsoft YaHei',sans-serif";
-      ctx.fillText(f.icon + " " + String(f.text).slice(0, 24), 90, fy);
-      fy += 44;
+      ctx.font = "26px 'PingFang SC','Microsoft YaHei',sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(f.icon + " " + String(f.text).slice(0, 20), 90, fy);
+      fy += 78;
     });
 
     // 落款
