@@ -14,7 +14,7 @@
 
   let allItems = [];
   let filter = "all";        // all | instock | gifted | played
-  let categoryFilter = "";   // 分类筛选
+  let categoryFilter = "";   // 收藏盒子筛选
   let search = "";
   let user = null;           // 当前登录用户
 
@@ -117,7 +117,7 @@
 
   /* ---------- 分类页 ---------- */
   function renderCatPage() {
-    topbarTitle.textContent = "我的分类";
+    topbarTitle.textContent = "我的收藏盒子";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
 
@@ -130,41 +130,161 @@
     });
     const uncat = allItems.filter((i) => !i.category).length;
 
+    // 盒子图标与配色
+    function boxMeta(c) {
+      const map = {
+        "菩提": { icon: "📿", grad: "linear-gradient(135deg,#8d6e4a,#a98b63)" },
+        "水晶": { icon: "💎", grad: "linear-gradient(135deg,#7ba7d9,#a8c8ec)" },
+        "玉石": { icon: "🪨", grad: "linear-gradient(135deg,#5d9b7a,#86b89c)" },
+        "拼图": { icon: "🧩", grad: "linear-gradient(135deg,#d98ba6,#e8b0c4)" },
+        "吧唧": { icon: "🏅", grad: "linear-gradient(135deg,#c9a227,#e0c25e)" },
+        "盲盒": { icon: "🎁", grad: "linear-gradient(135deg,#b06bd9,#cf97ec)" },
+        "其他": { icon: "🗂", grad: "linear-gradient(135deg,#8a7a68,#a89880)" }
+      };
+      return map[c] || { icon: "🗂", grad: "linear-gradient(135deg,#8a7a68,#a89880)" };
+    }
+
     let html = "";
-    html += '<div class="section-title">全部分类</div>';
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+    html += '<div class="section-title">我的收藏盒子</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
 
     // 全部
-    html += '<button class="cat-card" data-cat="" style="border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px;text-align:left">' +
-      '<div style="font-size:15px;font-weight:700;color:var(--wood)">📦 全部</div>' +
-      '<div style="font-size:12px;color:var(--text-2);margin-top:4px">' + allItems.length + " 件藏品</div></button>";
+    const allMeta = boxMeta("其他");
+    html += '<button class="cat-card" data-cat="" style="border:none;border-radius:16px;background:' + allMeta.grad + ';padding:18px 16px;text-align:left;color:#fff;box-shadow:var(--shadow)">' +
+      '<div style="font-size:26px">' + allMeta.icon + "</div>" +
+      '<div style="font-size:16px;font-weight:700;margin-top:8px;color:#fff">全部宝贝</div>' +
+      '<div style="font-size:12px;opacity:.85;margin-top:3px">' + allItems.length + " 件收藏</div></button>";
 
     // 每个分类
     cats.forEach((c) => {
       const n = countBy[c] || 0;
-      const icon = c === "菩提" ? "📿" : c === "水晶" ? "💎" : c === "玉石" ? "🪨" : c === "拼图" ? "🧩" : c === "吧唧" ? "🏅" : c === "盲盒" ? "🎁" : "🗂";
-      html += '<button class="cat-card" data-cat="' + esc(c) + '" style="border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px;text-align:left">' +
-        '<div style="font-size:15px;font-weight:700;color:var(--wood)">' + icon + " " + esc(c) + "</div>" +
-        '<div style="font-size:12px;color:var(--text-2);margin-top:4px">' + n + " 件藏品</div></button>";
+      const meta = boxMeta(c);
+      html += '<button class="cat-card" data-cat="' + esc(c) + '" style="border:none;border-radius:16px;background:' + meta.grad + ';padding:18px 16px;text-align:left;color:#fff;box-shadow:var(--shadow)">' +
+        '<div style="font-size:26px">' + meta.icon + "</div>" +
+        '<div style="font-size:16px;font-weight:700;margin-top:8px;color:#fff">' + esc(c) + "</div>" +
+        '<div style="font-size:12px;opacity:.85;margin-top:3px">' + n + " 件收藏</div></button>";
     });
 
     // 未分类
     if (uncat) {
-      html += '<button class="cat-card" data-cat="__uncat" style="border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px;text-align:left">' +
-        '<div style="font-size:15px;font-weight:700;color:var(--text-2)">❓ 未分类</div>' +
-        '<div style="font-size:12px;color:var(--text-2);margin-top:4px">' + uncat + " 件藏品</div></button>";
+      html += '<button class="cat-card" data-cat="__uncat" style="border:1px dashed var(--line);border-radius:16px;background:var(--card);padding:18px 16px;text-align:left">' +
+        '<div style="font-size:26px">❓</div>' +
+        '<div style="font-size:16px;font-weight:700;margin-top:8px;color:var(--text-2)">未分类</div>' +
+        '<div style="font-size:12px;color:var(--text-2);margin-top:3px">' + uncat + " 件收藏</div></button>";
     }
     html += "</div>";
 
-    html += '<p style="text-align:center;font-size:11px;color:#b0a290;margin-top:18px">分类可在 设置 → 分类管理 中增删</p>';
+    html += '<p style="text-align:center;font-size:11px;color:#b0a290;margin-top:18px">收藏盒子可在 设置 → 盒子管理 中增删</p>';
 
     view.innerHTML = html;
 
     view.querySelectorAll(".cat-card").forEach((c) => c.addEventListener("click", () => {
       const cat = c.dataset.cat;
-      categoryFilter = cat === "__uncat" ? "__uncat" : cat;
-      location.hash = "#/";
+      if (cat === "") { categoryFilter = ""; location.hash = "#/"; return; }
+      const target = cat === "__uncat" ? "__uncat" : cat;
+      location.hash = "#/box/" + encodeURIComponent(target);
     }));
+  }
+
+  /* ---------- 统计页 ---------- */
+  function renderStatsPage() {
+    topbarTitle.textContent = "收藏统计";
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+
+    const stats = Stats.computeStats(allItems);
+    const facts = Stats.funFacts(allItems, stats);
+    const achievements = Stats.getAchievements(allItems);
+    const unlockedCount = achievements.filter((a) => a.unlocked).length;
+
+    let html = "";
+
+    // 顶部总览卡
+    html += '<div class="stats-card"><h3>藏 品 总 览</h3><div class="stats-nums">' +
+      '<div><div class="n">' + stats.total + '</div><div class="l">全部宝贝</div></div>' +
+      '<div><div class="n">' + stats.owned + '</div><div class="l">在库</div></div>' +
+      '<div><div class="n">' + stats.gifted + '</div><div class="l">已送人</div></div>' +
+      '<div><div class="n">¥' + (stats.totalSpent || 0) + '</div><div class="l">累计花费</div></div>' +
+      "</div></div>";
+
+    // 月历
+    html += '<div class="section-title">📅 入库月历</div>';
+    html += '<div class="cal-card" id="calBox"></div>';
+
+    // 有趣小统计
+    html += '<div class="section-title">✨ 有趣发现</div>';
+    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 14px">';
+    facts.forEach((f) => {
+      html += '<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px dashed var(--line);font-size:14px">' +
+        '<span>' + f.icon + "</span><span style='line-height:1.6'>" + esc(f.text) + "</span></div>";
+    });
+    if (!facts.length) html += '<div style="padding:12px 0;font-size:13px;color:var(--text-2);text-align:center">还没有数据，先去收藏几件宝贝吧</div>';
+    html += "</div>";
+
+    // 成就
+    html += '<div class="section-title">🏆 成就殿堂 <small style="color:var(--text-2);font-weight:400">' + unlockedCount + "/" + achievements.length + " 已解锁</small></div>";
+    html += '<div class="ach-grid">';
+    achievements.forEach((a) => {
+      html += '<div class="ach-card' + (a.unlocked ? " unlocked" : "") + '">' +
+        '<div class="ach-icon">' + a.icon + "</div>" +
+        '<div class="ach-name">' + esc(a.name) + "</div>" +
+        '<div class="ach-desc">' + esc(a.desc) + "</div>" +
+        (a.unlocked ? '<div class="ach-flag">已解锁</div>' : '<div class="ach-lock">🔒</div>') +
+        "</div>";
+    });
+    html += "</div>";
+
+    view.innerHTML = html;
+    Stats.renderCalendar(allItems, $("#calBox"));
+  }
+
+  /* ---------- 收藏盒子二级页（专注展示该分类） ---------- */
+  function renderBoxPage(cat) {
+    const isUncat = cat === "__uncat";
+    const displayName = isUncat ? "未分类" : cat;
+    topbarTitle.textContent = displayName + "盒子";
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+
+    let list = allItems;
+    if (isUncat) list = list.filter((i) => !i.category);
+    else list = list.filter((i) => (i.category || "") === cat);
+
+    let html = "";
+    html += '<div class="home-head" style="margin-bottom:12px">' +
+      '<div class="stat-pills">' +
+      '<span class="stat-pill">共 <b>' + list.length + '</b></span>' +
+      '<span class="stat-pill">在库 <b>' + list.filter((i) => !i.gifted).length + '</b></span>' +
+      '<span class="stat-pill">已送 <b>' + list.filter((i) => i.gifted).length + '</b></span>' +
+      "</div></div>";
+
+    if (!list.length) {
+      html += '<div class="empty"><div class="empty-icon">📦</div><p>这个盒子里还没有宝贝\n点击下方 ＋ 添加一件吧</p></div>';
+      view.innerHTML = html;
+      return;
+    }
+
+    html += '<div class="grid">';
+    for (const it of list) {
+      const p = it.photos && it.photos[0];
+      const img = p ? '<img src="' + photoUrl(p) + '" loading="lazy" alt="">' : '<div class="placeholder">📿</div>';
+      const badge = it.gifted ? '<span class="badge gifted">已送人</span>' : '<span class="badge instock">在库</span>';
+      const st = it.playStatus;
+      const statusBadge = st === "playing" ? '<span class="badge played">盘玩中</span>' :
+        st === "puzzle_pending" ? '<span class="badge" style="background:#d98ba6">待拼</span>' :
+        st === "puzzle_done" ? '<span class="badge" style="background:#2e7d32">已拼</span>' : "";
+      const days = DB.formatDays(DB.daysWith(it));
+      html += '<div class="card" data-id="' + it.id + '">' +
+        '<div class="card-thumb">' + img + badge + statusBadge + "</div>" +
+        '<div class="card-body">' +
+        '<div class="card-name">' + esc(it.name || "未命名") + "</div>" +
+        '<div class="card-sub"><span>' + esc(it.species || it.beadSize ? (it.beadSize ? it.beadSize + "mm" : it.species || "") : "") + '</span><span class="days">' + esc(days) + "</span></div>" +
+        "</div></div>";
+    }
+    html += "</div>";
+
+    view.innerHTML = html;
+    view.querySelectorAll(".card").forEach((c) => c.addEventListener("click", () => location.hash = "#/item/" + c.dataset.id));
   }
 
   /* ---------- 多选分享模式 ---------- */
@@ -551,7 +671,9 @@
     let list = allItems;
     if (filter === "instock") list = list.filter((i) => !i.gifted);
     else if (filter === "gifted") list = list.filter((i) => i.gifted);
-    else if (filter === "played") list = list.filter((i) => i.played);
+    else if (filter === "playing") list = list.filter((i) => i.playStatus === "playing");
+    else if (filter === "puzzle_pending") list = list.filter((i) => i.playStatus === "puzzle_pending");
+    else if (filter === "puzzle_done") list = list.filter((i) => i.playStatus === "puzzle_done");
     if (categoryFilter === "__uncat") {
       list = list.filter((i) => !i.category);
     } else if (categoryFilter) {
@@ -577,26 +699,37 @@
 
     const inStock = allItems.filter((i) => !i.gifted).length;
     const gifted = allItems.filter((i) => i.gifted).length;
-    const played = allItems.filter((i) => i.played).length;
+    const playing = allItems.filter((i) => i.playStatus === "playing").length;
+    const pending = allItems.filter((i) => i.playStatus === "puzzle_pending").length;
+    const done = allItems.filter((i) => i.playStatus === "puzzle_done").length;
 
     let html = "";
+    // 折叠筛选区：按钮 + 可展开面板
+    html += '<button class="filter-toggle" id="filterToggle">' +
+      '<span>📊 筛选与统计</span><span class="filter-badge">' + allItems.length + ' 件</span><span class="filter-arrow" id="filterArrow">▾</span>' +
+      "</button>";
+
+    html += '<div id="filterPanel" style="display:none">';
     html += '<div class="home-head"><div class="stat-pills">' +
       '<span class="stat-pill">共 <b>' + allItems.length + '</b></span>' +
       '<span class="stat-pill">在库 <b>' + inStock + '</b></span>' +
+      '<span class="stat-pill">盘玩 <b>' + playing + '</b></span>' +
+      '<span class="stat-pill">待拼 <b>' + pending + '</b></span>' +
+      '<span class="stat-pill">已拼 <b>' + done + '</b></span>' +
       '<span class="stat-pill">已送 <b>' + gifted + '</b></span>' +
-      '<span class="stat-pill">盘玩 <b>' + played + '</b></span>' +
       '</div></div>';
 
     html += '<div class="filters">' +
-      chip("all", "全部") + chip("instock", "在库") + chip("gifted", "已送人") + chip("played", "在盘玩") +
+      chip("all", "全部") + chip("instock", "在库") + chip("playing", "在盘玩") + chip("puzzle_pending", "待拼") + chip("puzzle_done", "已拼") + chip("gifted", "已送人") +
       '</div>';
 
     // 分类筛选行
     const cats = getCategories();
     html += '<div class="filters">' +
-      '<button class="chip' + (!categoryFilter ? " active" : "") + '" data-cat="">全部</button>' +
+      '<button class="chip' + (!categoryFilter ? " active" : "") + '" data-cat="">全部分类</button>' +
       cats.map((c) => '<button class="chip' + (categoryFilter === c ? " active" : "") + '" data-cat="' + esc(c) + '">' + esc(c) + "</button>").join("") +
       "</div>";
+    html += "</div>";
 
     html += '<div class="search-box"><input id="searchInput" placeholder="搜索名字 / 品种 / 店铺…" value="' + esc(search) + '"></div>';
 
@@ -644,6 +777,15 @@
   }
 
   function bindHomeEvents() {
+    // 折叠筛选面板
+    const ft = $("#filterToggle");
+    if (ft) ft.onclick = () => {
+      const panel = $("#filterPanel");
+      const arrow = $("#filterArrow");
+      const open = panel.style.display !== "none";
+      panel.style.display = open ? "none" : "";
+      if (arrow) arrow.style.transform = open ? "" : "rotate(180deg)";
+    };
     const bb = $("#btnBatch");
     if (bb) bb.onclick = () => {
       enterBatchMode([], "批量录入（空列表，点击＋添加一行）");
@@ -710,6 +852,12 @@
       h += '<option value="' + i + '"' + (def === i ? " selected" : "") + ">" + i + " mm</option>";
     }
     return h;
+  }
+
+  /* 状态按钮 */
+  function statusButton(v, label, current, isNew) {
+    const active = isNew ? (v === "idle") : (current === v);
+    return '<button type="button" data-v="' + v + '" class="' + (active ? "active" : "") + '">' + label + "</button>";
   }
 
   /* ---------- 详情页 ---------- */
@@ -894,18 +1042,21 @@
     html += '<div class="form-group"><div class="form-label">在哪家店买的</div>' +
       '<input class="form-input" id="fShop" placeholder="店铺名 / 平台" value="' + esc(it ? it.shop : "") + '"></div>';
 
+    // 状态（按分类联动：拼图→待拼/已拼，珠子→待盘玩/在盘玩）
+    const curStatus = it ? (it.playStatus || "") : "";
+    const giftStatus = it && it.gifted ? "gifted" : "";
+
     html += '<div class="form-group"><div class="form-label">状态</div>' +
-      '<div class="seg" id="fGifted">' +
-      '<button type="button" data-v="0" class="' + (!it || !it.gifted ? "active" : "") + '">在库</button>' +
-      '<button type="button" data-v="1" class="' + (it && it.gifted ? "active" : "") + '">已送人</button>' +
+      '<div class="seg" id="fStatus">' +
+      statusButton("idle", "待盘玩", curStatus, !it) +
+      statusButton("playing", "在盘玩", curStatus) +
+      statusButton("puzzle_pending", "待拼", curStatus) +
+      statusButton("puzzle_done", "已拼", curStatus) +
+      statusButton("gifted", "已送人", curStatus || giftStatus) +
       "</div></div>";
 
-    html += '<div class="form-group" id="giftedWrap"' + (it && it.gifted ? "" : ' style="display:none"') + '><div class="form-label">送人时间</div>' +
+    html += '<div class="form-group" id="giftedWrap"' + ((curStatus === "gifted" || giftStatus === "gifted") ? "" : ' style="display:none"') + '><div class="form-label">送人时间</div>' +
       '<input class="form-input" id="fGiftedDate" type="date" value="' + (it && it.giftedAt ? fmtDateInput(it.giftedAt) : "") + '"></div>';
-
-    html += '<div class="form-group"><div class="check-row">' +
-      '<input type="checkbox" id="fPlayed"' + (it && it.played ? " checked" : "") + ">" +
-      '<label for="fPlayed" style="font-size:15px">正在盘玩</label></div></div>';
 
     html += '<div class="form-group" id="playedNoteWrap"><div class="form-label">盘玩记录 <small>可选</small></div>' +
       '<textarea class="form-textarea" id="fPlayedNote" placeholder="盘了多久、上色情况、手感变化…">' + esc(it ? it.playedNote : "") + "</textarea></div>";
@@ -932,11 +1083,7 @@
       view.querySelectorAll("#fCraft button").forEach((x) => x.classList.remove("active"));
       b.classList.add("active");
     });
-    view.querySelectorAll("#fGifted button").forEach((b) => b.onclick = () => {
-      view.querySelectorAll("#fGifted button").forEach((x) => x.classList.remove("active"));
-      b.classList.add("active");
-      $("#giftedWrap").style.display = b.dataset.v === "1" ? "" : "none";
-    });
+
     // 分类联动：更新品种选项/标签/工艺显隐/拼图完成时间
     const fCat = $("#fCategory");
     function refreshSpeciesByCategory() {
@@ -959,15 +1106,44 @@
         fw.style.display = isPuzzle ? "" : "none";
         if (!isPuzzle) { const fi = $("#fFinished"); if (fi) fi.value = ""; }
       }
+      // 状态按钮按分类显隐
+      const st = $("#fStatus");
+      if (st) {
+        st.querySelectorAll("button").forEach((b) => {
+          const v = b.dataset.v;
+          let show = true;
+          if (v === "puzzle_pending" || v === "puzzle_done") show = isPuzzle;
+          if (v === "idle" || v === "playing") show = !isPuzzle && isBead;
+          b.style.display = show ? "" : "none";
+        });
+        // 如果当前选中项被隐藏，自动切到第一个可见项
+        const activeBtn = st.querySelector("button.active");
+        if (activeBtn && activeBtn.style.display === "none") {
+          const firstVisible = st.querySelector("button:not([style*='display: none'])");
+          if (firstVisible) {
+            st.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
+            firstVisible.classList.add("active");
+          }
+        }
+      }
     }
     if (fCat) {
       fCat.addEventListener("change", refreshSpeciesByCategory);
       refreshSpeciesByCategory();
     }
 
-    $("#fPlayed").onchange = () => {
-      $("#playedNoteWrap").style.display = $("#fPlayed").checked ? "" : "none";
-    };
+    // 状态按钮交互：显示/隐藏送人时间
+    const fStatus = $("#fStatus");
+    if (fStatus) {
+      fStatus.querySelectorAll("button").forEach((b) => b.onclick = () => {
+        fStatus.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        const gw = $("#giftedWrap");
+        if (gw) gw.style.display = b.dataset.v === "gifted" ? "" : "none";
+      });
+    }
+
+
     if (!(it && it.played)) $("#playedNoteWrap").style.display = "none";
 
     const photos = (it ? (it.photos || []) : []).map((p) => ({ ...p }));
@@ -1076,14 +1252,16 @@
         const bsv = $("#fBeadSize").value;
         item.beadSize = bsv ? parseFloat(bsv) : null;
         item.category = $("#fCategory").value.trim();
-        item.gifted = view.querySelector("#fGifted button.active").dataset.v === "1";
+        const statusVal = view.querySelector("#fStatus button.active").dataset.v;
+        item.playStatus = statusVal === "gifted" ? "" : statusVal;
+        item.gifted = statusVal === "gifted";
         const gdv = $("#fGiftedDate").value;
         if (item.gifted) {
           item.giftedAt = gdv ? new Date(gdv + "T12:00:00").getTime() : (item.giftedAt || Date.now());
         } else {
           item.giftedAt = null;
         }
-        item.played = $("#fPlayed").checked;
+        item.played = statusVal === "playing";
         item.playedNote = $("#fPlayedNote").value.trim();
         item.note = $("#fNote").value.trim();
 
@@ -1143,12 +1321,12 @@
     html += "</div>";
 
     // 分类管理
-    html += '<div class="section-title">分类管理</div>';
+    html += '<div class="section-title">收藏盒子管理</div>';
     html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">';
-    html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:8px">自定义分类（菩提 / 水晶 / 玉石 / 盲盒 / 吧唧…）</div>';
+    html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:8px">自定义收藏盒子（菩提 / 水晶 / 玉石 / 盲盒 / 吧唧…）</div>';
     html += '<div id="catList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>';
     html += '<div style="display:flex;gap:8px">' +
-      '<input class="form-input" id="catInput" placeholder="新增分类，如：盲盒" style="flex:1;padding:9px 10px;font-size:14px">' +
+      '<input class="form-input" id="catInput" placeholder="新增盒子，如：盲盒" style="flex:1;padding:9px 10px;font-size:14px">' +
       '<button class="btn primary" id="catAdd" style="flex:none;padding:9px 16px;font-size:14px">添加</button></div>';
     html += "</div>";
     html += '<p style="text-align:center;font-size:11px;color:#b0a290;margin-top:22px;line-height:1.8">数据存储于云端（Supabase）<br>登录同一账号即可在任何设备查看</p>';
@@ -1216,13 +1394,13 @@
     renderCatList();
     $("#catAdd").onclick = () => {
       const v = $("#catInput").value.trim();
-      if (!v) { toast("请输入分类名"); return; }
+      if (!v) { toast("请输入盒子名"); return; }
       const cats = getCategories();
-      if (cats.includes(v)) { toast("分类已存在"); return; }
+      if (cats.includes(v)) { toast("盒子已存在"); return; }
       saveCategories(cats.concat([v]));
       $("#catInput").value = "";
       renderCatList();
-      toast("已添加分类：" + v);
+      toast("已添加盒子：" + v);
     };
     $("#catInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#catAdd").click(); });
     $("#btnLogout").onclick = async () => {
@@ -1244,6 +1422,12 @@
     if (!user) { renderAuth(); return; }
     if (h === "#/profile") { renderProfile(); return; }
     if (h === "#/cat") { renderCatPage(); return; }
+    if (h === "#/stats") { renderStatsPage(); return; }
+    if (h.startsWith("#/box/")) {
+      const box = decodeURIComponent(h.slice(6));
+      renderBoxPage(box);
+      return;
+    }
     if (h === "#/" || h === "#") { renderHome(); }
     else if (h.startsWith("#/item/")) { renderDetail(h.slice(7)); }
     else if (h.startsWith("#/edit/")) { renderForm(h.slice(7)); }
@@ -1263,7 +1447,8 @@
       location.hash = id ? "#/item/" + id : "#/";                            // 编辑 → 详情/首页
       return;
     }
-    if (h === "#/settings" || h === "#/profile" || h === "#/new" || h === "#/cat") { location.hash = "#/"; return; }
+    if (h === "#/settings" || h === "#/profile" || h === "#/new" || h === "#/cat" || h === "#/stats") { location.hash = "#/"; return; }
+    if (h.startsWith("#/box/")) { location.hash = "#/cat"; return; }
     if (h === "#/") { return; }
     history.back();
   }
@@ -1279,6 +1464,7 @@
     let active = "home";
     if (h === "#/settings") active = "settings";
     else if (h === "#/cat") active = "cat";
+    else if (h === "#/stats") active = "stats";
     tabbar.querySelectorAll(".tab-item").forEach((t) => {
       const tab = t.dataset.tab;
       if (tab === "add") return;
@@ -1290,6 +1476,7 @@
       const tab = t.dataset.tab;
       if (tab === "home") location.hash = "#/";
       else if (tab === "cat") location.hash = "#/cat";
+      else if (tab === "stats") location.hash = "#/stats";
       else if (tab === "settings") location.hash = "#/settings";
       else if (tab === "add") location.hash = "#/new";
     });
