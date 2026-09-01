@@ -296,6 +296,7 @@
       '<div class="title-main">' + lvGame.icon + ' ' + esc(lvGame.name) + ' <small>Lv.' + lvGame.level + '</small></div>' +
       '<div class="title-badges">' +
       (badgeAch.length ? badgeAch.map((b) => '<span class="title-badge" title="' + esc(b.desc) + '">' + b.icon + " " + esc(tierName(b)) + "</span>").join("") : '<span class="title-badge-empty">点击成就设为徽章</span>') +
+      '<button class="ach-share-btn" id="btnAchShare">📤 分享成就</button>' +
       "</div></div>";
 
     html += '<div class="section-title">🏆 成就殿堂 <small style="color:var(--text-2);font-weight:400">' + totalUnlocked + "/" + totalAch + " 已解锁</small></div>";
@@ -351,6 +352,26 @@
       body.style.display = open ? "none" : "";
       if (arrow) arrow.style.transform = open ? "" : "rotate(180deg)";
     });
+    // 分享成就海报
+    const ashare = $("#btnAchShare");
+    if (ashare) ashare.onclick = async () => {
+      ashare.textContent = "生成中…";
+      ashare.disabled = true;
+      try {
+        const canvas = await Poster.achievementPoster({
+          items: allItems,
+          username: user && user.displayName ? user.displayName : "",
+          badgeIds: getBadgeIds(),
+        });
+        await Poster.shareCanvas(canvas, "我的收藏成就.jpg");
+        toast("成就海报已分享/保存");
+      } catch (err) {
+        toast("生成失败：" + err.message);
+      } finally {
+        ashare.textContent = "📤 分享成就";
+        ashare.disabled = false;
+      }
+    };
     // 徽章点击（设为/取消展示）
     view.querySelectorAll(".ach-badge-btn").forEach((b) => b.onclick = (e) => {
       e.stopPropagation();
@@ -1557,18 +1578,48 @@
     const gifted = allItems.filter((i) => i.gifted).length;
     const played = allItems.filter((i) => i.played).length;
 
+    // 称号/徽章数据
+    const lvGame = Game.getLevel(Game.computeXp(allItems).xp);
+    const allAch = Stats.getAchievements(allItems);
+    const badgeIds = getBadgeIds();
+    const badgeAch = [];
+    const unlockedList = [];
+    allAch.forEach((g) => g.items.forEach((a) => { if (a.unlocked) unlockedList.push(a); }));
+    badgeIds.forEach((id) => {
+      const found = unlockedList.find((a) => a.id === id);
+      if (found) badgeAch.push(found);
+    });
+
     let html = "";
-    html += '<div class="stats-card"><h3>收 藏 统 计</h3><div class="stats-nums">' +
+    // ===== 1. 用户昵称（可编辑） =====
+    html += '<div class="profile-card">' +
+      '<div class="profile-avatar">' + lvGame.icon + "</div>" +
+      '<div class="profile-info">' +
+      '<div class="profile-name">' + esc(user && user.displayName ? user.displayName : "未设置昵称") + "</div>" +
+      '<div class="profile-mail">' + esc(user ? user.email : "") + "</div>" +
+      '<button class="btn ghost" id="btnProfile" style="margin-top:6px;padding:6px 12px;font-size:12px;flex:none">✏️ 修改昵称</button>' +
+      "</div></div>";
+
+    // ===== 2. 自选称号（展示 + 删除） =====
+    html += '<div class="section-title">🎖️ 我的称号</div>';
+    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">';
+    html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:8px">展示中的称号（点击 ✕ 移除）</div>';
+    html += '<div id="myBadges" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>';
+    html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:6px">🏆 称号库（已解锁的，点击选择/取消）</div>';
+    html += '<div id="badgeLibrary" style="display:flex;flex-wrap:wrap;gap:8px;max-height:220px;overflow-y:auto"></div>';
+    html += "</div>";
+
+    // ===== 3. 收藏统计 =====
+    html += '<div class="stats-card" style="margin-top:14px"><h3>收 藏 统 计</h3><div class="stats-nums">' +
       '<div><div class="n">' + allItems.length + '</div><div class="l">全部宝贝</div></div>' +
       '<div><div class="n">' + inStock + '</div><div class="l">在库</div></div>' +
       '<div><div class="n">' + gifted + '</div><div class="l">已送人</div></div>' +
       '<div><div class="n">' + played + '</div><div class="l">盘玩中</div></div>' +
       "</div></div>";
 
+    // ===== 4. 原有设置 =====
+    html += '<div class="section-title">数据与账户</div>';
     html += '<div class="settings-list">';
-    if (user) {
-      html += '<button class="setting-item" id="btnProfile"><div><div class="t">👤 ' + esc(user.displayName || user.email || "") + '</div><div class="d">修改用户名 · ' + esc(user.email || "") + '</div></div><span class="arrow">›</span></button>';
-    }
     html += '<button class="setting-item" id="btnExport"><div><div class="t">📤 导出备份</div><div class="d">下载全部数据为备份文件（含图片链接）</div></div><span class="arrow">›</span></button>';
     html += '<button class="setting-item" id="btnImport"><div><div class="t">📥 导入备份</div><div class="d">从备份文件恢复数据（会覆盖当前数据）</div></div><span class="arrow">›</span></button>';
     html += '<button class="setting-item" id="btnClear"><div><div class="t">🗑 清空全部数据</div><div class="d">删除所有收藏记录（不可恢复）</div></div><span class="arrow">›</span></button>';
@@ -1594,6 +1645,61 @@
 
     const bp = $("#btnProfile");
     if (bp) bp.onclick = () => location.hash = "#/profile";
+
+    // ===== 称号展示与称号库 =====
+    function badgeName(a) {
+      return a && a.tierResolved && a.tierResolved.current ? a.tierResolved.current.name : (a ? a.name : "");
+    }
+    function badgeIcon(a) {
+      return a && a.tierResolved && a.tierResolved.current ? a.tierResolved.current.icon : (a ? a.icon : "");
+    }
+    function renderMyBadges() {
+      const box = $("#myBadges");
+      if (!box) return;
+      const ids = getBadgeIds();
+      const shown = [];
+      ids.forEach((id) => {
+        const f = unlockedList.find((a) => a.id === id);
+        if (f) shown.push(f);
+      });
+      box.innerHTML = shown.length
+        ? shown.map((a) =>
+            '<span class="my-badge"><span>' + badgeIcon(a) + " " + esc(badgeName(a)) + '</span>' +
+            '<button type="button" data-rm="' + a.id + '" class="my-badge-del">✕</button></span>'
+          ).join("")
+        : '<span style="font-size:12px;color:var(--text-2);font-style:italic">还没有展示称号，从下面称号库选择吧</span>';
+      box.querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => {
+        const ids2 = getBadgeIds().filter((x) => x !== b.dataset.rm);
+        saveBadgeIds(ids2);
+        renderMyBadges();
+        renderBadgeLibrary();
+        toast("已移除称号");
+      });
+    }
+    function renderBadgeLibrary() {
+      const box = $("#badgeLibrary");
+      if (!box) return;
+      const ids = getBadgeIds();
+      box.innerHTML = unlockedList.length
+        ? unlockedList.map((a) => {
+            const on = ids.includes(a.id);
+            return '<button type="button" class="lib-badge' + (on ? " on" : "") + '" data-tg="' + a.id + '">' +
+              badgeIcon(a) + " " + esc(badgeName(a)) + "</button>";
+          }).join("")
+        : '<span style="font-size:12px;color:var(--text-2)">还没有解锁成就，去收藏吧！</span>';
+      box.querySelectorAll("[data-tg]").forEach((b) => b.onclick = () => {
+        const id = b.dataset.tg;
+        let ids2 = getBadgeIds();
+        if (ids2.includes(id)) { ids2 = ids2.filter((x) => x !== id); }
+        else { if (ids2.length >= 6) { toast("最多展示 6 个称号"); return; } ids2.push(id); }
+        saveBadgeIds(ids2);
+        renderMyBadges();
+        renderBadgeLibrary();
+      });
+    }
+    renderMyBadges();
+    renderBadgeLibrary();
+
     $("#btnExport").onclick = async () => {
       const json = await DB.exportBackup();
       const blob = new Blob([json], { type: "application/json" });

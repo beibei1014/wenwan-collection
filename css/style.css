@@ -397,3 +397,41 @@ img { display:block; }
 .ach-progress { margin-top:8px; }
 .ach-next { font-size:10px; color:var(--gold); margin-top:4px; }
 .ach-max { font-size:10px; color:var(--green); margin-top:6px; font-weight:600; }
+
+
+/* ============ 设置页：昵称与称号 ============ */
+.profile-card {
+  display:flex; align-items:center; gap:14px;
+  background:linear-gradient(135deg, var(--wood), var(--wood-2)); color:#f5f0e8;
+  border-radius:14px; padding:16px; box-shadow:var(--shadow);
+}
+.profile-avatar {
+  width:56px; height:56px; border-radius:50%; background:rgba(255,255,255,.15);
+  display:flex; align-items:center; justify-content:center; font-size:28px; flex-shrink:0;
+}
+.profile-info { flex:1; min-width:0; }
+.profile-name { font-size:18px; font-weight:800; }
+.profile-mail { font-size:12px; opacity:.75; margin-top:2px; overflow:hidden; text-overflow:ellipsis; }
+.profile-info .btn.ghost { background:rgba(255,255,255,.15); color:#f5f0e8; border-color:rgba(255,255,255,.3); }
+
+.my-badge {
+  display:inline-flex; align-items:center; gap:6px;
+  background:linear-gradient(135deg, #b8860b, #d4a96a); color:#fff;
+  border-radius:16px; padding:4px 8px 4px 12px; font-size:13px; font-weight:600;
+}
+.my-badge-del {
+  width:18px; height:18px; border-radius:50%; background:rgba(0,0,0,.25); color:#fff;
+  font-size:10px; display:flex; align-items:center; justify-content:center;
+}
+.lib-badge {
+  background:var(--bg); border:1px solid var(--line); border-radius:16px;
+  padding:5px 12px; font-size:13px; color:var(--text-2);
+}
+.lib-badge.on {
+  background:linear-gradient(135deg, var(--wood), var(--wood-2)); color:#f5f0e8;
+  border-color:var(--wood); font-weight:600;
+}
+.ach-share-btn {
+  margin-left:auto; background:linear-gradient(135deg,#b8860b,#a06b2c); color:#fff;
+  border-radius:14px; padding:4px 12px; font-size:12px; font-weight:600;
+}

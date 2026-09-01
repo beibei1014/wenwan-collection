@@ -202,6 +202,93 @@
     link.click();
   }
 
+  /* ---------- 成就海报（称号 + 徽章 + 月历 + 有趣发现） ---------- */
+  async function achievementPoster(opts) {
+    const items = opts.items || [];
+    const stats = window.Stats.computeStats(items);
+    const achievements = window.Stats.getAchievements(items);
+    const facts = window.Stats.funFacts(items, stats);
+    const lv = window.Game.getLevel(window.Game.computeXp(items).xp);
+    const username = opts.username || "";
+    const W = 1080, H = 1920;
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+
+    // 背景
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#f7f1e6");
+    bg.addColorStop(1, "#ead9c0");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#b8860b";
+    ctx.fillRect(0, 0, W, 14);
+
+    // 标题
+    ctx.fillStyle = "#3d2b1f";
+    ctx.font = "bold 52px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText((username ? username + " 的" : "") + "收藏成就", W / 2, 110);
+
+    // 等级称号卡
+    ctx.fillStyle = "#3d2b1f";
+    roundRect(ctx, 70, 160, W - 140, 130, 20);
+    ctx.fill();
+    ctx.fillStyle = "#f5f0e8";
+    ctx.font = "28px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(lv.icon + " " + lv.name + "  Lv." + lv.level, 110, 210);
+    ctx.fillStyle = "rgba(255,255,255,.8)";
+    ctx.font = "22px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText(lv.xp + " XP · " + "已解锁成就 " + achievements.reduce((s,g)=>s+g.unlockedCount,0) + " 个", 110, 250);
+
+    // 徽章区
+    const badgeIds = opts.badgeIds || [];
+    const badgeAch = [];
+    achievements.forEach((g) => g.items.forEach((a) => { if (a.unlocked && badgeIds.includes(a.id)) badgeAch.push(a); }));
+    if (badgeAch.length) {
+      ctx.fillStyle = "#8a7a68";
+      ctx.font = "24px 'PingFang SC','Microsoft YaHei',sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("我的徽章", 90, 350);
+      let bx = 90;
+      badgeAch.slice(0, 8).forEach((b) => {
+        ctx.fillStyle = "#b8860b";
+        roundRect(ctx, bx, 370, 110, 110, 14);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.font = "44px serif";
+        ctx.textAlign = "center";
+        const name = b.tierResolved && b.tierResolved.current ? b.tierResolved.current.name : b.name;
+        ctx.fillText(b.tierResolved && b.tierResolved.current ? b.tierResolved.current.icon : b.icon, bx + 55, 425);
+        ctx.font = "16px 'PingFang SC','Microsoft YaHei',sans-serif";
+        ctx.fillText(String(name).slice(0, 6), bx + 55, 460);
+        bx += 124;
+      });
+    }
+
+    // 有趣发现
+    ctx.fillStyle = "#8a7a68";
+    ctx.font = "24px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("有趣发现", 90, 560);
+    let fy = 600;
+    facts.slice(0, 5).forEach((f) => {
+      ctx.fillStyle = "#3d2b1f";
+      ctx.font = "24px 'PingFang SC','Microsoft YaHei',sans-serif";
+      ctx.fillText(f.icon + " " + String(f.text).slice(0, 24), 90, fy);
+      fy += 44;
+    });
+
+    // 落款
+    ctx.fillStyle = "rgba(61,43,31,.45)";
+    ctx.font = "26px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText((username ? username + " @ " : "") + "我的收藏馆", W / 2, H - 60);
+
+    return canvas;
+  }
+
   /* 分享海报（优先系统分享，否则下载） */
   async function shareCanvas(canvas, filename) {
     const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.92));
@@ -218,5 +305,5 @@
     return "downloaded";
   }
 
-  window.Poster = { singlePoster, galleryPoster, downloadCanvas, shareCanvas };
+  window.Poster = { singlePoster, galleryPoster, achievementPoster, downloadCanvas, shareCanvas };
 })();
