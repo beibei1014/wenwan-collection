@@ -16,6 +16,7 @@
   let filter = "all";        // all | instock | gifted | played
   let categoryFilter = "";   // 收藏盒子筛选
   let search = "";
+  let viewMode = localStorage.getItem("ww_viewmode") || "card"; // card | list
   let user = null;           // 当前登录用户
 
   /* ---------- 工具 ---------- */
@@ -987,7 +988,8 @@
 
     html += '<div style="display:flex;gap:8px;margin-bottom:12px">' +
       '<button class="batch-entry" id="btnBatch" style="flex:1">🗂 批量录入</button>' +
-      '<button class="batch-entry" id="btnShareMode" style="flex:1;background:linear-gradient(135deg,#b8860b,#a06b2c)">📤 多选分享</button>' +
+      '<button class="batch-entry" id="btnShareMode" style="flex:1;background:linear-gradient(135deg,#b8860b,#a06b2c)">📤 多选</button>' +
+      '<button class="batch-entry" id="btnViewToggle" style="flex:none;width:52px;background:var(--card);color:var(--wood);border:1px solid var(--line)" title="切换视图">' + (viewMode === "card" ? "📋" : "🗂") + "</button>" +
       "</div>";
 
     html += '<div id="gridHolder"></div>';
@@ -1006,6 +1008,36 @@
         "<p>" + (allItems.length ? "没有找到匹配的宝贝" : "还没有收藏任何宝贝\n点击下方 ＋ 添加第一条吧") + "</p>" +
         "</div>";
     }
+    if (viewMode === "list") {
+      // ===== 列表视图：缩略图 + 更多信息 =====
+      h += '<div class="list-view">';
+      for (const it of list) {
+        const p = it.photos && it.photos[0];
+        const img = p ? '<img src="' + photoUrl(p) + '" loading="lazy" alt="">' :
+          '<div class="placeholder" style="font-size:20px">📿</div>';
+        const statusTxt = it.gifted ? "已送人" :
+          it.playStatus === "playing" ? "在盘玩" :
+          it.playStatus === "puzzle_pending" ? "待拼" :
+          it.playStatus === "puzzle_done" ? "已拼" : "待盘玩";
+        const statusCls = it.gifted ? "r" : (it.playStatus === "puzzle_done" || it.playStatus === "playing" ? "g" : "yl");
+        const price = it.price != null && it.price !== "" ? "¥" + it.price : "";
+        h += '<div class="list-item" data-id="' + it.id + '">' +
+          '<div class="list-thumb">' + img + "</div>" +
+          '<div class="list-info">' +
+          '<div class="list-name">' + esc(it.name || "未命名") + "</div>" +
+          '<div class="list-sub">' + esc(cardSubText(it)) + (it.category ? " · " + esc(it.category) : "") + "</div>" +
+          '<div class="list-meta">' +
+          (it.shop ? '<span class="list-shop">🏪 ' + esc(it.shop) + "</span>" : "") +
+          (price ? '<span class="list-price">' + price + "</span>" : "") +
+          '<span class="list-days">⏳ ' + esc(DB.formatDays(DB.daysWith(it))) + "</span>" +
+          "</div>" +
+          "</div>" +
+          '<span class="list-status ' + statusCls + '">' + statusTxt + "</span>" +
+          "</div>";
+      }
+      return h + "</div>";
+    }
+    // ===== 卡片视图（默认） =====
     h += '<div class="grid">';
     for (const it of list) {
       const p = it.photos && it.photos[0];
@@ -1025,7 +1057,7 @@
   }
 
   function bindCardEvents() {
-    view.querySelectorAll(".card").forEach((c) => c.addEventListener("click", () => location.hash = "#/item/" + c.dataset.id));
+    view.querySelectorAll(".card, .list-item").forEach((c) => c.addEventListener("click", () => location.hash = "#/item/" + c.dataset.id));
   }
 
   function bindHomeEvents() {
@@ -1042,6 +1074,14 @@
       const open = panel.style.display !== "none";
       panel.style.display = open ? "none" : "";
       if (arrow) arrow.style.transform = open ? "" : "rotate(180deg)";
+    };
+    // 视图切换
+    const vt = $("#btnViewToggle");
+    if (vt) vt.onclick = () => {
+      viewMode = viewMode === "card" ? "list" : "card";
+      localStorage.setItem("ww_viewmode", viewMode);
+      vt.textContent = viewMode === "card" ? "📋" : "🗂";
+      updateGrid();
     };
     const bb = $("#btnBatch");
     if (bb) bb.onclick = () => {
@@ -1121,12 +1161,26 @@
 
   /* ---------- 主题系统 ---------- */
   const THEMES = [
-    { id: "light", name: "浅色", icon: "☀️", desc: "温暖原木风" },
-    { id: "dark", name: "深色", icon: "🌙", desc: "墨夜收藏" },
-    { id: "system", name: "跟随系统", icon: "📱", desc: "自动匹配设备" },
-    { id: "dopamine", name: "多巴胺", icon: "🍬", desc: "糖果活力" },
-    { id: "morandi", name: "莫兰迪", icon: "🎨", desc: "低饱和温柔" },
+    { id: "light", name: "浅色", icon: "☀️" },
+    { id: "dark", name: "深色", icon: "🌙" },
+    { id: "system", name: "跟随系统", icon: "📱" },
+    { id: "dopamine-pink", name: "多巴胺·粉", icon: "🍬" },
+    { id: "dopamine-yellow", name: "多巴胺·黄", icon: "🍋" },
+    { id: "dopamine-green", name: "多巴胺·绿", icon: "🌿" },
+    { id: "morandi", name: "莫兰迪·原木", icon: "🪵" },
+    { id: "morandi-blue", name: "莫兰迪·蓝", icon: "🫐" },
+    { id: "morandi-purple", name: "莫兰迪·紫", icon: "🍇" },
+    { id: "morandi-green", name: "莫兰迪·绿", icon: "🍃" },
   ];
+  // 主题色点（用于紧凑选择器）
+  function themeDotColor(id) {
+    const map = {
+      "light": "#f5f0e8", "dark": "#1e1a16", "system": "#8a7a68",
+      "dopamine-pink": "#e0447c", "dopamine-yellow": "#ffa500", "dopamine-green": "#1e9e5a",
+      "morandi": "#b5a48a", "morandi-blue": "#7d95ad", "morandi-purple": "#8d7aa8", "morandi-green": "#7d9d87",
+    };
+    return map[id] || "#b8860b";
+  }
   function getTheme() {
     try { return localStorage.getItem("ww_theme") || "light"; } catch (e) { return "light"; }
   }
@@ -1683,16 +1737,15 @@
 
     // ===== 3. 外观主题 =====
     html += '<div class="section-title">🎨 外观主题</div>';
-    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">';
-    html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px" id="themeList">';
+    html += '<div class="theme-strip" id="themeList">';
     THEMES.forEach((t) => {
       const active = getTheme() === t.id;
-      html += '<button type="button" class="theme-opt' + (active ? " active" : "") + '" data-theme="' + t.id + '">' +
+      html += '<button type="button" class="theme-opt' + (active ? " active" : "") + '" data-theme="' + t.id + '" title="' + t.name + '">' +
+        '<span class="theme-dot" style="background:' + themeDotColor(t.id) + '"></span>' +
         '<span class="theme-icon">' + t.icon + "</span>" +
-        '<span class="theme-name">' + t.name + "</span>" +
-        '<span class="theme-desc">' + t.desc + "</span></button>";
+        '<span class="theme-name">' + t.name + "</span></button>";
     });
-    html += "</div></div>";
+    html += "</div>";
 
     // ===== 4. 收藏盒子管理 =====
     html += '<div class="section-title">收藏盒子管理</div>';
