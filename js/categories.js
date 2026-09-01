@@ -26,7 +26,10 @@
     "拼图": {
       field: "brand",
       label: "品牌",
-      options: ["HEYE", "Ravensburger", "Educa", "Clementoni", "Galison", "Jumbo", "Art Puzzle", "Pomegranate", "Springbok", "Epoch", "Tenyo", "Mudpuppy", "NYPC", "SunsOut", "Eurographics", "Schmidt"]
+      options: [
+        "TOI图益", "猫的天空之城", "肯研DREAM FRIEND", "3D-JP", "蓝兔子Blue Rabbit", "Kasi卡西", "申侯SHENHOU", "云图", "拾光拼图", "纸居",
+        "HEYE", "Ravensburger", "Educa", "Clementoni", "Galison", "Jumbo", "Art Puzzle", "Pomegranate", "Springbok", "Epoch", "Tenyo", "Mudpuppy", "NYPC", "SunsOut", "Eurographics", "Schmidt"
+      ]
     },
     "吧唧": {
       field: "brand",
