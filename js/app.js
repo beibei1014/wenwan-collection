@@ -1648,10 +1648,10 @@
         $("#viewerImg").src = photoUrl(allPics[i]);
         $("#viewerNav").innerHTML = allPics.map((_, k) =>
           '<button data-i="' + k + '"' + (k === i ? ' style="background:var(--gold)"' : "") + ">" + (k + 1) + "</button>").join("");
+        $("#viewerNav").querySelectorAll("button").forEach((b) => b.onclick = () => show(+b.dataset.i));
         viewer._i = i;
       };
       show(idx);
-      $("#viewerNav").querySelectorAll("button").forEach((b) => b.onclick = () => show(+b.dataset.i));
     };
     view.querySelectorAll("[data-view]").forEach((el) => el.addEventListener("click", () => openViewer(+el.dataset.view)));
     $("#viewerClose").onclick = () => { $("#viewer").classList.remove("show"); };
