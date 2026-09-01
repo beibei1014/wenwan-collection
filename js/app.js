@@ -11,7 +11,6 @@
   const topbarTitle = $("#topbarTitle");
   const btnBack = $("#btnBack");
   const btnSettings = $("#btnSettings");
-  const btnAdd = $("#btnAdd");
 
   let allItems = [];
   let filter = "all";        // all | instock | gifted | played
@@ -116,6 +115,58 @@
     mask.onclick = () => { mask.hidden = true; modal.hidden = true; };
   }
 
+  /* ---------- 分类页 ---------- */
+  function renderCatPage() {
+    topbarTitle.textContent = "我的分类";
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+
+    // 统计每个分类的数量
+    const cats = getCategories();
+    const countBy = {};
+    allItems.forEach((i) => {
+      const c = i.category || "未分类";
+      countBy[c] = (countBy[c] || 0) + 1;
+    });
+    const uncat = allItems.filter((i) => !i.category).length;
+
+    let html = "";
+    html += '<div class="section-title">全部分类</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+
+    // 全部
+    html += '<button class="cat-card" data-cat="" style="border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px;text-align:left">' +
+      '<div style="font-size:15px;font-weight:700;color:var(--wood)">📦 全部</div>' +
+      '<div style="font-size:12px;color:var(--text-2);margin-top:4px">' + allItems.length + " 件藏品</div></button>";
+
+    // 每个分类
+    cats.forEach((c) => {
+      const n = countBy[c] || 0;
+      const icon = c === "菩提" ? "📿" : c === "水晶" ? "💎" : c === "玉石" ? "🪨" : c === "拼图" ? "🧩" : c === "吧唧" ? "🏅" : c === "盲盒" ? "🎁" : "🗂";
+      html += '<button class="cat-card" data-cat="' + esc(c) + '" style="border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px;text-align:left">' +
+        '<div style="font-size:15px;font-weight:700;color:var(--wood)">' + icon + " " + esc(c) + "</div>" +
+        '<div style="font-size:12px;color:var(--text-2);margin-top:4px">' + n + " 件藏品</div></button>";
+    });
+
+    // 未分类
+    if (uncat) {
+      html += '<button class="cat-card" data-cat="__uncat" style="border:1px solid var(--line);border-radius:12px;background:var(--card);padding:14px;text-align:left">' +
+        '<div style="font-size:15px;font-weight:700;color:var(--text-2)">❓ 未分类</div>' +
+        '<div style="font-size:12px;color:var(--text-2);margin-top:4px">' + uncat + " 件藏品</div></button>";
+    }
+    html += "</div>";
+
+    html += '<p style="text-align:center;font-size:11px;color:#b0a290;margin-top:18px">分类可在 设置 → 分类管理 中增删</p>';
+
+    view.innerHTML = html;
+
+    view.querySelectorAll(".cat-card").forEach((c) => c.addEventListener("click", () => {
+      const cat = c.dataset.cat;
+      categoryFilter = cat === "__uncat" ? "__uncat" : cat;
+      location.hash = "#/";
+    }));
+  }
+
   /* ---------- 多选分享模式 ---------- */
   function enterShareMode() {
     const selected = new Set();
@@ -125,7 +176,6 @@
       topbarTitle.textContent = "多选分享";
       btnBack.style.visibility = "visible";
       btnSettings.style.visibility = "hidden";
-      btnAdd.style.visibility = "hidden";
 
       let html = "";
       html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:10px">已选 ' + selected.size + ' 条，点击卡片勾选（最多 12 条）</div>';
@@ -168,7 +218,7 @@
         btn.textContent = "生成中…";
         btn.disabled = true;
         try {
-          const canvas = await Poster.galleryPoster(items);
+          const canvas = await Poster.galleryPoster(items, { username: user && user.displayName ? user.displayName : "" });
           await Poster.shareCanvas(canvas, "文玩收藏图鉴.jpg");
           toast("图鉴海报已分享/保存");
           location.hash = "#/";
@@ -192,7 +242,6 @@
       topbarTitle.textContent = batchTitle;
       btnBack.style.visibility = "visible";
       btnSettings.style.visibility = "hidden";
-      btnAdd.style.visibility = "hidden";
 
       let html = "";
       html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:10px">共 ' + drafts.length + ' 条，点击卡片可编辑详情；照片随各条保存</div>';
@@ -232,23 +281,24 @@
       topbarTitle.textContent = "编辑第 " + (idx + 1) + " 条";
       btnBack.style.visibility = "visible";
       btnSettings.style.visibility = "hidden";
-      btnAdd.style.visibility = "hidden";
 
       let html = "";
       html += '<div class="form">';
       html += '<div class="form-group"><div class="form-label">串的名字</div>' +
         '<input class="form-input" id="dName" value="' + esc(it.name || "") + '" placeholder="如：星月菩提·老念珠"></div>';
       html += '<div class="form-row">';
+      html += '<div class="form-group"><div class="form-label">分类</div>' +
+        '<select class="form-select" id="dCategory">' + categoryOptions(it.category || "") + '</select></div>';
       html += '<div class="form-group"><div class="form-label">品种/材质</div>' +
-        '<input class="form-input" id="dSpecies" list="speciesListB" value="' + esc(it.species || "") + '" placeholder="如：星月菩提">' +
-        '<datalist id="speciesListB">' + ["星月菩提","金刚菩提","凤眼菩提","菩提根","小叶紫檀","黄花梨","沉香","绿松石","南红玛瑙","蜜蜡","和田玉","橄榄核","核桃手串","椰壳","紫金鼠","千眼菩提","崖柏","血檀"].map((s) => '<option value="' + s + '">').join("") + "</datalist></div>";
-      html += '<div class="form-group"><div class="form-label">工艺</div>' +
+        '<input class="form-input" id="dSpecies" list="dSpeciesList" value="' + esc(it.species || "") + '" placeholder="可自由填写">' +
+        '<datalist id="dSpeciesList"></datalist></div>';
+      html += "</div>";
+      html += '<div class="form-group" id="dCraftWrap"><div class="form-label">工艺 <small>珠子类</small></div>' +
         '<div class="seg" id="dCraft">' +
         '<button type="button" data-v="干磨" class="' + (it.craft === "干磨" || !it.craft ? "active" : "") + '">干磨</button>' +
         '<button type="button" data-v="水磨" class="' + (it.craft === "水磨" ? "active" : "") + '">水磨</button>' +
         '<button type="button" data-v="" class="' + (it.craft && it.craft !== "干磨" && it.craft !== "水磨" ? "active" : "") + '">其他</button>' +
         "</div></div>";
-      html += "</div>";
       html += '<div class="form-row">';
       html += '<div class="form-group"><div class="form-label">到货时间</div>' +
         '<input class="form-input" id="dDate" type="date" value="' + (it.arrivedAt ? fmtDateInput(it.arrivedAt) : "") + '"></div>';
@@ -256,10 +306,10 @@
         '<input class="form-input" id="dPrice" type="number" inputmode="decimal" value="' + (it.price != null ? it.price : "") + '"></div>';
       html += "</div>";
       html += '<div class="form-row">';
-      html += '<div class="form-group"><div class="form-label">珠子大小 <small>mm</small></div>' +
+      html += '<div class="form-group"><div class="form-label">珠子大小 <small>mm，珠子类填</small></div>' +
         '<select class="form-select" id="dBeadSize">' + beadSizeOptions(it.beadSize) + '</select></div>';
-      html += '<div class="form-group"><div class="form-label">分类</div>' +
-        '<select class="form-select" id="dCategory">' + categoryOptions(it.category || "") + '</select></div>';
+      html += '<div class="form-group" id="dFinishedWrap" style="display:none"><div class="form-label">拼图完成时间</div>' +
+        '<input class="form-input" id="dFinished" type="date"></div>';
       html += "</div>";
       html += '<div class="form-group"><div class="form-label">店铺</div>' +
         '<input class="form-input" id="dShop" value="' + esc(it.shop || "") + '"></div>';
@@ -281,6 +331,28 @@
         view.querySelectorAll("#dCraft button").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
       });
+
+      // 批量分类联动（简化：更新标签与拼图完成时间显隐）
+      const dCat = $("#dCategory");
+      function refreshBatchCat() {
+        if (!dCat) return;
+        const cat = dCat.value;
+        const cfg = Categories.getCategoryConfig(cat);
+        const lbl = document.querySelector("#dSpecies");
+        if (lbl) lbl.setAttribute("placeholder", "可自由填写" + (cfg.options.length ? "（如：" + cfg.options.slice(0, 3).join("/") + "…）" : ""));
+        const dl = document.querySelector("#dSpeciesList");
+        if (dl) dl.innerHTML = cfg.options.map((s) => '<option value="' + esc(s) + '">').join("");
+        const isPuzzle = Categories.isPuzzleCategory(cat);
+        const isBead = !Categories.isBrandCategory(cat) && !isPuzzle;
+        const cw = document.querySelector("#dCraftWrap");
+        if (cw) cw.style.display = isBead ? "" : "none";
+        const fw = document.querySelector("#dFinishedWrap");
+        if (fw) {
+          fw.style.display = isPuzzle ? "" : "none";
+          if (!isPuzzle) { const fi = document.querySelector("#dFinished"); if (fi) fi.value = ""; }
+        }
+      }
+      if (dCat) { dCat.addEventListener("change", refreshBatchCat); refreshBatchCat(); }
 
       function renderPhotoGrid() {
         const grid = $("#dPhotoGrid");
@@ -319,6 +391,8 @@
         const dbsv = $("#dBeadSize").value;
         it.beadSize = dbsv ? parseFloat(dbsv) : null;
         it.category = $("#dCategory").value.trim();
+        const dfw = $("#dFinished").value;
+        it.finishedAt = dfw ? new Date(dfw + "T12:00:00").getTime() : null;
         it.note = $("#dNote").value.trim();
         renderList();
       };
@@ -365,7 +439,6 @@
     topbarTitle.textContent = "我的用户名";
     btnBack.style.visibility = "hidden";
     btnSettings.style.visibility = "hidden";
-    btnAdd.style.visibility = "hidden";
 
     let html = "";
     html += '<div style="text-align:center;padding:26px 0 14px">' +
@@ -398,15 +471,14 @@
 
   /* ---------- 认证页 ---------- */
   function renderAuth() {
-    topbarTitle.textContent = "登录 · 文玩手串收藏馆";
+    topbarTitle.textContent = "登录 · 我的收藏馆";
     btnBack.style.visibility = "hidden";
     btnSettings.style.visibility = "hidden";
-    btnAdd.style.visibility = "hidden";
 
     let html = "";
     html += '<div style="text-align:center;padding:30px 0 16px">' +
       '<div style="font-size:52px">📿</div>' +
-      '<div style="font-size:20px;font-weight:700;color:var(--wood);margin-top:8px">文玩手串收藏馆</div>' +
+      '<div style="font-size:20px;font-weight:700;color:var(--wood);margin-top:8px">我的收藏馆</div>' +
       '<div style="font-size:13px;color:var(--text-2);margin-top:6px">登录后，你的收藏在任何设备上都在</div></div>';
 
     html += '<div class="form">';
@@ -480,7 +552,9 @@
     if (filter === "instock") list = list.filter((i) => !i.gifted);
     else if (filter === "gifted") list = list.filter((i) => i.gifted);
     else if (filter === "played") list = list.filter((i) => i.played);
-    if (categoryFilter) {
+    if (categoryFilter === "__uncat") {
+      list = list.filter((i) => !i.category);
+    } else if (categoryFilter) {
       list = list.filter((i) => (i.category || "") === categoryFilter);
     }
     if (search) {
@@ -500,7 +574,6 @@
     topbarTitle.textContent = (user && user.displayName ? user.displayName : "文玩手串") + "收藏馆";
     btnBack.style.visibility = "hidden";
     btnSettings.style.visibility = "visible";
-    btnAdd.style.visibility = "visible";
 
     const inStock = allItems.filter((i) => !i.gifted).length;
     const gifted = allItems.filter((i) => i.gifted).length;
@@ -603,7 +676,7 @@
   }
 
   /* ---------- 分类管理（localStorage 持久化用户自定义分类） ---------- */
-  const DEFAULT_CATEGORIES = ["菩提", "水晶", "玉石", "其他"];
+  const DEFAULT_CATEGORIES = ["菩提", "水晶", "玉石", "拼图", "吧唧", "盲盒", "其他"];
   function getCategories() {
     try {
       const raw = localStorage.getItem("ww_categories");
@@ -646,7 +719,6 @@
     topbarTitle.textContent = "手串档案";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
-    btnAdd.style.visibility = "hidden";
 
     const hero = it.photos && it.photos[0]
       ? '<img src="' + photoUrl(it.photos[0]) + '" alt="">'
@@ -655,7 +727,8 @@
     const tags =
       (it.gifted ? '<span class="tag r">已送人</span>' : '<span class="tag g">在库</span>') +
       (it.played ? '<span class="tag yl">盘玩中</span>' : '<span class="tag">未盘玩</span>') +
-      (it.craft ? '<span class="tag">' + esc(it.craft) + "</span>" : "");
+      (it.craft ? '<span class="tag">' + esc(it.craft) + "</span>" : "") +
+      (it.category ? '<span class="tag">' + esc(it.category) + "</span>" : "");
 
     let html = "";
     html += '<div class="detail-hero" data-view="0">' + hero + "</div>";
@@ -673,6 +746,7 @@
     html += infoItem("入手价格", it.price != null && it.price !== "" ? "¥" + esc(String(it.price)) : "—");
     html += infoItem("购买店铺", esc(it.shop || "—"), true);
     if (it.gifted && it.giftedAt) html += infoItem("送人时间", fmtDate(it.giftedAt), true);
+    if (it.finishedAt) html += infoItem("拼图完成", fmtDate(it.finishedAt), true);
     html += "</div>";
 
     if (it.playedNote) {
@@ -730,7 +804,7 @@
       btn.textContent = "生成中…";
       btn.disabled = true;
       try {
-        const canvas = await Poster.singlePoster(it);
+        const canvas = await Poster.singlePoster(it, { username: user && user.displayName ? user.displayName : "" });
         const result = await Poster.shareCanvas(canvas, "文玩手串_" + (it.name || "分享") + ".jpg");
         toast(result === "shared" ? "已分享" : "海报已保存到相册/下载");
       } catch (err) {
@@ -772,7 +846,6 @@
     topbarTitle.textContent = isEdit ? "编辑手串" : "添加手串";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
-    btnAdd.style.visibility = "hidden";
 
     const d = isEdit && it.arrivedAt ? new Date(it.arrivedAt) : new Date();
     const dateVal = isEdit && it.arrivedAt ? fmtDateInput(it.arrivedAt) : "";
@@ -783,17 +856,30 @@
     html += '<div class="form-group"><div class="form-label">串的名字 <small>给它起个好听的名字</small></div>' +
       '<input class="form-input" id="fName" placeholder="如：星月菩提·老念珠" value="' + esc(it ? it.name : "") + '"></div>';
 
+    // 分类 + 品种/材质（分类联动）
+    const editCat = it ? (it.category || "") : "";
+    const catCfg = Categories.getCategoryConfig(editCat);
+    const speciesLabel = catCfg.label || "品种/材质";
+    const isPuzzle = Categories.isPuzzleCategory(editCat);
+
     html += '<div class="form-row">';
-    html += '<div class="form-group"><div class="form-label">品种/材质</div>' +
-      '<input class="form-input" id="fSpecies" list="speciesList" placeholder="如：星月菩提" value="' + esc(it ? it.species : "") + '">' +
-      '<datalist id="speciesList">' + ["星月菩提","金刚菩提","凤眼菩提","菩提根","小叶紫檀","黄花梨","沉香","绿松石","南红玛瑙","蜜蜡","和田玉","橄榄核","核桃手串","椰壳","紫金鼠","千眼菩提","崖柏","血檀"].map((s) => '<option value="' + s + '">').join("") + "</datalist></div>";
-    html += '<div class="form-group"><div class="form-label">工艺</div>' +
+    html += '<div class="form-group"><div class="form-label">分类</div>' +
+      '<select class="form-select" id="fCategory">' + categoryOptions(editCat) + '</select></div>';
+    html += '<div class="form-group"><div class="form-label" id="fSpeciesLabel">' + speciesLabel + '</div>' +
+      '<input class="form-input" id="fSpecies" list="speciesList" placeholder="可自由填写" value="' + esc(it ? it.species : "") + '">' +
+      '<datalist id="speciesList"></datalist></div>';
+    html += "</div>";
+
+    html += '<div class="form-group" id="fCraftWrap"><div class="form-label">工艺 <small>珠子类</small></div>' +
       '<div class="seg" id="fCraft">' +
       '<button type="button" data-v="干磨" class="' + (!it || it.craft === "干磨" ? "active" : "") + '">干磨</button>' +
       '<button type="button" data-v="水磨" class="' + (it && it.craft === "水磨" ? "active" : "") + '">水磨</button>' +
       '<button type="button" data-v="" class="' + (it && it.craft && it.craft !== "干磨" && it.craft !== "水磨" ? "active" : "") + '">其他</button>' +
       "</div></div>";
-    html += "</div>";
+
+    // 拼图完成时间（仅拼图分类显示）
+    html += '<div class="form-group" id="fFinishedWrap"' + (isPuzzle ? "" : ' style="display:none"') + '><div class="form-label">拼图完成时间</div>' +
+      '<input class="form-input" id="fFinished" type="date" value="' + (it && it.finishedAt ? fmtDateInput(it.finishedAt) : "") + '"></div>';
 
     html += '<div class="form-row">';
     html += '<div class="form-group"><div class="form-label">到货时间</div>' +
@@ -802,12 +888,8 @@
       '<input class="form-input" id="fPrice" type="number" inputmode="decimal" placeholder="如 1280" value="' + esc(it && it.price != null ? it.price : "") + '"></div>';
     html += "</div>";
 
-    html += '<div class="form-row">';
-    html += '<div class="form-group"><div class="form-label">珠子大小（卡数） <small>mm</small></div>' +
+    html += '<div class="form-group"><div class="form-label">珠子大小（卡数） <small>mm，珠子类填</small></div>' +
       '<select class="form-select" id="fBeadSize">' + beadSizeOptions(it && it.beadSize) + '</select></div>';
-    html += '<div class="form-group"><div class="form-label">分类</div>' +
-      '<select class="form-select" id="fCategory">' + categoryOptions(it ? it.category : "") + '</select></div>';
-    html += "</div>";
 
     html += '<div class="form-group"><div class="form-label">在哪家店买的</div>' +
       '<input class="form-input" id="fShop" placeholder="店铺名 / 平台" value="' + esc(it ? it.shop : "") + '"></div>';
@@ -855,6 +937,34 @@
       b.classList.add("active");
       $("#giftedWrap").style.display = b.dataset.v === "1" ? "" : "none";
     });
+    // 分类联动：更新品种选项/标签/工艺显隐/拼图完成时间
+    const fCat = $("#fCategory");
+    function refreshSpeciesByCategory() {
+      const cat = fCat.value;
+      const cfg = Categories.getCategoryConfig(cat);
+      const labelEl = $("#fSpeciesLabel");
+      if (labelEl) labelEl.textContent = cfg.label || "品种/材质";
+      const spEl = $("#fSpecies");
+      if (spEl) {
+        spEl.setAttribute("placeholder", "可自由填写" + (cfg.options.length ? "（如：" + cfg.options.slice(0, 3).join("/") + "…）" : ""));
+        const dl = $("#speciesList");
+        if (dl) dl.innerHTML = cfg.options.map((s) => '<option value="' + esc(s) + '">').join("");
+      }
+      const isPuzzle = Categories.isPuzzleCategory(cat);
+      const isBead = !Categories.isBrandCategory(cat) && !isPuzzle;
+      const cw = $("#fCraftWrap");
+      if (cw) cw.style.display = isBead ? "" : "none";
+      const fw = $("#fFinishedWrap");
+      if (fw) {
+        fw.style.display = isPuzzle ? "" : "none";
+        if (!isPuzzle) { const fi = $("#fFinished"); if (fi) fi.value = ""; }
+      }
+    }
+    if (fCat) {
+      fCat.addEventListener("change", refreshSpeciesByCategory);
+      refreshSpeciesByCategory();
+    }
+
     $("#fPlayed").onchange = () => {
       $("#playedNoteWrap").style.display = $("#fPlayed").checked ? "" : "none";
     };
@@ -1009,7 +1119,6 @@
     topbarTitle.textContent = "设置";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
-    btnAdd.style.visibility = "hidden";
 
     const inStock = allItems.filter((i) => !i.gifted).length;
     const gifted = allItems.filter((i) => i.gifted).length;
@@ -1134,20 +1243,57 @@
     }
     if (!user) { renderAuth(); return; }
     if (h === "#/profile") { renderProfile(); return; }
+    if (h === "#/cat") { renderCatPage(); return; }
     if (h === "#/" || h === "#") { renderHome(); }
     else if (h.startsWith("#/item/")) { renderDetail(h.slice(7)); }
     else if (h.startsWith("#/edit/")) { renderForm(h.slice(7)); }
     else if (h === "#/new") { renderForm(null); }
     else if (h === "#/settings") { renderSettings(); }
     else { renderHome(); }
+    updateTabbar();
     window.scrollTo(0, 0);
   }
 
   /* ---------- 启动 ---------- */
-  btnBack.onclick = () => history.back();
+  function goBack() {
+    const h = location.hash;
+    if (h.startsWith("#/item/")) { location.hash = "#/"; return; }         // 详情 → 首页
+    if (h.startsWith("#/edit/")) {
+      const id = h.slice(7);
+      location.hash = id ? "#/item/" + id : "#/";                            // 编辑 → 详情/首页
+      return;
+    }
+    if (h === "#/settings" || h === "#/profile" || h === "#/new" || h === "#/cat") { location.hash = "#/"; return; }
+    if (h === "#/") { return; }
+    history.back();
+  }
+  btnBack.onclick = goBack;
   btnSettings.onclick = () => location.hash = "#/settings";
-  btnAdd.onclick = () => location.hash = "#/new";
   window.addEventListener("hashchange", router);
+
+  /* 底部导航 */
+  const tabbar = $("#tabbar");
+  function updateTabbar() {
+    if (!tabbar) return;
+    const h = location.hash;
+    let active = "home";
+    if (h === "#/settings") active = "settings";
+    else if (h === "#/cat") active = "cat";
+    tabbar.querySelectorAll(".tab-item").forEach((t) => {
+      const tab = t.dataset.tab;
+      if (tab === "add") return;
+      t.classList.toggle("active", tab === active);
+    });
+  }
+  tabbar.querySelectorAll(".tab-item").forEach((t) => {
+    t.addEventListener("click", () => {
+      const tab = t.dataset.tab;
+      if (tab === "home") location.hash = "#/";
+      else if (tab === "cat") location.hash = "#/cat";
+      else if (tab === "settings") location.hash = "#/settings";
+      else if (tab === "add") location.hash = "#/new";
+    });
+  });
 
   async function init() {
     try {
@@ -1156,7 +1302,7 @@
       if (!cfg.url || cfg.url.indexOf("PASTE_") === 0) {
         view.innerHTML = '<div class="empty"><div class="empty-icon">🔧</div>' +
           "<p>应用尚未配置云端服务<br>请在 js/config.js 中填写 Supabase URL 和 Key</p></div>";
-        topbarTitle.textContent = "文玩手串收藏馆";
+        topbarTitle.textContent = "我的收藏馆";
         return;
       }
       const ok = await enterApp();

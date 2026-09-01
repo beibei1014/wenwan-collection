@@ -41,7 +41,7 @@ img { display:block; }
 .icon-btn:active { background:rgba(61,43,31,.08); }
 
 /* ============ 视图 ============ */
-.view { padding: 12px 12px calc(84px + env(safe-area-inset-bottom)); max-width:640px; margin:0 auto; min-height:calc(100vh - 120px); }
+.view { padding: 12px 12px calc(110px + env(safe-area-inset-bottom)); max-width:640px; margin:0 auto; min-height:calc(100vh - 120px); }
 
 /* ============ 首页：收藏柜 ============ */
 .home-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
@@ -166,21 +166,30 @@ img { display:block; }
 .spinner { width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--gold); border-radius:50%; animation:spin .8s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
 
-/* ============ 底部栏 & FAB ============ */
-.bottombar {
-  position:fixed; left:0; right:0; bottom:0; z-index:50;
-  display:flex; justify-content:center; align-items:center;
-  padding-bottom:calc(env(safe-area-inset-bottom) + 14px); padding-top:10px;
-  pointer-events:none;
+/* ============ 底部导航栏 ============ */
+.tabbar {
+  position:fixed; left:0; right:0; bottom:0; z-index:60;
+  display:flex; align-items:stretch; justify-content:space-around;
+  background:rgba(255,255,255,.97); backdrop-filter:blur(10px);
+  border-top:1px solid var(--line);
+  padding-bottom:calc(env(safe-area-inset-bottom));
 }
-.fab {
-  pointer-events:auto; width:58px; height:58px; border-radius:50%;
-  background:var(--wood); color:#f5f0e8; font-size:28px;
-  box-shadow:0 4px 16px rgba(61,43,31,.35);
+.tab-item {
+  flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:8px 0 6px; gap:1px; color:var(--text-2); font-size:11px;
+  transition:color .15s;
+}
+.tab-item.active { color:var(--wood); }
+.tab-item.active .tab-icon { transform:scale(1.1); }
+.tab-icon { font-size:20px; line-height:1; }
+.tab-fab {
+  width:46px; height:46px; border-radius:50%; margin-top:-18px;
+  background:var(--wood); color:#f5f0e8; font-size:26px;
+  box-shadow:0 4px 14px rgba(61,43,31,.35);
   display:flex; align-items:center; justify-content:center;
-  transition:transform .12s;
 }
-.fab:active { transform:scale(.9); }
+.tab-fab:active { transform:scale(.92); }
+.tab-label { font-size:10px; }
 
 /* ============ 弹层 ============ */
 .modal-mask { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:100; }

@@ -1,7 +1,7 @@
 {
-  "name": "文玩手串收藏馆",
-  "short_name": "手串馆",
-  "description": "记录与展示你的文玩手串收藏，像图鉴一样的收藏展示柜",
+  "name": "我的收藏馆",
+  "short_name": "收藏馆",
+  "description": "记录与展示你的收藏，像图鉴一样的收藏展示柜",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

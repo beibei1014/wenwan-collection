@@ -110,10 +110,11 @@
       ctx.fillText("来自 " + escText(item.shop).slice(0, 16), W / 2, 1390);
     }
 
-    // 底部品牌
-    ctx.fillStyle = "rgba(61,43,31,.35)";
-    ctx.font = "26px 'PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText("文玩手串收藏馆", W / 2, 1540);
+    // 底部落款：用户名@我的收藏馆
+    ctx.fillStyle = "rgba(61,43,31,.45)";
+    ctx.font = "28px 'PingFang SC','Microsoft YaHei',sans-serif";
+    const byline = (opts && opts.username ? opts.username + " @ " : "") + "我的收藏馆";
+    ctx.fillText(byline, W / 2, 1540);
 
     return canvas;
   }
@@ -145,7 +146,7 @@
     ctx.fillText("我的文玩收藏图鉴", W / 2, 90);
     ctx.fillStyle = "#b8860b";
     ctx.font = "30px 'PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText("共 " + count + " 件藏品 · 文玩手串收藏馆", W / 2, 138);
+    ctx.fillText("共 " + count + " 件藏品 · " + (opts && opts.username ? opts.username + " @ " : "") + "我的收藏馆", W / 2, 138);
 
     // 绘制每个卡片
     for (let i = 0; i < count; i++) {
