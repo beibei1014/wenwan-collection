@@ -412,9 +412,11 @@ img { display:block; }
 .cal-week-row { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-bottom:2px; }
 .cal-week { text-align:center; font-size:10px; color:var(--text-2); height:18px; display:flex; align-items:center; justify-content:center; }
 .cal-cell {
-  height:44px; border-radius:6px; display:flex; align-items:center; justify-content:center;
+  height:44px !important; min-height:44px; max-height:44px;
+  border-radius:6px; display:flex; align-items:center; justify-content:center;
   font-size:9px; color:var(--text-2); position:relative;
 }
+.cal-grid { align-items:stretch; grid-auto-rows:44px; }
 .cal-cell.l0 { background:color-mix(in srgb, var(--line) 30%, transparent); color:var(--text-2); }
 .cal-cell.l1 { background:color-mix(in srgb, var(--gold) 25%, var(--card)); color:var(--text); }
 .cal-cell.l2 { background:color-mix(in srgb, var(--gold) 45%, var(--card)); color:var(--text); font-weight:600; }

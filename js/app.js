@@ -1504,6 +1504,7 @@
 
     // 分类联动：更新品种选项/标签/工艺显隐/拼图完成时间
     const fCat = $("#fCategory");
+    let _catInited = false; // 是否已初始化（区分首次渲染 vs 分类切换）
     function refreshSpeciesByCategory() {
       const cat = fCat.value;
       const cfg = Categories.getCategoryConfig(cat);
@@ -1530,10 +1531,11 @@
         }
         const sizeSel = $("#fSize");
         if (sizeSel) {
-          const curVal = sizeSel.value;
-          const defVal = sizeField === "pieces" ? 1000 : 14;
+          // 首次用 it 原始值；分类切换后用已选值
+          const initVal = sizeField === "pieces" ? (it && it.pieceCount) : (it && it.beadSize);
+          const curVal = _catInited ? sizeSel.value : initVal;
           sizeSel.innerHTML = sizeField === "pieces" ? pieceOptions(curVal || null) : beadSizeOptions(curVal || null);
-          if (!curVal) sizeSel.value = defVal;
+          if (!curVal) sizeSel.value = sizeField === "pieces" ? 1000 : 14;
         }
       }
       const fw = $("#fFinishedWrap");
@@ -1551,21 +1553,25 @@
           if (v === "idle" || v === "playing") show = !isPuzzle && isBead;
           b.style.display = show ? "" : "none";
         });
-        // 如果当前选中项被隐藏，自动切到第一个可见项
-        const activeBtn = st.querySelector("button.active");
-        if (activeBtn && activeBtn.style.display === "none") {
-          const firstVisible = st.querySelector("button:not([style*='display: none'])");
-          if (firstVisible) {
-            st.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
-            firstVisible.classList.add("active");
-          }
+        // 首次用 it 的 playStatus；分类切换后保留已选状态
+        const savedStatus = !_catInited
+          ? ((it && (it.playStatus || (it.gifted ? "gifted" : ""))) || "idle")
+          : (st.querySelector("button.active") ? st.querySelector("button.active").dataset.v : "idle");
+        const statusBtn = st.querySelector('button[data-v="' + savedStatus + '"]');
+        const targetBtn = statusBtn && statusBtn.style.display !== "none"
+          ? statusBtn
+          : st.querySelector("button:not([style*='display: none'])");
+        if (targetBtn) {
+          st.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
+          targetBtn.classList.add("active");
         }
       }
     }
     if (fCat) {
       fCat.addEventListener("change", refreshSpeciesByCategory);
-      refreshSpeciesByCategory();
+      refreshSpeciesByCategory();   // 首次调用（_catInited=false → 用 it 原始值）
     }
+    _catInited = true;               // 之后再调用用已选值
 
     // 状态按钮交互：显示/隐藏送人时间
     const fStatus = $("#fStatus");
