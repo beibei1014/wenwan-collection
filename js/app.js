@@ -965,7 +965,7 @@
         e.target.value = "";
         for (const f of files) {
           try {
-            const cf = await ImageUtil.compressFile(f, { maxSizeKB: 500, maxDim: 1920 });
+            const cf = await ImageUtil.compressFile(f, { maxSizeKB: 200, maxDim: 1920 });
             it.photos.push(DB.fileToPhoto(cf));
           } catch (err) {
             it.photos.push(DB.fileToPhoto(f));
@@ -1923,7 +1923,7 @@
       e.target.value = "";
       for (const f of files) {
         try {
-          const cf = await ImageUtil.compressFile(f, { maxSizeKB: 500, maxDim: 1920 });
+          const cf = await ImageUtil.compressFile(f, { maxSizeKB: 200, maxDim: 1920 });
           photos.push(DB.fileToPhoto(cf));
         } catch (err) {
           photos.push(DB.fileToPhoto(f));
@@ -1936,7 +1936,7 @@
       e.target.value = "";
       for (const f of files) {
         try {
-          const cf = await ImageUtil.compressFile(f, { maxSizeKB: 500, maxDim: 2000 });
+          const cf = await ImageUtil.compressFile(f, { maxSizeKB: 200, maxDim: 2000 });
           shots.push(DB.fileToPhoto(cf));
         } catch (err) {
           shots.push(DB.fileToPhoto(f));

@@ -20,9 +20,9 @@
   /* 压缩图片到目标大小 */
   async function compressFile(file, opts) {
     opts = opts || {};
-    const maxSizeKB = opts.maxSizeKB || 500;
+    const maxSizeKB = opts.maxSizeKB || 200;
     const maxDim = opts.maxDim || 1920;   // 长边最大像素
-    const minQuality = opts.minQuality || 0.4;
+    const minQuality = opts.minQuality || 0.35;
 
     // 已经是小图/非图片 → 直接返回
     if (!file || !file.type || !file.type.startsWith("image/")) return file;
