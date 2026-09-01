@@ -595,13 +595,17 @@
           const canvas = await Poster.galleryPoster(items, { username: user && user.displayName ? user.displayName : "" });
           await Poster.shareCanvas(canvas, "我的收藏图鉴.jpg");
           toast("图鉴海报已分享/保存");
+          renderHome();
           location.hash = "#/";
+          window.scrollTo(0, 0);
           return;
         } catch (err) {
           // 用户取消系统分享不算失败：也返回首页
-          if (String(err && err.message).includes("share")) {
+          if (String(err && err.message).includes("share") || String(err && err.message).includes("abort")) {
             toast("已取消分享");
+            renderHome();
             location.hash = "#/";
+            window.scrollTo(0, 0);
             return;
           }
           toast("生成失败：" + err.message);
