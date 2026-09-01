@@ -141,6 +141,41 @@
   }
 
   /* ---------- CRUD ---------- */
+  // 可能尚未在数据库建好的新字段（未执行 SQL 时自动降级）
+  const OPTIONAL_FIELDS = ["piece_count", "accessory_type", "play_status", "finished_at"];
+
+  function isMissingColumnErr(error) {
+    return error && error.message && error.message.includes("Could not find the") && error.message.includes("column");
+  }
+
+  async function put(item) {
+    const sb = getSupabase();
+    const user = (await sb.auth.getUser()).data.user;
+    if (!user) throw new Error("未登录");
+    const record = toDB(item);
+    record.user_id = user.id;
+    const hasId = !!record.id;
+    if (hasId) { delete record.id; delete record.created_at; }
+    else { delete record.created_at; }
+    try {
+      const { data, error } = hasId
+        ? await sb.from("bracelets").update(record).eq("id", item.id).select().single()
+        : await sb.from("bracelets").insert(record).select().single();
+      if (error) {
+        if (isMissingColumnErr(error)) {
+          OPTIONAL_FIELDS.forEach((f) => delete record[f]);
+          const { data: d2, error: e2 } = hasId
+            ? await sb.from("bracelets").update(record).eq("id", item.id).select().single()
+            : await sb.from("bracelets").insert(record).select().single();
+          if (e2) throw e2;
+          return toFront(d2);
+        }
+        throw error;
+      }
+      return toFront(data);
+    } catch (err) { throw err; }
+  }
+
   async function getAll() {
     const sb = getSupabase();
     const uid0 = sb.auth.getUser();
@@ -162,26 +197,7 @@
     return toFront(data);
   }
 
-  async function put(item) {
-    const sb = getSupabase();
-    const user = (await sb.auth.getUser()).data.user;
-    if (!user) throw new Error("未登录");
-    const record = toDB(item);
-    record.user_id = user.id;
-    if (record.id) {
-      // 更新：不允许改 id / created_at
-      delete record.id;
-      delete record.created_at;
-      const { data, error } = await sb.from("bracelets").update(record).eq("id", item.id).select().single();
-      if (error) throw error;
-      return toFront(data);
-    }
-    // 新增
-    delete record.created_at;
-    const { data, error } = await sb.from("bracelets").insert(record).select().single();
-    if (error) throw error;
-    return toFront(data);
-  }
+
 
   async function remove(id) {
     const sb = getSupabase();

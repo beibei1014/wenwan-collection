@@ -592,6 +592,14 @@
       html += '<div class="form-group" id="dFinishedWrap" style="display:none"><div class="form-label">拼图完成时间</div>' +
         '<input class="form-input" id="dFinished" type="date"></div>';
       html += "</div>";
+      html += '<div class="form-group"><div class="form-label">状态</div>' +
+        '<div class="seg" id="dStatus">' +
+        statusButton("idle", "待盘玩", it.playStatus || "", !it) +
+        statusButton("playing", "在盘玩", it.playStatus || "") +
+        statusButton("puzzle_pending", "待拼", it.playStatus || "") +
+        statusButton("puzzle_done", "已拼", it.playStatus || "") +
+        statusButton("gifted", "已送人", it.playStatus || "") +
+        "</div></div>";
       html += '<div class="form-group"><div class="form-label">店铺</div>' +
         '<input class="form-input" id="dShop" value="' + esc(it.shop || "") + '"></div>';
       html += '<div class="form-group"><div class="form-label">备注</div>' +
@@ -615,6 +623,13 @@
 
       // 批量分类联动（简化：更新标签与拼图完成时间显隐）
       const dCat = $("#dCategory");
+      const dStatusEl = document.querySelector("#dStatus");
+      if (dStatusEl) {
+        dStatusEl.querySelectorAll("button").forEach((b) => b.onclick = () => {
+          dStatusEl.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
+          b.classList.add("active");
+        });
+      }
       const batchIt = it; // 当前草稿
       function refreshBatchCat() {
         if (!dCat) return;
@@ -632,6 +647,25 @@
         if (fw) {
           fw.style.display = isPuzzle ? "" : "none";
           if (!isPuzzle) { const fi = document.querySelector("#dFinished"); if (fi) fi.value = ""; }
+        }
+        // 状态按钮按分类显隐
+        const dStatus = document.querySelector("#dStatus");
+        if (dStatus) {
+          dStatus.querySelectorAll("button").forEach((b) => {
+            const v = b.dataset.v;
+            let show = true;
+            if (v === "puzzle_pending" || v === "puzzle_done") show = isPuzzle;
+            if (v === "idle" || v === "playing") show = !isPuzzle && isBead;
+            b.style.display = show ? "" : "none";
+          });
+          const activeBtn = dStatus.querySelector("button.active");
+          if (activeBtn && activeBtn.style.display === "none") {
+            const firstVisible = dStatus.querySelector("button:not([style*='display: none'])");
+            if (firstVisible) {
+              dStatus.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
+              firstVisible.classList.add("active");
+            }
+          }
         }
         // 尺寸字段
         const sizeField = Categories.getSizeField(cat);
@@ -687,6 +721,14 @@
         it.price = isNaN(pv) ? null : pv;
         it.shop = $("#dShop").value.trim();
         it.category = $("#dCategory").value.trim();
+        const dStatusBtn = document.querySelector("#dStatus button.active");
+        if (dStatusBtn) {
+          const sv2 = dStatusBtn.dataset.v;
+          it.playStatus = sv2 === "gifted" ? "" : sv2;
+          it.gifted = sv2 === "gifted";
+          if (!it.gifted) it.giftedAt = null;
+          it.played = sv2 === "playing";
+        }
         const dSizeField = Categories.getSizeField(it.category);
         const dsv = $("#dSize").value;
         if (dSizeField === "pieces") {
@@ -1890,7 +1932,6 @@
     if (h === "#/settings") active = "settings";
     else if (h === "#/cat") active = "cat";
     else if (h === "#/stats") active = "stats";
-    else if (h === "#/quest") active = "quest";
     tabbar.querySelectorAll(".tab-item").forEach((t) => {
       const tab = t.dataset.tab;
       if (tab === "add") return;
@@ -1903,7 +1944,6 @@
       if (tab === "home") location.hash = "#/";
       else if (tab === "cat") location.hash = "#/cat";
       else if (tab === "stats") location.hash = "#/stats";
-      else if (tab === "quest") location.hash = "#/quest";
       else if (tab === "settings") location.hash = "#/settings";
       else if (tab === "add") location.hash = "#/new";
     });
