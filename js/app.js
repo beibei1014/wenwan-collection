@@ -15,6 +15,7 @@
 
   let allItems = [];
   let filter = "all";        // all | instock | gifted | played
+  let categoryFilter = "";   // 分类筛选
   let search = "";
   let user = null;           // 当前登录用户
 
@@ -65,6 +66,120 @@
       $("#mOk").onclick = () => done(true);
       mask.onclick = () => done(false);
     });
+  }
+
+  /* ---------- 养护小知识弹层 ---------- */
+  function showTipsModal(item) {
+    const tips = Tips.getTips(item.species, item.craft);
+    const mask = $("#modalMask");
+    const modal = $("#modal");
+
+    let html = "<h3>📖 养护小知识</h3>";
+    if (tips.matched) {
+      html += "<p style='text-align:center;font-size:13px;color:var(--gold);margin-bottom:12px'>针对「" + esc(tips.matchedKey) + "」的专属科普</p>";
+    } else {
+      html += "<p style='text-align:center;font-size:13px;color:var(--text-2);margin-bottom:12px'>通用文玩科普（填了品种会有专属内容哦）</p>";
+    }
+
+    const sections = [
+      { key: "care", icon: "🧴", title: "日常保养" },
+      { key: "taboo", icon: "🚫", title: "佩戴禁忌" },
+      { key: "play", icon: "🤲", title: "盘玩技巧" },
+      { key: "trivia", icon: "💡", title: "冷知识" },
+    ];
+    sections.forEach((s, i) => {
+      const list = tips[s.key] || [];
+      html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden">' +
+        '<button type="button" data-sec="' + s.key + '" style="width:100%;padding:12px 14px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;color:var(--wood);background:none;border:none;text-align:left">' +
+        '<span>' + s.icon + "</span><span>" + s.title + "</span><span style='margin-left:auto;color:var(--text-2);font-size:12px'>" + list.length + " 条</span>" +
+        '<span style="margin-left:4px;color:var(--gold);transition:transform .2s" data-arrow="' + s.key + '">▾</span></button>' +
+        '<div data-body="' + s.key + '" style="display:none;padding:0 14px 14px">' +
+        list.map((t) => '<div style="font-size:14px;color:var(--text);line-height:1.7;padding:6px 0;border-top:1px dashed var(--line)">' + esc(t) + "</div>").join("") +
+        "</div></div>";
+    });
+
+    html += '<button class="btn primary" id="mCloseTips" style="width:100%">知道了</button>';
+
+    modal.innerHTML = html;
+    mask.hidden = false;
+    modal.hidden = false;
+
+    modal.querySelectorAll("[data-sec]").forEach((b) => b.onclick = () => {
+      const key = b.dataset.sec;
+      const body = modal.querySelector('[data-body="' + key + '"]');
+      const arrow = modal.querySelector('[data-arrow="' + key + '"]');
+      const open = body.style.display !== "none";
+      body.style.display = open ? "none" : "block";
+      arrow.style.transform = open ? "" : "rotate(180deg)";
+    });
+    $("#mCloseTips").onclick = () => { mask.hidden = true; modal.hidden = true; };
+    mask.onclick = () => { mask.hidden = true; modal.hidden = true; };
+  }
+
+  /* ---------- 多选分享模式 ---------- */
+  function enterShareMode() {
+    const selected = new Set();
+    const list = filtered();
+
+    function render() {
+      topbarTitle.textContent = "多选分享";
+      btnBack.style.visibility = "visible";
+      btnSettings.style.visibility = "hidden";
+      btnAdd.style.visibility = "hidden";
+
+      let html = "";
+      html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:10px">已选 ' + selected.size + ' 条，点击卡片勾选（最多 12 条）</div>';
+      html += '<div class="grid">';
+      list.forEach((it) => {
+        const p = it.photos && it.photos[0];
+        const img = p ? '<img src="' + photoUrl(p) + '" alt="">' : '<div class="placeholder">📿</div>';
+        const checked = selected.has(it.id) ? ' style="outline:3px solid var(--gold)"' : "";
+        html += '<div class="card" data-id="' + it.id + '"' + checked + '>' +
+          '<div class="card-thumb">' + img +
+          '<span class="badge ' + (selected.has(it.id) ? "instock" : "gifted") + '" style="right:8px;left:auto">' + (selected.has(it.id) ? "✓ 已选" : "选择") + "</span>" +
+          "</div>" +
+          '<div class="card-body"><div class="card-name">' + esc(it.name || "未命名") + "</div>" +
+          '<div class="card-sub"><span>' + esc(it.beadSize ? it.beadSize + "mm" : it.species || "") + "</span></div>" +
+          "</div></div>";
+      });
+      html += "</div>";
+
+      if (!list.length) {
+        html = '<div class="empty"><div class="empty-icon">📤</div><p>没有可分享的手串</p></div>';
+      }
+
+      html += '<div class="detail-actions" style="margin-top:16px">';
+      html += '<button class="btn ghost" id="sCancel" style="flex:1">取消</button>';
+      html += '<button class="btn primary" id="sShare" style="flex:2"' + (selected.size ? "" : " disabled") + '>生成图鉴海报 (' + selected.size + ')</button>';
+      html += "</div>";
+
+      view.innerHTML = html;
+
+      view.querySelectorAll(".card").forEach((c) => c.addEventListener("click", () => {
+        const id = c.dataset.id;
+        if (selected.has(id)) selected.delete(id); else selected.add(id);
+        render();
+      }));
+      $("#sCancel").onclick = () => location.hash = "#/";
+      $("#sShare").onclick = async () => {
+        const items = allItems.filter((i) => selected.has(i.id));
+        if (!items.length) { toast("请先选择手串"); return; }
+        const btn = $("#sShare");
+        btn.textContent = "生成中…";
+        btn.disabled = true;
+        try {
+          const canvas = await Poster.galleryPoster(items);
+          await Poster.shareCanvas(canvas, "文玩收藏图鉴.jpg");
+          toast("图鉴海报已分享/保存");
+          location.hash = "#/";
+        } catch (err) {
+          toast("生成失败：" + err.message);
+          btn.textContent = "生成图鉴海报 (" + selected.size + ")";
+          btn.disabled = false;
+        }
+      };
+    }
+    render();
   }
 
   /* ---------- 批量录入模式 ---------- */
@@ -140,6 +255,12 @@
       html += '<div class="form-group"><div class="form-label">价格 <small>元</small></div>' +
         '<input class="form-input" id="dPrice" type="number" inputmode="decimal" value="' + (it.price != null ? it.price : "") + '"></div>';
       html += "</div>";
+      html += '<div class="form-row">';
+      html += '<div class="form-group"><div class="form-label">珠子大小 <small>mm</small></div>' +
+        '<select class="form-select" id="dBeadSize">' + beadSizeOptions(it.beadSize) + '</select></div>';
+      html += '<div class="form-group"><div class="form-label">分类</div>' +
+        '<select class="form-select" id="dCategory">' + categoryOptions(it.category || "") + '</select></div>';
+      html += "</div>";
       html += '<div class="form-group"><div class="form-label">店铺</div>' +
         '<input class="form-input" id="dShop" value="' + esc(it.shop || "") + '"></div>';
       html += '<div class="form-group"><div class="form-label">备注</div>' +
@@ -195,6 +316,9 @@
         const pv = parseFloat($("#dPrice").value);
         it.price = isNaN(pv) ? null : pv;
         it.shop = $("#dShop").value.trim();
+        const dbsv = $("#dBeadSize").value;
+        it.beadSize = dbsv ? parseFloat(dbsv) : null;
+        it.category = $("#dCategory").value.trim();
         it.note = $("#dNote").value.trim();
         renderList();
       };
@@ -356,6 +480,9 @@
     if (filter === "instock") list = list.filter((i) => !i.gifted);
     else if (filter === "gifted") list = list.filter((i) => i.gifted);
     else if (filter === "played") list = list.filter((i) => i.played);
+    if (categoryFilter) {
+      list = list.filter((i) => (i.category || "") === categoryFilter);
+    }
     if (search) {
       const q = search.toLowerCase();
       list = list.filter((i) =>
@@ -391,9 +518,19 @@
       chip("all", "全部") + chip("instock", "在库") + chip("gifted", "已送人") + chip("played", "在盘玩") +
       '</div>';
 
+    // 分类筛选行
+    const cats = getCategories();
+    html += '<div class="filters">' +
+      '<button class="chip' + (!categoryFilter ? " active" : "") + '" data-cat="">全部</button>' +
+      cats.map((c) => '<button class="chip' + (categoryFilter === c ? " active" : "") + '" data-cat="' + esc(c) + '">' + esc(c) + "</button>").join("") +
+      "</div>";
+
     html += '<div class="search-box"><input id="searchInput" placeholder="搜索名字 / 品种 / 店铺…" value="' + esc(search) + '"></div>';
 
-    html += '<button class="batch-entry" id="btnBatch">🗂 批量录入</button>';
+    html += '<div style="display:flex;gap:8px;margin-bottom:12px">' +
+      '<button class="batch-entry" id="btnBatch" style="flex:1">🗂 批量录入</button>' +
+      '<button class="batch-entry" id="btnShareMode" style="flex:1;background:linear-gradient(135deg,#b8860b,#a06b2c)">📤 多选分享</button>' +
+      "</div>";
 
     html += '<div id="gridHolder"></div>';
 
@@ -438,11 +575,19 @@
     if (bb) bb.onclick = () => {
       enterBatchMode([], "批量录入（空列表，点击＋添加一行）");
     };
+    const sm = $("#btnShareMode");
+    if (sm) sm.onclick = () => enterShareMode();
     const si = $("#searchInput");
     if (si) si.addEventListener("input", () => { search = si.value.trim(); updateGrid(); });
-    view.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => {
+    view.querySelectorAll(".chip[data-f]").forEach((c) => c.addEventListener("click", () => {
       filter = c.dataset.f;
-      view.querySelectorAll(".chip").forEach((x) => x.classList.toggle("active", x === c));
+      view.querySelectorAll(".chip[data-f]").forEach((x) => x.classList.toggle("active", x === c));
+      updateGrid();
+    }));
+    // 分类 chips（用 data-cat 区分）
+    view.querySelectorAll(".chip[data-cat]").forEach((c) => c.addEventListener("click", () => {
+      categoryFilter = c.dataset.cat || "";
+      view.querySelectorAll(".chip[data-cat]").forEach((x) => x.classList.toggle("active", x === c));
       updateGrid();
     }));
   }
@@ -455,6 +600,43 @@
 
   function chip(key, label) {
     return '<button class="chip' + (filter === key ? " active" : "") + '" data-f="' + key + '">' + label + "</button>";
+  }
+
+  /* ---------- 分类管理（localStorage 持久化用户自定义分类） ---------- */
+  const DEFAULT_CATEGORIES = ["菩提", "水晶", "玉石", "其他"];
+  function getCategories() {
+    try {
+      const raw = localStorage.getItem("ww_categories");
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.length) return arr;
+      }
+    } catch (e) {}
+    return DEFAULT_CATEGORIES.slice();
+  }
+  function saveCategories(arr) {
+    const cleaned = arr.map((c) => c.trim()).filter(Boolean);
+    const uniq = [...new Set(cleaned)];
+    try { localStorage.setItem("ww_categories", JSON.stringify(uniq)); } catch (e) {}
+    return uniq;
+  }
+  function categoryOptions(selected) {
+    const cats = getCategories();
+    let h = '<option value="">未分类</option>';
+    cats.forEach((c) => {
+      h += '<option value="' + esc(c) + '"' + (selected === c ? " selected" : "") + ">" + esc(c) + "</option>";
+    });
+    return h;
+  }
+
+  /* ---------- 珠径（卡数）选择 ---------- */
+  function beadSizeOptions(selected) {
+    let h = "";
+    const def = selected != null ? selected : 14;
+    for (let i = 6; i <= 22; i++) {
+      h += '<option value="' + i + '"' + (def === i ? " selected" : "") + ">" + i + " mm</option>";
+    }
+    return h;
   }
 
   /* ---------- 详情页 ---------- */
@@ -512,8 +694,9 @@
       html += "</div>";
     }
 
+    html += '<button class="btn ghost" id="btnTips" style="width:100%;margin-top:14px">📖 养护小知识</button>';
     html += '<div class="detail-actions">';
-    html += '<button class="btn ghost" id="btnShare">分享</button>';
+    html += '<button class="btn ghost" id="btnShare">分享海报</button>';
     html += '<button class="btn primary" id="btnEdit">编辑</button>';
     html += '<button class="btn danger" id="btnDel">删除</button>';
     html += "</div></div>";
@@ -536,12 +719,27 @@
     view.querySelectorAll("[data-view]").forEach((el) => el.addEventListener("click", () => openViewer(+el.dataset.view)));
     $("#viewerClose").onclick = () => { $("#viewer").classList.remove("show"); };
 
+    $("#btnTips").onclick = () => showTipsModal(it);
     $("#btnEdit").onclick = () => location.hash = "#/edit/" + it.id;
     $("#btnDel").onclick = async () => {
       const ok = await confirmModal("删除这条手串？", "删除后不可恢复，请确认。", "删除", true);
       if (ok) { await DB.remove(it.id); await loadItems(); toast("已删除"); location.hash = "#/"; }
     };
-    $("#btnShare").onclick = () => shareItem(it);
+    $("#btnShare").onclick = async () => {
+      const btn = $("#btnShare");
+      btn.textContent = "生成中…";
+      btn.disabled = true;
+      try {
+        const canvas = await Poster.singlePoster(it);
+        const result = await Poster.shareCanvas(canvas, "文玩手串_" + (it.name || "分享") + ".jpg");
+        toast(result === "shared" ? "已分享" : "海报已保存到相册/下载");
+      } catch (err) {
+        toast("海报生成失败：" + err.message);
+      } finally {
+        btn.textContent = "分享";
+        btn.disabled = false;
+      }
+    };
   }
 
   function infoItem(k, v, full) {
@@ -602,6 +800,13 @@
       '<input class="form-input" id="fDate" type="date" value="' + dateVal + '"></div>';
     html += '<div class="form-group"><div class="form-label">入手价格 <small>元</small></div>' +
       '<input class="form-input" id="fPrice" type="number" inputmode="decimal" placeholder="如 1280" value="' + esc(it && it.price != null ? it.price : "") + '"></div>';
+    html += "</div>";
+
+    html += '<div class="form-row">';
+    html += '<div class="form-group"><div class="form-label">珠子大小（卡数） <small>mm</small></div>' +
+      '<select class="form-select" id="fBeadSize">' + beadSizeOptions(it && it.beadSize) + '</select></div>';
+    html += '<div class="form-group"><div class="form-label">分类</div>' +
+      '<select class="form-select" id="fCategory">' + categoryOptions(it ? it.category : "") + '</select></div>';
     html += "</div>";
 
     html += '<div class="form-group"><div class="form-label">在哪家店买的</div>' +
@@ -758,6 +963,9 @@
         const pv = parseFloat($("#fPrice").value);
         item.price = isNaN(pv) ? null : pv;
         item.shop = $("#fShop").value.trim();
+        const bsv = $("#fBeadSize").value;
+        item.beadSize = bsv ? parseFloat(bsv) : null;
+        item.category = $("#fCategory").value.trim();
         item.gifted = view.querySelector("#fGifted button.active").dataset.v === "1";
         const gdv = $("#fGiftedDate").value;
         if (item.gifted) {
@@ -824,6 +1032,16 @@
     html += '<button class="setting-item" id="btnClear"><div><div class="t">🗑 清空全部数据</div><div class="d">删除所有手串记录（不可恢复）</div></div><span class="arrow">›</span></button>';
     html += '<button class="setting-item" id="btnLogout"><div><div class="t">🚪 退出登录</div><div class="d">退出后本机不再保留登录状态</div></div><span class="arrow">›</span></button>';
     html += "</div>";
+
+    // 分类管理
+    html += '<div class="section-title">分类管理</div>';
+    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">';
+    html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:8px">自定义分类（菩提 / 水晶 / 玉石 / 盲盒 / 吧唧…）</div>';
+    html += '<div id="catList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>';
+    html += '<div style="display:flex;gap:8px">' +
+      '<input class="form-input" id="catInput" placeholder="新增分类，如：盲盒" style="flex:1;padding:9px 10px;font-size:14px">' +
+      '<button class="btn primary" id="catAdd" style="flex:none;padding:9px 16px;font-size:14px">添加</button></div>';
+    html += "</div>";
     html += '<p style="text-align:center;font-size:11px;color:#b0a290;margin-top:22px;line-height:1.8">数据存储于云端（Supabase）<br>登录同一账号即可在任何设备查看</p>';
 
     view.innerHTML = html;
@@ -869,6 +1087,35 @@
       toast("已清空");
       location.hash = "#/";
     };
+    // 分类管理渲染
+    function renderCatList() {
+      const box = $("#catList");
+      if (!box) return;
+      const cats = getCategories();
+      box.innerHTML = cats.map((c, i) =>
+        '<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:4px 8px 4px 12px;font-size:13px">' + esc(c) +
+        '<button type="button" data-i="' + i + '" style="width:18px;height:18px;border-radius:50%;background:#fbe9e7;color:var(--red);font-size:11px;display:flex;align-items:center;justify-content:center">✕</button></span>'
+      ).join("");
+      box.querySelectorAll("[data-i]").forEach((b) => b.onclick = () => {
+        const cats2 = getCategories();
+        cats2.splice(+b.dataset.i, 1);
+        saveCategories(cats2);
+        renderCatList();
+        renderSettings();
+      });
+    }
+    renderCatList();
+    $("#catAdd").onclick = () => {
+      const v = $("#catInput").value.trim();
+      if (!v) { toast("请输入分类名"); return; }
+      const cats = getCategories();
+      if (cats.includes(v)) { toast("分类已存在"); return; }
+      saveCategories(cats.concat([v]));
+      $("#catInput").value = "";
+      renderCatList();
+      toast("已添加分类：" + v);
+    };
+    $("#catInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#catAdd").click(); });
     $("#btnLogout").onclick = async () => {
       const ok = await confirmModal("退出登录？", "退出后本机需要重新登录才能查看。", "退出");
       if (!ok) return;
