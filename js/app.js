@@ -71,9 +71,67 @@
 
   /* ---------- 养护小知识弹层 ---------- */
   function showTipsModal(item) {
-    const tips = Tips.getTips(item.species, item.craft);
     const mask = $("#modalMask");
     const modal = $("#modal");
+    const cat = item.category || "";
+
+    // 拼图/动漫周边等非珠子类：显示品牌/IP 介绍，而不是文玩护理
+    const isPuzzle = Categories.isPuzzleCategory(cat);
+    const isBrandCat = Categories.isBrandCategory(cat);
+    if (isPuzzle || isBrandCat) {
+      const cfg = Categories.getCategoryConfig(cat);
+      const brandName = item.species || (item.beadSize ? item.beadSize + "片" : "");
+      const fieldLabel = cfg.label || "品牌";
+      const options = cfg.options || [];
+
+      let html = "<h3>" + (isPuzzle ? "🧩 " : "🏅 ") + "品牌 / IP 档案</h3>";
+      html += "<p style='text-align:center;font-size:13px;color:var(--gold);margin-bottom:12px'>「" + esc(cat) + "」收藏指南</p>";
+
+      if (brandName) {
+        html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px">' +
+          '<div style="font-size:13px;color:var(--text-2);margin-bottom:4px">当前' + fieldLabel + '</div>' +
+          '<div style="font-size:17px;font-weight:700;color:var(--wood)">' + esc(brandName) + "</div></div>";
+      }
+
+      // 品牌库介绍
+      if (options.length) {
+        html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">' +
+          '<div style="font-size:13px;font-weight:600;color:var(--wood);margin-bottom:8px">常见' + fieldLabel + '一览</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
+          options.map((o) => '<span style="background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:3px 10px;font-size:12px;color:var(--text-2)">' + esc(o) + "</span>").join("") +
+          "</div></div>";
+      }
+
+      // 拼图额外提示
+      if (isPuzzle) {
+        html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:12px">' +
+          '<div style="font-size:13px;font-weight:600;color:var(--wood);margin-bottom:6px">💡 拼图小贴士</div>' +
+          '<div style="font-size:13px;color:var(--text);line-height:1.7">' +
+          "拼图作品完成后建议装裱（相框+防UV玻璃）防止氧化褪色。<br>" +
+          "未完成的拼图用拼图垫或卷筒收纳，防止散片丢失。<br>" +
+          "品牌盒子上都有片数标注，收藏时可以记录拼完时间。";
+        if (brandName) {
+          const known = options.find((o) => o === brandName);
+          if (known) {
+            html += "<br><br>「" + esc(brandName) + "」是拼图圈常见品牌，咬合和印刷质量有保障，可以放心入手。";
+          } else {
+            html += "<br><br>「" + esc(brandName) + "」不在常见品牌库里，是宝藏品牌！记得分享给串友。";
+          }
+        }
+        html += "</div></div>";
+      }
+
+      html += '<button class="btn primary" id="mCloseTips" style="width:100%;margin-top:14px">知道了</button>';
+      modal.innerHTML = html;
+      mask.hidden = false;
+      modal.hidden = false;
+      $("#mCloseTips").onclick = () => { mask.hidden = true; modal.hidden = true; };
+      mask.onclick = () => { mask.hidden = true; modal.hidden = true; };
+      return;
+    }
+
+    // 珠子类：文玩养护知识
+    const tips = Tips.getTips(item.species, item.craft);
 
     let html = "<h3>📖 养护小知识</h3>";
     if (tips.matched) {
@@ -522,7 +580,11 @@
         }
         render();
       }));
-      $("#sCancel").onclick = () => { renderHome(); };
+      $("#sCancel").onclick = () => {
+        renderHome();
+        location.hash = "#/";
+        window.scrollTo(0, 0);
+      };
       $("#sShare").onclick = async () => {
         const items = allItems.filter((i) => selected.has(i.id));
         if (!items.length) { toast("请先选择宝贝"); return; }
@@ -655,7 +717,11 @@
         location.hash = "#/";
       };
       $("#bDone").onclick = () => { render(); };
-      $("#bCancelBatch").onclick = () => { renderHome(); };
+      $("#bCancelBatch").onclick = () => {
+        renderHome();
+        location.hash = "#/";
+        window.scrollTo(0, 0);
+      };
 
       // 通用应用函数：逐条更新并保存
       async function applyToItems(items, mutator) {
