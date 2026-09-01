@@ -301,9 +301,24 @@
     if (stats.total > 0) {
       facts.push({ icon: "💡", text: "平均每件花了 ¥" + Math.round(stats.totalSpent / stats.total) });
     }
-    // 每日陪伴
-    if (stats.totalDays > 0) {
-      facts.push({ icon: "🤲", text: "它们累计陪你度过了 " + DB.formatDays(stats.totalDays) + " 的时光" });
+    // 最常收藏的品种/品牌
+    const speciesCount = {};
+    items.forEach((i) => {
+      const key = i.species || i.accessoryType || i.category || "未分类";
+      speciesCount[key] = (speciesCount[key] || 0) + 1;
+    });
+    const topSpecies = Object.entries(speciesCount).sort((a, b) => b[1] - a[1])[0];
+    if (topSpecies && topSpecies[0] !== "未分类") {
+      facts.push({ icon: "🏆", text: "最宠爱的品种是「" + topSpecies[0] + "」，收了 " + topSpecies[1] + " 件" });
+    }
+    // 在库率
+    if (stats.total > 0) {
+      const inStockRate = Math.round((stats.owned / stats.total) * 100);
+      facts.push({ icon: "🏠", text: "在库率 " + inStockRate + "%（" + stats.owned + "/" + stats.total + " 件还在身边）" });
+    }
+    // 已送出的宝贝
+    if (stats.gifted > 0) {
+      facts.push({ icon: "🎁", text: "送出了 " + stats.gifted + " 件宝贝，把快乐分享给了别人" });
     }
     return facts;
   }

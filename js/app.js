@@ -1503,14 +1503,6 @@
     return h;
   }
 
-  /* ---------- 订单截图识别开关 ---------- */
-  function isOcrEnabled() {
-    return localStorage.getItem("ww_ocr") !== "0";
-  }
-  function setOcrEnabled(enabled) {
-    localStorage.setItem("ww_ocr", enabled ? "1" : "0");
-  }
-
   /* ---------- 主题系统 ---------- */
   const THEMES = [
     { id: "light", name: "浅色", icon: "☀️" },
@@ -1951,7 +1943,7 @@
         }
       }
       renderUploadGrid("#shotGrid", shots, () => $("#shotInput").click(), true);
-      if (files.length && isOcrEnabled()) runOcrOnShot(files[0]);
+      // 订单截图仅保存，不自动识别（识别准确率有限）
     };
     renderUploadGrid("#photoGrid", photos, () => $("#photoInput").click(), false);
     renderUploadGrid("#shotGrid", shots, () => $("#shotInput").click(), true);
@@ -2157,16 +2149,6 @@
     });
     html += "</div>";
 
-    // ===== 3.5 订单识别开关 =====
-    const ocrChecked = isOcrEnabled() ? " checked" : "";
-    html += '<div class="section-title">🧾 订单截图识别</div>';
-    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">';
-    html += '<div style="display:flex;align-items:center;gap:10px">';
-    html += '<div style="flex:1"><div style="font-size:14px;font-weight:600;color:var(--wood)">上传后自动识别</div>';
-    html += '<div style="font-size:11px;color:var(--text-2);margin-top:2px">识别准确率有限，可关闭改为手动填写</div></div>';
-    html += '<label class="switch"><input type="checkbox" id="ocrSwitch"' + ocrChecked + '><span class="switch-slider"></span></label>';
-    html += '</div></div>';
-
     // ===== 4. 收藏盒子管理 =====
     html += '<div class="section-title">收藏盒子管理</div>';
     html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">';
@@ -2251,13 +2233,6 @@
     }
     renderMyBadges();
     renderBadgeLibrary();
-
-    // OCR 开关
-    const ocrSw = $("#ocrSwitch");
-    if (ocrSw) ocrSw.onchange = () => {
-      setOcrEnabled(ocrSw.checked);
-      toast(ocrSw.checked ? "已开启订单识别" : "已关闭订单识别");
-    };
 
     // 主题选择
     document.querySelectorAll("#themeList .theme-opt").forEach((b) => b.onclick = () => {
