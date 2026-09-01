@@ -358,3 +358,18 @@ img { display:block; }
 }
 .levelup-sub { font-size:17px; font-weight:700; color:var(--wood); margin-top:6px; }
 .levelup-desc { font-size:12px; color:var(--text-2); margin-top:6px; }
+
+
+/* ============ 成就分组 ============ */
+.ach-group { margin-bottom:10px; }
+.ach-group-head {
+  width:100%; display:flex; align-items:center; gap:8px;
+  background:var(--card); border:1px solid var(--line); border-radius:12px;
+  padding:12px 14px; margin-bottom:6px;
+}
+.ach-group-desc { flex:1; font-size:11px; color:var(--text-2); text-align:left; }
+.ach-group-count {
+  font-size:12px; font-weight:700; color:var(--wood);
+  background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:2px 8px;
+}
+.ach-group-body { padding:2px 0 4px; }

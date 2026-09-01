@@ -175,7 +175,7 @@
     const result = [];
     const catNames = (function () {
       // 从 DEFAULT_CATEGORIES 读（通过 app 的 getCategories 不可达，这里内置一份）
-      return ["菩提", "水晶", "玉石", "拼图", "吧唧", "盲盒", "其他"];
+      return ["菩提", "水晶", "玉石", "拼图", "动漫周边", "盲盒", "其他"];
     })();
     catNames.forEach((c) => {
       const cfg = window.Categories.getCategoryConfig(c);

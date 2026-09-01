@@ -31,10 +31,10 @@
         "HEYE", "Ravensburger", "Educa", "Clementoni", "Galison", "Jumbo", "Art Puzzle", "Pomegranate", "Springbok", "Epoch", "Tenyo", "Mudpuppy", "NYPC", "SunsOut", "Eurographics", "Schmidt"
       ]
     },
-    "吧唧": {
-      field: "brand",
-      label: "IP/角色",
-      options: ["原神", "崩坏：星穹铁道", "明日方舟", "咒术回战", "鬼灭之刃", "排球少年", "蓝锁", "刀剑乱舞", "偶像梦幻祭", "未定事件簿", "时光代理人", "非人哉"]
+    "动漫周边": {
+      field: "accessory",
+      label: "周边类型",
+      options: ["手办", "吧唧", "镭射卡", "立牌", "亚克力挂件", "徽章", "色纸", "海报", "毛绒", "一番赏", "谷子", "粘土人", "景品"]
     },
     "盲盒": {
       field: "brand",
@@ -49,12 +49,18 @@
 
   /* 获取分类配置 */
   function getCategoryConfig(category) {
-    return CATEGORY_CONFIG[category] || { field: DEFAULT_FIELD, label: DEFAULT_LABEL, options: [] };
+    const cfg = CATEGORY_CONFIG[category] || { field: DEFAULT_FIELD, label: DEFAULT_LABEL, options: [] };
+    // 尺寸字段：拼图→pieces，动漫周边/盲盒→none，其他珠子类→bead
+    if (category === "拼图") cfg.sizeField = "pieces";
+    else if (category === "动漫周边" || category === "盲盒") cfg.sizeField = "none";
+    else cfg.sizeField = "bead";
+    return cfg;
   }
 
-  /* 判断是否品牌类分类（拼图/吧唧/盲盒） */
+  /* 判断是否品牌类分类（拼图/动漫周边/盲盒） */
   function isBrandCategory(category) {
-    return getCategoryConfig(category).field === "brand";
+    const f = getCategoryConfig(category).field;
+    return f === "brand" || f === "accessory";
   }
 
   /* 是否需要拼图完成时间 */
@@ -77,5 +83,5 @@
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
-  window.Categories = { getCategoryConfig, isBrandCategory, isPuzzleCategory, speciesOptionsHtml };
+  window.Categories = { getCategoryConfig, isBrandCategory, isPuzzleCategory, speciesOptionsHtml, getSizeField: (c) => getCategoryConfig(c).sizeField };
 })();

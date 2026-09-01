@@ -137,7 +137,7 @@
         "水晶": { icon: "💎", grad: "linear-gradient(135deg,#7ba7d9,#a8c8ec)" },
         "玉石": { icon: "🪨", grad: "linear-gradient(135deg,#5d9b7a,#86b89c)" },
         "拼图": { icon: "🧩", grad: "linear-gradient(135deg,#d98ba6,#e8b0c4)" },
-        "吧唧": { icon: "🏅", grad: "linear-gradient(135deg,#c9a227,#e0c25e)" },
+        "动漫周边": { icon: "🏅", grad: "linear-gradient(135deg,#c9a227,#e0c25e)" },
         "盲盒": { icon: "🎁", grad: "linear-gradient(135deg,#b06bd9,#cf97ec)" },
         "其他": { icon: "🗂", grad: "linear-gradient(135deg,#8a7a68,#a89880)" }
       };
@@ -251,14 +251,13 @@
 
   /* ---------- 统计页 ---------- */
   function renderStatsPage() {
-    topbarTitle.textContent = "收藏统计";
+    topbarTitle.textContent = "成就殿堂";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
 
     const stats = Stats.computeStats(allItems);
     const facts = Stats.funFacts(allItems, stats);
     const achievements = Stats.getAchievements(allItems);
-    const unlockedCount = achievements.filter((a) => a.unlocked).length;
 
     let html = "";
 
@@ -284,21 +283,45 @@
     if (!facts.length) html += '<div style="padding:12px 0;font-size:13px;color:var(--text-2);text-align:center">还没有数据，先去收藏几件宝贝吧</div>';
     html += "</div>";
 
-    // 成就
-    html += '<div class="section-title">🏆 成就殿堂 <small style="color:var(--text-2);font-weight:400">' + unlockedCount + "/" + achievements.length + " 已解锁</small></div>";
-    html += '<div class="ach-grid">';
-    achievements.forEach((a) => {
-      html += '<div class="ach-card' + (a.unlocked ? " unlocked" : "") + '">' +
-        '<div class="ach-icon">' + a.icon + "</div>" +
-        '<div class="ach-name">' + esc(a.name) + "</div>" +
-        '<div class="ach-desc">' + esc(a.desc) + "</div>" +
-        (a.unlocked ? '<div class="ach-flag">已解锁</div>' : '<div class="ach-lock">🔒</div>') +
-        "</div>";
+    // 成就（分组递进展示）
+    const totalAch = achievements.reduce((s, g) => s + g.items.length, 0);
+    const totalUnlocked = achievements.reduce((s, g) => s + g.unlockedCount, 0);
+    html += '<div class="section-title">🏆 成就殿堂 <small style="color:var(--text-2);font-weight:400">' + totalUnlocked + "/" + totalAch + " 已解锁</small></div>";
+
+    achievements.forEach((g, gi) => {
+      html += '<div class="ach-group">' +
+        '<button type="button" class="ach-group-head" data-g="' + gi + '">' +
+        '<span style="font-size:18px">' + g.icon + "</span>" +
+        '<span style="font-size:15px;font-weight:700;color:var(--wood)">' + esc(g.title) + "</span>" +
+        '<span class="ach-group-desc">' + esc(g.desc) + "</span>" +
+        '<span class="ach-group-count">' + g.unlockedCount + "/" + g.items.length + "</span>" +
+        '<span class="ach-group-arrow" data-garrow="' + gi + '" style="color:var(--gold);transition:transform .2s">▾</span>' +
+        "</button>" +
+        '<div class="ach-group-body" data-gbody="' + gi + '"' + (gi === 0 ? "" : ' style="display:none"') + ">" +
+        '<div class="ach-grid">';
+      g.items.forEach((a) => {
+        html += '<div class="ach-card' + (a.unlocked ? " unlocked" : "") + '">' +
+          '<div class="ach-icon">' + a.icon + "</div>" +
+          '<div class="ach-name">' + esc(a.name) + "</div>" +
+          '<div class="ach-desc">' + esc(a.desc) + "</div>" +
+          (a.unlocked ? '<div class="ach-flag">已解锁</div>' : '<div class="ach-lock">🔒</div>') +
+          "</div>";
+      });
+      html += "</div></div>";
     });
-    html += "</div>";
 
     view.innerHTML = html;
     Stats.renderCalendar(allItems, $("#calBox"));
+
+    // 成就分组折叠
+    view.querySelectorAll(".ach-group-head").forEach((h) => h.onclick = () => {
+      const gi = +h.dataset.g;
+      const body = view.querySelector('[data-gbody="' + gi + '"]');
+      const arrow = view.querySelector('[data-garrow="' + gi + '"]');
+      const open = body.style.display !== "none";
+      body.style.display = open ? "none" : "";
+      if (arrow) arrow.style.transform = open ? "" : "rotate(180deg)";
+    });
   }
 
   /* ---------- 收藏盒子二级页（专注展示该分类） ---------- */
@@ -504,8 +527,8 @@
         '<input class="form-input" id="dPrice" type="number" inputmode="decimal" value="' + (it.price != null ? it.price : "") + '"></div>';
       html += "</div>";
       html += '<div class="form-row">';
-      html += '<div class="form-group"><div class="form-label">珠子大小 <small>mm，珠子类填</small></div>' +
-        '<select class="form-select" id="dBeadSize">' + beadSizeOptions(it.beadSize) + '</select></div>';
+      html += '<div class="form-group" id="dSizeWrap"><div class="form-label" id="dSizeLabel">珠子大小 <small>mm</small></div>' +
+        '<select class="form-select" id="dSize"></select></div>';
       html += '<div class="form-group" id="dFinishedWrap" style="display:none"><div class="form-label">拼图完成时间</div>' +
         '<input class="form-input" id="dFinished" type="date"></div>';
       html += "</div>";
@@ -532,6 +555,7 @@
 
       // 批量分类联动（简化：更新标签与拼图完成时间显隐）
       const dCat = $("#dCategory");
+      const batchIt = it; // 当前草稿
       function refreshBatchCat() {
         if (!dCat) return;
         const cat = dCat.value;
@@ -548,6 +572,22 @@
         if (fw) {
           fw.style.display = isPuzzle ? "" : "none";
           if (!isPuzzle) { const fi = document.querySelector("#dFinished"); if (fi) fi.value = ""; }
+        }
+        // 尺寸字段
+        const sizeField = Categories.getSizeField(cat);
+        const dSizeWrap = document.querySelector("#dSizeWrap");
+        if (dSizeWrap) {
+          dSizeWrap.style.display = sizeField === "none" ? "none" : "";
+          const dSizeLbl = document.querySelector("#dSizeLabel");
+          if (dSizeLbl) {
+            dSizeLbl.innerHTML = (sizeField === "pieces" ? "拼图片数" : "珠子大小") + " <small>" + (sizeField === "pieces" ? "片" : "mm") + "</small>";
+          }
+          const dSize = document.querySelector("#dSize");
+          if (dSize) {
+            const initVal = sizeField === "pieces" ? (batchIt && batchIt.pieceCount) : (batchIt && batchIt.beadSize);
+            const curVal = dSize.value || initVal;
+            dSize.innerHTML = sizeField === "pieces" ? pieceOptions(curVal || null) : beadSizeOptions(curVal || null);
+          }
         }
       }
       if (dCat) { dCat.addEventListener("change", refreshBatchCat); refreshBatchCat(); }
@@ -586,9 +626,20 @@
         const pv = parseFloat($("#dPrice").value);
         it.price = isNaN(pv) ? null : pv;
         it.shop = $("#dShop").value.trim();
-        const dbsv = $("#dBeadSize").value;
-        it.beadSize = dbsv ? parseFloat(dbsv) : null;
         it.category = $("#dCategory").value.trim();
+        const dSizeField = Categories.getSizeField(it.category);
+        const dsv = $("#dSize").value;
+        if (dSizeField === "pieces") {
+          it.pieceCount = dsv ? parseFloat(dsv) : null;
+          it.beadSize = null;
+        } else if (dSizeField === "bead") {
+          it.beadSize = dsv ? parseFloat(dsv) : null;
+          it.pieceCount = null;
+        } else {
+          it.beadSize = null;
+          it.pieceCount = null;
+        }
+        it.accessoryType = it.category === "动漫周边" ? it.species : "";
         const dfw = $("#dFinished").value;
         it.finishedAt = dfw ? new Date(dfw + "T12:00:00").getTime() : null;
         it.note = $("#dNote").value.trim();
@@ -856,7 +907,7 @@
         '<div class="card-thumb">' + img + badge + playedBadge + "</div>" +
         '<div class="card-body">' +
         '<div class="card-name">' + esc(it.name || "未命名") + "</div>" +
-        '<div class="card-sub"><span>' + esc(it.species || "") + '</span><span class="days">' + esc(days) + "</span></div>" +
+        '<div class="card-sub"><span>' + esc(cardSubText(it)) + '</span><span class="days">' + esc(days) + "</span></div>" +
         "</div></div>";
     }
     return h + "</div>";
@@ -911,7 +962,7 @@
   }
 
   /* ---------- 分类管理（localStorage 持久化用户自定义分类） ---------- */
-  const DEFAULT_CATEGORIES = ["菩提", "水晶", "玉石", "拼图", "吧唧", "盲盒", "其他"];
+  const DEFAULT_CATEGORIES = ["菩提", "水晶", "玉石", "拼图", "动漫周边", "盲盒", "其他"];
   function getCategories() {
     try {
       const raw = localStorage.getItem("ww_categories");
@@ -943,6 +994,28 @@
     const def = selected != null ? selected : 14;
     for (let i = 6; i <= 22; i++) {
       h += '<option value="' + i + '"' + (def === i ? " selected" : "") + ">" + i + " mm</option>";
+    }
+    return h;
+  }
+
+  /* 卡片副标题文字 */
+  function cardSubText(it) {
+    const f = Categories.getSizeField(it.category || "");
+    if (f === "pieces" && it.pieceCount) return it.pieceCount + "片";
+    if (f === "bead" && it.beadSize) return it.beadSize + "mm";
+    return it.species || it.accessoryType || "";
+  }
+
+  /* 拼图片数选项 */
+  function pieceOptions(selected) {
+    const opts = [500, 1000, 1500, 2000];
+    const def = selected != null ? Number(selected) : 1000;
+    let h = "";
+    opts.forEach((p) => {
+      h += '<option value="' + p + '"' + (def === p ? " selected" : "") + ">" + p + " 片</option>";
+    });
+    if (selected != null && !opts.includes(def)) {
+      h += '<option value="' + def + '" selected>' + def + " 片（自定义）</option>";
     }
     return h;
   }
@@ -983,6 +1056,10 @@
     html += '<div class="detail-grid">';
     html += infoItem("到货时间", fmtDate(it.arrivedAt));
     html += infoItem("陪伴时长", days);
+    const dSizeField = Categories.getSizeField(it.category || "");
+    if (dSizeField === "pieces") html += infoItem("拼图片数", it.pieceCount ? it.pieceCount + " 片" : "—");
+    else if (dSizeField === "bead") html += infoItem("珠子大小", it.beadSize ? it.beadSize + " mm" : "—");
+    else if (it.accessoryType) html += infoItem("周边类型", esc(it.accessoryType));
     html += infoItem("工艺", it.craft || "—");
     html += infoItem("入手价格", it.price != null && it.price !== "" ? "¥" + esc(String(it.price)) : "—");
     html += infoItem("购买店铺", esc(it.shop || "—"), true);
@@ -1129,8 +1206,11 @@
       '<input class="form-input" id="fPrice" type="number" inputmode="decimal" placeholder="如 1280" value="' + esc(it && it.price != null ? it.price : "") + '"></div>';
     html += "</div>";
 
-    html += '<div class="form-group"><div class="form-label">珠子大小（卡数） <small>mm，珠子类填</small></div>' +
-      '<select class="form-select" id="fBeadSize">' + beadSizeOptions(it && it.beadSize) + '</select></div>';
+    // 尺寸字段（按分类联动：珠子大小 / 拼图片数 / 无）
+    const curSizeField = Categories.getSizeField(editCat);
+    html += '<div class="form-group" id="fSizeWrap"' + (curSizeField === "none" ? ' style="display:none"' : "") + '>' +
+      '<div class="form-label" id="fSizeLabel">' + (curSizeField === "pieces" ? "拼图片数" : "珠子大小（卡数）") + " <small>" + (curSizeField === "pieces" ? "片" : "mm") + '</small></div>' +
+      '<select class="form-select" id="fSize">' + (curSizeField === "pieces" ? pieceOptions(it && it.pieceCount) : beadSizeOptions(it && it.beadSize)) + '</select></div>';
 
     html += '<div class="form-group"><div class="form-label">在哪家店买的</div>' +
       '<input class="form-input" id="fShop" placeholder="店铺名 / 平台" value="' + esc(it ? it.shop : "") + '"></div>';
@@ -1194,6 +1274,23 @@
       const isBead = !Categories.isBrandCategory(cat) && !isPuzzle;
       const cw = $("#fCraftWrap");
       if (cw) cw.style.display = isBead ? "" : "none";
+      // 尺寸字段：bead→珠子大小 / pieces→拼图片数 / none→隐藏
+      const sizeField = Categories.getSizeField(cat);
+      const sizeWrap = $("#fSizeWrap");
+      if (sizeWrap) {
+        sizeWrap.style.display = sizeField === "none" ? "none" : "";
+        const sizeLbl = $("#fSizeLabel");
+        if (sizeLbl) {
+          sizeLbl.innerHTML = (sizeField === "pieces" ? "拼图片数" : "珠子大小（卡数）") + " <small>" + (sizeField === "pieces" ? "片" : "mm") + "</small>";
+        }
+        const sizeSel = $("#fSize");
+        if (sizeSel) {
+          const curVal = sizeSel.value;
+          const defVal = sizeField === "pieces" ? 1000 : 14;
+          sizeSel.innerHTML = sizeField === "pieces" ? pieceOptions(curVal || null) : beadSizeOptions(curVal || null);
+          if (!curVal) sizeSel.value = defVal;
+        }
+      }
       const fw = $("#fFinishedWrap");
       if (fw) {
         fw.style.display = isPuzzle ? "" : "none";
@@ -1342,8 +1439,19 @@
         const pv = parseFloat($("#fPrice").value);
         item.price = isNaN(pv) ? null : pv;
         item.shop = $("#fShop").value.trim();
-        const bsv = $("#fBeadSize").value;
-        item.beadSize = bsv ? parseFloat(bsv) : null;
+        const sizeField = Categories.getSizeField(item.category);
+        const sv = $("#fSize").value;
+        if (sizeField === "pieces") {
+          item.pieceCount = sv ? parseFloat(sv) : null;
+          item.beadSize = null;
+        } else if (sizeField === "bead") {
+          item.beadSize = sv ? parseFloat(sv) : null;
+          item.pieceCount = null;
+        } else {
+          item.beadSize = null;
+          item.pieceCount = null;
+        }
+        item.accessoryType = item.category === "动漫周边" ? item.species : "";
         item.category = $("#fCategory").value.trim();
         const statusVal = view.querySelector("#fStatus button.active").dataset.v;
         item.playStatus = statusVal === "gifted" ? "" : statusVal;
@@ -1416,7 +1524,7 @@
     // 分类管理
     html += '<div class="section-title">收藏盒子管理</div>';
     html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">';
-    html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:8px">自定义收藏盒子（菩提 / 水晶 / 玉石 / 盲盒 / 吧唧…）</div>';
+    html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:8px">自定义收藏盒子（菩提 / 水晶 / 玉石 / 拼图 / 动漫周边…）</div>';
     html += '<div id="catList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>';
     html += '<div style="display:flex;gap:8px">' +
       '<input class="form-input" id="catInput" placeholder="新增盒子，如：盲盒" style="flex:1;padding:9px 10px;font-size:14px">' +

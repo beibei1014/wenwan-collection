@@ -86,36 +86,99 @@
     };
   }
 
-  /* ---------- 成就系统（中二感） ---------- */
-  const ACHIEVEMENTS = [
-    { id: "first", icon: "🌟", name: "入坑の瞬间", desc: "收藏第一件宝贝", check: (s) => s.total >= 1 },
-    { id: "ten", icon: "🎒", name: "十方俱灭", desc: "收藏达到 10 件", check: (s) => s.total >= 10 },
-    { id: "twenty", icon: "🗃️", name: "百宝箱之主", desc: "收藏达到 20 件", check: (s) => s.total >= 20 },
-    { id: "fifty", icon: "🏰", name: "收藏界の王", desc: "收藏达到 50 件", check: (s) => s.total >= 50 },
-    { id: "spend1k", icon: "💸", name: "氪金战士", desc: "累计消费超 1000 元", check: (s) => s.totalSpent >= 1000 },
-    { id: "spend5k", icon: "👑", name: "钞能力觉醒", desc: "累计消费超 5000 元", check: (s) => s.totalSpent >= 5000 },
-    { id: "spend10k", icon: "💎", name: "氪金の极意", desc: "累计消费超 10000 元", check: (s) => s.totalSpent >= 10000 },
-    { id: "expensive", icon: "🔥", name: "镇馆之宝", desc: "拥有一件超 1000 元的宝贝", check: (s) => s.maxPrice >= 1000 },
-    { id: "luxury", icon: "🏆", name: "传世の神器", desc: "拥有一件超 3000 元的宝贝", check: (s) => s.maxPrice >= 3000 },
-    { id: "cheap", icon: "🕵️", name: "捡漏王", desc: "拥有 200 元以下的宝贝", check: (s) => s.minPrice > 0 && s.minPrice <= 200 },
-    { id: "value", icon: "🧮", name: "性价比之王", desc: "拥有超高性价比宝贝", check: (s) => !!s.bestValue },
-    { id: "puzzle1", icon: "🧩", name: "拼图学徒", desc: "完成第 1 幅拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 1 },
-    { id: "puzzle5", icon: "🎯", name: "拼图达人", desc: "完成 5 幅拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 5 },
-    { id: "puzzle10", icon: "🧠", name: "拼图の支配者", desc: "完成 10 幅拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 10 },
-    { id: "puzzlePending", icon: "📦", name: "囤货大佬", desc: "同时拥有 5 幅待拼拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_pending").length >= 5 },
-    { id: "gift1", icon: "🎁", name: "慷慨之人", desc: "送出第 1 件宝贝", check: (s) => s.gifted >= 1 },
-    { id: "gift5", icon: "🤝", name: "散财童子", desc: "送出 5 件宝贝", check: (s) => s.gifted >= 5 },
-    { id: "year", icon: "⏳", name: "岁月の见证", desc: "某件宝贝陪伴超 365 天", check: (s, items) => items.some((i) => DB.daysWith(i) >= 365) },
-    { id: "cat3", icon: "🧰", name: "博爱收藏家", desc: "收藏覆盖 3 个收藏盒子", check: (s, items) => new Set(items.map((i) => i.category).filter(Boolean)).size >= 3 },
-    { id: "cat6", icon: "🌌", name: "全领域制霸", desc: "收藏覆盖 6 个收藏盒子", check: (s, items) => new Set(items.map((i) => i.category).filter(Boolean)).size >= 6 },
-    { id: "photo", icon: "📸", name: "记录の狂人", desc: "某件宝贝有 3 张以上照片", check: (s, items) => items.some((i) => (i.photos || []).length >= 3) },
+  /* ---------- 成就系统（分组递进，中二感） ---------- */
+  // 每个"系"是一条成长线，内部成就递进；单方面深耕也能解锁高级成就
+  const ACHIEVEMENT_GROUPS = [
+    {
+      id: "collect", title: "📦 收藏之道", icon: "📦",
+      desc: "收藏之路的成长",
+      items: [
+        { id: "first", icon: "🌟", name: "入坑の瞬间", desc: "收藏第一件宝贝", check: (s) => s.total >= 1 },
+        { id: "ten", icon: "🎒", name: "十方俱灭", desc: "收藏达到 10 件", check: (s) => s.total >= 10 },
+        { id: "twenty", icon: "🗃️", name: "百宝箱之主", desc: "收藏达到 20 件", check: (s) => s.total >= 20 },
+        { id: "fifty", icon: "🏰", name: "收藏界の王", desc: "收藏达到 50 件", check: (s) => s.total >= 50 },
+        { id: "hundred", icon: "🌌", name: "万象归藏", desc: "收藏达到 100 件", check: (s) => s.total >= 100 },
+      ],
+    },
+    {
+      id: "bead", title: "📿 菩提之道", icon: "📿",
+      desc: "菩提类收藏的修行",
+      items: [
+        { id: "bead5", icon: "🌱", name: "菩提新芽", desc: "收藏 5 件菩提类宝贝", check: (s, items) => countSpecies(items, /菩提|金刚|凤眼|星月/) >= 5 },
+        { id: "bead10", icon: "🌿", name: "菩提小成", desc: "收藏 10 件菩提类宝贝", check: (s, items) => countSpecies(items, /菩提|金刚|凤眼|星月/) >= 10 },
+        { id: "bead30", icon: "🧘", name: "菩提老祖", desc: "收藏 30 件菩提类宝贝（你就是菩提老祖！）", check: (s, items) => countSpecies(items, /菩提|金刚|凤眼|星月/) >= 30 },
+        { id: "bead50", icon: "👴", name: "菩提祖师", desc: "收藏 50 件菩提类宝贝，祖师爷驾到", check: (s, items) => countSpecies(items, /菩提|金刚|凤眼|星月/) >= 50 },
+      ],
+    },
+    {
+      id: "puzzle", title: "🧩 拼图之道", icon: "🧩",
+      desc: "拼图狂魔的进阶",
+      items: [
+        { id: "puzzle1", icon: "🧩", name: "拼图学徒", desc: "完成第 1 幅拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 1 },
+        { id: "puzzle5", icon: "🎯", name: "拼图达人", desc: "完成 5 幅拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 5 },
+        { id: "puzzle10", icon: "🎪", name: "拼图大师", desc: "完成 10 幅拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 10 },
+        { id: "puzzle30", icon: "🧠", name: "拼图宗师", desc: "完成 30 幅拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 30 },
+        { id: "puzzle70", icon: "👑", name: "拼图の支配者", desc: "完成 70 幅拼图，拼图界无人能敌", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_done").length >= 70 },
+      ],
+    },
+    {
+      id: "spend", title: "💸 氪金之道", icon: "💸",
+      desc: "钱包的悲欢离合",
+      items: [
+        { id: "spend1k", icon: "🪙", name: "氪金战士", desc: "累计消费超 1000 元", check: (s) => s.totalSpent >= 1000 },
+        { id: "spend5k", icon: "💳", name: "钞能力觉醒", desc: "累计消费超 5000 元", check: (s) => s.totalSpent >= 5000 },
+        { id: "spend10k", icon: "👑", name: "氪金の极意", desc: "累计消费超 10000 元", check: (s) => s.totalSpent >= 10000 },
+        { id: "luxury", icon: "🏆", name: "传世の神器", desc: "拥有一件超 3000 元的宝贝", check: (s) => s.maxPrice >= 3000 },
+      ],
+    },
+    {
+      id: "share", title: "🎁 赠予之道", icon: "🎁",
+      desc: "独乐乐不如众乐乐",
+      items: [
+        { id: "gift1", icon: "🎁", name: "慷慨之人", desc: "送出第 1 件宝贝", check: (s) => s.gifted >= 1 },
+        { id: "gift5", icon: "🤝", name: "散财童子", desc: "送出 5 件宝贝", check: (s) => s.gifted >= 5 },
+        { id: "gift10", icon: "🕊️", name: "送财菩萨", desc: "送出 10 件宝贝", check: (s) => s.gifted >= 10 },
+      ],
+    },
+    {
+      id: "nobuy", title: "🧘 不买之道", icon: "🧘",
+      desc: "克制也是一种修行",
+      items: [
+        { id: "nobuy7", icon: "🧘", name: "心静如水", desc: "7 天不买挑战达成", check: (s, items) => Game.daysSinceLastBuy(items) >= 7 },
+        { id: "nobuy30", icon: "🧎", name: "苦行僧", desc: "30 天不买挑战达成", check: (s, items) => Game.daysSinceLastBuy(items) >= 30 },
+        { id: "nobuy100", icon: "🍃", name: "四大皆空", desc: "100 天不买挑战达成", check: (s, items) => Game.daysSinceLastBuy(items) >= 100 },
+      ],
+    },
+    {
+      id: "misc", title: "✨ 奇遇之道", icon: "✨",
+      desc: "收藏路上的彩蛋",
+      items: [
+        { id: "cheap", icon: "🕵️", name: "捡漏王", desc: "拥有 200 元以下的宝贝", check: (s) => s.minPrice > 0 && s.minPrice <= 200 },
+        { id: "value", icon: "🧮", name: "性价比之王", desc: "拥有超高性价比宝贝", check: (s) => !!s.bestValue },
+        { id: "year", icon: "⏳", name: "岁月の见证", desc: "某件宝贝陪伴超 365 天", check: (s, items) => items.some((i) => DB.daysWith(i) >= 365) },
+        { id: "cat3", icon: "🧰", name: "博爱收藏家", desc: "收藏覆盖 3 个收藏盒子", check: (s, items) => new Set(items.map((i) => i.category).filter(Boolean)).size >= 3 },
+        { id: "cat6", icon: "🌌", name: "全领域制霸", desc: "收藏覆盖 6 个收藏盒子", check: (s, items) => new Set(items.map((i) => i.category).filter(Boolean)).size >= 6 },
+        { id: "photo", icon: "📸", name: "记录の狂人", desc: "某件宝贝有 3 张以上照片", check: (s, items) => items.some((i) => (i.photos || []).length >= 3) },
+        { id: "puzzlePending", icon: "📦", name: "囤货大佬", desc: "同时拥有 5 幅待拼拼图", check: (s, items) => items.filter((i) => i.playStatus === "puzzle_pending").length >= 5 },
+      ],
+    },
   ];
 
+  // 按品种关键词统计（菩提系）
+  function countSpecies(items, re) {
+    return items.filter((i) => {
+      const name = (i.name || "") + (i.species || "");
+      return re.test(name);
+    }).length;
+  }
+
+  // 展开所有成就
   function getAchievements(items) {
     const stats = computeStats(items);
-    return ACHIEVEMENTS.map((a) => ({
-      ...a,
-      unlocked: a.check(stats, items),
+    return ACHIEVEMENT_GROUPS.map((g) => ({
+      ...g,
+      unlockedCount: g.items.filter((a) => a.unlocked = a.check(stats, items)).length,
+      items: g.items.map((a) => ({ ...a, unlocked: a.check(stats, items) })),
     }));
   }
 
@@ -152,5 +215,5 @@
     return facts;
   }
 
-  window.Stats = { renderCalendar, computeStats, getAchievements, funFacts };
+  window.Stats = { renderCalendar, computeStats, getAchievements, funFacts, ACHIEVEMENT_GROUPS };
 })();
