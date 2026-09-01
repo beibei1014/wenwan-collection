@@ -26,16 +26,16 @@
     });
 
     // 拼图完成
-    const puzzles = [1, 5, 15, 50, 100, 300];
-    const puzzleXp = [100, 300, 600, 1200, 2500, 6000];
+    const puzzles = [5, 20, 50, 100, 300, 1000];
+    const puzzleXp = [100, 300, 600, 1500, 4000, 10000];
     puzzles.forEach((c, i) => {
       if (puzzleDone >= c) { xp += puzzleXp[i]; milestones.push({ icon: "🧩", name: "完成 " + c + " 幅拼图", xp: puzzleXp[i] }); }
     });
 
     // 菩提类收藏（菩提之道经验）
     const beadCount = items.filter((i) => /菩提|金刚|凤眼|星月/.test((i.name || "") + (i.species || ""))).length;
-    const beads = [5, 15, 50, 100, 300];
-    const beadXp = [100, 250, 600, 1200, 3000];
+    const beads = [5, 15, 30, 50, 100, 300, 1000];
+    const beadXp = [100, 250, 400, 600, 1200, 3000, 8000];
     beads.forEach((c, i) => {
       if (beadCount >= c) { xp += beadXp[i]; milestones.push({ icon: "📿", name: "菩提收藏 " + c + " 件", xp: beadXp[i] }); }
     });
@@ -84,8 +84,8 @@
 
     // 不买挑战（隐藏任务，自动累计）
     const noBuyDays = daysSinceLastBuy(items);
-    const noBuys = [7, 30, 100];
-    const noBuyXp = [100, 500, 2000];
+    const noBuys = [7, 30, 50, 100, 365, 1000];
+    const noBuyXp = [50, 200, 400, 800, 2000, 5000];
     noBuys.forEach((c, i) => {
       if (noBuyDays >= c) { xp += noBuyXp[i]; milestones.push({ icon: "🧘", name: "不买挑战 " + c + " 天", xp: noBuyXp[i] }); }
     });

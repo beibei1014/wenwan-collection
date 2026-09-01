@@ -121,11 +121,11 @@
       items: [
         { id: "bead5", icon: "🌱", name: "菩提新芽", desc: "收藏 5 件菩提类宝贝", check: (s, items) => nSpecies(items, /菩提|金刚|凤眼|星月/) >= 5 },
         { id: "bead15", icon: "🌿", name: "菩提小成", desc: "收藏 15 件菩提类宝贝", check: (s, items) => nSpecies(items, /菩提|金刚|凤眼|星月/) >= 15 },
-        { id: "bead50", icon: "🌳", name: "菩提老树", desc: "收藏 50 件菩提类宝贝", check: (s, items) => nSpecies(items, /菩提|金刚|凤眼|星月/) >= 50 },
-        { id: "bead100", icon: "🧘", name: "菩提老祖", desc: "收藏 100 件菩提类宝贝", check: (s, items) => nSpecies(items, /菩提|金刚|凤眼|星月/) >= 100 },
+        { id: "bead30", icon: "🌳", name: "菩提老树", desc: "收藏 30 件菩提类宝贝", check: (s, items) => nSpecies(items, /菩提|金刚|凤眼|星月/) >= 30 },
+        { id: "bead50", icon: "🧘", name: "菩提老祖", desc: "收藏 50 件菩提类宝贝", check: (s, items) => nSpecies(items, /菩提|金刚|凤眼|星月/) >= 50 },
         { id: "tier_bead", icon: "👴", name: "菩提祖师", desc: "菩提修为继续精进", tier: { getValue: (items, s) => nSpecies(items, /菩提|金刚|凤眼|星月/), levels: [
-          { min: 300, icon: "👴", name: "菩提祖师", desc: "收藏 300 件菩提类宝贝" },
-          { min: 500, icon: "🦖", name: "菩提始祖", desc: "收藏 500 件菩提类宝贝，开山立派" },
+          { min: 100, icon: "👴", name: "菩提祖师", desc: "收藏 100 件菩提类宝贝，道法自然" },
+          { min: 300, icon: "🦖", name: "菩提始祖", desc: "收藏 300 件菩提类宝贝，开山立派" },
           { min: 1000, icon: "🌱🌱", name: "菩提之神", desc: "收藏 1000 件菩提类宝贝，人间菩提" },
         ] } },
       ],
@@ -133,14 +133,12 @@
     {
       id: "puzzle", title: "🧩 拼图之道", icon: "🧩", desc: "拼图狂魔的进阶",
       items: [
-        { id: "puzzle1", icon: "🧩", name: "拼图学徒", desc: "完成第 1 幅拼图", check: (s, items) => nPuzzleDone(items) >= 1 },
-        { id: "puzzle5", icon: "🎯", name: "拼图达人", desc: "完成 5 幅拼图", check: (s, items) => nPuzzleDone(items) >= 5 },
-        { id: "puzzle15", icon: "🎪", name: "拼图大师", desc: "完成 15 幅拼图", check: (s, items) => nPuzzleDone(items) >= 15 },
-        { id: "puzzle50", icon: "🎡", name: "拼图高手", desc: "完成 50 幅拼图", check: (s, items) => nPuzzleDone(items) >= 50 },
-        { id: "puzzle100", icon: "🧠", name: "拼图宗师", desc: "完成 100 幅拼图", check: (s, items) => nPuzzleDone(items) >= 100 },
+        { id: "puzzle5", icon: "🧩", name: "拼图学徒", desc: "完成第 5 幅拼图", check: (s, items) => nPuzzleDone(items) >= 5 },
+        { id: "puzzle20", icon: "🎯", name: "拼图达人", desc: "完成 20 幅拼图", check: (s, items) => nPuzzleDone(items) >= 20 },
+        { id: "puzzle50", icon: "🎪", name: "拼图大师", desc: "完成 50 幅拼图", check: (s, items) => nPuzzleDone(items) >= 50 },
         { id: "tier_puzzle", icon: "👑", name: "拼图の支配者", desc: "拼图之路无止境", tier: { getValue: nPuzzleDone, levels: [
-          { min: 300, icon: "👑", name: "拼图の支配者", desc: "完成 300 幅拼图" },
-          { min: 500, icon: "🧠✨", name: "拼图神王", desc: "完成 500 幅拼图，拼图宇宙之王" },
+          { min: 100, icon: "👑", name: "拼图の支配者", desc: "完成 100 幅拼图，拼图界至尊" },
+          { min: 300, icon: "🧠✨", name: "拼图神王", desc: "完成 300 幅拼图，拼图宇宙之王" },
           { min: 1000, icon: "🌟", name: "拼图创世神", desc: "完成 1000 幅拼图，你就是拼图" },
         ] } },
       ],
@@ -176,10 +174,11 @@
       items: [
         { id: "nobuy7", icon: "🧘", name: "心静如水", desc: "7 天不买挑战达成", check: (s, items) => Game.daysSinceLastBuy(items) >= 7 },
         { id: "nobuy30", icon: "🧎", name: "苦行僧", desc: "30 天不买挑战达成", check: (s, items) => Game.daysSinceLastBuy(items) >= 30 },
-        { id: "nobuy100", icon: "🍃", name: "四大皆空", desc: "100 天不买挑战达成", check: (s, items) => Game.daysSinceLastBuy(items) >= 100 },
-        { id: "tier_nobuy", icon: "🕉️", name: "佛系人生", desc: "克制的极致", tier: { getValue: (items, s) => Game.daysSinceLastBuy(items), levels: [
-          { min: 365, icon: "🕉️", name: "佛系人生", desc: "365 天不买挑战" },
-          { min: 1000, icon: "🌕", name: "心如止水", desc: "1000 天不买挑战" },
+        { id: "tier_nobuy", icon: "🍃", name: "四大皆空", desc: "克制的进阶", tier: { getValue: (items, s) => Game.daysSinceLastBuy(items), levels: [
+          { min: 50, icon: "🍃", name: "四大皆空", desc: "50 天不买挑战" },
+          { min: 100, icon: "🕉️", name: "佛系人生", desc: "100 天不买挑战" },
+          { min: 365, icon: "🌕", name: "心如止水", desc: "365 天不买挑战" },
+          { min: 1000, icon: "🌟", name: "无欲无求", desc: "1000 天不买挑战" },
         ] } },
       ],
     },
