@@ -5,34 +5,58 @@
 (function () {
   "use strict";
 
-  /* ---------- 月历热力图（GitHub 风格） ---------- */
-  function renderCalendar(items, container) {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
+  /* ---------- 月历热力图（GitHub 风格，按月可翻） ---------- */
+  // 记录最早数据月份（用于限制往前翻）
+  function getEarliestMonth(items) {
+    let earliest = Infinity;
+    items.forEach((i) => {
+      const ts = i.arrivedAt || i.createdAt;
+      if (ts && ts < earliest) earliest = ts;
+    });
+    if (!isFinite(earliest)) { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() }; }
+    const d = new Date(earliest);
+    return { y: d.getFullYear(), m: d.getMonth() };
+  }
 
-    // 统计本月每天入库数（按 arrivedAt 或 createdAt）
+  function renderCalendar(items, container, opts) {
+    opts = opts || {};
+    const now = new Date();
+    // 当前显示的年月（默认当月；opts.year/month 可指定）
+    const viewYear = opts.year != null ? opts.year : now.getFullYear();
+    const viewMonth = opts.month != null ? opts.month : now.getMonth();
+    const earliest = getEarliestMonth(items);
+    const curKey = viewYear * 12 + viewMonth;
+    const earliestKey = earliest.y * 12 + earliest.m;
+    const nowKey = now.getFullYear() * 12 + now.getMonth();
+    const canPrev = curKey > earliestKey;          // 可往前翻
+    const canNext = curKey < nowKey;               // 可往后翻（不超当月）
+
+    // 统计该月每天入库数
     const dayCount = {};
     items.forEach((it) => {
       const ts = it.arrivedAt || it.createdAt;
       if (!ts) return;
       const d = new Date(ts);
-      if (d.getFullYear() === year && d.getMonth() === month) {
+      if (d.getFullYear() === viewYear && d.getMonth() === viewMonth) {
         const key = d.getDate();
         dayCount[key] = (dayCount[key] || 0) + 1;
       }
     });
 
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const firstDay = new Date(year, month, 1).getDay(); // 0=周日
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const firstDay = new Date(viewYear, viewMonth, 1).getDay();
     const max = Math.max(1, ...Object.values(dayCount));
 
-    let html = '<div class="cal-head">' + year + " 年 " + (month + 1) + " 月 · 入库热力图</div>";
-    // 周标签独立一行
+    let html = '<div class="cal-head-row">' +
+      '<button class="cal-nav" data-move="-1"' + (canPrev ? "" : " disabled") + '>◀</button>' +
+      '<div class="cal-head">' + viewYear + " 年 " + (viewMonth + 1) + " 月</div>" +
+      '<button class="cal-nav" data-move="1"' + (canNext ? "" : " disabled") + '>▶</button>' +
+      "</div>";
+
     html += '<div class="cal-week-row">';
     ["日", "一", "二", "三", "四", "五", "六"].forEach((w) => html += '<div class="cal-week">' + w + "</div>");
     html += "</div>";
-    // 日期格子单独网格（自动换行，不会错位）
+
     html += '<div class="cal-grid">';
     for (let i = 0; i < firstDay; i++) html += '<div class="cal-cell empty"></div>';
     for (let d = 1; d <= daysInMonth; d++) {
@@ -44,11 +68,23 @@
         "</div>";
     }
     html += "</div>";
+
     html += '<div class="cal-legend"><span>少</span>' +
       [0,1,2,3,4].map((l) => '<span class="cal-cell l' + l + '" style="width:14px;height:14px;display:inline-block;border-radius:4px"></span>').join("") +
       "<span>多</span></div>";
 
     container.innerHTML = html;
+
+    // 翻月事件
+    container.querySelectorAll(".cal-nav").forEach((b) => b.onclick = () => {
+      if (b.disabled) return;
+      const move = +b.dataset.move;
+      const nk = curKey + move;
+      const ny = Math.floor(nk / 12);
+      const nm = nk % 12;
+      // 调用回调更新
+      if (opts.onChange) opts.onChange(ny, nm);
+    });
   }
 
   /* ---------- 统计计算 ---------- */

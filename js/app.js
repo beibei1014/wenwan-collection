@@ -17,6 +17,7 @@
   let categoryFilter = "";   // 收藏盒子筛选
   let search = "";
   let viewMode = localStorage.getItem("ww_viewmode") || "card"; // card | list
+  let sortMode = "newest"; // newest(入库降序) | oldest(入库升序)
   let user = null;           // 当前登录用户
 
   /* ---------- 工具 ---------- */
@@ -342,7 +343,18 @@
     });
 
     view.innerHTML = html;
-    Stats.renderCalendar(allItems, $("#calBox"));
+
+    // 月历：默认当月，可翻历史（2025.1 起或最早数据月）
+    let calY = new Date().getFullYear();
+    let calM = new Date().getMonth();
+    function renderCal(y, m) {
+      calY = y; calM = m;
+      Stats.renderCalendar(allItems, $("#calBox"), {
+        year: y, month: m,
+        onChange: (ny, nm) => renderCal(ny, nm),
+      });
+    }
+    renderCal(calY, calM);
 
     // 成就分组折叠
     view.querySelectorAll(".ach-group-head").forEach((h) => h.onclick = () => {
@@ -764,9 +776,10 @@
       try {
         let n = 0;
         for (const it of valid) {
-          // 上传照片
+          // 上传照片（先读原图，避免提前清空导致丢失）
+          const originals = (it.photos || []).slice();
           it.photos = [];
-          for (const p of drafts[valid.indexOf(it)].photos) {
+          for (const p of originals) {
             if (p.url) { it.photos.push(p); continue; }
             if (p.data) it.photos.push(await DB.uploadPhoto(p.data, "photos"));
           }
@@ -898,6 +911,13 @@
   /* ---------- 数据加载 ---------- */
   async function loadItems() {
     allItems = await DB.getAll();
+    sortItems();
+  }
+
+  // 按入库时间排序：newest=降序（最新在前），oldest=升序（最早在前）
+  function sortItems() {
+    const key = (i) => i.arrivedAt || i.createdAt || 0;
+    allItems.sort((a, b) => sortMode === "oldest" ? key(a) - key(b) : key(b) - key(a));
   }
 
   function filtered() {
@@ -982,6 +1002,14 @@
       '<button class="chip' + (!categoryFilter ? " active" : "") + '" data-cat="">全部分类</button>' +
       cats.map((c) => '<button class="chip' + (categoryFilter === c ? " active" : "") + '" data-cat="' + esc(c) + '">' + esc(c) + "</button>").join("") +
       "</div>";
+
+    // 排序
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text-2)">' +
+      '<span>排序</span>' +
+      '<div class="seg" id="sortSeg" style="flex:1">' +
+      '<button type="button" data-sort="newest" class="' + (sortMode === "newest" ? "active" : "") + '">🕐 入库最新</button>' +
+      '<button type="button" data-sort="oldest" class="' + (sortMode === "oldest" ? "active" : "") + '">📜 入库最早</button>' +
+      "</div></div>";
     html += "</div>";
 
     html += '<div class="search-box"><input id="searchInput" placeholder="搜索名字 / 品种 / 店铺…" value="' + esc(search) + '"></div>';
@@ -1102,6 +1130,14 @@
       view.querySelectorAll(".chip[data-cat]").forEach((x) => x.classList.toggle("active", x === c));
       updateGrid();
     }));
+    // 排序
+    view.querySelectorAll("#sortSeg button").forEach((b) => b.onclick = () => {
+      sortMode = b.dataset.sort;
+      view.querySelectorAll("#sortSeg button").forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      sortItems();
+      updateGrid();
+    });
   }
 
   function updateGrid() {
@@ -1736,7 +1772,7 @@
     html += "</div>";
 
     // ===== 3. 外观主题 =====
-    html += '<div class="section-title">🎨 外观主题</div>';
+    html += '<div class="section-title">🎨 外观主题 <small style="color:var(--text-2);font-weight:400;font-size:11px">← 左右滑动查看 →</small></div>';
     html += '<div class="theme-strip" id="themeList">';
     THEMES.forEach((t) => {
       const active = getTheme() === t.id;
