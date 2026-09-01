@@ -745,7 +745,7 @@
     render();
   }
 
-  /* ---------- 批量录入模式 ---------- */  /* ---------- 批量录入模式 ---------- */
+  /* ---------- 批量录入模式 ---------- */
   function enterBatchMode(items, title) {
     const drafts = items.map((it) => JSON.parse(JSON.stringify(it)));
     const batchTitle = title || "批量录入 " + drafts.length + " 件宝贝";
@@ -801,10 +801,10 @@
         '<input class="form-input" id="dName" value="' + esc(it.name || "") + '" placeholder="如：星月菩提·老念珠"></div>';
       html += '<div class="form-row">';
       html += '<div class="form-group"><div class="form-label">分类</div>' +
-        '<select class="form-select" id="dCategory">' + categoryOptions(it.category || "") + '</select></div>';
+        '<select class="form-select" id="dCategory">' + categoryOptions(it.category || (it && it.id ? "" : "菩提")) + '</select></div>';
       html += '<div class="form-group"><div class="form-label">品种/材质</div>' +
-        '<input class="form-input" id="dSpecies" list="dSpeciesList" value="' + esc(it.species || "") + '" placeholder="可自由填写">' +
-        '<datalist id="dSpeciesList"></datalist></div>';
+        '<input class="form-input" id="dSpecies" value="' + esc(it.species || "") + '" placeholder="可自由填写或点下方选择">' +
+        '<div class="species-chips" id="dSpeciesChips"></div></div>';
       html += "</div>";
       html += '<div class="form-group" id="dCraftWrap"><div class="form-label">工艺 <small>珠子类</small></div>' +
         '<div class="seg" id="dCraft">' +
@@ -881,8 +881,16 @@
         const cfg = Categories.getCategoryConfig(cat);
         const lbl = document.querySelector("#dSpecies");
         if (lbl) lbl.setAttribute("placeholder", "可自由填写" + (cfg.options.length ? "（如：" + cfg.options.slice(0, 3).join("/") + "…）" : ""));
-        const dl = document.querySelector("#dSpeciesList");
-        if (dl) dl.innerHTML = cfg.options.map((s) => '<option value="' + esc(s) + '">').join("");
+        const chips = document.querySelector("#dSpeciesChips");
+        if (chips) {
+          chips.innerHTML = cfg.options.map((s) =>
+            '<button type="button" class="species-chip" data-s="' + esc(s) + '">' + esc(s) + "</button>"
+          ).join("");
+          chips.querySelectorAll(".species-chip").forEach((b) => b.onclick = () => {
+            const inp = document.querySelector("#dSpecies");
+            if (inp) inp.value = b.dataset.s;
+          });
+        }
         const isPuzzle = Categories.isPuzzleCategory(cat);
         const isBead = !Categories.isBrandCategory(cat) && !isPuzzle;
         const cw = document.querySelector("#dCraftWrap");
@@ -1701,10 +1709,10 @@
 
     html += '<div class="form-row">';
     html += '<div class="form-group"><div class="form-label">分类</div>' +
-      '<select class="form-select" id="fCategory">' + categoryOptions(editCat) + '</select></div>';
+      '<select class="form-select" id="fCategory">' + categoryOptions(editCat || (it ? "" : "菩提")) + '</select></div>';
     html += '<div class="form-group"><div class="form-label" id="fSpeciesLabel">' + speciesLabel + '</div>' +
-      '<input class="form-input" id="fSpecies" list="speciesList" placeholder="可自由填写" value="' + esc(it ? it.species : "") + '">' +
-      '<datalist id="speciesList"></datalist></div>';
+      '<input class="form-input" id="fSpecies" placeholder="可自由填写或点下方选择" value="' + esc(it ? it.species : "") + '">' +
+      '<div class="species-chips" id="speciesChips"></div></div>';
     html += "</div>";
 
     html += '<div class="form-group" id="fCraftWrap"><div class="form-label">工艺 <small>珠子类</small></div>' +
@@ -1787,9 +1795,16 @@
       if (labelEl) labelEl.textContent = cfg.label || "品种/材质";
       const spEl = $("#fSpecies");
       if (spEl) {
-        spEl.setAttribute("placeholder", "可自由填写" + (cfg.options.length ? "（如：" + cfg.options.slice(0, 3).join("/") + "…）" : ""));
-        const dl = $("#speciesList");
-        if (dl) dl.innerHTML = cfg.options.map((s) => '<option value="' + esc(s) + '">').join("");
+        spEl.setAttribute("placeholder", "可自由填写或点下方选择");
+        const chips = $("#speciesChips");
+        if (chips) {
+          chips.innerHTML = cfg.options.map((s) =>
+            '<button type="button" class="species-chip" data-s="' + esc(s) + '">' + esc(s) + "</button>"
+          ).join("");
+          chips.querySelectorAll(".species-chip").forEach((b) => b.onclick = () => {
+            spEl.value = b.dataset.s;
+          });
+        }
       }
       const isPuzzle = Categories.isPuzzleCategory(cat);
       const isBead = !Categories.isBrandCategory(cat) && !isPuzzle;
