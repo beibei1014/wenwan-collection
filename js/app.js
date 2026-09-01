@@ -1188,11 +1188,23 @@
     }
     if (search) {
       const q = search.toLowerCase();
+      // 状态文字映射（支持搜"盘玩""待拼""已拼""送人"等）
+      const statusText = (i) => i.gifted ? "已送人" :
+        i.playStatus === "playing" ? "在盘玩 盘玩" :
+        i.playStatus === "puzzle_pending" ? "待拼" :
+        i.playStatus === "puzzle_done" ? "已拼" : "待盘玩";
       list = list.filter((i) =>
         (i.name || "").toLowerCase().includes(q) ||
         (i.species || "").toLowerCase().includes(q) ||
         (i.shop || "").toLowerCase().includes(q) ||
-        (i.note || "").toLowerCase().includes(q)
+        (i.note || "").toLowerCase().includes(q) ||
+        (i.category || "").toLowerCase().includes(q) ||
+        (i.craft || "").toLowerCase().includes(q) ||
+        (i.accessoryType || "").toLowerCase().includes(q) ||
+        statusText(i).toLowerCase().includes(q) ||
+        (i.price != null && String(i.price).includes(q)) ||
+        (i.beadSize ? String(i.beadSize).includes(q) : false) ||
+        (i.pieceCount ? String(i.pieceCount).includes(q) : false)
       );
     }
     return list;
@@ -1266,7 +1278,7 @@
       "</div></div>";
     html += "</div>";
 
-    html += '<div class="search-box"><input id="searchInput" placeholder="搜索名字 / 品种 / 店铺…" value="' + esc(search) + '"></div>';
+    html += '<div class="search-box"><input id="searchInput" placeholder="搜索名字 / 品种 / 工艺 / 状态…" value="' + esc(search) + '"></div>';
 
     html += '<div style="display:flex;gap:8px;margin-bottom:12px">' +
       '<button class="batch-entry" id="btnBatch" style="flex:1">🗂 批量录入</button>' +
