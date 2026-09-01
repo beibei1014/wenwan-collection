@@ -1,5 +1,5 @@
 /* Service Worker — 离线缓存（PWA） */
-const CACHE = "wenwan-v2";
+const CACHE = "wenwan-v3";
 const ASSETS = [
   "./",
   "./index.html",

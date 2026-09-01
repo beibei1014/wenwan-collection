@@ -318,7 +318,7 @@
     const openViewer = (idx) => {
       if (!allPics.length) return;
       const viewer = $("#viewer");
-      viewer.hidden = false;
+      viewer.classList.add("show");
       const show = (i) => {
         $("#viewerImg").src = photoUrl(allPics[i]);
         $("#viewerNav").innerHTML = allPics.map((_, k) =>
@@ -329,7 +329,7 @@
       $("#viewerNav").querySelectorAll("button").forEach((b) => b.onclick = () => show(+b.dataset.i));
     };
     view.querySelectorAll("[data-view]").forEach((el) => el.addEventListener("click", () => openViewer(+el.dataset.view)));
-    $("#viewerClose").onclick = () => { $("#viewer").hidden = true; };
+    $("#viewerClose").onclick = () => { $("#viewer").classList.remove("show"); };
 
     $("#btnEdit").onclick = () => location.hash = "#/edit/" + it.id;
     $("#btnDel").onclick = async () => {
