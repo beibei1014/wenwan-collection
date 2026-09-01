@@ -1,37 +1,34 @@
-/* Service Worker — 离线缓存（PWA） */
-const CACHE = "wenwan-v3";
-const ASSETS = [
-  "./",
-  "./index.html",
-  "./css/style.css",
-  "./js/config.js",
-  "./js/db.js",
-  "./js/ocr.js",
-  "./js/app.js",
-  "./manifest.json",
-  "./icons/icon.svg",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png"
-];
+/* Service Worker — 网络优先 + 缓存兜底（PWA 离线可用，更新即时生效） */
+const CACHE = "wenwan-v4";
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(
-    keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))
-  )).then(() => self.clients.claim()));
+  e.waitUntil(
+    caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
-  if (e.request.url.includes("supabase.co")) return; // 云端 API 不走缓存
+  const url = e.request.url;
+  // 云端 API 与 Supabase 请求直接走网络，不缓存
+  if (url.includes("supabase.co") || url.includes("tesseract")) return;
+
   e.respondWith(
-    caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
-      const copy = res.clone();
-      caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
-      return res;
-    }).catch(() => caches.match("./index.html")))
+    fetch(e.request)
+      .then((res) => {
+        // 只缓存同源静态资源
+        if (url.includes("github.io")) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
+        }
+        return res;
+      })
+      .catch(() =>
+        caches.match(e.request).then((hit) => hit || caches.match("./index.html"))
+      )
   );
 });
