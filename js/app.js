@@ -1838,6 +1838,16 @@
       document.querySelectorAll("#themeList .theme-opt").forEach((x) => x.classList.toggle("active", x === b));
       toast("已切换主题");
     });
+    // 电脑鼠标滚轮 → 横向滚动
+    const themeStrip = document.querySelector("#themeList");
+    if (themeStrip) {
+      themeStrip.addEventListener("wheel", (e) => {
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+          e.preventDefault();
+          themeStrip.scrollLeft += e.deltaY;
+        }
+      }, { passive: false });
+    }
 
     $("#btnExport").onclick = async () => {
       const json = await DB.exportBackup();

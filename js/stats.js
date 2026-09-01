@@ -28,12 +28,13 @@
     const max = Math.max(1, ...Object.values(dayCount));
 
     let html = '<div class="cal-head">' + year + " 年 " + (month + 1) + " 月 · 入库热力图</div>";
-    html += '<div class="cal-grid">';
-    // 周标签
+    // 周标签独立一行
+    html += '<div class="cal-week-row">';
     ["日", "一", "二", "三", "四", "五", "六"].forEach((w) => html += '<div class="cal-week">' + w + "</div>");
-    // 空白格
+    html += "</div>";
+    // 日期格子单独网格（自动换行，不会错位）
+    html += '<div class="cal-grid">';
     for (let i = 0; i < firstDay; i++) html += '<div class="cal-cell empty"></div>';
-    // 日期格
     for (let d = 1; d <= daysInMonth; d++) {
       const n = dayCount[d] || 0;
       const level = n === 0 ? 0 : Math.min(4, 1 + Math.floor((n - 1) / Math.ceil(max / 3)));
