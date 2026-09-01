@@ -1308,7 +1308,19 @@
       const ok = await enterApp();
       if (ok) {
         if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-          navigator.serviceWorker.register("sw.js").catch(() => {});
+          navigator.serviceWorker.register("sw.js").then((reg) => {
+            // 检测到新 SW 等待激活时，立即跳过等待并刷新页面
+            reg.addEventListener("updatefound", () => {
+              const newWorker = reg.installing;
+              if (!newWorker) return;
+              newWorker.addEventListener("statechange", () => {
+                if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+                  newWorker.postMessage({ type: "SKIP_WAITING" });
+                  setTimeout(() => location.reload(), 300);
+                }
+              });
+            });
+          }).catch(() => {});
         }
       }
     } catch (err) {
