@@ -1,0 +1,15 @@
+# 测试残留
+.chrome-*/
+.dom-*/
+.preview-*.png
+.shot*.png
+*.test.js
+.fix-*.js
+.sbtest/
+
+# gh 授权日志
+.gh-login*.log
+
+# 系统文件
+Thumbs.db
+.DS_Store
