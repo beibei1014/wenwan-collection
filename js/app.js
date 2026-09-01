@@ -1036,7 +1036,9 @@
         }
         await loadItems();
         toast("批量保存成功：" + n + " 条 🎉");
+        renderHome();
         location.hash = "#/";
+        window.scrollTo(0, 0);
       } catch (err) {
         toast("保存失败：" + translateAuthError(err.message));
         btn.textContent = "保存全部 " + valid.length + " 条";
@@ -2066,7 +2068,9 @@
         await DB.put(item);
         await loadItems();
         toast(isEdit ? "已保存修改" : "已收入收藏馆 🎉");
-        location.hash = "#/item/" + item.id;
+        renderHome();
+        location.hash = "#/";
+        window.scrollTo(0, 0);
       } catch (err) {
         toast("保存失败：" + translateAuthError(err.message));
       } finally {
