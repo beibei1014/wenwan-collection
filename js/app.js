@@ -186,6 +186,69 @@
     }));
   }
 
+  /* ---------- 任务页（地球Online风） ---------- */
+  function renderQuestPage() {
+    topbarTitle.textContent = "今日任务";
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+
+    const game = Game.computeXp(allItems);
+    const level = Game.getLevel(game.xp);
+    const tasks = Game.dailyTasks(allItems);
+    const noBuy = Game.noBuyChallenge(allItems);
+    const doneCount = tasks.filter((t) => t.done).length;
+
+    let html = "";
+
+    // 等级卡
+    html += '<div class="stats-card"><h3>' + level.icon + " " + level.name + " · Lv." + level.level + "</h3>" +
+      '<div class="xp-bar"><div class="xp-fill" style="width:' + level.progress + '%"></div></div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:11px;opacity:.8;margin-top:6px">' +
+      "<span>" + level.xp + " XP</span><span>距下一称号还需 " + (level.nextMin - level.xp) + " XP</span></div></div>";
+
+    // 每日任务
+    html += '<div class="section-title">📋 今日任务 <small style="color:var(--text-2);font-weight:400">' + doneCount + "/" + tasks.length + " 完成</small></div>";
+    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 14px">';
+    tasks.forEach((t) => {
+      html += '<div class="quest-item' + (t.done ? " done" : "") + '">' +
+        '<span class="quest-icon">' + t.icon + "</span>" +
+        '<div class="quest-body"><div class="quest-title">' + esc(t.title) + "</div>" +
+        '<div class="quest-desc">' + esc(t.desc) + "</div></div>" +
+        (t.done ? '<span class="quest-flag">✓ +' + t.xp + "XP</span>" : '<span class="quest-xp">+' + t.xp + "XP</span>") +
+        "</div>";
+    });
+    html += "</div>";
+
+    // 隐藏任务：不买挑战
+    html += '<div class="section-title">🤫 隐藏任务</div>';
+    html += '<div class="no-buy-card">' +
+      '<div class="no-buy-head">' +
+      '<span style="font-size:26px">🧘</span>' +
+      '<div><div class="no-buy-title">「' + noBuy.days + ' 天不买挑战」</div>' +
+      '<div class="no-buy-desc">' + esc(noBuy.text) + "</div></div></div>" +
+      '<div class="xp-bar" style="background:rgba(255,255,255,.3)"><div class="xp-fill" style="width:' + noBuy.nextProgress + '%;background:#fff"></div></div>' +
+      '<div style="font-size:11px;opacity:.85;margin-top:6px">' +
+      (noBuy.next ? "距下一个里程碑 " + noBuy.next + " 天" : "已达成全部里程碑！") +
+      (noBuy.reached.length ? " · 已达成：" + noBuy.reached.map((d) => d + "天").join(" / ") : "") +
+      "</div></div>";
+
+    // 里程碑经验明细
+    html += '<div class="section-title">🗺️ 经验里程碑</div>';
+    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 14px">';
+    if (game.milestones.length) {
+      game.milestones.forEach((m) => {
+        html += '<div class="quest-item done"><span class="quest-icon">' + m.icon + '</span>' +
+          '<div class="quest-body"><div class="quest-title">' + esc(m.name) + "</div></div>" +
+          '<span class="quest-flag">+' + m.xp + "XP</span></div>";
+      });
+    } else {
+      html += '<div style="padding:12px 0;font-size:13px;color:var(--text-2);text-align:center">还没有里程碑，去收藏第一件宝贝吧！</div>';
+    }
+    html += "</div>";
+
+    view.innerHTML = html;
+  }
+
   /* ---------- 统计页 ---------- */
   function renderStatsPage() {
     topbarTitle.textContent = "收藏统计";
@@ -250,7 +313,22 @@
     if (isUncat) list = list.filter((i) => !i.category);
     else list = list.filter((i) => (i.category || "") === cat);
 
-    let html = "";
+    // 收集进度（仅非未分类盒子显示）
+    let progressHtml = "";
+    if (!isUncat) {
+      const cfg = Categories.getCategoryConfig(cat);
+      const target = cfg.options.length || 1;
+      const pct = Math.min(100, Math.round((list.length / target) * 100));
+      progressHtml = '<div class="box-progress">' +
+        '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">' +
+        '<span style="color:var(--text-2)">收集进度：' + list.length + ' / ' + target + ' 种' + (cfg.field === "brand" ? "品牌" : "品种") + '</span>' +
+        '<span style="color:var(--gold);font-weight:600">' + pct + '%</span></div>' +
+        '<div class="xp-track"><div class="xp-fill" style="width:' + pct + '%;background:linear-gradient(90deg,#b8860b,#d4a96a)"></div></div>' +
+        '<div style="font-size:10px;color:var(--text-2);margin-top:4px">继续收集，解锁更多' + esc(cfg.label || "品种") + '！</div>' +
+        "</div>";
+    }
+
+    let html = progressHtml;
     html += '<div class="home-head" style="margin-bottom:12px">' +
       '<div class="stat-pills">' +
       '<span class="stat-pill">共 <b>' + list.length + '</b></span>' +
@@ -659,6 +737,7 @@
       location.hash = "#/profile";
     }
     router();
+    checkLevelUp();
     return true;
   }
 
@@ -703,7 +782,18 @@
     const pending = allItems.filter((i) => i.playStatus === "puzzle_pending").length;
     const done = allItems.filter((i) => i.playStatus === "puzzle_done").length;
 
+    // 等级经验条（游戏化）
+    const gameInfo = Game.computeXp(allItems);
+    const lvInfo = Game.getLevel(gameInfo.xp);
+
     let html = "";
+    html += '<button class="level-bar" id="levelBar">' +
+      '<span class="level-icon">' + lvInfo.icon + "</span>" +
+      '<span class="level-info"><span class="level-name">' + esc(lvInfo.name) + ' · Lv.' + lvInfo.level + '</span>' +
+      '<span class="xp-track"><span class="xp-fill" style="width:' + lvInfo.progress + '%"></span></span></span>' +
+      '<span class="level-xp">' + lvInfo.xp + ' XP</span>' +
+      "</button>";
+
     // 折叠筛选区：按钮 + 可展开面板
     html += '<button class="filter-toggle" id="filterToggle">' +
       '<span>📊 筛选与统计</span><span class="filter-badge">' + allItems.length + ' 件</span><span class="filter-arrow" id="filterArrow">▾</span>' +
@@ -777,6 +867,9 @@
   }
 
   function bindHomeEvents() {
+    // 等级条 → 任务页
+    const lb = $("#levelBar");
+    if (lb) lb.onclick = () => location.hash = "#/quest";
     // 折叠筛选面板
     const ft = $("#filterToggle");
     if (ft) ft.onclick = () => {
@@ -1423,6 +1516,7 @@
     if (h === "#/profile") { renderProfile(); return; }
     if (h === "#/cat") { renderCatPage(); return; }
     if (h === "#/stats") { renderStatsPage(); return; }
+    if (h === "#/quest") { renderQuestPage(); return; }
     if (h.startsWith("#/box/")) {
       const box = decodeURIComponent(h.slice(6));
       renderBoxPage(box);
@@ -1438,6 +1532,38 @@
     window.scrollTo(0, 0);
   }
 
+  /* ---------- 升级弹窗 ---------- */
+  function checkLevelUp() {
+    try {
+      const game = Game.computeXp(allItems);
+      const lv = Game.getLevel(game.xp);
+      const prev = parseInt(localStorage.getItem("ww_level") || "0", 10);
+      if (prev > 0 && lv.level > prev) {
+        // 升级！弹出特效
+        showLevelUpModal(lv);
+      }
+      localStorage.setItem("ww_level", String(lv.level));
+    } catch (e) { /* 忽略 */ }
+  }
+
+  function showLevelUpModal(lv) {
+    const mask = $("#modalMask");
+    const modal = $("#modal");
+    modal.innerHTML =
+      '<div class="levelup">' +
+      '<div class="levelup-burst">✨</div>' +
+      '<div class="levelup-icon">' + lv.icon + "</div>" +
+      '<div class="levelup-title">升 级 了！</div>' +
+      '<div class="levelup-sub">Lv.' + lv.level + " · " + esc(lv.name) + "</div>" +
+      '<div class="levelup-desc">你的收藏馆升到了新高度</div>' +
+      '<button class="btn primary" id="mOkLv" style="width:100%;margin-top:14px">好耶！</button>' +
+      "</div>";
+    mask.hidden = false;
+    modal.hidden = false;
+    $("#mOkLv").onclick = () => { mask.hidden = true; modal.hidden = true; };
+    mask.onclick = () => { mask.hidden = true; modal.hidden = true; };
+  }
+
   /* ---------- 启动 ---------- */
   function goBack() {
     const h = location.hash;
@@ -1447,7 +1573,7 @@
       location.hash = id ? "#/item/" + id : "#/";                            // 编辑 → 详情/首页
       return;
     }
-    if (h === "#/settings" || h === "#/profile" || h === "#/new" || h === "#/cat" || h === "#/stats") { location.hash = "#/"; return; }
+    if (h === "#/settings" || h === "#/profile" || h === "#/new" || h === "#/cat" || h === "#/stats" || h === "#/quest") { location.hash = "#/"; return; }
     if (h.startsWith("#/box/")) { location.hash = "#/cat"; return; }
     if (h === "#/") { return; }
     history.back();
@@ -1465,6 +1591,7 @@
     if (h === "#/settings") active = "settings";
     else if (h === "#/cat") active = "cat";
     else if (h === "#/stats") active = "stats";
+    else if (h === "#/quest") active = "quest";
     tabbar.querySelectorAll(".tab-item").forEach((t) => {
       const tab = t.dataset.tab;
       if (tab === "add") return;
@@ -1477,6 +1604,7 @@
       if (tab === "home") location.hash = "#/";
       else if (tab === "cat") location.hash = "#/cat";
       else if (tab === "stats") location.hash = "#/stats";
+      else if (tab === "quest") location.hash = "#/quest";
       else if (tab === "settings") location.hash = "#/settings";
       else if (tab === "add") location.hash = "#/new";
     });

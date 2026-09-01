@@ -283,3 +283,78 @@ img { display:block; }
   background:var(--gold); border-radius:10px; padding:2px 8px;
 }
 .ach-lock { position:absolute; top:10px; right:10px; font-size:14px; opacity:.7; }
+
+
+/* ============ 游戏化 ============ */
+.level-bar {
+  width:100%; margin-bottom:10px; padding:10px 14px; border-radius:12px;
+  background:linear-gradient(135deg, var(--wood), var(--wood-2)); color:#f5f0e8;
+  display:flex; align-items:center; gap:10px; border:none; box-shadow:var(--shadow);
+  transition:transform .12s;
+}
+.level-bar:active { transform:scale(.98); }
+.level-icon { font-size:24px; }
+.level-info { flex:1; text-align:left; min-width:0; }
+.level-name { font-size:13px; font-weight:700; display:block; margin-bottom:4px; }
+.level-xp { font-size:12px; font-weight:700; color:var(--gold); }
+
+.xp-track {
+  display:block; height:8px; background:rgba(255,255,255,.25); border-radius:4px; overflow:hidden;
+}
+.xp-fill {
+  display:block; height:100%; background:linear-gradient(90deg,#e0c25e,#b8860b);
+  border-radius:4px; transition:width .5s ease;
+}
+.stats-card .xp-track { background:rgba(255,255,255,.25); }
+.stats-card .xp-fill { background:linear-gradient(90deg,#e0c25e,#fff); }
+
+.quest-item {
+  display:flex; align-items:center; gap:12px; padding:11px 0; border-bottom:1px dashed var(--line);
+}
+.quest-item:last-child { border-bottom:none; }
+.quest-item.done { opacity:.75; }
+.quest-icon { font-size:22px; flex-shrink:0; }
+.quest-body { flex:1; min-width:0; }
+.quest-title { font-size:14px; font-weight:600; color:var(--wood); }
+.quest-desc { font-size:11px; color:var(--text-2); margin-top:2px; }
+.quest-flag {
+  font-size:11px; font-weight:700; color:#fff; background:var(--green);
+  border-radius:10px; padding:2px 8px; flex-shrink:0;
+}
+.quest-xp { font-size:12px; font-weight:700; color:var(--gold); flex-shrink:0; }
+
+.no-buy-card {
+  background:linear-gradient(135deg,#3d2b1f,#5a3d2a); color:#f5f0e8;
+  border-radius:14px; padding:16px; box-shadow:var(--shadow);
+}
+.no-buy-head { display:flex; gap:12px; align-items:flex-start; margin-bottom:10px; }
+.no-buy-title { font-size:16px; font-weight:700; }
+.no-buy-desc { font-size:12px; opacity:.85; margin-top:3px; }
+
+.box-progress {
+  background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:12px;
+}
+
+
+/* ============ 升级弹窗 ============ */
+.levelup { text-align:center; padding:10px 4px 4px; position:relative; }
+.levelup-burst {
+  position:absolute; top:0; left:50%; transform:translateX(-50%);
+  font-size:70px; animation:burst 1.2s ease infinite; pointer-events:none;
+}
+@keyframes burst {
+  0% { opacity:.9; transform:translateX(-50%) scale(.7); }
+  50% { opacity:.4; transform:translateX(-50%) scale(1.4); }
+  100% { opacity:.9; transform:translateX(-50%) scale(.7); }
+}
+.levelup-icon { font-size:56px; animation:bounce 1s ease infinite; }
+@keyframes bounce {
+  0%,100% { transform:translateY(0); }
+  50% { transform:translateY(-10px); }
+}
+.levelup-title {
+  font-size:26px; font-weight:800; color:var(--gold); letter-spacing:4px;
+  margin-top:8px; text-shadow:0 2px 8px rgba(184,134,11,.3);
+}
+.levelup-sub { font-size:17px; font-weight:700; color:var(--wood); margin-top:6px; }
+.levelup-desc { font-size:12px; color:var(--text-2); margin-top:6px; }
