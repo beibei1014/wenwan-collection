@@ -195,7 +195,7 @@
       html += "</div>";
 
       if (!list.length) {
-        html = '<div class="empty"><div class="empty-icon">📤</div><p>没有可分享的手串</p></div>';
+        html = '<div class="empty"><div class="empty-icon">📤</div><p>没有可分享的宝贝</p></div>';
       }
 
       html += '<div class="detail-actions" style="margin-top:16px">';
@@ -213,7 +213,7 @@
       $("#sCancel").onclick = () => location.hash = "#/";
       $("#sShare").onclick = async () => {
         const items = allItems.filter((i) => selected.has(i.id));
-        if (!items.length) { toast("请先选择手串"); return; }
+        if (!items.length) { toast("请先选择宝贝"); return; }
         const btn = $("#sShare");
         btn.textContent = "生成中…";
         btn.disabled = true;
@@ -235,7 +235,7 @@
   /* ---------- 批量录入模式 ---------- */
   function enterBatchMode(items, title) {
     const drafts = items.map((it) => JSON.parse(JSON.stringify(it)));
-    const batchTitle = title || "批量录入 " + drafts.length + " 条手串";
+    const batchTitle = title || "批量录入 " + drafts.length + " 件宝贝";
     let current = null; // 当前编辑中的草稿
 
     function renderList() {
@@ -405,7 +405,7 @@
 
     async function saveAllDrafts() {
       const valid = drafts.filter((it) => it.name && it.name.trim());
-      if (!valid.length) { toast("请至少给一条手串填上名字"); return; }
+      if (!valid.length) { toast("请至少给一件宝贝填上名字"); return; }
       const btn = $("#bSaveAll");
       btn.textContent = "正在保存…";
       btn.disabled = true;
@@ -444,7 +444,7 @@
     html += '<div style="text-align:center;padding:26px 0 14px">' +
       '<div style="font-size:46px">👤</div>' +
       '<div style="font-size:17px;font-weight:700;color:var(--wood);margin-top:8px">给收藏馆起个称呼</div>' +
-      '<div style="font-size:12px;color:var(--text-2);margin-top:5px">其他信息（手串数据）仍按账号隔离，用户名只用于显示</div></div>';
+      '<div style="font-size:12px;color:var(--text-2);margin-top:5px">其他信息（收藏数据）仍按账号隔离，用户名只用于显示</div></div>';
 
     html += '<div class="form">';
     html += '<div class="form-group"><div class="form-label">用户名 <small>1-20 字，可随时修改</small></div>' +
@@ -571,7 +571,7 @@
 
   /* ---------- 首页 ---------- */
   function renderHome() {
-    topbarTitle.textContent = (user && user.displayName ? user.displayName : "文玩手串") + "收藏馆";
+    topbarTitle.textContent = (user && user.displayName ? user.displayName : "我的") + "收藏馆";
     btnBack.style.visibility = "hidden";
     btnSettings.style.visibility = "visible";
 
@@ -618,7 +618,7 @@
     if (!list.length) {
       return '<div class="empty">' +
         '<div class="empty-icon">' + (allItems.length ? "🔍" : "📿") + "</div>" +
-        "<p>" + (allItems.length ? "没有找到匹配的手串" : "还没有收藏任何手串\n点击下方 ＋ 添加第一条吧") + "</p>" +
+        "<p>" + (allItems.length ? "没有找到匹配的宝贝" : "还没有收藏任何宝贝\n点击下方 ＋ 添加第一条吧") + "</p>" +
         "</div>";
     }
     h += '<div class="grid">';
@@ -716,7 +716,7 @@
   function renderDetail(id) {
     const it = allItems.find((x) => x.id === id);
     if (!it) { location.hash = "#/"; return; }
-    topbarTitle.textContent = "手串档案";
+    topbarTitle.textContent = "宝贝档案";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
 
@@ -796,7 +796,7 @@
     $("#btnTips").onclick = () => showTipsModal(it);
     $("#btnEdit").onclick = () => location.hash = "#/edit/" + it.id;
     $("#btnDel").onclick = async () => {
-      const ok = await confirmModal("删除这条手串？", "删除后不可恢复，请确认。", "删除", true);
+      const ok = await confirmModal("删除这件宝贝？", "删除后不可恢复，请确认。", "删除", true);
       if (ok) { await DB.remove(it.id); await loadItems(); toast("已删除"); location.hash = "#/"; }
     };
     $("#btnShare").onclick = async () => {
@@ -805,7 +805,7 @@
       btn.disabled = true;
       try {
         const canvas = await Poster.singlePoster(it, { username: user && user.displayName ? user.displayName : "" });
-        const result = await Poster.shareCanvas(canvas, "文玩手串_" + (it.name || "分享") + ".jpg");
+        const result = await Poster.shareCanvas(canvas, "我的收藏馆_" + (it.name || "分享") + ".jpg");
         toast(result === "shared" ? "已分享" : "海报已保存到相册/下载");
       } catch (err) {
         toast("海报生成失败：" + err.message);
@@ -822,7 +822,7 @@
 
   async function shareItem(it) {
     try {
-      const text = "📿 " + (it.name || "文玩手串") + (it.species ? " · " + it.species : "") +
+      const text = "📿 " + (it.name || "我的宝贝") + (it.species ? " · " + it.species : "") +
         "\n陪伴时长：" + DB.formatDays(DB.daysWith(it)) +
         "\n到货时间：" + fmtDate(it.arrivedAt) +
         (it.craft ? "\n工艺：" + it.craft : "") +
@@ -831,7 +831,7 @@
         (it.gifted ? "\n状态：已送人" : "\n状态：在库") +
         (it.played ? "\n状态：盘玩中" : "");
       if (navigator.share) {
-        await navigator.share({ title: it.name || "文玩手串", text });
+        await navigator.share({ title: it.name || "我的宝贝", text });
       } else {
         await navigator.clipboard.writeText(text);
         toast("文案已复制到剪贴板");
@@ -843,7 +843,7 @@
   function renderForm(id) {
     const it = id ? allItems.find((x) => x.id === id) : null;
     const isEdit = !!it;
-    topbarTitle.textContent = isEdit ? "编辑手串" : "添加手串";
+    topbarTitle.textContent = isEdit ? "编辑宝贝" : "添加宝贝";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
 
@@ -913,7 +913,7 @@
     html += '<div class="form-group"><div class="form-label">备注</div>' +
       '<textarea class="form-textarea" id="fNote" placeholder="来历、故事、心情…">' + esc(it ? it.note : "") + "</textarea></div>";
 
-    html += '<div class="form-group"><div class="form-label">手串照片</div>' +
+    html += '<div class="form-group"><div class="form-label">宝贝照片</div>' +
       '<div class="upload-grid" id="photoGrid"></div>' +
       '<input type="file" id="photoInput" accept="image/*" multiple hidden></div>';
 
@@ -1087,7 +1087,7 @@
         item.playedNote = $("#fPlayedNote").value.trim();
         item.note = $("#fNote").value.trim();
 
-        if (!item.name) { toast("请给手串起个名字"); return; }
+        if (!item.name) { toast("请给宝贝起个名字"); return; }
 
         // 上传新照片到云端
         item.photos = [];
@@ -1126,7 +1126,7 @@
 
     let html = "";
     html += '<div class="stats-card"><h3>收 藏 统 计</h3><div class="stats-nums">' +
-      '<div><div class="n">' + allItems.length + '</div><div class="l">全部手串</div></div>' +
+      '<div><div class="n">' + allItems.length + '</div><div class="l">全部宝贝</div></div>' +
       '<div><div class="n">' + inStock + '</div><div class="l">在库</div></div>' +
       '<div><div class="n">' + gifted + '</div><div class="l">已送人</div></div>' +
       '<div><div class="n">' + played + '</div><div class="l">盘玩中</div></div>' +
@@ -1138,7 +1138,7 @@
     }
     html += '<button class="setting-item" id="btnExport"><div><div class="t">📤 导出备份</div><div class="d">下载全部数据为备份文件（含图片链接）</div></div><span class="arrow">›</span></button>';
     html += '<button class="setting-item" id="btnImport"><div><div class="t">📥 导入备份</div><div class="d">从备份文件恢复数据（会覆盖当前数据）</div></div><span class="arrow">›</span></button>';
-    html += '<button class="setting-item" id="btnClear"><div><div class="t">🗑 清空全部数据</div><div class="d">删除所有手串记录（不可恢复）</div></div><span class="arrow">›</span></button>';
+    html += '<button class="setting-item" id="btnClear"><div><div class="t">🗑 清空全部数据</div><div class="d">删除所有收藏记录（不可恢复）</div></div><span class="arrow">›</span></button>';
     html += '<button class="setting-item" id="btnLogout"><div><div class="t">🚪 退出登录</div><div class="d">退出后本机不再保留登录状态</div></div><span class="arrow">›</span></button>';
     html += "</div>";
 
@@ -1162,7 +1162,7 @@
       const blob = new Blob([json], { type: "application/json" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "文玩手串备份_" + new Date().toISOString().slice(0, 10) + ".json";
+      a.download = "我的收藏馆备份_" + new Date().toISOString().slice(0, 10) + ".json";
       a.click();
       toast("备份已导出");
     };
@@ -1188,7 +1188,7 @@
       inp.click();
     };
     $("#btnClear").onclick = async () => {
-      const ok = await confirmModal("清空全部数据？", "所有手串将被永久删除，无法恢复！", "清空", true);
+      const ok = await confirmModal("清空全部数据？", "所有收藏将被永久删除，无法恢复！", "清空", true);
       if (!ok) return;
       const items = await DB.getAll();
       for (const it of items) await DB.remove(it.id);
