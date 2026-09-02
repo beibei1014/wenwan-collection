@@ -17,7 +17,7 @@
   let categoryFilter = "";   // 收藏盒子筛选
   let search = "";
   let viewMode = localStorage.getItem("ww_viewmode") || "card"; // card | list
-  let sortMode = "newest"; // newest(入库降序) | oldest(入库升序)
+  let sortMode = localStorage.getItem("ww_sortmode") || "newest"; // newest(入库降序) | oldest(入库升序) | created_desc(创建降序) | created_asc(创建升序)
   let user = null;           // 当前登录用户
 
   /* ---------- 工具 ---------- */
@@ -512,9 +512,15 @@
       const img = p ? '<img src="' + photoUrl(p) + '" loading="lazy" alt="">' : '<div class="placeholder">📿</div>';
       const badge = it.gifted ? '<span class="badge gifted">已送人</span>' : '<span class="badge instock">在库</span>';
       const st = it.playStatus;
-      const statusBadge = st === "playing" ? '<span class="badge played">盘玩中</span>' :
-        st === "puzzle_pending" ? '<span class="badge" style="background:#d98ba6">待拼</span>' :
-        st === "puzzle_done" ? '<span class="badge" style="background:#2e7d32">已拼</span>' : "";
+      // 状态徽章：点击可快捷切换（待盘玩↔在盘玩、待拼↔已拼），已送人除外
+      const isPuzzleCard = Categories.isPuzzleCategory(it.category || "");
+      const statusBadge = it.gifted ? "" :
+        st === "playing" ? '<button type="button" class="badge played status-toggle" data-id="' + it.id + '" title="点击切换">在盘玩</button>' :
+        st === "puzzle_pending" ? '<button type="button" class="badge status-toggle" style="background:#d98ba6" data-id="' + it.id + '" title="点击切换">待拼</button>' :
+        st === "puzzle_done" ? '<button type="button" class="badge status-toggle" style="background:#2e7d32" data-id="' + it.id + '" title="点击切换">已拼</button>' :
+        (isPuzzleCard
+          ? '<button type="button" class="badge status-toggle" style="background:#d98ba6" data-id="' + it.id + '" title="点击切换">待拼</button>'
+          : '<button type="button" class="badge status-toggle" style="background:#8d8d8d" data-id="' + it.id + '" title="点击切换">待盘玩</button>');
       const days = DB.formatDays(DB.daysWith(it));
       html += '<div class="card" data-id="' + it.id + '">' +
         '<div class="card-thumb">' + img + badge + statusBadge + "</div>" +
@@ -527,6 +533,39 @@
 
     view.innerHTML = html;
     view.querySelectorAll(".card").forEach((c) => c.addEventListener("click", () => location.hash = "#/item/" + c.dataset.id));
+    bindStatusToggles();
+  }
+
+  /* 状态快捷切换绑定（卡片 + 列表）：待盘玩↔在盘玩、待拼↔已拼，已送人除外 */
+  function bindStatusToggles() {
+    view.querySelectorAll(".status-toggle").forEach((b) => b.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const item = allItems.find((x) => x.id === b.dataset.id);
+      if (!item || item.gifted) return;
+      const isPuzzle = Categories.isPuzzleCategory(item.category || "");
+      const cur = item.playStatus || "";
+      let next;
+      if (isPuzzle) next = cur === "puzzle_done" ? "puzzle_pending" : "puzzle_done";
+      else next = cur === "playing" ? "idle" : "playing";
+      const prev = cur;
+      item.playStatus = next;
+      const label = { idle: "待盘玩", playing: "在盘玩", puzzle_pending: "待拼", puzzle_done: "已拼" }[next];
+      try {
+        const saved = await DB.put(item);
+        if (!saved || saved.playStatus !== next) {
+          item.playStatus = prev;
+          toast("⚠️ 状态未保存：数据库缺少 play_status 字段");
+        } else {
+          toast("已切换为「" + label + "」");
+          if (document.getElementById("gridHolder")) updateGrid();
+          else if (location.hash.startsWith("#/box/")) renderBoxPage(decodeURIComponent(location.hash.slice(6)));
+          else router();
+        }
+      } catch (err) {
+        item.playStatus = prev;
+        toast("切换失败：" + err.message);
+      }
+    }));
   }
 
   /* ---------- 多选分享模式 ---------- */
@@ -1168,10 +1207,16 @@
     sortItems();
   }
 
-  // 按入库时间排序：newest=降序（最新在前），oldest=升序（最早在前）
+  // 排序：newest=入库降序，oldest=入库升序，created_desc=创建时间降序，created_asc=创建时间升序
   function sortItems() {
     const key = (i) => i.arrivedAt || i.createdAt || 0;
-    allItems.sort((a, b) => sortMode === "oldest" ? key(a) - key(b) : key(b) - key(a));
+    const createdKey = (i) => i.createdAt || i.arrivedAt || 0;
+    switch (sortMode) {
+      case "oldest": allItems.sort((a, b) => key(a) - key(b)); break;
+      case "created_desc": allItems.sort((a, b) => createdKey(b) - createdKey(a)); break;
+      case "created_asc": allItems.sort((a, b) => createdKey(a) - createdKey(b)); break;
+      default: allItems.sort((a, b) => key(b) - key(a)); // newest
+    }
   }
 
   function filtered() {
@@ -1272,9 +1317,11 @@
     // 排序
     html += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text-2)">' +
       '<span>排序</span>' +
-      '<div class="seg" id="sortSeg" style="flex:1">' +
+      '<div class="seg" id="sortSeg" style="flex:1;flex-wrap:wrap">' +
       '<button type="button" data-sort="newest" class="' + (sortMode === "newest" ? "active" : "") + '">🕐 入库最新</button>' +
       '<button type="button" data-sort="oldest" class="' + (sortMode === "oldest" ? "active" : "") + '">📜 入库最早</button>' +
+      '<button type="button" data-sort="created_desc" class="' + (sortMode === "created_desc" ? "active" : "") + '">🆕 创建最新</button>' +
+      '<button type="button" data-sort="created_asc" class="' + (sortMode === "created_asc" ? "active" : "") + '">🗓 创建最早</button>' +
       "</div></div>";
     html += "</div>";
 
@@ -1326,7 +1373,9 @@
           '<span class="list-days">⏳ ' + esc(DB.formatDays(DB.daysWith(it))) + "</span>" +
           "</div>" +
           "</div>" +
-          '<span class="list-status ' + statusCls + '">' + statusTxt + "</span>" +
+          (it.gifted
+            ? '<span class="list-status ' + statusCls + '">' + statusTxt + "</span>"
+            : '<button type="button" class="list-status ' + statusCls + ' status-toggle" data-id="' + it.id + '" title="点击切换状态">' + statusTxt + "</button>") +
           "</div>";
       }
       return h + "</div>";
@@ -1352,6 +1401,7 @@
 
   function bindCardEvents() {
     view.querySelectorAll(".card, .list-item").forEach((c) => c.addEventListener("click", () => location.hash = "#/item/" + c.dataset.id));
+    bindStatusToggles();
   }
 
   function bindHomeEvents() {
@@ -1399,6 +1449,7 @@
     // 排序
     view.querySelectorAll("#sortSeg button").forEach((b) => b.onclick = () => {
       sortMode = b.dataset.sort;
+      localStorage.setItem("ww_sortmode", sortMode);
       view.querySelectorAll("#sortSeg button").forEach((x) => x.classList.remove("active"));
       b.classList.add("active");
       sortItems();
@@ -1585,7 +1636,10 @@
     const days = DB.formatDays(DB.daysWith(it));
     const tags =
       (it.gifted ? '<span class="tag r">已送人</span>' : '<span class="tag g">在库</span>') +
-      (it.played ? '<span class="tag yl">盘玩中</span>' : '<span class="tag">未盘玩</span>') +
+      (it.playStatus === "playing" ? '<span class="tag yl">在盘玩</span>' :
+        it.playStatus === "puzzle_pending" ? '<span class="tag yl">待拼</span>' :
+        it.playStatus === "puzzle_done" ? '<span class="tag g">已拼</span>' :
+        '<span class="tag">待盘玩</span>') +
       (it.craft ? '<span class="tag">' + esc(it.craft) + "</span>" : "") +
       (it.category ? '<span class="tag">' + esc(it.category) + "</span>" : "");
 

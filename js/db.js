@@ -276,7 +276,11 @@
     now = now || Date.now();
     const end = item.giftedAt || now;
     const start = item.arrivedAt || item.createdAt || now;
-    return Math.max(0, Math.floor((end - start) / 86400000));
+    // 按自然日计算（昨天入库 → 1 天，今天入库 → 0 天），而不是滚动 24 小时
+    const s = new Date(start), e = new Date(end);
+    s.setHours(0, 0, 0, 0);
+    e.setHours(0, 0, 0, 0);
+    return Math.max(0, Math.round((e - s) / 86400000));
   }
 
   function formatDays(n) {

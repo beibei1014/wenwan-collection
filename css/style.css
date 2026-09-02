@@ -252,6 +252,7 @@ img { display:block; }
 .badge.gifted { background:var(--gray); }
 .badge.instock { background:var(--green); }
 .badge.played { position:absolute; top:8px; right:8px; background:rgba(184,134,11,.92); }
+.badge.status-toggle { position:absolute; top:8px; right:8px; left:auto; cursor:pointer; }
 .card-body { padding:8px 10px 10px; }
 .card-name { font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .card-sub { font-size:11px; color:var(--text-2); margin-top:2px; display:flex; justify-content:space-between; align-items:center; }
@@ -309,6 +310,8 @@ img { display:block; }
 .seg { display:flex; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
 .seg button { flex:1; padding:10px; font-size:14px; color:var(--text-2); }
 .seg button.active { background:var(--wood); color:#f5f0e8; font-weight:600; }
+#sortSeg { flex-wrap:wrap; overflow:visible; border-radius:12px; }
+#sortSeg button { flex:1 1 auto; min-width:88px; }
 .check-row { display:flex; align-items:center; gap:8px; padding:4px 0; }
 .check-row input { width:20px; height:20px; accent-color:var(--wood); }
 
