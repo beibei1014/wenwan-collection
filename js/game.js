@@ -135,7 +135,27 @@
     return { level: lv, name, icon, xp, curMin, nextMin, progress };
   }
 
-  /* ---------- 每日任务（地球Online风，自动检测） ---------- */
+  /* ---------- 每日任务（地球Online风，自动检测 + 每日随机） ---------- */
+  // 用日期作随机种子：同一天内所有人看到相同任务，第二天自动换一批
+  function mulberry32(seed) {
+    let s = seed >>> 0;
+    return function () {
+      s |= 0; s = (s + 0x6D2B79F5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function seededShuffle(arr, seed) {
+    const a = arr.slice();
+    const rand = mulberry32(seed);
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      const tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+    }
+    return a;
+  }
+
   function dailyTasks(items) {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -153,12 +173,57 @@
       const ts = i.finishedAt;
       return ts && ts >= todayStart && ts < todayEnd;
     }).length;
+    const todayGifted = items.filter((i) => {
+      const ts = i.giftedAt;
+      return ts && ts >= todayStart && ts < todayEnd;
+    }).length;
 
-    return [
-      { icon: "📦", title: "今日新收", desc: "收藏一件新宝贝", done: todayNew > 0, progress: Math.min(todayNew, 1), target: 1, xp: 15 },
-      { icon: "✏️", title: "今日打理", desc: "编辑整理一件宝贝", done: todayEdited > 0, progress: Math.min(todayEdited, 1), target: 1, xp: 10 },
-      { icon: "🧩", title: "今日拼图", desc: "完成一幅拼图", done: todayFinished > 0, progress: Math.min(todayFinished, 1), target: 1, xp: 30 },
+    // 全局统计（用于各种达成型任务）
+    const withPhotos = items.filter((i) => (i.photos || []).length > 0).length;
+    const withPrice = items.filter((i) => i.price != null && i.price !== "").length;
+    const withShop = items.filter((i) => i.shop && i.shop.trim()).length;
+    const withNote = items.filter((i) => i.note && i.note.trim()).length;
+    const playing = items.filter((i) => i.playStatus === "playing").length;
+    const puzzleDone = items.filter((i) => i.playStatus === "puzzle_done").length;
+    const catCount = new Set(items.map((i) => i.category).filter(Boolean)).size;
+    const beadCount = items.filter((i) => /菩提|金刚|凤眼|星月/.test((i.name || "") + (i.species || ""))).length;
+    const crystal = items.filter((i) => (i.category || "") === "水晶").length;
+    const accessories = items.filter((i) => (i.category || "") === "动漫周边").length;
+    const longCompanion = items.some((i) => DB.daysWith(i) >= 30);
+    const noBuyToday = todayNew === 0; // 今天没有入手新宝贝
+
+    // 任务池：当日型（每天随机挑 2 个）+ 达成型（每天随机挑 2 个）
+    const todayPool = [
+      { icon: "📦", title: "今日新收", desc: "收藏一件新宝贝", done: todayNew > 0, target: 1, xp: 15 },
+      { icon: "✏️", title: "今日打理", desc: "编辑整理一件宝贝", done: todayEdited > 0, target: 1, xp: 10 },
+      { icon: "🧩", title: "今日拼图", desc: "完成一幅拼图", done: todayFinished > 0, target: 1, xp: 30 },
+      { icon: "🎁", title: "今日送出", desc: "送出一件宝贝", done: todayGifted > 0, target: 1, xp: 20 },
+      { icon: "🧘", title: "今日清心", desc: "今天没有入手新宝贝", done: noBuyToday, target: 1, xp: 10 },
     ];
+    const achievePool = [
+      { icon: "🤲", title: "盘玩进行时", desc: "有宝贝处于「在盘玩」状态", done: playing > 0, target: 1, xp: 15 },
+      { icon: "🧩", title: "拼图小成", desc: "累计完成一幅拼图", done: puzzleDone > 0, target: 1, xp: 20 },
+      { icon: "📸", title: "拍照留念", desc: "给宝贝拍过照片", done: withPhotos > 0, target: 1, xp: 10 },
+      { icon: "💰", title: "记录价值", desc: "为宝贝记录过价格", done: withPrice > 0, target: 1, xp: 10 },
+      { icon: "🏪", title: "店铺记忆", desc: "记录过购买店铺", done: withShop > 0, target: 1, xp: 10 },
+      { icon: "📝", title: "备注大师", desc: "给宝贝写过备注", done: withNote > 0, target: 1, xp: 10 },
+      { icon: "🗃️", title: "盒子多多", desc: "覆盖 2 个收藏盒子", done: catCount >= 2, target: 1, xp: 15 },
+      { icon: "📿", title: "菩提有缘", desc: "收藏 3 件菩提类宝贝", done: beadCount >= 3, target: 1, xp: 20 },
+      { icon: "🔮", title: "水晶之约", desc: "收藏一件水晶宝贝", done: crystal > 0, target: 1, xp: 15 },
+      { icon: "🎨", title: "周边收藏", desc: "收藏一件动漫周边", done: accessories > 0, target: 1, xp: 15 },
+      { icon: "⏰", title: "长久陪伴", desc: "有宝贝陪伴超 30 天", done: longCompanion, target: 1, xp: 20 },
+    ];
+
+    // 种子 = 年月日（如 20260903），保证当天固定、次日变化
+    const seed = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+    const pickedToday = seededShuffle(todayPool, seed).slice(0, 2);
+    const pickedAchieve = seededShuffle(achievePool, seed + 7919).slice(0, 2);
+
+    const tasks = pickedToday.concat(pickedAchieve);
+    // 保持展示顺序稳定：未完成的在前、已完成的在后
+    tasks.sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1));
+    tasks.forEach((t) => { t.progress = t.done ? 1 : 0; });
+    return tasks;
   }
 
   /* ---------- 隐藏任务：不买挑战 ---------- */
