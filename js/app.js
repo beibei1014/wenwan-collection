@@ -13,8 +13,10 @@
   const btnSettings = $("#btnSettings");
 
   let allItems = [];
-  let filter = "all";        // all | instock | gifted | played
+  let filter = "all";        // 兼容旧：单值；现用多选 selectFilters
   let categoryFilter = "";   // 收藏盒子筛选
+  const selectFilters = new Set(); // 多选状态筛选（空=全部）
+  const selectColors = new Set();  // 多选颜色筛选（空=不限）
   let search = "";
   let viewMode = localStorage.getItem("ww_viewmode") || "card"; // card | list
   let sortMode = localStorage.getItem("ww_sortmode") || "arrived"; // arrived(入库) | created(创建) | color(颜色)
@@ -1802,22 +1804,46 @@
 
   function filtered() {
     let list = allItems;
-    if (filter === "instock") list = list.filter((i) => !i.gifted);
-    else if (filter === "gifted") list = list.filter((i) => i.gifted);
-    // 珠子状态筛选 + 拼图状态筛选
-    else if (filter === "unplayed") list = list.filter((i) => isBeadCat(i.category || "") && (i.playStatus === "unplayed" || !i.playStatus));
-    else if (filter === "ready") list = list.filter((i) => isBeadCat(i.category || "") && i.playStatus === "ready");
-    else if (filter === "playing") list = list.filter((i) => isBeadCat(i.category || "") && i.playStatus === "playing");
-    else if (filter === "done") list = list.filter((i) => isBeadCat(i.category || "") && i.playStatus === "done");
-    else if (filter === "puzzle_pending") list = list.filter((i) => i.playStatus === "puzzle_pending");
-    else if (filter === "puzzle_done") list = list.filter((i) => i.playStatus === "puzzle_done");
-    // 颜色筛选（filter="color:x"）
-    else if (filter.indexOf("color:") === 0) {
-      const c = filter.slice(6);
+    // 多选状态筛选（selectFilters 空 = 全部）
+    if (selectFilters.size) {
+      list = list.filter((i) => {
+        for (const f of selectFilters) {
+          if (f === "instock" && !i.gifted) return true;
+          if (f === "gifted" && i.gifted) return true;
+          if (f === "unplayed" && isBeadCat(i.category || "") && (i.playStatus === "unplayed" || !i.playStatus)) return true;
+          if (f === "ready" && isBeadCat(i.category || "") && i.playStatus === "ready") return true;
+          if (f === "playing" && isBeadCat(i.category || "") && i.playStatus === "playing") return true;
+          if (f === "done" && isBeadCat(i.category || "") && i.playStatus === "done") return true;
+          if (f === "puzzle_pending" && i.playStatus === "puzzle_pending") return true;
+          if (f === "puzzle_done" && i.playStatus === "puzzle_done") return true;
+        }
+        return false;
+      });
+    }
+    // 多选颜色筛选（selectColors 空 = 不限）
+    if (selectColors.size) {
       list = list.filter((i) => {
         const ic = window.Color ? window.Color.normColor(i.color) : i.color;
-        return (ic || "") === c;
+        return selectColors.has(ic || "");
       });
+    }
+    // 兼容旧的单值 filter（保留，避免影响其他页面）
+    if (!selectFilters.size && !selectColors.size) {
+      if (filter === "instock") list = allItems.filter((i) => !i.gifted);
+      else if (filter === "gifted") list = allItems.filter((i) => i.gifted);
+      else if (filter === "unplayed") list = allItems.filter((i) => isBeadCat(i.category || "") && (i.playStatus === "unplayed" || !i.playStatus));
+      else if (filter === "ready") list = allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus === "ready");
+      else if (filter === "playing") list = allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus === "playing");
+      else if (filter === "done") list = allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus === "done");
+      else if (filter === "puzzle_pending") list = allItems.filter((i) => i.playStatus === "puzzle_pending");
+      else if (filter === "puzzle_done") list = allItems.filter((i) => i.playStatus === "puzzle_done");
+      else if (filter.indexOf("color:") === 0) {
+        const c = filter.slice(6);
+        list = allItems.filter((i) => {
+          const ic = window.Color ? window.Color.normColor(i.color) : i.color;
+          return (ic || "") === c;
+        });
+      }
     }
     if (categoryFilter === "__uncat") {
       list = list.filter((i) => !i.category);
@@ -1899,15 +1925,18 @@
       '<span class="stat-pill">已送 <b>' + gifted + '</b></span>' +
       '</div></div>';
 
+    // 状态多选 chips
+    const stChip = (k, label) => '<button type="button" class="chip' + (selectFilters.has(k) ? " active" : "") + '" data-mf="' + k + '">' + label + "</button>";
     html += '<div class="filters">' +
-      chip("all", "全部") + chip("instock", "在库") +
-      chip("unplayed", "未盘玩") + chip("ready", "待盘玩") + chip("playing", "盘玩中") + chip("done", "已盘好") +
-      chip("puzzle_pending", "待拼") + chip("puzzle_done", "已拼") + chip("gifted", "已送人") +
+      stChip("instock", "在库") + stChip("unplayed", "未盘玩") + stChip("ready", "待盘玩") + stChip("playing", "盘玩中") + stChip("done", "已盘好") +
+      stChip("puzzle_pending", "待拼") + stChip("puzzle_done", "已拼") + stChip("gifted", "已送人") +
+      (selectFilters.size ? '<button type="button" class="chip clear-chip" id="clearSt">✕ 清除状态</button>' : "") +
       '</div>';
 
-    // 颜色筛选行（按主色）
+    // 颜色多选 chips
     html += '<div class="filters">' +
-      (window.Color ? window.Color.COLOR_LIST.map((c) => '<button class="chip' + (filter === "color:" + c.v ? " active" : "") + '" data-f="color:' + c.v + '">' + c.label + "</button>").join("") : "") +
+      (window.Color ? window.Color.COLOR_LIST.map((c) => '<button type="button" class="chip' + (selectColors.has(c.v) ? " active" : "") + '" data-mcolor="' + c.v + '">' + c.label + "</button>").join("") : "") +
+      (selectColors.size ? '<button type="button" class="chip clear-chip" id="clearColor">✕ 清除颜色</button>' : "") +
       '</div>';
 
     // 分类筛选行
@@ -2083,6 +2112,23 @@
       view.querySelectorAll(".chip[data-f]").forEach((x) => x.classList.toggle("active", x === c));
       updateGrid();
     }));
+    // 多选状态 chips（data-mf）
+    view.querySelectorAll(".chip[data-mf]").forEach((c) => c.addEventListener("click", () => {
+      const k = c.dataset.mf;
+      if (selectFilters.has(k)) selectFilters.delete(k);
+      else selectFilters.add(k);
+      renderHome();
+    }));
+    // 多选颜色 chips（data-mcolor）
+    view.querySelectorAll(".chip[data-mcolor]").forEach((c) => c.addEventListener("click", () => {
+      const k = c.dataset.mcolor;
+      if (selectColors.has(k)) selectColors.delete(k);
+      else selectColors.add(k);
+      renderHome();
+    }));
+    // 清除状态/颜色筛选
+    const cs = $("#clearSt"); if (cs) cs.onclick = () => { selectFilters.clear(); renderHome(); };
+    const cc = $("#clearColor"); if (cc) cc.onclick = () => { selectColors.clear(); renderHome(); };
     // 分类 chips（用 data-cat 区分）
     view.querySelectorAll(".chip[data-cat]").forEach((c) => c.addEventListener("click", () => {
       categoryFilter = c.dataset.cat || "";
@@ -2101,10 +2147,8 @@
       }
       localStorage.setItem("ww_sortmode", sortMode);
       localStorage.setItem("ww_sortdir", sortDir);
-      view.querySelectorAll("#sortSeg button").forEach((x) => x.classList.remove("active"));
-      b.classList.add("active");
       sortItems();
-      updateGrid();
+      renderHome(); // 重新渲染整个首页，让排序按钮箭头更新
     });
     // 今日心选抽卡
     const bd = $("#btnDraw");

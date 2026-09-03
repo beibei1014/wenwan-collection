@@ -205,6 +205,7 @@ img { display:block; }
   background:var(--card); border:1px solid var(--line); color:var(--text-2); transition:all .15s;
 }
 .chip.active { background:var(--wood); color:#f5f0e8; border-color:var(--wood); font-weight:600; }
+.clear-chip { background:#fdecea; border-color:#f5c6c6; color:var(--red); }
 .search-box { position:relative; margin-bottom:12px; }
 .search-box input {
   width:100%; padding:10px 14px 10px 38px; border-radius:12px; border:1px solid var(--line);
