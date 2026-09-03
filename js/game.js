@@ -242,14 +242,15 @@
   }
 
   /* ---------- 抽卡系统：今日心选 3 串（按日期种子随机，当天固定、次日变化） ---------- */
-  // 候选：珠子类（非拼图/非周边/非送人）
+  // 候选：只抽「菩提」分类（只有菩提需要盘包浆）
   // - ready(待盘玩)/playing(盘玩中)/done(已盘好包浆)：随时可抽（done 不受上次盘玩时间限制）
   // - resting(放置中)：需距上次盘玩 > 1 天（放够回油才重新进池）
+  const DRAW_CATS = ["菩提"];
   function isDrawable(item, now) {
     if (!item || item.gifted) return false;
     const cat = item.category || "";
-    // 拼图/周边/盲盒不参与盘玩抽卡
-    if (Categories.isPuzzleCategory(cat) || Categories.isBrandCategory(cat)) return false;
+    // 只有菩提参与盘玩抽卡；拼图/周边/水晶/玉石等不参与
+    if (!DRAW_CATS.includes(cat)) return false;
     if (item.playStatus === "unplayed" || item.playStatus === "") return false; // 未盘玩（暂时不想盘的）不抽
     if (item.playStatus === "done") return true; // 已盘好包浆：随时能拿出来盘，始终可抽
     const okStatus = ["ready", "playing", "resting"].includes(item.playStatus);
