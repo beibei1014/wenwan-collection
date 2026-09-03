@@ -1051,11 +1051,26 @@
         const p = it.photos && it.photos[0];
         const img = p ? '<img src="' + photoUrl(p) + '" alt="">' : '<div class="placeholder" style="font-size:20px">📿</div>';
         const checked = selected.has(it.id);
+        // 主色标签
+        const colorTag = colorTagHtml(it);
+        // 盘玩状态标签（珠子/拼图）
+        const isPuzzleIt = isPuzzleCat(it.category || "");
+        const isBeadIt = isBeadCat(it.category || "");
+        const statusTxt = it.gifted ? "已送人" :
+          (isPuzzleIt ? (it.playStatus === "puzzle_done" ? "已拼" : "待拼") :
+            isBeadIt ? beadStatusText(it) : "");
+        const statusCls = it.gifted ? "r" :
+          (isPuzzleIt ? (it.playStatus === "puzzle_done" ? "g" : "yl") :
+            isBeadIt ? beadStatusCls(it) : "");
+        const statusTag = statusTxt
+          ? '<span class="list-status ' + statusCls + '">' + esc(statusTxt) + "</span>"
+          : "";
         html += '<div class="list-item multi-item' + (checked ? " checked" : "") + '" data-id="' + it.id + '">' +
           '<div class="list-thumb">' + img + "</div>" +
           '<div class="list-info">' +
           '<div class="list-name">' + esc(it.name || "未命名") + "</div>" +
           '<div class="list-sub">' + esc(cardSubText(it)) + (it.category ? " · " + esc(it.category) : "") + "</div>" +
+          '<div class="list-meta">' + colorTag + statusTag + "</div>" +
           "</div>" +
           '<span class="multi-check">' + (checked ? "✓" : "") + "</span>" +
           "</div>";
