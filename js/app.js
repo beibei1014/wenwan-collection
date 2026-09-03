@@ -88,6 +88,21 @@
     return "";
   }
 
+  // 主色标签（卡片/列表复用）：未分色用醒目提示
+  function colorTagHtml(it) {
+    const nc = window.Color ? window.Color.normColor(it.color) : it.color;
+    if (!nc) {
+      return '<span class="color-tag no-color" title="还未分色，点进去设主色">🎨 未分色</span>';
+    }
+    const label = window.Color ? window.Color.colorLabel(nc) : "分色";
+    const hex = window.Color ? window.Color.colorHex(nc) : "#9e9e9e";
+    const grad = (nc === "duo" || nc === "lightflower" || nc === "deepflower")
+      ? 'background:linear-gradient(135deg,#e53935,#fbc02d,#4caf50,#1976d2)'
+      : ("background:" + hex);
+    const border = nc === "white" ? "border:1px solid #ddd" : "";
+    return '<span class="color-tag" title="主色：' + esc(label) + '"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:0;margin-right:4px;' + grad + ';' + border + '"></span>' + esc(label) + "</span>";
+  }
+
   // 珠子状态徽章颜色（CSS 类）
   function beadBadgeCls(it) {
     const st = it.playStatus || "unplayed";
@@ -1030,19 +1045,20 @@
       btnSettings.style.visibility = "hidden";
 
       let html = "";
-      html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:10px">已选 ' + selected.size + ' 个，点击卡片勾选（最多 ' + MAX_SELECT + ' 个）</div>';
-      html += '<div class="grid">';
+      html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:10px">已选 ' + selected.size + ' 个，点击勾选（最多 ' + MAX_SELECT + ' 个）</div>';
+      html += '<div class="list-view">';
       list.forEach((it) => {
         const p = it.photos && it.photos[0];
-        const img = p ? '<img src="' + photoUrl(p) + '" alt="">' : '<div class="placeholder">📿</div>';
-        const checked = selected.has(it.id) ? ' style="outline:3px solid var(--gold)"' : "";
-        html += '<div class="card" data-id="' + it.id + '"' + checked + '>' +
-          '<div class="card-thumb">' + img +
-          '<span class="badge ' + (selected.has(it.id) ? "instock" : "gifted") + '" style="right:8px;left:auto">' + (selected.has(it.id) ? "✓ 已选" : "选择") + "</span>" +
+        const img = p ? '<img src="' + photoUrl(p) + '" alt="">' : '<div class="placeholder" style="font-size:20px">📿</div>';
+        const checked = selected.has(it.id);
+        html += '<div class="list-item multi-item' + (checked ? " checked" : "") + '" data-id="' + it.id + '">' +
+          '<div class="list-thumb">' + img + "</div>" +
+          '<div class="list-info">' +
+          '<div class="list-name">' + esc(it.name || "未命名") + "</div>" +
+          '<div class="list-sub">' + esc(cardSubText(it)) + (it.category ? " · " + esc(it.category) : "") + "</div>" +
           "</div>" +
-          '<div class="card-body"><div class="card-name">' + esc(it.name || "未命名") + "</div>" +
-          '<div class="card-sub"><span>' + esc(cardSubText(it)) + "</span></div>" +
-          "</div></div>";
+          '<span class="multi-check">' + (checked ? "✓" : "") + "</span>" +
+          "</div>";
       });
       html += "</div>";
 
@@ -1059,7 +1075,7 @@
 
       view.innerHTML = html;
 
-      view.querySelectorAll(".card").forEach((c) => c.addEventListener("click", () => {
+      view.querySelectorAll(".list-item.multi-item").forEach((c) => c.addEventListener("click", () => {
         const id = c.dataset.id;
         if (selected.has(id)) selected.delete(id);
         else {
@@ -1953,12 +1969,15 @@
           '<span class="list-days">⏳ ' + esc(DB.formatDays(DB.daysWith(it))) + "</span>" +
           "</div>" +
           "</div>" +
+          '<div class="list-right">' +
+          colorTagHtml(it) +
           (it.gifted
             ? '<span class="list-status ' + statusCls + '">' + statusTxt + "</span>"
             : (isPuzzleIt || isBeadIt
               ? '<button type="button" class="list-status ' + statusCls + ' status-toggle" data-id="' + it.id + '" title="点击切换状态">' + statusTxt + "</button>"
               : "")) +
           favBtn +
+          "</div>" +
           "</div>";
       }
       return h + "</div>";
@@ -1979,7 +1998,7 @@
         '<div class="card-thumb">' + img + badge + statusBadge + favBtn + "</div>" +
         '<div class="card-body">' +
         '<div class="card-name">' + esc(it.name || "未命名") + "</div>" +
-        '<div class="card-sub"><span>' + esc(cardSubText(it)) + '</span><span class="days">' + esc(days) + "</span></div>" +
+        '<div class="card-sub">' + colorTagHtml(it) + '<span class="days">' + esc(days) + "</span></div>" +
         "</div></div>";
     }
     return h + "</div>";

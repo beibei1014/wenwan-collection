@@ -732,6 +732,24 @@ img { display:block; }
 .list-status.sp-resting { background:#e3f2fd; color:#1976d2; border-color:#bbdefb; }
 .list-status.sp-done { background:#e8f5e9; color:#2e7d32; border-color:#c8e6c9; }
 
+/* 主色标签（卡片/列表） */
+.color-tag {
+  display:inline-flex; align-items:center; font-size:10px; padding:2px 8px;
+  border-radius:10px; background:var(--bg); border:1px solid var(--line); color:var(--text-2); flex-shrink:0;
+}
+.color-tag.no-color { background:#fdecea; border-color:#f5c6c6; color:var(--red); font-weight:600; }
+/* 列表右侧（主色 + 状态 + 收藏）纵向 */
+.list-right { display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex-shrink:0; }
+
+/* 多选列表项 */
+.multi-item { cursor:pointer; }
+.multi-item.checked { border-color:var(--gold); background:rgba(184,134,11,.06); }
+.multi-check {
+  width:26px; height:26px; border-radius:50%; border:2px solid var(--line); flex-shrink:0;
+  display:flex; align-items:center; justify-content:center; font-size:14px; color:var(--gold); background:var(--bg);
+}
+.multi-item.checked .multi-check { border-color:var(--gold); background:var(--gold); color:#fff; font-weight:700; }
+
 
 /* ============ 批量编辑面板 ============ */
 .batch-op {
