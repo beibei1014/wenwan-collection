@@ -17,7 +17,8 @@
   let categoryFilter = "";   // 收藏盒子筛选
   let search = "";
   let viewMode = localStorage.getItem("ww_viewmode") || "card"; // card | list
-  let sortMode = localStorage.getItem("ww_sortmode") || "newest"; // newest(入库降序) | oldest(入库升序) | created_desc(创建降序) | created_asc(创建升序)
+  let sortMode = localStorage.getItem("ww_sortmode") || "arrived"; // arrived(入库) | created(创建) | color(颜色)
+  let sortDir = localStorage.getItem("ww_sortdir") || "desc"; // asc | desc（箭头指向）
   let user = null;           // 当前登录用户
   let _onBack = null;        // 当前页面的自定义返回钩子（如批量编辑页设回首页，离开时清空）
 
@@ -1168,7 +1169,7 @@
       {
         let colorChips = '<button type="button" class="color-chip' + (!"" ? " active" : "") + '" data-bcolor="">未选</button>';
         (window.Color ? window.Color.COLOR_LIST : []).forEach((c) => {
-          const dotStyle = c.hex === "mix" ? 'background:linear-gradient(135deg,#e53935,#fbc02d,#4caf50,#1976d2)' : ("background:" + c.hex);
+          const dotStyle = c.v === "duo" || c.v === "lightflower" || c.v === "deepflower" ? 'background:linear-gradient(135deg,#e53935,#fbc02d,#4caf50,#1976d2)' : ("background:" + c.hex);
           const dotBorder = c.v === "white" ? "border:1px solid #ddd" : "";
           colorChips += '<button type="button" class="color-chip" data-bcolor="' + c.v + '" style="display:inline-flex;align-items:center;gap:5px">' +
             '<span style="display:block;width:16px;height:16px;border-radius:50%;' + dotStyle + ';' + dotBorder + '"></span>' + c.label + "</button>";
@@ -1750,17 +1751,21 @@
   function sortItems() {
     const key = (i) => i.arrivedAt || i.createdAt || 0;
     const createdKey = (i) => i.createdAt || i.arrivedAt || 0;
+    const dir = sortDir === "asc" ? 1 : -1; // asc: 小→大；desc: 大→小
     switch (sortMode) {
-      case "oldest": allItems.sort((a, b) => key(a) - key(b)); break;
-      case "created_desc": allItems.sort((a, b) => createdKey(b) - createdKey(a)); break;
-      case "created_asc": allItems.sort((a, b) => createdKey(a) - createdKey(b)); break;
+      case "created": allItems.sort((a, b) => (createdKey(a) - createdKey(b)) * dir); break;
       case "color": {
+        // 按颜色浅→深排；方向：desc=浅→深（白在前），asc=深→浅
         const order = (window.Color ? window.Color.COLOR_LIST : []).map((c) => c.v);
-        const idx = (c) => { const i = order.indexOf(c); return i === -1 ? order.length : i; };
-        allItems.sort((a, b) => idx(b.color) - idx(a.color)); // 靠后的颜色在前，无颜色最后
+        const idx = (it) => {
+          const c = window.Color ? window.Color.normColor(it.color) : it.color;
+          const i = order.indexOf(c);
+          return i === -1 ? order.length : i;
+        };
+        allItems.sort((a, b) => (idx(a) - idx(b)) * dir);
         break;
       }
-      default: allItems.sort((a, b) => key(b) - key(a)); // newest
+      default: allItems.sort((a, b) => (key(a) - key(b)) * dir); // arrived
     }
   }
 
@@ -1778,7 +1783,10 @@
     // 颜色筛选（filter="color:x"）
     else if (filter.indexOf("color:") === 0) {
       const c = filter.slice(6);
-      list = list.filter((i) => (i.color || "other") === c);
+      list = list.filter((i) => {
+        const ic = window.Color ? window.Color.normColor(i.color) : i.color;
+        return (ic || "") === c;
+      });
     }
     if (categoryFilter === "__uncat") {
       list = list.filter((i) => !i.category);
@@ -1878,15 +1886,14 @@
       cats.map((c) => '<button class="chip' + (categoryFilter === c ? " active" : "") + '" data-cat="' + esc(c) + '">' + esc(c) + "</button>").join("") +
       "</div>";
 
-    // 排序
+    // 排序（3 个按钮，点一下切换升/降序，箭头指示当前方向）
+    const arrow = (m) => (sortMode === m ? (sortDir === "asc" ? " ▲" : " ▼") : "");
     html += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text-2)">' +
       '<span>排序</span>' +
       '<div class="seg" id="sortSeg" style="flex:1;flex-wrap:wrap">' +
-      '<button type="button" data-sort="newest" class="' + (sortMode === "newest" ? "active" : "") + '">🕐 入库最新</button>' +
-      '<button type="button" data-sort="oldest" class="' + (sortMode === "oldest" ? "active" : "") + '">📜 入库最早</button>' +
-      '<button type="button" data-sort="created_desc" class="' + (sortMode === "created_desc" ? "active" : "") + '">🆕 创建最新</button>' +
-      '<button type="button" data-sort="created_asc" class="' + (sortMode === "created_asc" ? "active" : "") + '">🗓 创建最早</button>' +
-      '<button type="button" data-sort="color" class="' + (sortMode === "color" ? "active" : "") + '">🎨 颜色</button>' +
+      '<button type="button" data-sort="arrived" class="' + (sortMode === "arrived" ? "active" : "") + '">🕐 入库时间' + arrow("arrived") + "</button>" +
+      '<button type="button" data-sort="created" class="' + (sortMode === "created" ? "active" : "") + '">🆕 创建时间' + arrow("created") + "</button>" +
+      '<button type="button" data-sort="color" class="' + (sortMode === "color" ? "active" : "") + '">🎨 颜色' + arrow("color") + "</button>" +
       "</div></div>";
     html += "</div>";
 
@@ -2048,10 +2055,18 @@
       view.querySelectorAll(".chip[data-cat]").forEach((x) => x.classList.toggle("active", x === c));
       updateGrid();
     }));
-    // 排序
+    // 排序：点当前维度切换升/降序，点其他维度切换维度
     view.querySelectorAll("#sortSeg button").forEach((b) => b.onclick = () => {
-      sortMode = b.dataset.sort;
+      const chosen = b.dataset.sort;
+      if (sortMode === chosen) {
+        // 切方向：asc ↔ desc
+        sortDir = sortDir === "asc" ? "desc" : "asc";
+      } else {
+        sortMode = chosen;
+        sortDir = chosen === "color" ? "asc" : "desc"; // 颜色默认浅→深(asc)，时间默认新→旧(desc)
+      }
       localStorage.setItem("ww_sortmode", sortMode);
+      localStorage.setItem("ww_sortdir", sortDir);
       view.querySelectorAll("#sortSeg button").forEach((x) => x.classList.remove("active"));
       b.classList.add("active");
       sortItems();
@@ -2295,12 +2310,13 @@
         html += infoItem("盘玩时长", "未记录 <button type=\"button\" class=\"link-btn\" id=\"editLastPlayed\">设置上次盘玩</button>", true);
       }
     }
-    // 颜色：显示主色 + 可点击修改
+    // 颜色：显示主色 + 可点击修改（旧值归一化）
     {
-      const cLabel = window.Color ? window.Color.colorLabel(it.color) : "其他";
-      const cHex = window.Color ? window.Color.colorHex(it.color) : "#9e9e9e";
-      const dotStyle = it.color === "mixed" ? 'background:linear-gradient(135deg,#e53935,#fbc02d,#4caf50,#1976d2)' : ("background:" + cHex);
-      const dotBorder = it.color === "white" ? "border:1px solid #ddd" : "";
+      const nc = window.Color ? window.Color.normColor(it.color) : it.color;
+      const cLabel = window.Color ? window.Color.colorLabel(nc) : "其他";
+      const cHex = window.Color ? window.Color.colorHex(nc) : "#9e9e9e";
+      const dotStyle = nc === "duo" || nc === "lightflower" || nc === "deepflower" ? 'background:linear-gradient(135deg,#e53935,#fbc02d,#4caf50,#1976d2)' : ("background:" + cHex);
+      const dotBorder = nc === "white" ? "border:1px solid #ddd" : "";
       html += infoItem("主色", '<span style="display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:-2px;margin-right:5px;' + dotStyle + ';' + dotBorder + '"></span>' + esc(cLabel) + ' <button type="button" class="link-btn" id="editColor">修改</button>', true);
     }
     if (it.gifted && it.giftedAt) html += infoItem("送人时间", fmtDate(it.giftedAt), true);
@@ -2504,10 +2520,10 @@
 
     // 主色选择（手动）
     {
-      const curColor = it ? (it.color || "") : "";
+      const curColor = it ? (window.Color ? window.Color.normColor(it.color) : it.color) : "";
       let colorChips = '<button type="button" class="color-chip' + (!curColor ? " active" : "") + '" data-color="">未选</button>';
       (window.Color ? window.Color.COLOR_LIST : []).forEach((c) => {
-        const dotStyle = c.hex === "mix" ? 'background:linear-gradient(135deg,#e53935,#fbc02d,#4caf50,#1976d2)' : ("background:" + c.hex);
+        const dotStyle = c.v === "duo" || c.v === "lightflower" || c.v === "deepflower" ? 'background:linear-gradient(135deg,#e53935,#fbc02d,#4caf50,#1976d2)' : ("background:" + c.hex);
         const dotBorder = c.v === "white" ? "border:1px solid #ddd" : "";
         colorChips += '<button type="button" class="color-chip' + (curColor === c.v ? " active" : "") + '" data-color="' + c.v + '" style="display:inline-flex;align-items:center;gap:5px">' +
           '<span style="display:block;width:16px;height:16px;border-radius:50%;' + dotStyle + ';' + dotBorder + '"></span>' + c.label + "</button>";
