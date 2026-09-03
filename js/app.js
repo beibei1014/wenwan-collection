@@ -892,6 +892,49 @@
     };
   }
 
+  /* 修改密码弹窗 */
+  function showChangePasswordModal() {
+    const mask = $("#modalMask");
+    const modal = $("#modal");
+    let html = '<h3 style="text-align:center">🔑 修改密码</h3>';
+    html += '<p style="text-align:center;color:var(--text-2);font-size:12px;margin-bottom:12px">设置一个至少 6 位的新密码</p>';
+    html += '<div style="display:flex;flex-direction:column;gap:10px">';
+    html += '<input class="form-input" id="pwdNew" type="password" placeholder="新密码（至少 6 位）" autocomplete="new-password">';
+    html += '<input class="form-input" id="pwdConfirm" type="password" placeholder="再次输入新密码" autocomplete="new-password">';
+    html += "</div>";
+    html += '<div id="pwdMsg" style="text-align:center;font-size:12px;color:var(--red);margin-top:8px;min-height:16px"></div>';
+    html += '<button type="button" id="pwdSave" class="btn primary" style="width:100%;margin-top:12px">确认修改</button>';
+    html += '<button type="button" id="mCancel" class="btn ghost" style="width:100%;margin-top:8px">取消</button>';
+
+    modal.innerHTML = html;
+    modal.style.display = "block";
+    mask.hidden = false;
+
+    const done = () => { modal.style.display = "none"; mask.hidden = true; };
+    const msg = $("#pwdMsg");
+    $("#mCancel").onclick = done;
+
+    $("#pwdSave").onclick = async () => {
+      const np = $("#pwdNew").value;
+      const cp = $("#pwdConfirm").value;
+      if (!np || np.length < 6) { msg.textContent = "密码至少 6 位"; return; }
+      if (np !== cp) { msg.textContent = "两次输入的密码不一致"; return; }
+      const btn = $("#pwdSave");
+      btn.disabled = true; btn.textContent = "修改中…";
+      msg.textContent = "";
+      try {
+        await DB.updatePassword(np);
+        done();
+        toast("✅ 密码已修改，下次登录用新密码");
+      } catch (err) {
+        msg.textContent = "修改失败：" + (String(err && err.message).includes("validate") ? "密码不符合要求" : err.message);
+      } finally {
+        btn.disabled = false; btn.textContent = "确认修改";
+        $("#pwdNew").value = ""; $("#pwdConfirm").value = "";
+      }
+    };
+  }
+
   /* ---------- 今日心选抽卡 ---------- */
   function drawStorageKey() {
     const d = new Date();
@@ -2731,6 +2774,7 @@
     // ===== 4. 数据与账户 =====
     html += '<div class="section-title">数据与账户</div>';
     html += '<div class="settings-list">';
+    html += '<button class="setting-item" id="btnChangePwd"><div><div class="t">🔑 修改密码</div><div class="d">更新当前账号的登录密码</div></div><span class="arrow">›</span></button>';
     html += '<button class="setting-item" id="btnExport"><div><div class="t">📤 导出备份</div><div class="d">下载全部数据为备份文件（含图片链接）</div></div><span class="arrow">›</span></button>';
     html += '<button class="setting-item" id="btnImport"><div><div class="t">📥 导入备份</div><div class="d">从备份文件恢复数据（会覆盖当前数据）</div></div><span class="arrow">›</span></button>';
     html += '<button class="setting-item" id="btnClear"><div><div class="t">🗑 清空全部数据</div><div class="d">删除所有收藏记录（不可恢复）</div></div><span class="arrow">›</span></button>';
@@ -2816,6 +2860,7 @@
       }, { passive: false });
     }
 
+    $("#btnChangePwd").onclick = () => showChangePasswordModal();
     $("#btnExport").onclick = async () => {
       const json = await DB.exportBackup();
       const blob = new Blob([json], { type: "application/json" });

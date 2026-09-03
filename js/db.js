@@ -116,6 +116,14 @@
     if (error) throw error;
   }
 
+  // 修改密码（登录状态下更新当前账号密码）
+  async function updatePassword(newPassword) {
+    const sb = getSupabase();
+    const { data, error } = await sb.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+    return data;
+  }
+
   /* ---------- 用户档案（显示名） ---------- */
   async function getProfile(userId) {
     const sb = getSupabase();
@@ -320,7 +328,7 @@
 
   window.DB = {
     getSupabase,
-    getSession, signUp, signIn, signOut, onAuthChange,
+    getSession, signUp, signIn, signOut, updatePassword, onAuthChange,
     getProfile, setDisplayName,
     getAll, getById, put, remove,
     uploadPhoto, deletePhoto,
