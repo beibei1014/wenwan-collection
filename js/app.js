@@ -1055,6 +1055,16 @@
         "</select>" +
         '<button class="btn primary" id="bApplyStatus" style="flex:none;padding:9px 14px;font-size:13px">应用</button></div></div>';
 
+      // 批量设置上次盘玩时间
+      html += '<div class="batch-op">' +
+        '<div class="batch-op-title">⏱️ 批量设置上次盘玩时间</div>' +
+        '<div style="display:flex;gap:8px">' +
+        '<button type="button" class="btn ghost" data-lp="today" style="flex:1;font-size:13px">今天</button>' +
+        '<button type="button" class="btn ghost" data-lp="yesterday" style="flex:1;font-size:13px">昨天</button>' +
+        '<button type="button" class="btn ghost" data-lp="clear" style="flex:1;font-size:13px">清除</button>' +
+        '<button class="btn primary" id="bApplyLastPlayed" style="flex:none;padding:9px 14px;font-size:13px">应用</button>' +
+        "</div></div>";
+
       // 批量设置珠子大小/拼图片数（按分类自动判断）
       html += '<div class="batch-op">' +
         '<div class="batch-op-title">📏 设置大小（珠子mm / 拼图片数）</div>' +
@@ -1096,6 +1106,26 @@
           if (!it.gifted) it.giftedAt = null;
           it.played = it.playStatus === "playing";
         });
+      };
+      // 批量设置上次盘玩时间（今天/昨天/清除）
+      let lpChoice = "today";
+      view.querySelectorAll("[data-lp]").forEach((b) => b.onclick = () => {
+        lpChoice = b.dataset.lp;
+        view.querySelectorAll("[data-lp]").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+      });
+      const defLp = view.querySelector('[data-lp="today"]');
+      if (defLp) defLp.classList.add("active");
+      $("#bApplyLastPlayed").onclick = async () => {
+        if (lpChoice === "clear") {
+          await applyToItems(items, async (it) => { it.lastPlayedAt = null; });
+        } else if (lpChoice === "yesterday") {
+          const t = new Date(); t.setDate(t.getDate() - 1); t.setHours(12, 0, 0, 0);
+          await applyToItems(items, async (it) => { it.lastPlayedAt = t.getTime(); if (!it.playStatus || it.playStatus === "unplayed") it.playStatus = "playing"; });
+        } else {
+          const t = new Date(); t.setHours(12, 0, 0, 0);
+          await applyToItems(items, async (it) => { it.lastPlayedAt = t.getTime(); if (!it.playStatus || it.playStatus === "unplayed") it.playStatus = "playing"; });
+        }
       };
       // 设置大小
       $("#bApplySize").onclick = async () => {
@@ -2101,10 +2131,15 @@
     html += infoItem("工艺", it.craft || "—");
     html += infoItem("入手价格", it.price != null && it.price !== "" ? "¥" + esc(String(it.price)) : "—");
     html += infoItem("购买店铺", esc(it.shop || "—"), true);
-    // 盘玩时长（上次盘玩 → 现在），仅珠子类且盘玩中/已盘好有记录时显示；可手动设置上次盘玩时间
-    if (isBeadCat(it.category || "") && it.lastPlayedAt) {
-      const restDays = Math.floor((Date.now() - it.lastPlayedAt) / 86400000);
-      html += infoItem("盘玩时长", "已放置 " + restDays + " 天 <button type=\"button\" class=\"link-btn\" id=\"editLastPlayed\">修改</button>", true);
+    // 盘玩时长（上次盘玩 → 现在）：所有菩提类都显示，可手动设置上次盘玩时间
+    if (isBeadCat(it.category || "")) {
+      if (it.lastPlayedAt) {
+        const restDays = Math.floor((Date.now() - it.lastPlayedAt) / 86400000);
+        const lpDate = new Date(it.lastPlayedAt);
+        html += infoItem("盘玩时长", "已放置 " + restDays + " 天（上次盘玩 " + (lpDate.getMonth() + 1) + "/" + lpDate.getDate() + "）<button type=\"button\" class=\"link-btn\" id=\"editLastPlayed\">修改</button>", true);
+      } else {
+        html += infoItem("盘玩时长", "未记录 <button type=\"button\" class=\"link-btn\" id=\"editLastPlayed\">设置上次盘玩</button>", true);
+      }
     }
     if (it.gifted && it.giftedAt) html += infoItem("送人时间", fmtDate(it.giftedAt), true);
     if (it.finishedAt) html += infoItem("拼图完成", fmtDate(it.finishedAt), true);
