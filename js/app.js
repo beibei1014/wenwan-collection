@@ -592,9 +592,12 @@
       const img = p ? '<img src="' + photoUrl(p) + '" loading="lazy" alt="">' : '<div class="placeholder">📿</div>';
       const badge = it.gifted ? '<span class="badge gifted">已送人</span>' : '<span class="badge instock">在库</span>';
       const statusBadge = statusBadgeHtml(it);
+      const favBtn = it.fav
+        ? '<button type="button" class="fav-heart faved" data-id="' + it.id + '" title="取消喜欢">❤️</button>'
+        : '<button type="button" class="fav-heart" data-id="' + it.id + '" title="标记喜欢">🤍</button>';
       const days = DB.formatDays(DB.daysWith(it));
       html += '<div class="card" data-id="' + it.id + '">' +
-        '<div class="card-thumb">' + img + badge + statusBadge + "</div>" +
+        '<div class="card-thumb">' + img + badge + statusBadge + favBtn + "</div>" +
         '<div class="card-body">' +
         '<div class="card-name">' + esc(it.name || "未命名") + "</div>" +
         '<div class="card-sub"><span>' + esc(it.species || it.beadSize ? (it.beadSize ? it.beadSize + "mm" : it.species || "") : "") + '</span><span class="days">' + esc(days) + "</span></div>" +
@@ -605,6 +608,51 @@
     view.innerHTML = html;
     view.querySelectorAll(".card").forEach((c) => c.addEventListener("click", () => location.hash = "#/item/" + c.dataset.id));
     bindStatusToggles();
+    bindFavToggles();
+  }
+
+  /* ---------- 喜欢展示柜页 ---------- */
+  function renderFavPage() {
+    topbarTitle.textContent = "我的喜欢";
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+
+    const favs = allItems.filter((i) => i.fav);
+    let html = "";
+    html += '<div class="section-title">❤️ 我特别喜欢的宝贝</div>';
+    html += '<div style="font-size:12px;color:var(--text-2);margin:-6px 0 12px">共 ' + favs.length + " 件，点卡片查看详情，点 ❤️ 取消喜欢</div>";
+
+    if (!favs.length) {
+      html += '<div class="empty"><div class="empty-icon">🤍</div>' +
+        "<p>还没有标记喜欢的宝贝\n在卡片或详情页点 ❤️ 收藏到这里</p></div>";
+      view.innerHTML = html;
+      view.querySelectorAll(".card").forEach((c) => c.addEventListener("click", () => location.hash = "#/item/" + c.dataset.id));
+      bindStatusToggles();
+      bindFavToggles();
+      return;
+    }
+
+    html += '<div class="grid">';
+    for (const it of favs) {
+      const p = it.photos && it.photos[0];
+      const img = p ? '<img src="' + photoUrl(p) + '" loading="lazy" alt="">' : '<div class="placeholder">📿</div>';
+      const badge = it.gifted ? '<span class="badge gifted">已送人</span>' : '<span class="badge instock">在库</span>';
+      const statusBadge = statusBadgeHtml(it);
+      const favBtn = '<button type="button" class="fav-heart faved" data-id="' + it.id + '" title="取消喜欢">❤️</button>';
+      const days = DB.formatDays(DB.daysWith(it));
+      html += '<div class="card" data-id="' + it.id + '">' +
+        '<div class="card-thumb">' + img + badge + statusBadge + favBtn + "</div>" +
+        '<div class="card-body">' +
+        '<div class="card-name">' + esc(it.name || "未命名") + "</div>" +
+        '<div class="card-sub"><span>' + esc(cardSubText(it)) + '</span><span class="days">' + esc(days) + "</span></div>" +
+        "</div></div>";
+    }
+    html += "</div>";
+
+    view.innerHTML = html;
+    view.querySelectorAll(".card").forEach((c) => c.addEventListener("click", () => location.hash = "#/item/" + c.dataset.id));
+    bindStatusToggles();
+    bindFavToggles();
   }
 
   /* 状态快捷切换绑定（卡片 + 列表）：
@@ -1550,6 +1598,7 @@
           (isPuzzleIt ? (it.playStatus === "puzzle_done" ? "g" : "yl") :
             isBeadIt ? beadStatusCls(it) : "");
         const price = it.price != null && it.price !== "" ? "¥" + it.price : "";
+        const favBtn = '<button type="button" class="fav-heart list-fav' + (it.fav ? " faved" : "") + '" data-id="' + it.id + '" title="喜欢">' + (it.fav ? "❤️" : "🤍") + "</button>";
         h += '<div class="list-item" data-id="' + it.id + '">' +
           '<div class="list-thumb">' + img + "</div>" +
           '<div class="list-info">' +
@@ -1566,6 +1615,7 @@
             : (isPuzzleIt || isBeadIt
               ? '<button type="button" class="list-status ' + statusCls + ' status-toggle" data-id="' + it.id + '" title="点击切换状态">' + statusTxt + "</button>"
               : "")) +
+          favBtn +
           "</div>";
       }
       return h + "</div>";
@@ -1578,9 +1628,12 @@
         '<div class="placeholder">📿</div>';
       const badge = it.gifted ? '<span class="badge gifted">已送人</span>' : '<span class="badge instock">在库</span>';
       const statusBadge = statusBadgeHtml(it);
+      const favBtn = it.fav
+        ? '<button type="button" class="fav-heart faved" data-id="' + it.id + '" title="取消喜欢">❤️</button>'
+        : '<button type="button" class="fav-heart" data-id="' + it.id + '" title="标记喜欢">🤍</button>';
       const days = DB.formatDays(DB.daysWith(it));
       h += '<div class="card" data-id="' + it.id + '">' +
-        '<div class="card-thumb">' + img + badge + statusBadge + "</div>" +
+        '<div class="card-thumb">' + img + badge + statusBadge + favBtn + "</div>" +
         '<div class="card-body">' +
         '<div class="card-name">' + esc(it.name || "未命名") + "</div>" +
         '<div class="card-sub"><span>' + esc(cardSubText(it)) + '</span><span class="days">' + esc(days) + "</span></div>" +
@@ -1592,6 +1645,29 @@
   function bindCardEvents() {
     view.querySelectorAll(".card, .list-item").forEach((c) => c.addEventListener("click", () => location.hash = "#/item/" + c.dataset.id));
     bindStatusToggles();
+    bindFavToggles();
+  }
+
+  /* 喜欢/取消喜欢（卡片 + 列表，点击 ❤️/🤍） */
+  function bindFavToggles() {
+    view.querySelectorAll(".fav-heart").forEach((b) => b.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const item = allItems.find((x) => x.id === b.dataset.id);
+      if (!item) return;
+      const next = !item.fav;
+      const prev = item.fav;
+      item.fav = next;
+      try {
+        const saved = await DB.put(item);
+        if (saved && saved.fav !== next) { item.fav = prev; toast("⚠️ 未保存：数据库缺少 fav 字段"); }
+        else {
+          toast(next ? "❤️ 已加入喜欢" : "已取消喜欢");
+          if (document.getElementById("gridHolder")) updateGrid();
+          else if (location.hash === "#/fav") renderFavPage();
+          else router();
+        }
+      } catch (err) { item.fav = prev; toast("操作失败：" + err.message); }
+    }));
   }
 
   function bindHomeEvents() {
@@ -1896,7 +1972,8 @@
 
     html += '<button class="btn ghost" id="btnTips" style="width:100%;margin-top:14px">📖 养护小知识</button>';
     html += '<div class="detail-actions">';
-    html += '<button class="btn ghost" id="btnShare">分享海报</button>';
+    html += '<button class="btn ghost" id="btnFav" style="flex:1">' + (it.fav ? "❤️ 已喜欢" : "🤍 喜欢") + '</button>';
+    html += '<button class="btn ghost" id="btnShare" style="flex:1">分享</button>';
     html += '<button class="btn primary" id="btnEdit">编辑</button>';
     html += '<button class="btn danger" id="btnDel">删除</button>';
     html += "</div></div>";
@@ -1920,6 +1997,16 @@
     $("#viewerClose").onclick = () => { $("#viewer").classList.remove("show"); };
 
     $("#btnTips").onclick = () => showTipsModal(it);
+    $("#btnFav").onclick = async () => {
+      const next = !it.fav;
+      const prev = it.fav;
+      it.fav = next;
+      try {
+        const saved = await DB.put(it);
+        if (saved && saved.fav !== next) { it.fav = prev; toast("⚠️ 未保存：数据库缺少 fav 字段"); }
+        else { toast(next ? "❤️ 已加入喜欢" : "已取消喜欢"); renderDetail(id); }
+      } catch (err) { it.fav = prev; toast("操作失败：" + err.message); }
+    };
     $("#btnEdit").onclick = () => location.hash = "#/edit/" + it.id;
     $("#btnDel").onclick = async () => {
       const ok = await confirmModal("删除这件宝贝？", "删除后不可恢复，请确认。", "删除", true);
@@ -2641,6 +2728,7 @@
     if (h === "#/cat") { renderCatPage(); return; }
     if (h === "#/stats") { renderStatsPage(); return; }
     if (h === "#/quest") { renderQuestPage(); return; }
+    if (h === "#/fav") { renderFavPage(); return; }
     if (h.startsWith("#/box/")) {
       const box = decodeURIComponent(h.slice(6));
       renderBoxPage(box);
@@ -2715,6 +2803,8 @@
     if (h === "#/settings") active = "settings";
     else if (h === "#/cat") active = "cat";
     else if (h === "#/stats") active = "stats";
+    else if (h === "#/quest") active = "quest";
+    else if (h === "#/fav") active = "fav";
     tabbar.querySelectorAll(".tab-item").forEach((t) => {
       const tab = t.dataset.tab;
       if (tab === "add") return;
@@ -2728,6 +2818,8 @@
       else if (tab === "cat") location.hash = "#/cat";
       else if (tab === "stats") location.hash = "#/stats";
       else if (tab === "settings") location.hash = "#/settings";
+      else if (tab === "quest") location.hash = "#/quest";
+      else if (tab === "fav") location.hash = "#/fav";
       else if (tab === "add") location.hash = "#/new";
     });
   });

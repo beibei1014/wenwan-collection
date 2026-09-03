@@ -260,6 +260,12 @@ img { display:block; }
 .badge.status-toggle.bead[data-bead="done"] { background:#2e7d32; }
 .badge.status-toggle.done { background:#2e7d32; }
 .badge.status-toggle.pending { background:#d98ba6; }
+/* 喜欢按钮（卡片右下角，固定） */
+.fav-heart { position:absolute; bottom:6px; left:6px; width:30px; height:30px; border-radius:50%; background:rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-size:15px; cursor:pointer; z-index:3; }
+.fav-heart.faved { background:rgba(255,60,120,.28); }
+/* 列表喜欢按钮（跟随行内，不用绝对定位） */
+.fav-heart.list-fav { position:static; background:none; width:30px; height:30px; margin-left:4px; flex-shrink:0; }
+.fav-heart.list-fav.faved { background:none; }
 .card-body { padding:8px 10px 10px; }
 .card-name { font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .card-sub { font-size:11px; color:var(--text-2); margin-top:2px; display:flex; justify-content:space-between; align-items:center; }
