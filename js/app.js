@@ -1164,6 +1164,21 @@
         '<input class="form-input" id="bSpecies" placeholder="如：星月菩提 / HEYE" style="flex:1">' +
         '<button class="btn primary" id="bApplySpecies" style="flex:none;padding:9px 14px;font-size:13px">应用</button></div></div>';
 
+      // 批量设置主色
+      {
+        let colorChips = '<button type="button" class="color-chip' + (!"" ? " active" : "") + '" data-bcolor="">未选</button>';
+        (window.Color ? window.Color.COLOR_LIST : []).forEach((c) => {
+          const dotStyle = c.hex === "mix" ? 'background:linear-gradient(135deg,#e53935,#fbc02d,#4caf50,#1976d2)' : ("background:" + c.hex);
+          const dotBorder = c.v === "white" ? "border:1px solid #ddd" : "";
+          colorChips += '<button type="button" class="color-chip" data-bcolor="' + c.v + '" style="display:inline-flex;align-items:center;gap:5px">' +
+            '<span style="display:block;width:16px;height:16px;border-radius:50%;' + dotStyle + ';' + dotBorder + '"></span>' + c.label + "</button>";
+        });
+        html += '<div class="batch-op">' +
+          '<div class="batch-op-title">🎨 批量设置主色</div>' +
+          '<div class="filters" id="bColorChips" style="margin-bottom:8px">' + colorChips + "</div>" +
+          '<button class="btn primary" id="bApplyColor" style="width:100%">应用到所选宝贝</button></div>';
+      }
+
       // 批量删除
       html += '<div class="batch-op" style="border-color:#f8bbd0">' +
         '<div class="batch-op-title" style="color:var(--red)">🗑️ 批量删除（' + items.length + ' 个）</div>' +
@@ -1220,6 +1235,20 @@
           it.species = v;
           if (it.category === "动漫周边") it.accessoryType = v;
         });
+      };
+      // 批量设置主色：chips 选择 + 应用到所选
+      let bColorChoice = "";
+      const bColorChips = $("#bColorChips");
+      if (bColorChips) {
+        bColorChips.querySelectorAll(".color-chip").forEach((b) => b.onclick = () => {
+          bColorChips.querySelectorAll(".color-chip").forEach((x) => x.classList.remove("active"));
+          b.classList.add("active");
+          bColorChoice = b.dataset.bcolor || "";
+        });
+      }
+      $("#bApplyColor").onclick = async () => {
+        if (!bColorChoice) { toast("请先选择颜色"); return; }
+        await applyToItems(items, async (it) => { it.color = bColorChoice; });
       };
       // 批量删除
       $("#bDelete").onclick = async () => {
