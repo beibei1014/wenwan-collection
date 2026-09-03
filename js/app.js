@@ -61,13 +61,11 @@
     if (st === "playing") return "盘玩中";
     return "未盘玩";
   }
-  // 珠子状态颜色 class（复用列表状态配色）
+  // 珠子状态颜色 class（5 种状态 5 种颜色）
+  const BEAD_CLS = { unplayed: "sp-unplayed", ready: "sp-ready", playing: "sp-playing", resting: "sp-resting", done: "sp-done" };
   function beadStatusCls(it) {
     const st = it.playStatus || "unplayed";
-    if (st === "playing" || st === "done") return "g";
-    if (st === "resting") return "b";
-    if (st === "ready") return "yl";
-    return "yl"; // unplayed
+    return BEAD_CLS[st] || BEAD_CLS.unplayed;
   }
 
   // 生成可点击的状态徽章 HTML（卡片 thumb 右上角 / 列表右侧），已送人不显示
@@ -1841,7 +1839,9 @@
     };
     const br = $("#btnRedraw");
     if (br) br.onclick = () => {
-      const res = Game.drawRecommendation(allItems, 3);
+      const salt = Math.floor(Math.random() * 1000000); // 每次重抽不同盐
+      const res = Game.drawRecommendation(allItems, 3, salt);
+      res.salt = salt;
       if (!res.items.length) { toast("暂无可抽的串"); return; }
       setDrawResult(res);
       renderHome();

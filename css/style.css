@@ -256,6 +256,7 @@ img { display:block; }
 .badge.status-toggle.bead { background:rgba(184,134,11,.92); font-size:10px; }
 .badge.status-toggle.bead[data-bead="unplayed"] { background:#8d8d8d; }
 .badge.status-toggle.bead[data-bead="ready"] { background:rgba(184,134,11,.85); }
+.badge.status-toggle.bead[data-bead="playing"] { background:#e67e22; }
 .badge.status-toggle.bead[data-bead="resting"] { background:#1976d2; }
 .badge.status-toggle.bead[data-bead="done"] { background:#2e7d32; }
 .badge.status-toggle.done { background:#2e7d32; }
@@ -324,6 +325,11 @@ img { display:block; }
 .tag.g { background:#e8f5e9; color:var(--green); border-color:#c8e6c9; }
 .tag.r { background:#fce4ec; color:var(--red); border-color:#f8bbd0; }
 .tag.yl { background:#fff8e1; color:var(--gold); border-color:#ffecb3; }
+.tag.sp-unplayed { background:#f0f0f0; color:#757575; border-color:#dcdcdc; }
+.tag.sp-ready { background:#fff8e1; color:#b8860b; border-color:#ffecb3; }
+.tag.sp-playing { background:#fde8d7; color:#e67e22; border-color:#f7c9a3; }
+.tag.sp-resting { background:#e3f2fd; color:#1976d2; border-color:#bbdefb; }
+.tag.sp-done { background:#e8f5e9; color:#2e7d32; border-color:#c8e6c9; }
 .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
 .info-item { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
 .info-item .k { font-size:11px; color:var(--text-2); margin-bottom:3px; }
@@ -718,6 +724,12 @@ img { display:block; }
 .list-status.r { background:#fce4ec; color:var(--red); border-color:#f8bbd0; }
 .list-status.yl { background:#fff8e1; color:var(--gold); border-color:#ffecb3; }
 .list-status.b { background:#e3f2fd; color:#1976d2; border-color:#bbdefb; }
+/* 珠子 5 态专属颜色 */
+.list-status.sp-unplayed { background:#f0f0f0; color:#757575; border-color:#dcdcdc; }
+.list-status.sp-ready { background:#fff8e1; color:#b8860b; border-color:#ffecb3; }
+.list-status.sp-playing { background:#fde8d7; color:#e67e22; border-color:#f7c9a3; }
+.list-status.sp-resting { background:#e3f2fd; color:#1976d2; border-color:#bbdefb; }
+.list-status.sp-done { background:#e8f5e9; color:#2e7d32; border-color:#c8e6c9; }
 
 
 /* ============ 批量编辑面板 ============ */

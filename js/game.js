@@ -264,12 +264,13 @@
     return true;
   }
 
-  function drawRecommendation(items, count) {
+  function drawRecommendation(items, count, salt) {
     count = count || 3;
     const now = Date.now();
-    // 种子 = 年月日（当天固定、次日变化）
+    // 默认种子 = 年月日（当天固定、跨设备一致）；点"重抽"时传 salt 让结果变化
     const d = new Date(now);
-    const seed = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+    let seed = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+    if (salt != null) seed = (seed ^ Math.floor(salt)); // 重抽：异或一个随机盐，保证与默认不同且可重复
     const pool = items.filter((i) => isDrawable(i, now));
     const picked = seededShuffle(pool, seed).slice(0, count);
     return {

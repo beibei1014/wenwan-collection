@@ -151,6 +151,11 @@
   function isMissingColumnErr(error) {
     return error && error.message && error.message.includes("Could not find the") && error.message.includes("column");
   }
+  // 从错误消息中提取缺失的列名（形如 Could not find the 'play_status' column ...）
+  function missingColumnName(error) {
+    const m = /Could not find the '([^']+)' column/.exec(error.message || "");
+    return m ? m[1] : null;
+  }
 
   async function put(item) {
     const sb = getSupabase();
@@ -167,12 +172,26 @@
         : await sb.from("bracelets").insert(record).select().single();
       if (error) {
         if (isMissingColumnErr(error)) {
-          OPTIONAL_FIELDS.forEach((f) => delete record[f]);
-          const { data: d2, error: e2 } = hasId
-            ? await sb.from("bracelets").update(record).eq("id", item.id).select().single()
-            : await sb.from("bracelets").insert(record).select().single();
-          if (e2) throw e2;
-          return toFront(d2);
+          // 精确降级：只删除报错缺失的那一列，重试（保留 play_status/fav 等其它字段）
+          const missing = missingColumnName(error);
+          if (missing && record[missing] !== undefined) {
+            delete record[missing];
+            const { data: d2, error: e2 } = hasId
+              ? await sb.from("bracelets").update(record).eq("id", item.id).select().single()
+              : await sb.from("bracelets").insert(record).select().single();
+            if (!e2) return toFront(d2);
+          }
+          // 若无法识别缺失列或重试仍失败，做一次兜底：逐字段剔除重试
+          let candidate = { ...record };
+          for (let i = 0; i < OPTIONAL_FIELDS.length; i++) {
+            candidate = { ...candidate };
+            delete candidate[OPTIONAL_FIELDS[i]];
+            const { data: d3, error: e3 } = hasId
+              ? await sb.from("bracelets").update(candidate).eq("id", item.id).select().single()
+              : await sb.from("bracelets").insert(candidate).select().single();
+            if (!e3) return toFront(d3);
+          }
+          throw error;
         }
         throw error;
       }
