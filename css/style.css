@@ -263,6 +263,42 @@ img { display:block; }
 /* 喜欢按钮（卡片右下角，固定） */
 .fav-heart { position:absolute; bottom:6px; left:6px; width:30px; height:30px; border-radius:50%; background:rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-size:15px; cursor:pointer; z-index:3; }
 .fav-heart.faved { background:rgba(255,60,120,.28); }
+
+/* ============ 喜欢展示柜（沉浸式一屏一宝贝） ============ */
+.fav-stage { min-height:60vh; display:flex; flex-direction:column; }
+.fav-frame {
+  position:relative; flex:1; min-height:52vh; border-radius:20px; overflow:hidden;
+  background:linear-gradient(160deg,#1d1712,#2b211a);
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:inset 0 0 60px rgba(0,0,0,.6), 0 10px 30px rgba(0,0,0,.25);
+}
+.fav-frame img { max-width:88%; max-height:64vh; object-fit:contain; border-radius:14px; filter:drop-shadow(0 12px 28px rgba(0,0,0,.6)); }
+.fav-frame .placeholder { font-size:120px; color:#c9b89c; }
+/* 射灯光效 */
+.fav-shine {
+  position:absolute; top:-30%; left:50%; width:70%; height:160%;
+  background:radial-gradient(ellipse at center, rgba(255,236,180,.28), transparent 70%);
+  transform:translateX(-50%); pointer-events:none;
+  animation:shineFloat 6s ease-in-out infinite;
+}
+@keyframes shineFloat { 0%,100%{opacity:.7;} 50%{opacity:1;} }
+/* 喜欢页内的大号取消喜欢按钮（右上角） */
+.fav-frame .fav-heart { top:12px; right:12px; bottom:auto; left:auto; width:40px; height:40px; font-size:18px; background:rgba(0,0,0,.5); }
+.fav-nav { display:flex; align-items:center; justify-content:center; gap:16px; margin-top:14px; }
+.fav-arrow {
+  width:42px; height:42px; border-radius:50%; background:var(--card); border:1px solid var(--line);
+  color:var(--wood); font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+}
+.fav-arrow:active { background:var(--wood); color:#f5f0e8; }
+.fav-dots { display:flex; gap:8px; }
+.fav-dot { width:8px; height:8px; border-radius:50%; background:var(--line); cursor:pointer; transition:all .2s; }
+.fav-dot.active { width:22px; border-radius:5px; background:var(--gold); }
+.fav-meta { text-align:center; margin-top:14px; }
+.fav-name { font-size:20px; font-weight:700; color:var(--wood); }
+.fav-sub { font-size:13px; color:var(--text-2); margin-top:4px; }
+.fav-status { margin-top:8px; }
+.fav-count { font-size:11px; color:var(--text-2); margin-top:6px; letter-spacing:1px; }
+.fav-actions { display:flex; gap:10px; margin-top:16px; }
 /* 列表喜欢按钮（跟随行内，不用绝对定位） */
 .fav-heart.list-fav { position:static; background:none; width:30px; height:30px; margin-left:4px; flex-shrink:0; }
 .fav-heart.list-fav.faved { background:none; }

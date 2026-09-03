@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>我的收藏展厅</title>
+  <style>
+    :root { --gold:#d8b25a; --bg1:#14100c; --bg2:#1e1711; }
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    body {
+      font-family:'PingFang SC','Microsoft YaHei',sans-serif;
+      background:linear-gradient(180deg,var(--bg1),var(--bg2) 55%,#0d0a07);
+      color:#e8dcc0; min-height:100vh; overflow-x:hidden;
+      display:flex; flex-direction:column; align-items:center;
+    }
+    .title-wrap { padding:38px 20px 6px; text-align:center; z-index:2; }
+    .title { font-size:26px; font-weight:700; color:var(--gold); letter-spacing:4px; }
+    .subtitle { font-size:13px; color:rgba(216,178,90,.7); margin-top:8px; letter-spacing:2px; }
+    .stage { position:relative; width:100%; max-width:480px; margin:8px auto; flex:1; display:flex; flex-direction:column; align-items:center; }
+    .spotlight { position:absolute; top:8px; left:50%; transform:translateX(-50%); width:160px; height:60px; z-index:3; background:radial-gradient(ellipse at center, rgba(255,236,180,.35), transparent 70%); pointer-events:none; }
+    .frame { position:relative; width:78vw; max-width:360px; aspect-ratio:1/1; margin:30px auto 10px; border-radius:18px; overflow:hidden; background:linear-gradient(160deg,#221a12,#17100a); box-shadow:inset 0 0 50px rgba(0,0,0,.75), 0 14px 40px rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; border:1px solid rgba(216,178,90,.25); }
+    .frame img { width:86%; height:86%; object-fit:contain; border-radius:12px; filter:drop-shadow(0 12px 30px rgba(0,0,0,.7)); animation:itemIn .6s cubic-bezier(.2,.8,.3,1); }
+    .frame .placeholder { font-size:96px; color:#c9b89c; animation:itemIn .6s ease; }
+    @keyframes itemIn { from { opacity:0; transform:scale(.9); } to { opacity:1; transform:scale(1); } }
+    .shine { position:absolute; top:-40%; left:50%; width:60%; height:180%; background:linear-gradient(180deg, transparent, rgba(255,236,180,.16), transparent); transform:translateX(-50%) rotate(8deg); animation:sweep 5.5s ease-in-out infinite; pointer-events:none; mix-blend-mode:screen; }
+    @keyframes sweep { 0%,100%{ left:8%; opacity:.35;} 50%{ left:92%; opacity:.9;} }
+    .nameplate { text-align:center; padding:6px 0 14px; }
+    .name { font-size:20px; font-weight:700; color:#f0e6cf; letter-spacing:2px; }
+    .sub { font-size:13px; color:rgba(216,178,90,.75); margin-top:6px; }
+    .dots { display:flex; gap:8px; justify-content:center; margin:12px 0 4px; }
+    .dot { width:7px; height:7px; border-radius:50%; background:rgba(216,178,90,.3); cursor:pointer; transition:all .25s; }
+    .dot.active { width:20px; border-radius:4px; background:var(--gold); }
+    .nav { position:absolute; top:50%; transform:translateY(-50%); width:44px; height:44px; border-radius:50%; background:rgba(255,255,255,.07); border:1px solid rgba(216,178,90,.3); color:var(--gold); font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:5; user-select:none; }
+    .nav:active { background:rgba(216,178,90,.25); }
+    .prev { left:12px; } .next { right:12px; }
+    .footer { padding:14px; text-align:center; font-size:11px; color:rgba(216,178,90,.5); letter-spacing:1px; }
+    .count { font-size:12px; color:rgba(216,178,90,.65); margin-top:2px; }
+    .empty { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:70vh; text-align:center; padding:20px; }
+    .empty .icon { font-size:70px; opacity:.5; }
+    .empty p { margin-top:16px; font-size:15px; color:rgba(216,178,90,.7); line-height:1.8; }
+  </style>
+</head>
+<body>
+  <div class="title-wrap">
+    <div class="title">我的收藏展厅</div>
+    <div class="subtitle" id="subtitle">MUSEUM OF PRIVATE COLLECTION</div>
+  </div>
+  <div class="stage" id="stage">
+    <div class="spotlight"></div>
+    <div class="nav prev" id="prev">‹</div>
+    <div class="nav next" id="next">›</div>
+    <div class="frame" id="frame"></div>
+    <div class="nameplate">
+      <div class="name" id="name"></div>
+      <div class="sub" id="sub"></div>
+    </div>
+    <div class="dots" id="dots"></div>
+    <div class="count" id="count"></div>
+  </div>
+  <div class="footer">我的收藏馆 · 分享你的藏品</div>
+  <script>
+    function getParam(name) {
+      var m = new URLSearchParams(location.search).get(name);
+      return m ? m : "";
+    }
+    function decodeData(s) {
+      try { return JSON.parse(decodeURIComponent(s || "")) || []; } catch (e) { return []; }
+    }
+    var raw = getParam("data");
+    var items = decodeData(raw);
+    var idx = 0;
+    function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+    var frame = document.getElementById("frame");
+    var nameEl = document.getElementById("name");
+    var subEl = document.getElementById("sub");
+    var dotsEl = document.getElementById("dots");
+    var countEl = document.getElementById("count");
+    function render() {
+      if (!items.length) {
+        document.getElementById("stage").style.display = "none";
+        document.querySelector(".footer").textContent = "这个展厅暂时是空的";
+        return;
+      }
+      if (idx < 0) idx = items.length - 1;
+      if (idx >= items.length) idx = 0;
+      var it = items[idx] || {};
+      var img = it.url ? '<img src="' + esc(it.url) + '" alt="">' : '<div class="placeholder">📿</div>';
+      frame.innerHTML = '<div class="shine"></div>' + img;
+      nameEl.textContent = it.name || "未命名";
+      var sub = it.species || (it.size ? it.size : it.category || "");
+      subEl.textContent = sub;
+      var d = "";
+      for (var i = 0; i < items.length; i++) { d += '<span class="dot' + (i === idx ? " active" : "") + '" data-i="' + i + '"></span>'; }
+      dotsEl.innerHTML = d;
+      countEl.textContent = "第 " + (idx + 1) + " / " + items.length + " 件";
+      dotsEl.querySelectorAll(".dot").forEach(function(dot){ dot.onclick = function(){ idx = +dot.dataset.i; render(); }; });
+    }
+    document.getElementById("prev").onclick = function(){ idx--; render(); };
+    document.getElementById("next").onclick = function(){ idx++; render(); };
+    var sx = 0;
+    document.getElementById("stage").addEventListener("touchstart", function(e){ sx = e.touches[0].clientX; }, {passive:true});
+    document.getElementById("stage").addEventListener("touchend", function(e){
+      var dx = e.changedTouches[0].clientX - sx;
+      if (Math.abs(dx) > 50) { if (dx < 0) idx++; else idx--; render(); }
+    }, {passive:true});
+    render();
+  </script>
+</body>
+</html>

@@ -376,6 +376,132 @@
     return canvas;
   }
 
+  /* ---------- 喜欢展柜海报（深色博物馆 + 射灯 + 铜牌） ---------- */
+  async function favPoster(items, opts) {
+    const list = (items || []).slice(0, 20);
+    const W = 1080;
+    const cols = 3;
+    const cardW = 320, cardH = 430, gap = 28;
+    const padX = 40;
+    const titleH = 210, footerH = 130;
+    const count = list.length;
+    const rows = count ? Math.ceil(count / cols) : 1;
+    const contentH = rows * cardH + (rows - 1) * gap;
+    const H = Math.max(1520, titleH + contentH + footerH);
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+
+    // 深色展厅背景（暗棕 + 聚光灯渐变）
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#14100c");
+    bg.addColorStop(0.5, "#1e1711");
+    bg.addColorStop(1, "#0d0a07");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // 地面反光
+    ctx.fillStyle = "rgba(184,134,11,.06)";
+    ctx.fillRect(0, H - 120, W, 120);
+
+    // 顶部标题（鎏金）
+    ctx.fillStyle = "#d8b25a";
+    ctx.font = "bold 56px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("我的收藏展厅", W / 2, 90);
+    ctx.fillStyle = "rgba(216,178,90,.75)";
+    ctx.font = "26px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("MUSEUM · " + (opts && opts.username ? opts.username + " @ " : "") + "我的收藏馆", W / 2, 138);
+    // 顶部装饰线
+    ctx.strokeStyle = "rgba(216,178,90,.5)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(W / 2 - 200, 168); ctx.lineTo(W / 2 + 200, 168);
+    ctx.stroke();
+
+    // 内容区居中
+    const totalW = cols * cardW + (cols - 1) * gap;
+    const startX = (W - totalW) / 2;
+
+    for (let i = 0; i < count; i++) {
+      const item = list[i];
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const rowStart = row * cols;
+      const rowCount = Math.min(cols, count - rowStart);
+      const rowWidth = rowCount * cardW + (rowCount - 1) * gap;
+      const rowStartX = (W - rowWidth) / 2;
+      const x = rowStartX + col * (cardW + gap);
+      const y = titleH + row * (cardH + gap);
+
+      // 展位背板（深色玻璃）
+      ctx.fillStyle = "rgba(30,24,18,.9)";
+      roundRect(ctx, x, y, cardW, cardH, 16);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(216,178,90,.35)";
+      ctx.lineWidth = 2;
+      roundRect(ctx, x, y, cardW, cardH, 16);
+      ctx.stroke();
+
+      // 顶部射灯光晕
+      const spot = ctx.createRadialGradient(x + cardW / 2, y + 20, 20, x + cardW / 2, y + 120, cardW * 0.7);
+      spot.addColorStop(0, "rgba(255,236,180,.22)");
+      spot.addColorStop(1, "rgba(255,236,180,0)");
+      ctx.fillStyle = spot;
+      ctx.fillRect(x, y, cardW, 200);
+
+      // 照片（方形，带阴影）
+      const photo = item.photos && item.photos[0];
+      const imgX = x + 20, imgY = y + 24, imgSize = cardW - 40;
+      if (photo) {
+        try {
+          const img = await loadImg(photo.url || (photo.data ? URL.createObjectURL(photo.data) : ""));
+          ctx.save();
+          ctx.shadowColor = "rgba(0,0,0,.6)";
+          ctx.shadowBlur = 18;
+          ctx.shadowOffsetY = 8;
+          drawRoundImage(ctx, img, imgX, imgY, imgSize, imgSize, 10);
+          ctx.restore();
+        } catch (e) {
+          ctx.fillStyle = "#2a211a";
+          roundRect(ctx, imgX, imgY, imgSize, imgSize, 10);
+          ctx.fill();
+          ctx.fillStyle = "#c9b89c";
+          ctx.font = "80px serif";
+          ctx.textAlign = "center";
+          ctx.fillText("📿", x + cardW / 2, imgY + imgSize / 2 + 30);
+        }
+      } else {
+        ctx.fillStyle = "#2a211a";
+        roundRect(ctx, imgX, imgY, imgSize, imgSize, 10);
+        ctx.fill();
+        ctx.fillStyle = "#c9b89c";
+        ctx.font = "80px serif";
+        ctx.textAlign = "center";
+        ctx.fillText("📿", x + cardW / 2, imgY + imgSize / 2 + 30);
+      }
+
+      // 铜牌（名称）
+      ctx.fillStyle = "#d8b25a";
+      ctx.font = "bold 26px 'PingFang SC','Microsoft YaHei',sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(escText(item.name || "未命名").slice(0, 7), x + cardW / 2, y + imgY + imgSize + 26);
+      // 铜牌副信息
+      ctx.fillStyle = "rgba(216,178,90,.7)";
+      ctx.font = "22px 'PingFang SC','Microsoft YaHei',sans-serif";
+      const sub = item.category || item.species || (item.beadSize ? item.beadSize + "mm" : "");
+      ctx.fillText(sub.slice(0, 8), x + cardW / 2, y + imgY + imgSize + 58);
+    }
+
+    // 底部落款
+    ctx.fillStyle = "rgba(216,178,90,.55)";
+    ctx.font = "24px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("· 我的收藏展厅 ·", W / 2, H - 46);
+
+    return canvas;
+  }
+
   /* 分享海报（优先系统分享，否则下载） */
   async function shareCanvas(canvas, filename) {
     const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.92));
@@ -392,5 +518,5 @@
     return "downloaded";
   }
 
-  window.Poster = { singlePoster, galleryPoster, achievementPoster, downloadCanvas, shareCanvas };
+  window.Poster = { singlePoster, galleryPoster, achievementPoster, favPoster, downloadCanvas, shareCanvas };
 })();

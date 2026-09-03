@@ -611,49 +611,158 @@
     bindFavToggles();
   }
 
-  /* ---------- 喜欢展示柜页 ---------- */
+  /* ---------- 喜欢展示柜页（沉浸式一屏一宝贝 + 左右滑动切换） ---------- */
+  let favIdx = 0; // 当前展示的第几个喜欢宝贝
   function renderFavPage() {
     topbarTitle.textContent = "我的喜欢";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
 
     const favs = allItems.filter((i) => i.fav);
-    let html = "";
-    html += '<div class="section-title">❤️ 我特别喜欢的宝贝</div>';
-    html += '<div style="font-size:12px;color:var(--text-2);margin:-6px 0 12px">共 ' + favs.length + " 件，点卡片查看详情，点 ❤️ 取消喜欢</div>";
+    if (favIdx >= favs.length) favIdx = 0;
+    if (favIdx < 0) favIdx = 0;
 
+    let html = "";
     if (!favs.length) {
+      html += '<div class="section-title">❤️ 我特别喜欢的宝贝</div>';
       html += '<div class="empty"><div class="empty-icon">🤍</div>' +
         "<p>还没有标记喜欢的宝贝\n在卡片或详情页点 ❤️ 收藏到这里</p></div>";
       view.innerHTML = html;
-      view.querySelectorAll(".card").forEach((c) => c.addEventListener("click", () => location.hash = "#/item/" + c.dataset.id));
-      bindStatusToggles();
-      bindFavToggles();
       return;
     }
 
-    html += '<div class="grid">';
-    for (const it of favs) {
-      const p = it.photos && it.photos[0];
-      const img = p ? '<img src="' + photoUrl(p) + '" loading="lazy" alt="">' : '<div class="placeholder">📿</div>';
-      const badge = it.gifted ? '<span class="badge gifted">已送人</span>' : '<span class="badge instock">在库</span>';
-      const statusBadge = statusBadgeHtml(it);
-      const favBtn = '<button type="button" class="fav-heart faved" data-id="' + it.id + '" title="取消喜欢">❤️</button>';
-      const days = DB.formatDays(DB.daysWith(it));
-      html += '<div class="card" data-id="' + it.id + '">' +
-        '<div class="card-thumb">' + img + badge + statusBadge + favBtn + "</div>" +
-        '<div class="card-body">' +
-        '<div class="card-name">' + esc(it.name || "未命名") + "</div>" +
-        '<div class="card-sub"><span>' + esc(cardSubText(it)) + '</span><span class="days">' + esc(days) + "</span></div>" +
-        "</div></div>";
+    const it = favs[favIdx];
+    const p = it.photos && it.photos[0];
+    const img = p ? '<img src="' + photoUrl(p) + '" alt="">' : '<div class="placeholder">📿</div>';
+
+    // 底部信息
+    const stTxt = it.gifted ? "已送人" :
+      isPuzzleCat(it.category || "") ? (it.playStatus === "puzzle_done" ? "已拼" : "待拼") :
+      isBeadCat(it.category || "") ? beadStatusText(it) : "";
+    const stCls = it.gifted ? "r" :
+      isPuzzleCat(it.category || "") ? (it.playStatus === "puzzle_done" ? "g" : "yl") :
+      isBeadCat(it.category || "") ? beadStatusCls(it) : "";
+
+    // 圆点指示器
+    let dots = "";
+    for (let i = 0; i < favs.length; i++) {
+      dots += '<span class="fav-dot' + (i === favIdx ? " active" : "") + '" data-i="' + i + '"></span>';
     }
+
+    html += '<div class="fav-stage">';
+    html += '<div class="fav-frame">' + img +
+      '<div class="fav-shine"></div>' +
+      '<button type="button" class="fav-heart faved" data-id="' + it.id + '" title="取消喜欢">❤️</button>' +
+      '</div>';
+    html += '<div class="fav-nav">' +
+      '<button type="button" class="fav-arrow" id="favPrev">◀</button>' +
+      '<div class="fav-dots">' + dots + "</div>" +
+      '<button type="button" class="fav-arrow" id="favNext">▶</button>' +
+      "</div>";
+    html += '<div class="fav-meta">' +
+      '<div class="fav-name">' + esc(it.name || "未命名") + "</div>" +
+      '<div class="fav-sub">' + esc(cardSubText(it)) + (it.category ? " · " + esc(it.category) : "") + "</div>" +
+      (stTxt ? '<div class="fav-status"><span class="tag ' + stCls + '">' + esc(stTxt) + "</span></div>" : "") +
+      '<div class="fav-count">第 ' + (favIdx + 1) + " / " + favs.length + " 件</div>" +
+      "</div>";
+    // 操作按钮行
+    html += '<div class="fav-actions">' +
+      '<button class="btn ghost" id="favShare" style="flex:1">🏛 海报</button>' +
+      '<button class="btn ghost" id="favShareLink" style="flex:1">🔗 动态展厅</button>' +
+      '<button class="btn primary" id="favView" style="flex:1">详情</button>' +
+      "</div>";
     html += "</div>";
 
     view.innerHTML = html;
-    view.querySelectorAll(".card").forEach((c) => c.addEventListener("click", () => location.hash = "#/item/" + c.dataset.id));
-    bindStatusToggles();
-    bindFavToggles();
+
+    // 事件绑定
+    const show = (i) => { favIdx = (i + favs.length) % favs.length; renderFavPage(); };
+    const prev = $("#favPrev"), next = $("#favNext");
+    if (prev) prev.onclick = () => show(favIdx - 1);
+    if (next) next.onclick = () => show(favIdx + 1);
+    view.querySelectorAll(".fav-dot").forEach((d) => d.onclick = () => show(+d.dataset.i));
+    // 取消喜欢
+    const heart = view.querySelector(".fav-heart");
+    if (heart) heart.onclick = async (e) => {
+      e.stopPropagation();
+      const item = allItems.find((x) => x.id === heart.dataset.id);
+      if (!item) return;
+      const nextFav = !item.fav;
+      const prevFav = item.fav;
+      item.fav = nextFav;
+      try {
+        const saved = await DB.put(item);
+        if (saved && saved.fav !== nextFav) { item.fav = prevFav; toast("⚠️ 未保存：数据库缺 fav 列（详见开发文档 SQL）"); }
+        else { toast("已取消喜欢"); if (favIdx >= favs.length - 1) favIdx = 0; renderFavPage(); }
+      } catch (err) { item.fav = prevFav; toast("操作失败：" + err.message); }
+    };
+    // 查看详情
+    const fv = $("#favView");
+    if (fv) fv.onclick = () => location.hash = "#/item/" + it.id;
+    // 分享展柜（高级海报）
+    const fsBtn = $("#favShare");
+    if (fsBtn) fsBtn.onclick = async () => {
+      const btn = fsBtn;
+      btn.disabled = true; btn.textContent = "生成中…";
+      try {
+        const canvas = await Poster.favPoster(favs, { username: user && user.displayName ? user.displayName : "" });
+        const result = await Poster.shareCanvas(canvas, "我的收藏展柜_" + new Date().getFullYear() + ".jpg");
+        toast(result === "shared" ? "已分享" : "展柜海报已保存到相册/下载");
+      } catch (err) { toast("展柜生成失败：" + err.message); }
+      finally { btn.disabled = false; btn.textContent = "🏛 海报"; }
+    };
+    // 分享动态展厅链接（公开可访问，任何人可看）
+    const fsLink = $("#favShareLink");
+    if (fsLink) fsLink.onclick = async () => {
+      const btn = fsLink;
+      btn.disabled = true; btn.textContent = "生成中…";
+      try {
+        // 打包喜欢宝贝数据（仅暴露公开信息：名称/图片URL/分类/品种/尺寸）
+        const data = favs.map((it) => {
+          const p = it.photos && it.photos[0];
+          const size = Categories.getSizeField(it.category || "");
+          return {
+            name: it.name || "未命名",
+            url: p ? (p.url || (p.data ? URL.createObjectURL(p.data) : "")) : "",
+            category: it.category || "",
+            species: it.species || "",
+            size: size === "bead" ? (it.beadSize ? it.beadSize + "mm" : "") : size === "pieces" ? (it.pieceCount ? it.pieceCount + "片" : "") : "",
+          };
+        }).filter((d) => d.url);
+        if (!data.length) { toast("这些宝贝没有照片，无法生成展厅"); return; }
+        const encoded = encodeURIComponent(JSON.stringify(data));
+        // 用当前脚本所在目录拼 gallery.html（兼容 GitHub Pages 子路径）
+        const here = location.href.split("#")[0];
+        const base = here.slice(0, here.lastIndexOf("/")) + "/gallery.html";
+        const link = base + "?data=" + encoded;
+        // 复制到剪贴板并尝试系统分享
+        let shown = false;
+        if (navigator.share) {
+          try { await navigator.share({ title: "我的收藏展厅", text: "看看我的藏品：", url: link }); shown = true; } catch (e) {}
+        }
+        if (!shown) {
+          try { await navigator.clipboard.writeText(link); toast("展厅链接已复制，发给朋友吧！"); }
+          catch (e) { toast("链接：" + link); }
+        }
+      } catch (err) { toast("生成链接失败：" + err.message); }
+      finally { btn.disabled = false; btn.textContent = "🔗 动态展厅"; }
+    };
+    // 左右滑动（触摸）
+    bindFavSwipe();
   }
+
+  /* 左右滑动切换喜欢页 */
+  function bindFavSwipe() {
+    const stage = view.querySelector(".fav-stage");
+    if (!stage) return;
+    let sx = 0;
+    stage.addEventListener("touchstart", (e) => { sx = e.touches[0].clientX; }, { passive: true });
+    stage.addEventListener("touchend", (e) => {
+      const dx = e.changedTouches[0].clientX - sx;
+      if (Math.abs(dx) > 50) { if (dx < 0) { favIdx++; } else { favIdx--; } renderFavPage(); }
+    }, { passive: true });
+  }
+
 
   /* 状态快捷切换绑定（卡片 + 列表）：
    * 拼图：待拼↔已拼 直接切换；珠子：点击弹出状态选择器；均已送人除外 */
