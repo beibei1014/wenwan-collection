@@ -36,6 +36,20 @@
     ctx.restore();
   }
 
+  /* 保持图片比例 contain 居中到方框内（不拉伸变形） */
+  function drawImageContain(ctx, img, x, y, w, h, r) {
+    ctx.save();
+    roundRect(ctx, x, y, w, h, r);
+    ctx.clip();
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    if (!iw || !ih) { ctx.drawImage(img, x, y, w, h); ctx.restore(); return; }
+    const scale = Math.min(w / iw, h / ih);
+    const dw = iw * scale, dh = ih * scale;
+    const dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
+    ctx.drawImage(img, dx, dy, dw, dh);
+    ctx.restore();
+  }
+
   function escText(s) {
     return String(s == null ? "" : s);
   }
@@ -63,7 +77,7 @@
     if (photo) {
       try {
         const img = await loadImg(photo.url || (photo.data ? URL.createObjectURL(photo.data) : ""));
-        drawRoundImage(ctx, img, 90, 120, 900, 900, 24);
+        drawImageContain(ctx, img, 90, 120, 900, 900, 24);
       } catch (e) {
         ctx.fillStyle = "#e0d5c0";
         roundRect(ctx, 90, 120, 900, 900, 24);
@@ -182,7 +196,7 @@
       if (photo) {
         try {
           const img = await loadImg(photo.url || (photo.data ? URL.createObjectURL(photo.data) : ""));
-          drawRoundImage(ctx, img, x + 14, y + 14, cardW - 28, cardW - 28, 12);
+          drawImageContain(ctx, img, x + 14, y + 14, cardW - 28, cardW - 28, 12);
         } catch (e) {}
       } else {
         ctx.fillStyle = "#efe9dd";
@@ -450,9 +464,16 @@
       ctx.fillStyle = spot;
       ctx.fillRect(x, y, cardW, 200);
 
-      // 照片（方形，带阴影）
+      // 卡片布局：上半部图片区（方形，contain 完整显示），下半部铜牌文字区
+      const imgPad = 22;                 // 图片四周留白
+      const nameZoneTop = 24;            // 图片区顶部
+      const nameZoneH = 116;             // 底部文字区高度
+      const imgSize = cardW - imgPad * 2; // 方形图片边长（282）
+      const imgY = y + nameZoneTop;
+      const imgX = x + imgPad;
+
+      // 照片（方形，居中完整显示，不裁剪不拉伸）
       const photo = item.photos && item.photos[0];
-      const imgX = x + 20, imgY = y + 24, imgSize = cardW - 40;
       if (photo) {
         try {
           const img = await loadImg(photo.url || (photo.data ? URL.createObjectURL(photo.data) : ""));
@@ -460,7 +481,7 @@
           ctx.shadowColor = "rgba(0,0,0,.6)";
           ctx.shadowBlur = 18;
           ctx.shadowOffsetY = 8;
-          drawRoundImage(ctx, img, imgX, imgY, imgSize, imgSize, 10);
+          drawImageContain(ctx, img, imgX, imgY, imgSize, imgSize, 10);
           ctx.restore();
         } catch (e) {
           ctx.fillStyle = "#2a211a";
@@ -481,16 +502,17 @@
         ctx.fillText("📿", x + cardW / 2, imgY + imgSize / 2 + 30);
       }
 
-      // 铜牌（名称）
+      // 铜牌（名称）——位于卡片底部预留区，固定在卡片内
+      const textTop = y + nameZoneTop + imgSize + 22;
       ctx.fillStyle = "#d8b25a";
       ctx.font = "bold 26px 'PingFang SC','Microsoft YaHei',sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(escText(item.name || "未命名").slice(0, 7), x + cardW / 2, y + imgY + imgSize + 26);
-      // 铜牌副信息
+      ctx.fillText(escText(item.name || "未命名").slice(0, 7), x + cardW / 2, textTop + 26);
+      // 铜牌副信息（品种/分类）
       ctx.fillStyle = "rgba(216,178,90,.7)";
       ctx.font = "22px 'PingFang SC','Microsoft YaHei',sans-serif";
-      const sub = item.category || item.species || (item.beadSize ? item.beadSize + "mm" : "");
-      ctx.fillText(sub.slice(0, 8), x + cardW / 2, y + imgY + imgSize + 58);
+      const sub = item.species || item.category || (item.beadSize ? item.beadSize + "mm" : "");
+      ctx.fillText(sub.slice(0, 8), x + cardW / 2, textTop + 62);
     }
 
     // 底部落款
