@@ -50,51 +50,6 @@
     ctx.restore();
   }
 
-  /* 自动去浅色背景（抠图）：采样图片四角背景色，把接近背景色的像素设为透明。
-     手串主体通常是深/中色，浅色背景（布料/桌面）会被去掉。
-     返回一张透明背景的 canvas。 */
-  function removeBackground(img, threshold) {
-    threshold = threshold == null ? 42 : threshold;
-    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
-    const cv = document.createElement("canvas");
-    cv.width = w; cv.height = h;
-    const c = cv.getContext("2d");
-    c.drawImage(img, 0, 0, w, h);
-    let data;
-    try { data = c.getImageData(0, 0, w, h).data; } catch (e) { return cv; } // 跨域等时回退原图
-    // 采样四个角落的颜色作为背景色估计
-    const pts = [
-      [Math.floor(w * 0.03), Math.floor(h * 0.03)],
-      [Math.floor(w * 0.97), Math.floor(h * 0.03)],
-      [Math.floor(w * 0.03), Math.floor(h * 0.97)],
-      [Math.floor(w * 0.97), Math.floor(h * 0.97)],
-    ];
-    let br = 0, bg = 0, bb = 0, n = 0;
-    pts.forEach(([px, py]) => {
-      const idx = (py * w + px) * 4;
-      br += data[idx]; bg += data[idx + 1]; bb += data[idx + 2]; n++;
-    });
-    br /= n; bg /= n; bb /= n;
-    // 背景足够浅才抠（否则保留原图，避免误抠）
-    const isLightBg = (br + bg + bb) / 3 > 130;
-    if (!isLightBg) return cv;
-    // 逐像素处理
-    const out = c.getImageData(0, 0, w, h);
-    const d = out.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const dr = Math.abs(d[i] - br), dg = Math.abs(d[i + 1] - bg), db = Math.abs(d[i + 2] - bb);
-      // 颜色距离（近似）
-      const dist = Math.sqrt(dr * dr + dg * dg + db * db);
-      if (dist < threshold) {
-        // 越接近背景越透明
-        const a = Math.max(0, Math.min(255, (dist / threshold) * 255));
-        d[i + 3] = Math.min(d[i + 3], a);
-      }
-    }
-    c.putImageData(out, 0, 0);
-    return cv;
-  }
-
   function escText(s) {
     return String(s == null ? "" : s);
   }
@@ -507,22 +462,11 @@
       if (photo) {
         try {
           const img = await loadImg(photo.url || (photo.data ? URL.createObjectURL(photo.data) : ""));
-          let drawImg = img;
-          // 抠图：去浅色背景（默认开，opt.cutout === false 则用完整图）
-          if (opts && opts.cutout !== false) {
-            const bgRemoved = removeBackground(img);
-            // 检查抠图是否真的去掉了背景（透明像素占比），否则回退完整图
-            const c = bgRemoved.getContext("2d");
-            const px = c.getImageData(0, 0, bgRemoved.width, bgRemoved.height).data;
-            let transparent = 0, total = px.length / 4;
-            for (let k = 3; k < px.length; k += 4) { if (px[k] < 128) transparent++; }
-            if (transparent / total > 0.12) drawImg = bgRemoved; // 抠图成功才用
-          }
           ctx.save();
           ctx.shadowColor = "rgba(61,43,31,.28)";
           ctx.shadowBlur = 26;
           ctx.shadowOffsetY = 10;
-          drawImageContain(ctx, drawImg, imgX, imgY, imgSize, imgSize, 14);
+          drawImageContain(ctx, img, imgX, imgY, imgSize, imgSize, 14);
           ctx.restore();
         } catch (e) {
           ctx.fillStyle = "#e2d5c0";
