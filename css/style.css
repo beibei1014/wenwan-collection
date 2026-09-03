@@ -768,6 +768,13 @@ img { display:block; }
 }
 .species-chip:active { background:var(--gold); color:#fff; border-color:var(--gold); }
 
+/* 主色选择 chips */
+.color-chip {
+  background:var(--bg); border:1px solid var(--line); border-radius:16px;
+  padding:5px 12px; font-size:12px; color:var(--text-2); cursor:pointer;
+}
+.color-chip.active { background:var(--wood); color:#f5f0e8; border-color:var(--wood); font-weight:600; }
+
 
 /* ============ 开关 ============ */
 .switch { position:relative; display:inline-block; width:50px; height:28px; flex-shrink:0; }

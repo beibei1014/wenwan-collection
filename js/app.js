@@ -2268,8 +2268,8 @@
     }
     // 颜色：显示主色 + 可点击修改
     {
-      const cLabel = Color ? Color.colorLabel(it.color) : "其他";
-      const cHex = Color ? Color.colorHex(it.color) : "#9e9e9e";
+      const cLabel = window.Color ? window.Color.colorLabel(it.color) : "其他";
+      const cHex = window.Color ? window.Color.colorHex(it.color) : "#9e9e9e";
       const dotStyle = it.color === "mixed" ? 'background:linear-gradient(135deg,#e53935,#fbc02d,#4caf50,#1976d2)' : ("background:" + cHex);
       const dotBorder = it.color === "white" ? "border:1px solid #ddd" : "";
       html += infoItem("主色", '<span style="display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:-2px;margin-right:5px;' + dotStyle + ';' + dotBorder + '"></span>' + esc(cLabel) + ' <button type="button" class="link-btn" id="editColor">修改</button>', true);
@@ -2473,6 +2473,20 @@
     html += '<div class="form-group"><div class="form-label">状态</div>' +
       '<div class="seg" id="fStatus">' + statusBtns + "</div></div>";
 
+    // 主色选择（手动）
+    {
+      const curColor = it ? (it.color || "") : "";
+      let colorChips = '<button type="button" class="color-chip' + (!curColor ? " active" : "") + '" data-color="">未选</button>';
+      (window.Color ? window.Color.COLOR_LIST : []).forEach((c) => {
+        const dotStyle = c.hex === "mix" ? 'background:linear-gradient(135deg,#e53935,#fbc02d,#4caf50,#1976d2)' : ("background:" + c.hex);
+        const dotBorder = c.v === "white" ? "border:1px solid #ddd" : "";
+        colorChips += '<button type="button" class="color-chip' + (curColor === c.v ? " active" : "") + '" data-color="' + c.v + '" style="display:inline-flex;align-items:center;gap:5px">' +
+          '<span style="display:block;width:16px;height:16px;border-radius:50%;' + dotStyle + ';' + dotBorder + '"></span>' + c.label + "</button>";
+      });
+      html += '<div class="form-group"><div class="form-label">主色 <small>自动识别，可手动改</small></div>' +
+        '<div class="filters" id="fColorChips">' + colorChips + "</div></div>";
+    }
+
     html += '<div class="form-group" id="giftedWrap"' + ((curStatus === "gifted" || giftStatus === "gifted") ? "" : ' style="display:none"') + '><div class="form-label">送人时间</div>' +
       '<input class="form-input" id="fGiftedDate" type="date" value="' + (it && it.giftedAt ? fmtDateInput(it.giftedAt) : "") + '"></div>';
 
@@ -2588,6 +2602,14 @@
         b.classList.add("active");
         const gw = $("#giftedWrap");
         if (gw) gw.style.display = b.dataset.v === "gifted" ? "" : "none";
+      });
+    }
+    // 主色 chips 点击切换
+    const fColorChips = $("#fColorChips");
+    if (fColorChips) {
+      fColorChips.querySelectorAll(".color-chip").forEach((b) => b.onclick = () => {
+        fColorChips.querySelectorAll(".color-chip").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
       });
     }
 
@@ -2783,7 +2805,11 @@
           await Promise.all(delTasks);
         }
 
-        // 自动识别主色：有照片且未手动设颜色时，识别第一张主照片的颜色
+        // 优先用手动选的主色（表单 color-chip）
+        const colorChip = view.querySelector("#fColorChips .color-chip.active");
+        if (colorChip) item.color = colorChip.dataset.color || "";
+
+        // 自动识别主色：未手动选色且照片存在时，识别第一张主照片的颜色
         if (!item.color && item.photos.length && window.Color) {
           const first = item.photos[0];
           const src = first.url || (first.data ? URL.createObjectURL(first.data) : "");
