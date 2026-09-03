@@ -19,6 +19,7 @@
   let viewMode = localStorage.getItem("ww_viewmode") || "card"; // card | list
   let sortMode = localStorage.getItem("ww_sortmode") || "newest"; // newest(入库降序) | oldest(入库升序) | created_desc(创建降序) | created_asc(创建升序)
   let user = null;           // 当前登录用户
+  let _onBack = null;        // 当前页面的自定义返回钩子（如批量编辑页设回首页，离开时清空）
 
   /* ---------- 状态定义 ---------- */
   // 珠子类 4 态：未盘玩(unplayed) / 待盘玩(ready) / 盘玩中(playing) / 已盘好(done)
@@ -938,6 +939,8 @@
     const selected = new Set();
     const list = filtered();
     const MAX_SELECT = 20;
+    // 整个多选/批量编辑流程：顶栏返回都回首页
+    _onBack = () => { renderHome(); location.hash = "#/"; window.scrollTo(0, 0); };
 
     function render() {
       topbarTitle.textContent = "多选操作";
@@ -1028,6 +1031,8 @@
       topbarTitle.textContent = "批量编辑 " + items.length + " 个宝贝";
       btnBack.style.visibility = "visible";
       btnSettings.style.visibility = "hidden";
+      // 顶栏返回：回首页（批量编辑页无独立 hash，避免跳向旧历史/批量导入）
+      _onBack = () => { renderHome(); location.hash = "#/"; window.scrollTo(0, 0); };
 
       let html = "";
       html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:12px">对选中的 ' + items.length + ' 个宝贝执行以下操作：</div>';
@@ -1055,15 +1060,14 @@
         "</select>" +
         '<button class="btn primary" id="bApplyStatus" style="flex:none;padding:9px 14px;font-size:13px">应用</button></div></div>';
 
-      // 批量设置上次盘玩时间
+      // 批量设置上次盘玩时间（日期选择器）
       html += '<div class="batch-op">' +
-        '<div class="batch-op-title">⏱️ 批量设置上次盘玩时间</div>' +
+        '<div class="batch-op-title">⏱️ 批量设置上次盘玩时间（日历选择）</div>' +
         '<div style="display:flex;gap:8px">' +
-        '<button type="button" class="btn ghost" data-lp="today" style="flex:1;font-size:13px">今天</button>' +
-        '<button type="button" class="btn ghost" data-lp="yesterday" style="flex:1;font-size:13px">昨天</button>' +
-        '<button type="button" class="btn ghost" data-lp="clear" style="flex:1;font-size:13px">清除</button>' +
+        '<input class="form-input" id="bLastPlayed" type="date" style="flex:1">' +
         '<button class="btn primary" id="bApplyLastPlayed" style="flex:none;padding:9px 14px;font-size:13px">应用</button>' +
-        "</div></div>";
+        "</div>" +
+        '<div style="font-size:11px;color:var(--text-2);margin-top:6px">不填日期直接点应用 = 清除上次盘玩时间；填了日期则设为该日（并自动转盘玩中）</div></div>';
 
       // 批量设置珠子大小/拼图片数（按分类自动判断）
       html += '<div class="batch-op">' +
@@ -1107,24 +1111,14 @@
           it.played = it.playStatus === "playing";
         });
       };
-      // 批量设置上次盘玩时间（今天/昨天/清除）
-      let lpChoice = "today";
-      view.querySelectorAll("[data-lp]").forEach((b) => b.onclick = () => {
-        lpChoice = b.dataset.lp;
-        view.querySelectorAll("[data-lp]").forEach((x) => x.classList.remove("active"));
-        b.classList.add("active");
-      });
-      const defLp = view.querySelector('[data-lp="today"]');
-      if (defLp) defLp.classList.add("active");
+      // 批量设置上次盘玩时间（日历选择：填日期=设为该日；不填=清除）
       $("#bApplyLastPlayed").onclick = async () => {
-        if (lpChoice === "clear") {
+        const dv = $("#bLastPlayed").value;
+        if (!dv) {
           await applyToItems(items, async (it) => { it.lastPlayedAt = null; });
-        } else if (lpChoice === "yesterday") {
-          const t = new Date(); t.setDate(t.getDate() - 1); t.setHours(12, 0, 0, 0);
-          await applyToItems(items, async (it) => { it.lastPlayedAt = t.getTime(); if (!it.playStatus || it.playStatus === "unplayed") it.playStatus = "playing"; });
         } else {
-          const t = new Date(); t.setHours(12, 0, 0, 0);
-          await applyToItems(items, async (it) => { it.lastPlayedAt = t.getTime(); if (!it.playStatus || it.playStatus === "unplayed") it.playStatus = "playing"; });
+          const t = new Date(dv + "T12:00:00").getTime();
+          await applyToItems(items, async (it) => { it.lastPlayedAt = t; if (!it.playStatus || it.playStatus === "unplayed") it.playStatus = "playing"; });
         }
       };
       // 设置大小
@@ -1155,8 +1149,16 @@
         toast("已删除 " + items.length + " 个宝贝");
         location.hash = "#/";
       };
-      $("#bDone").onclick = () => { render(); };
+      $("#bDone").onclick = () => {
+        _onBack = null;                        // 清空自定义返回
+        btnBack.onclick = goBack;              // 恢复全局返回
+        renderHome();
+        location.hash = "#/";
+        window.scrollTo(0, 0);
+      };
       $("#bCancelBatch").onclick = () => {
+        _onBack = null;
+        btnBack.onclick = goBack;
         renderHome();
         location.hash = "#/";
         window.scrollTo(0, 0);
@@ -2978,6 +2980,8 @@
 
   /* ---------- 启动 ---------- */
   function goBack() {
+    // 当前页面设置了自定义返回钩子（如批量编辑页），优先用它
+    if (_onBack) { const b = _onBack; _onBack = null; btnBack.onclick = goBack; b(); return; }
     const h = location.hash;
     if (h.startsWith("#/item/")) { location.hash = "#/"; return; }         // 详情 → 首页
     if (h.startsWith("#/edit/")) {
