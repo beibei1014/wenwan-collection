@@ -50,29 +50,37 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 - 配置入口：js/config.js；建表脚本：`supabase-schema.sql`
 
 **`bracelets` 表字段**（注意：历史迭代多次 alter，脚本分散在多个 supabase-*.sql）：
-`id, user_id, name, species, craft, arrived_at, price, shop, gifted, gifted_at, played, played_note, note, photos(jsonb), screenshots(jsonb), created_at, updated_at, bead_size, category, finished_at, piece_count, accessory_type, play_status`
+`id, user_id, name, species, craft, arrived_at, price, shop, gifted, gifted_at, played, played_note, note, photos(jsonb), screenshots(jsonb), created_at, updated_at, bead_size, category, finished_at, piece_count, accessory_type, play_status, last_played_at`
 
-- `play_status`：`''`(待盘玩) / `playing`(在盘玩) / `puzzle_pending`(待拼) / `puzzle_done`(已拼)；**若用户库缺此列需执行 `alter table public.bracelets add column if not exists play_status text not null default '';`**（db.js 会静默降级，不会崩，但状态保存无效）
+- `play_status`（v30 改为珠子 5 态）：珠子类 `''/unplayed`(未盘玩) / `ready`(待盘玩) / `playing`(盘玩中) / `resting`(放置中) / `done`(已盘好)；拼图类 `puzzle_pending`(待拼) / `puzzle_done`(已拼)；**若用户库缺此列需执行 `alter table public.bracelets add column if not exists play_status text not null default '';`**（db.js 会静默降级，不会崩，但状态保存无效）
+- `last_played_at`（v30 新增）：上次盘玩时间（timestamptz），抽卡/放置天数靠它；**需执行 `alter table public.bracelets add column if not exists last_played_at timestamptz;`**（db.js 已加入 OPTIONAL_FIELDS 降级）
 - `category`：菩提/水晶/玉石/拼图/动漫周边/盲盒/其他（用户可自定义增删，存 localStorage `ww_categories`）
 - `photos`/`screenshots`：jsonb 数组，每项 `{url, name, ...}`（Blob 只在本地上传前存在）
 - `profiles` 表：`id, display_name, updated_at`（昵称）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS）。
 
-## 五、功能清单（截至 v29）
+## 五、功能清单（截至 v30）
 
-1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（待盘玩/在盘玩/待拼/已拼/已送人）、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
+1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（珠子 5 态 + 拼图 2 态 + 已送人）、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **图鉴展示**：卡片视图 / 列表视图（可切换、记忆）；状态筛选、分类筛选、搜索（含工艺/状态/价格/珠径/片数）；**排序 4 种：入库最新/最早、创建时间最新/最早**（记忆 `ww_sortmode`）
-3. **状态快捷切换**：卡片右上角 / 列表右侧状态按钮点击即切换（不进入详情），手串↔待盘玩/在盘玩，拼图↔待拼/已拼，已送人不切换
-4. **大图查看器**：点图放大，底部数字按钮切换多图（每次切换重新绑定事件）
-5. **分类盒子页**：按分类展示 + 收集进度（品种/品牌收集率）
-6. **批量录入**：一次填多行；**多选操作**：勾选卡片（≤20）批量编辑（转分类/状态/尺寸/品牌/删除）+ 生成图鉴海报
-7. **分享海报**：单条海报 + 图鉴长图 + 成就海报（Canvas 生成，系统分享/保存）
-8. **统计页**：GitHub 风月历热力图（按月翻看）、花费统计、成就徽章（囤囤鼠系列 tier：囤囤新鼠→囤囤鼠→囤囤大仙→囤货龙王等，点击设置展示称号，最多 6 个）
-9. **游戏化**：XP/等级称号（收藏萌新→异世界收藏王）、**每日任务 4 个**（当日型池 5 选 2 + 达成型池 11 选 2，按日期种子随机，当天一致次日变化）、不买挑战（隐藏自动累计）、升级弹窗
-10. **有趣发现**（统计页底部）：最贵/最省/性价比之王/陪伴最久/平均单价/最宠爱的品种/在库率/送出的宝贝
-11. **Tips 知识库**：按材质/分类显示养护、禁忌、盘玩、冷知识
-12. **多账号 + 云同步** + **PWA 离线可用** + **数据导出/导入 JSON**
+3. **珠子状态机（v30 新增）**：珠子类 5 态 `未盘玩(unplayed)` / `待盘玩(ready)` / `盘玩中(playing)` / `放置中(resting)` / `已盘好(done)`；**每个珠子记录 `lastPlayedAt`（上次盘玩时间）**；点击状态徽章弹出状态选择器，含 **"✅ 今日盘过"**（记录今天盘了 → 自动转放置中）；列表显示"放置中 · 已放 X 天"
+4. **今日心选抽卡（v30 新增）**：首页"🎴 今日心选"栏目，用户**主动点击抽取**，从候选池（待盘玩/盘玩中/放置中>1天/已盘好，且距上次盘玩>1天或从未盘过）按**当天日期种子**随机抽 3 串，当天固定、次日变化，可重抽；结果存 localStorage（`ww_draw_YYYY-M-D`）；拼图/周边不参与
+5. **大图查看器**：点图放大，底部数字按钮切换多图（每次切换重新绑定事件）
+6. **分类盒子页**：按分类展示 + 收集进度（品种/品牌收集率）
+7. **批量录入**：一次填多行；**多选操作**：勾选卡片（≤20）批量编辑（转分类/状态/尺寸/品牌/删除）+ 生成图鉴海报
+8. **分享海报**：单条海报 + 图鉴长图 + 成就海报（Canvas 生成，系统分享/保存）
+9. **统计页**：GitHub 风月历热力图（按月翻看）、花费统计、成就徽章（囤囤鼠系列 tier：囤囤新鼠→囤囤鼠→囤囤大仙→囤货龙王等，点击设置展示称号，最多 6 个）
+10. **游戏化**：XP/等级称号（收藏萌新→异世界收藏王）、**每日任务 4 个**（当日型池 5 选 2 + 达成型池 11 选 2，按日期种子随机，当天一致次日变化）、不买挑战（隐藏自动累计）、升级弹窗
+11. **有趣发现**（统计页底部）：最贵/最省/性价比之王/陪伴最久/平均单价/最宠爱的品种/在库率/送出的宝贝
+12. **Tips 知识库**：按材质/分类显示养护、禁忌、盘玩、冷知识
+13. **多账号 + 云同步** + **PWA 离线可用** + **数据导出/导入 JSON**
+
+### 珠子状态兼容（v30）
+- 旧数据 `playStatus: "idle"` → 归一为 `"ready"`（旧"待盘玩"→ 新"待盘玩"）
+- 旧 `"playing"` → 保留（= 新"盘玩中"）
+- 旧 `""` / `null` → 归一为 `"unplayed"`（新"未盘玩"）
+- 兼容逻辑在 app.js 的 `loadItems()` 和 `normBeadStatus()`
 
 ## 六、用户偏好与重要决策（历史讨论结论）
 

@@ -253,6 +253,13 @@ img { display:block; }
 .badge.instock { background:var(--green); }
 .badge.played { position:absolute; top:8px; right:8px; background:rgba(184,134,11,.92); }
 .badge.status-toggle { position:absolute; top:8px; right:8px; left:auto; cursor:pointer; }
+.badge.status-toggle.bead { background:rgba(184,134,11,.92); font-size:10px; }
+.badge.status-toggle.bead[data-bead="unplayed"] { background:#8d8d8d; }
+.badge.status-toggle.bead[data-bead="ready"] { background:rgba(184,134,11,.85); }
+.badge.status-toggle.bead[data-bead="resting"] { background:#1976d2; }
+.badge.status-toggle.bead[data-bead="done"] { background:#2e7d32; }
+.badge.status-toggle.done { background:#2e7d32; }
+.badge.status-toggle.pending { background:#d98ba6; }
 .card-body { padding:8px 10px 10px; }
 .card-name { font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .card-sub { font-size:11px; color:var(--text-2); margin-top:2px; display:flex; justify-content:space-between; align-items:center; }
@@ -668,6 +675,7 @@ img { display:block; }
 .list-status.g { background:#e8f5e9; color:var(--green); border-color:#c8e6c9; }
 .list-status.r { background:#fce4ec; color:var(--red); border-color:#f8bbd0; }
 .list-status.yl { background:#fff8e1; color:var(--gold); border-color:#ffecb3; }
+.list-status.b { background:#e3f2fd; color:#1976d2; border-color:#bbdefb; }
 
 
 /* ============ 批量编辑面板 ============ */
@@ -719,3 +727,24 @@ img { display:block; }
 }
 .switch input:checked + .switch-slider { background:var(--gold); }
 .switch input:checked + .switch-slider:before { transform:translateX(22px); }
+
+
+/* ============ 今日心选抽卡 ============ */
+.draw-card {
+  background:linear-gradient(135deg, rgba(184,134,11,.12), rgba(184,134,11,.05));
+  border:1px solid rgba(184,134,11,.4);
+  border-radius:14px; padding:12px; margin-bottom:14px;
+}
+.draw-head { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.draw-title { font-size:15px; font-weight:700; color:var(--wood); }
+.draw-sub { font-size:11px; color:var(--text-2); flex:1; }
+.draw-redraw { flex-shrink:0; font-size:11px; padding:4px 10px; border-radius:16px; background:var(--card); border:1px solid var(--line); color:var(--text-2); cursor:pointer; }
+.draw-empty { text-align:center; font-size:12px; color:var(--text-2); margin-top:8px; }
+.draw-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.draw-item { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:6px; cursor:pointer; text-align:center; }
+.draw-thumb { position:relative; aspect-ratio:1/1; border-radius:8px; overflow:hidden; background:var(--ph-bg, #efe9dd); }
+.draw-thumb img { width:100%; height:100%; object-fit:cover; }
+.draw-thumb .placeholder { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:26px; color:#c9b89c; }
+.draw-status { position:absolute; left:4px; bottom:4px; font-size:9px; padding:1px 6px; border-radius:8px; background:rgba(0,0,0,.55); color:#fff; }
+.draw-name { font-size:12px; font-weight:600; margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text); }
+.draw-sub { font-size:10px; color:var(--text-2); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }

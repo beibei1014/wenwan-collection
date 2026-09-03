@@ -38,6 +38,7 @@
       category: item.category || "",
       finished_at: item.finishedAt ? new Date(item.finishedAt).toISOString() : null,
       play_status: item.playStatus || "",
+      last_played_at: item.lastPlayedAt ? new Date(item.lastPlayedAt).toISOString() : null,
       piece_count: (item.pieceCount == null || item.pieceCount === "") ? null : Number(item.pieceCount),
       accessory_type: item.accessoryType || "",
       photos: (item.photos || []).map(stripBlob),
@@ -66,6 +67,7 @@
       category: row.category || "",
       finishedAt: row.finished_at ? new Date(row.finished_at).getTime() : null,
       playStatus: row.play_status || "",
+      lastPlayedAt: row.last_played_at ? new Date(row.last_played_at).getTime() : null,
       pieceCount: row.piece_count,
       accessoryType: row.accessory_type || "",
       photos: row.photos || [],
@@ -142,7 +144,7 @@
 
   /* ---------- CRUD ---------- */
   // 可能尚未在数据库建好的新字段（未执行 SQL 时自动降级）
-  const OPTIONAL_FIELDS = ["piece_count", "accessory_type", "play_status", "finished_at"];
+  const OPTIONAL_FIELDS = ["piece_count", "accessory_type", "play_status", "finished_at", "last_played_at"];
 
   function isMissingColumnErr(error) {
     return error && error.message && error.message.includes("Could not find the") && error.message.includes("column");

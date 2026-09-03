@@ -241,6 +241,43 @@
     };
   }
 
+  /* ---------- 抽卡系统：今日心选 3 串（按日期种子随机，当天固定、次日变化） ---------- */
+  // 候选：珠子类（非拼图/非周边/非送人）
+  // - ready(待盘玩)/playing(盘玩中)/done(已盘好包浆)：随时可抽（done 不受上次盘玩时间限制）
+  // - resting(放置中)：需距上次盘玩 > 1 天（放够回油才重新进池）
+  function isDrawable(item, now) {
+    if (!item || item.gifted) return false;
+    const cat = item.category || "";
+    // 拼图/周边/盲盒不参与盘玩抽卡
+    if (Categories.isPuzzleCategory(cat) || Categories.isBrandCategory(cat)) return false;
+    if (item.playStatus === "unplayed" || item.playStatus === "") return false; // 未盘玩（暂时不想盘的）不抽
+    if (item.playStatus === "done") return true; // 已盘好包浆：随时能拿出来盘，始终可抽
+    const okStatus = ["ready", "playing", "resting"].includes(item.playStatus);
+    if (!okStatus) return false;
+    // ready/playing 从没盘过可抽；resting 需距上次盘玩 > 1 天
+    if (item.playStatus === "resting") {
+      if (!item.lastPlayedAt) return true;
+      return Math.floor((now - item.lastPlayedAt) / 86400000) >= 1;
+    }
+    // ready / playing
+    return true;
+  }
+
+  function drawRecommendation(items, count) {
+    count = count || 3;
+    const now = Date.now();
+    // 种子 = 年月日（当天固定、次日变化）
+    const d = new Date(now);
+    const seed = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+    const pool = items.filter((i) => isDrawable(i, now));
+    const picked = seededShuffle(pool, seed).slice(0, count);
+    return {
+      items: picked,
+      poolSize: pool.length,
+      date: d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"),
+    };
+  }
+
   /* ---------- 收集进度（每个盒子） ---------- */
   function boxProgress(items) {
     const cats = Categories ? Categories.getCategoryConfig("") : null;
@@ -264,5 +301,5 @@
     return result;
   }
 
-  window.Game = { computeXp, getLevel, dailyTasks, noBuyChallenge, boxProgress, daysSinceLastBuy };
+  window.Game = { computeXp, getLevel, dailyTasks, noBuyChallenge, boxProgress, daysSinceLastBuy, drawRecommendation, isDrawable };
 })();
