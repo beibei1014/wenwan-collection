@@ -662,6 +662,14 @@
       (stTxt ? '<div class="fav-status"><span class="tag ' + stCls + '">' + esc(stTxt) + "</span></div>" : "") +
       '<div class="fav-count">第 ' + (favIdx + 1) + " / " + favs.length + " 件</div>" +
       "</div>";
+    // 抠图开关（海报生成时去背景/完整图）
+    html += '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:6px;font-size:12px;color:var(--text-2)">' +
+      '<span>海报抠图</span>' +
+      '<label class="switch">' +
+      '<input type="checkbox" id="favCutout"' + (getFavCutout() ? " checked" : "") + '>' +
+      '<span class="switch-slider"></span>' +
+      "</label>" +
+      '<span style="font-size:11px">关=完整图</span></div>';
     // 操作按钮行
     html += '<div class="fav-actions">' +
       '<button class="btn ghost" id="favShare" style="flex:1">🏛 海报</button>' +
@@ -696,13 +704,16 @@
     // 查看详情
     const fv = $("#favView");
     if (fv) fv.onclick = () => location.hash = "#/item/" + it.id;
+    // 抠图开关切换（记住选择）
+    const fCut = $("#favCutout");
+    if (fCut) fCut.onchange = () => setFavCutout(fCut.checked);
     // 分享展柜（高级海报）
     const fsBtn = $("#favShare");
     if (fsBtn) fsBtn.onclick = async () => {
       const btn = fsBtn;
       btn.disabled = true; btn.textContent = "生成中…";
       try {
-        const canvas = await Poster.favPoster(favs, { username: user && user.displayName ? user.displayName : "" });
+        const canvas = await Poster.favPoster(favs, { username: user && user.displayName ? user.displayName : "", cutout: getFavCutout() });
         const result = await Poster.shareCanvas(canvas, "我的收藏展柜_" + new Date().getFullYear() + ".jpg");
         toast(result === "shared" ? "已分享" : "展柜海报已保存到相册/下载");
       } catch (err) { toast("展柜生成失败：" + err.message); }
@@ -2032,6 +2043,13 @@
   }
   function setHideSpend(hide) {
     localStorage.setItem("ww_hide_spend", hide ? "1" : "0");
+  }
+  /* 海报抠图开关（默认开=去背景） */
+  function getFavCutout() {
+    return localStorage.getItem("ww_fav_cutout") !== "0"; // 默认 true（去背景）
+  }
+  function setFavCutout(v) {
+    localStorage.setItem("ww_fav_cutout", v ? "1" : "0");
   }
 
   /* ---------- 店铺输入记忆 ---------- */

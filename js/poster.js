@@ -50,6 +50,51 @@
     ctx.restore();
   }
 
+  /* 自动去浅色背景（抠图）：采样图片四角背景色，把接近背景色的像素设为透明。
+     手串主体通常是深/中色，浅色背景（布料/桌面）会被去掉。
+     返回一张透明背景的 canvas。 */
+  function removeBackground(img, threshold) {
+    threshold = threshold == null ? 42 : threshold;
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    const cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    const c = cv.getContext("2d");
+    c.drawImage(img, 0, 0, w, h);
+    let data;
+    try { data = c.getImageData(0, 0, w, h).data; } catch (e) { return cv; } // 跨域等时回退原图
+    // 采样四个角落的颜色作为背景色估计
+    const pts = [
+      [Math.floor(w * 0.03), Math.floor(h * 0.03)],
+      [Math.floor(w * 0.97), Math.floor(h * 0.03)],
+      [Math.floor(w * 0.03), Math.floor(h * 0.97)],
+      [Math.floor(w * 0.97), Math.floor(h * 0.97)],
+    ];
+    let br = 0, bg = 0, bb = 0, n = 0;
+    pts.forEach(([px, py]) => {
+      const idx = (py * w + px) * 4;
+      br += data[idx]; bg += data[idx + 1]; bb += data[idx + 2]; n++;
+    });
+    br /= n; bg /= n; bb /= n;
+    // 背景足够浅才抠（否则保留原图，避免误抠）
+    const isLightBg = (br + bg + bb) / 3 > 130;
+    if (!isLightBg) return cv;
+    // 逐像素处理
+    const out = c.getImageData(0, 0, w, h);
+    const d = out.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const dr = Math.abs(d[i] - br), dg = Math.abs(d[i + 1] - bg), db = Math.abs(d[i + 2] - bb);
+      // 颜色距离（近似）
+      const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+      if (dist < threshold) {
+        // 越接近背景越透明
+        const a = Math.max(0, Math.min(255, (dist / threshold) * 255));
+        d[i + 3] = Math.min(d[i + 3], a);
+      }
+    }
+    c.putImageData(out, 0, 0);
+    return cv;
+  }
+
   function escText(s) {
     return String(s == null ? "" : s);
   }
@@ -391,135 +436,131 @@
   }
 
   /* ---------- 喜欢展柜海报（深色博物馆 + 射灯 + 铜牌） ---------- */
-  async function favPoster(items, opts) {
+    async function favPoster(items, opts) {
     const list = (items || []).slice(0, 20);
     const W = 1080;
-    const cols = 3;
-    const cardW = 320, cardH = 430, gap = 28;
-    const padX = 40;
-    const titleH = 210, footerH = 130;
+    const cols = 2;
+    const gap = 44;
+    const titleH = 190, footerH = 120;
     const count = list.length;
     const rows = count ? Math.ceil(count / cols) : 1;
+    // 单张卡片宽（一行 2 个，大图）
+    const cardW = Math.floor((W - gap * (cols + 1)) / cols);
+    const cardH = cardW + 150;   // 大图 + 文字区
     const contentH = rows * cardH + (rows - 1) * gap;
-    const H = Math.max(1520, titleH + contentH + footerH);
+    const H = Math.max(1380, titleH + contentH + footerH);
     const canvas = document.createElement("canvas");
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext("2d");
 
-    // 深色展厅背景（暗棕 + 聚光灯渐变）
+    // 浅色质感展厅背景
     const bg = ctx.createLinearGradient(0, 0, 0, H);
-    bg.addColorStop(0, "#14100c");
-    bg.addColorStop(0.5, "#1e1711");
-    bg.addColorStop(1, "#0d0a07");
+    bg.addColorStop(0, "#f6f0e6");
+    bg.addColorStop(0.5, "#efe4d2");
+    bg.addColorStop(1, "#e6d7bf");
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
 
-    // 地面反光
-    ctx.fillStyle = "rgba(184,134,11,.06)";
-    ctx.fillRect(0, H - 120, W, 120);
-
-    // 顶部标题（鎏金）
-    ctx.fillStyle = "#d8b25a";
-    ctx.font = "bold 56px 'PingFang SC','Microsoft YaHei',sans-serif";
+    // 顶部标题（深棕）
+    ctx.fillStyle = "#3d2b1f";
+    ctx.font = "bold 58px 'PingFang SC','Microsoft YaHei',sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("我的收藏展厅", W / 2, 90);
-    ctx.fillStyle = "rgba(216,178,90,.75)";
+    ctx.fillText("我的收藏展厅", W / 2, 84);
+    ctx.fillStyle = "rgba(184,134,11,.8)";
     ctx.font = "26px 'PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText("MUSEUM · " + (opts && opts.username ? opts.username + " @ " : "") + "我的收藏馆", W / 2, 138);
-    // 顶部装饰线
-    ctx.strokeStyle = "rgba(216,178,90,.5)";
+    ctx.fillText("MUSEUM · " + (opts && opts.username ? opts.username + " @ " : "") + "我的收藏馆", W / 2, 130);
+    ctx.strokeStyle = "rgba(184,134,11,.4)";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(W / 2 - 200, 168); ctx.lineTo(W / 2 + 200, 168);
+    ctx.moveTo(W / 2 - 220, 158); ctx.lineTo(W / 2 + 220, 158);
     ctx.stroke();
 
-    // 内容区居中
-    const totalW = cols * cardW + (cols - 1) * gap;
-    const startX = (W - totalW) / 2;
+    // 内容区
+    const startX = (W - (cols * cardW + (cols - 1) * gap)) / 2;
 
     for (let i = 0; i < count; i++) {
       const item = list[i];
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const rowStart = row * cols;
-      const rowCount = Math.min(cols, count - rowStart);
-      const rowWidth = rowCount * cardW + (rowCount - 1) * gap;
-      const rowStartX = (W - rowWidth) / 2;
-      const x = rowStartX + col * (cardW + gap);
+      const rowWidth = (count - row * cols >= cols) ? (cols * cardW + (cols - 1) * gap) : (0); // 未用
+      const x = startX + col * (cardW + gap);
       const y = titleH + row * (cardH + gap);
 
-      // 展位背板（深色玻璃）
-      ctx.fillStyle = "rgba(30,24,18,.9)";
-      roundRect(ctx, x, y, cardW, cardH, 16);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(216,178,90,.35)";
-      ctx.lineWidth = 2;
-      roundRect(ctx, x, y, cardW, cardH, 16);
-      ctx.stroke();
+      // 图片整块（大，占卡片上部大部分）
+      const imgSize = cardW;
+      const imgY = y;
+      const imgX = x;
 
-      // 顶部射灯光晕
-      const spot = ctx.createRadialGradient(x + cardW / 2, y + 20, 20, x + cardW / 2, y + 120, cardW * 0.7);
-      spot.addColorStop(0, "rgba(255,236,180,.22)");
-      spot.addColorStop(1, "rgba(255,236,180,0)");
+      // 图片顶部射灯光晕（浅色环境用柔光）
+      const spot = ctx.createRadialGradient(x + cardW / 2, imgY + imgSize / 2, 40, x + cardW / 2, imgY + imgSize / 2, cardW * 0.85);
+      spot.addColorStop(0, "rgba(255,250,240,.35)");
+      spot.addColorStop(1, "rgba(255,250,240,0)");
       ctx.fillStyle = spot;
-      ctx.fillRect(x, y, cardW, 200);
+      ctx.fillRect(x, imgY, cardW, imgSize);
 
-      // 卡片布局：上半部图片区（方形，contain 完整显示），下半部铜牌文字区
-      const imgPad = 22;                 // 图片四周留白
-      const nameZoneTop = 24;            // 图片区顶部
-      const nameZoneH = 116;             // 底部文字区高度
-      const imgSize = cardW - imgPad * 2; // 方形图片边长（282）
-      const imgY = y + nameZoneTop;
-      const imgX = x + imgPad;
+      // 底部浅色台面阴影线
+      ctx.fillStyle = "rgba(61,43,31,.08)";
+      ctx.fillRect(x + 30, y + cardW + 20, cardW - 60, 6);
 
-      // 照片（方形，居中完整显示，不裁剪不拉伸）
+      // 照片
       const photo = item.photos && item.photos[0];
       if (photo) {
         try {
           const img = await loadImg(photo.url || (photo.data ? URL.createObjectURL(photo.data) : ""));
+          let drawImg = img;
+          // 抠图：去浅色背景（默认开，opt.cutout === false 则用完整图）
+          if (opts && opts.cutout !== false) {
+            const bgRemoved = removeBackground(img);
+            // 检查抠图是否真的去掉了背景（透明像素占比），否则回退完整图
+            const c = bgRemoved.getContext("2d");
+            const px = c.getImageData(0, 0, bgRemoved.width, bgRemoved.height).data;
+            let transparent = 0, total = px.length / 4;
+            for (let k = 3; k < px.length; k += 4) { if (px[k] < 128) transparent++; }
+            if (transparent / total > 0.12) drawImg = bgRemoved; // 抠图成功才用
+          }
           ctx.save();
-          ctx.shadowColor = "rgba(0,0,0,.6)";
-          ctx.shadowBlur = 18;
-          ctx.shadowOffsetY = 8;
-          drawImageContain(ctx, img, imgX, imgY, imgSize, imgSize, 10);
+          ctx.shadowColor = "rgba(61,43,31,.28)";
+          ctx.shadowBlur = 26;
+          ctx.shadowOffsetY = 10;
+          drawImageContain(ctx, drawImg, imgX, imgY, imgSize, imgSize, 14);
           ctx.restore();
         } catch (e) {
-          ctx.fillStyle = "#2a211a";
-          roundRect(ctx, imgX, imgY, imgSize, imgSize, 10);
+          ctx.fillStyle = "#e2d5c0";
+          roundRect(ctx, imgX, imgY, imgSize, imgSize, 14);
           ctx.fill();
           ctx.fillStyle = "#c9b89c";
-          ctx.font = "80px serif";
+          ctx.font = "90px serif";
           ctx.textAlign = "center";
           ctx.fillText("📿", x + cardW / 2, imgY + imgSize / 2 + 30);
         }
       } else {
-        ctx.fillStyle = "#2a211a";
-        roundRect(ctx, imgX, imgY, imgSize, imgSize, 10);
+        ctx.fillStyle = "#e2d5c0";
+        roundRect(ctx, imgX, imgY, imgSize, imgSize, 14);
         ctx.fill();
         ctx.fillStyle = "#c9b89c";
-        ctx.font = "80px serif";
+        ctx.font = "90px serif";
         ctx.textAlign = "center";
         ctx.fillText("📿", x + cardW / 2, imgY + imgSize / 2 + 30);
       }
 
-      // 铜牌（名称）——位于卡片底部预留区，固定在卡片内
-      const textTop = y + nameZoneTop + imgSize + 22;
-      ctx.fillStyle = "#d8b25a";
-      ctx.font = "bold 26px 'PingFang SC','Microsoft YaHei',sans-serif";
+      // 铜牌名称（下方居中）
+      const textTop = y + cardW + 46;
+      ctx.fillStyle = "#3d2b1f";
+      ctx.font = "bold 30px 'PingFang SC','Microsoft YaHei',sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(escText(item.name || "未命名").slice(0, 7), x + cardW / 2, textTop + 26);
-      // 铜牌副信息（品种/分类）
-      ctx.fillStyle = "rgba(216,178,90,.7)";
-      ctx.font = "22px 'PingFang SC','Microsoft YaHei',sans-serif";
+      ctx.fillText(escText(item.name || "未命名").slice(0, 9), x + cardW / 2, textTop);
+      // 副信息
+      ctx.fillStyle = "rgba(184,134,11,.85)";
+      ctx.font = "24px 'PingFang SC','Microsoft YaHei',sans-serif";
       const sub = item.species || item.category || (item.beadSize ? item.beadSize + "mm" : "");
-      ctx.fillText(sub.slice(0, 8), x + cardW / 2, textTop + 62);
+      ctx.fillText(sub.slice(0, 9), x + cardW / 2, textTop + 38);
     }
 
     // 底部落款
-    ctx.fillStyle = "rgba(216,178,90,.55)";
+    ctx.fillStyle = "rgba(61,43,31,.5)";
     ctx.font = "24px 'PingFang SC','Microsoft YaHei',sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("· 我的收藏展厅 ·", W / 2, H - 46);
+    ctx.fillText("· 我的收藏展厅 ·", W / 2, H - 40);
 
     return canvas;
   }
