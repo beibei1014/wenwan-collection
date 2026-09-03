@@ -52,9 +52,9 @@
   // 珠子状态展示文案（含放置天数提示）
   function beadStatusText(it) {
     const st = it.playStatus || "unplayed";
-    if (st === "resting" && it.lastPlayedAt) {
-      const days = Math.floor((Date.now() - it.lastPlayedAt) / 86400000);
-      return "放置中" + (days > 0 ? " · " + days + "天" : "");
+    if (st === "resting") {
+      // 放置中：有盘玩时间则显示天数，否则显示"放置中"
+      return "放置中" + (it.lastPlayedAt ? " · " + Math.floor((Date.now() - it.lastPlayedAt) / 86400000) + "天" : "");
     }
     if (st === "done") return "已盘好";
     if (st === "ready") return "待盘玩";
