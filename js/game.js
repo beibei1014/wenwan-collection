@@ -243,8 +243,8 @@
 
   /* ---------- 抽卡系统：今日心选 3 串（按日期种子随机，当天固定、次日变化） ---------- */
   // 候选：只抽「菩提」分类（只有菩提需要盘包浆）
-  // - ready(待盘玩)/playing(盘玩中)/done(已盘好包浆)：随时可抽（done 不受上次盘玩时间限制）
-  // - resting(放置中)：需距上次盘玩 > 1 天（放够回油才重新进池）
+  // - done(已盘好包浆)：随时可抽（不受上次盘玩时间限制）
+  // - ready(待盘玩)/playing(盘玩中)：从未盘过或距上次盘玩 > 1 天（放置够 1 天）才可抽
   const DRAW_CATS = ["菩提"];
   function isDrawable(item, now) {
     if (!item || item.gifted) return false;
@@ -253,15 +253,11 @@
     if (!DRAW_CATS.includes(cat)) return false;
     if (item.playStatus === "unplayed" || item.playStatus === "") return false; // 未盘玩（暂时不想盘的）不抽
     if (item.playStatus === "done") return true; // 已盘好包浆：随时能拿出来盘，始终可抽
-    const okStatus = ["ready", "playing", "resting"].includes(item.playStatus);
+    const okStatus = ["ready", "playing"].includes(item.playStatus);
     if (!okStatus) return false;
-    // ready/playing 从没盘过可抽；resting 需距上次盘玩 > 1 天
-    if (item.playStatus === "resting") {
-      if (!item.lastPlayedAt) return true;
-      return Math.floor((now - item.lastPlayedAt) / 86400000) >= 1;
-    }
-    // ready / playing
-    return true;
+    // ready/playing：从未盘过可抽；否则需距上次盘玩 > 1 天
+    if (!item.lastPlayedAt) return true;
+    return Math.floor((now - item.lastPlayedAt) / 86400000) >= 1;
   }
 
   function drawRecommendation(items, count, salt) {

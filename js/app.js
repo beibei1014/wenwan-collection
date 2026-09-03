@@ -21,48 +21,45 @@
   let user = null;           // 当前登录用户
 
   /* ---------- 状态定义 ---------- */
-  // 珠子类 4+1 状态：未盘玩(unplayed) / 待盘玩(ready) / 盘玩中(playing) / 放置中(resting) / 已盘好(done)
+  // 珠子类 4 态：未盘玩(unplayed) / 待盘玩(ready) / 盘玩中(playing) / 已盘好(done)
+  // 放置时长（盘玩→现在）由 lastPlayedAt 推算，不再单独占用"放置中"状态
   const BEAD_STATUS = [
     { v: "unplayed", label: "未盘玩" },
     { v: "ready", label: "待盘玩" },
     { v: "playing", label: "盘玩中" },
-    { v: "resting", label: "放置中" },
     { v: "done", label: "已盘好" },
   ];
   const BEAD_STATUS_LABEL = Object.fromEntries(BEAD_STATUS.map((s) => [s.v, s.label]));
   // 珠子类状态的可抽卡状态集合（排除 unplayed）
-  const DRAWABLE_STATUS = ["ready", "playing", "resting", "done"];
+  const DRAWABLE_STATUS = ["ready", "playing", "done"];
   const isPuzzleCat = (cat) => Categories.isPuzzleCategory(cat);
-  // 盘玩(包浆)状态机只用于「菩提」分类：未盘玩/待盘玩/盘玩中/放置中/已盘好
+  // 盘玩(包浆)状态机只用于「菩提」分类：未盘玩/待盘玩/盘玩中/已盘好
   const PLAYABLE_CATS = ["菩提"];
   const isBeadCat = (cat) => PLAYABLE_CATS.includes(cat);
   // 无盘玩状态分类（水晶/玉石/周边/盲盒/其他等）：只显示"在库/已送人"
   const isNoPlayCat = (cat) => !Categories.isPuzzleCategory(cat) && !isBeadCat(cat);
 
   function beadStatusLabel(v) { return BEAD_STATUS_LABEL[v] || "未盘玩"; }
-  // 珠子状态默认值：新宝贝默认"待盘玩"还是"未盘玩"？用户描述里新增串通常是"未盘玩"，抽卡时才转"待盘玩"。
-  // 但为兼容旧数据（playStatus 为 "" 或 "idle"），这里做归一化
+  // 珠子状态默认值：新宝贝默认"未盘玩"，抽卡时才转"待盘玩"。
+  // 兼容旧数据（playStatus 为 "" / "idle" / "resting"）
   function normBeadStatus(v, cat) {
     if (!isBeadCat(cat)) return v; // 拼图/周边不动
     if (v === "idle") return "ready";     // 旧"待盘玩" → 新"待盘玩(ready)"
+    if (v === "resting") return "playing"; // 旧"放置中" → 新"盘玩中"
     if (v === "playing") return "playing"; // 旧"在盘玩" → 新"盘玩中"
-    if (["unplayed", "ready", "playing", "resting", "done"].includes(v)) return v;
+    if (["unplayed", "ready", "playing", "done"].includes(v)) return v;
     return v; // 其他（""等）保持
   }
-  // 珠子状态展示文案（含放置天数提示）
+  // 珠子状态展示文案：盘玩中显示"已放置 X 天"（基于上次盘玩时间）
   function beadStatusText(it) {
     const st = it.playStatus || "unplayed";
-    if (st === "resting") {
-      // 放置中：有盘玩时间则显示天数，否则显示"放置中"
-      return "放置中" + (it.lastPlayedAt ? " · " + Math.floor((Date.now() - it.lastPlayedAt) / 86400000) + "天" : "");
-    }
+    if (st === "playing") return "盘玩中" + (it.lastPlayedAt ? " · 已放置" + Math.floor((Date.now() - it.lastPlayedAt) / 86400000) + "天" : "");
     if (st === "done") return "已盘好";
     if (st === "ready") return "待盘玩";
-    if (st === "playing") return "盘玩中";
     return "未盘玩";
   }
-  // 珠子状态颜色 class（5 种状态 5 种颜色）
-  const BEAD_CLS = { unplayed: "sp-unplayed", ready: "sp-ready", playing: "sp-playing", resting: "sp-resting", done: "sp-done" };
+  // 珠子状态颜色 class（4 种状态 4 种颜色）
+  const BEAD_CLS = { unplayed: "sp-unplayed", ready: "sp-ready", playing: "sp-playing", done: "sp-done" };
   function beadStatusCls(it) {
     const st = it.playStatus || "unplayed";
     return BEAD_CLS[st] || BEAD_CLS.unplayed;
@@ -80,9 +77,10 @@
       const label = it.playStatus === "puzzle_done" ? "已拼" : "待拼";
       return '<button type="button" class="' + cls + (st === "done" ? ' done' : ' pending') + '"' + idAttr + ' style="background:' + (st === "done" ? "#2e7d32" : "#d98ba6") + '">' + label + "</button>";
     }
-    // 菩提（盘玩 5 态）：显示盘玩状态徽章
+    // 菩提（盘玩 4 态）：显示盘玩状态徽章（简短标签，不含天数）
     if (isBead) {
-      return '<button type="button" class="' + cls + ' bead" data-bead="' + (it.playStatus || "unplayed") + '"' + idAttr + '>' + esc(beadStatusText(it)) + "</button>";
+      const lbl = beadStatusLabel(it.playStatus || "unplayed");
+      return '<button type="button" class="' + cls + ' bead" data-bead="' + (it.playStatus || "unplayed") + '"' + idAttr + '>' + esc(lbl) + "</button>";
     }
     // 水晶/玉石/周边/盲盒等：无盘玩状态，不显示徽章（仅"在库/已送人"上游 badge 处理）
     return "";
@@ -808,7 +806,7 @@
         (cur === s.v ? "✓ " : "") + s.label + "</button>";
     });
     html += "</div>";
-    // 今日盘过（今日记录盘玩 → 状态自动变放置中）
+    // 今日盘过（记录今天盘了 → 状态为盘玩中，放置时长从今天算起）
     html += '<button type="button" id="btnPlayedToday" class="btn primary" style="width:100%;margin-top:12px">✅ 今日盘过（记录今天盘了它）</button>';
     html += '<button type="button" id="mCancel" class="btn ghost" style="width:100%;margin-top:8px">关闭</button>';
 
@@ -831,14 +829,65 @@
     });
 
     $("#btnPlayedToday").onclick = async () => {
-      const prev = item.playStatus;
+      const prevSt = item.playStatus;
+      const prevT = item.lastPlayedAt;
       item.lastPlayedAt = Date.now();
-      item.playStatus = "resting"; // 盘完 → 放置中
+      item.playStatus = "playing"; // 盘完 → 盘玩中（放置时长从今天算起）
       try {
         const saved = await DB.put(item);
-        if (!saved || (saved.lastPlayedAt == null && saved.playStatus !== "resting")) { item.lastPlayedAt = prev; item.playStatus = prev; toast("⚠️ 未保存：缺少 last_played_at 字段"); }
-        else { done(); toast("✅ 已记录今天盘过，开始放置回油"); refreshAfterToggle(); }
-      } catch (err) { item.playStatus = prev; toast("记录失败：" + err.message); }
+        if (!saved || (saved.lastPlayedAt == null && saved.playStatus !== "playing")) { item.lastPlayedAt = prevT; item.playStatus = prevSt; toast("⚠️ 未保存：缺少 last_played_at 字段"); }
+        else { done(); toast("✅ 已记录今天盘过，开始放置"); refreshAfterToggle(); }
+      } catch (err) { item.playStatus = prevSt; toast("记录失败：" + err.message); }
+    };
+  }
+
+  /* 手动设置上次盘玩时间（用于精确计算放置时长） */
+  function promptSetLastPlayed(item, onDone) {
+    const mask = $("#modalMask");
+    const modal = $("#modal");
+    const cur = item.lastPlayedAt ? new Date(item.lastPlayedAt) : new Date();
+    const curVal = cur.getFullYear() + "-" + String(cur.getMonth() + 1).padStart(2, "0") + "-" + String(cur.getDate()).padStart(2, "0");
+    // 昨天日期作为快捷选项
+    const y = new Date(); y.setDate(y.getDate() - 1);
+    const yDay = y.getFullYear() + "-" + String(y.getMonth() + 1).padStart(2, "0") + "-" + String(y.getDate()).padStart(2, "0");
+    const y2 = new Date(); y2.setDate(y2.getDate() - 2);
+    const yDay2 = y2.getFullYear() + "-" + String(y2.getMonth() + 1).padStart(2, "0") + "-" + String(y2.getDate()).padStart(2, "0");
+
+    let html = '<h3 style="text-align:center">设置上次盘玩时间</h3>';
+    html += '<p style="text-align:center;color:var(--text-2);font-size:12px;margin-bottom:12px">放置时长 = 今天 − 上次盘玩时间，够 1 天才能再被抽到</p>';
+    html += '<div style="display:flex;gap:8px;margin-bottom:10px">' +
+      '<button type="button" class="btn ghost" data-d="' + yDay + '" style="flex:1">昨天</button>' +
+      '<button type="button" class="btn ghost" data-d="' + yDay2 + '" style="flex:1">前天</button>' +
+      '<button type="button" class="btn ghost" data-d="__clear" style="flex:1">清除</button>' +
+      '</div>';
+    html += '<input class="form-input" id="lpDate" type="date" value="' + curVal + '">';
+    html += '<button type="button" id="lpSave" class="btn primary" style="width:100%;margin-top:10px">保存</button>';
+    html += '<button type="button" id="mCancel" class="btn ghost" style="width:100%;margin-top:8px">取消</button>';
+
+    modal.innerHTML = html;
+    modal.style.display = "block";
+    mask.hidden = false;
+
+    const done = () => { modal.style.display = "none"; mask.hidden = true; };
+    $("#mCancel").onclick = done;
+
+    modal.querySelectorAll("[data-d]").forEach((btn) => btn.onclick = () => {
+      const dv = btn.dataset.d;
+      if (dv === "__clear") { $("#lpDate").value = ""; }
+      else { $("#lpDate").value = dv; }
+    });
+
+    $("#lpSave").onclick = async () => {
+      const dv = $("#lpDate").value;
+      const prevT = item.lastPlayedAt;
+      item.lastPlayedAt = dv ? new Date(dv + "T12:00:00").getTime() : null;
+      // 若设置了时间且当前是未盘玩，自动转为盘玩中
+      if (dv && (item.playStatus === "unplayed" || !item.playStatus)) item.playStatus = "playing";
+      try {
+        const saved = await DB.put(item);
+        if (!saved || (saved.lastPlayedAt === null && dv)) { item.lastPlayedAt = prevT; toast("⚠️ 未保存：缺少 last_played_at 字段"); }
+        else { done(); toast(dv ? "✅ 已设置上次盘玩时间" : "已清除盘玩时间"); onDone && onDone(); }
+      } catch (err) { item.lastPlayedAt = prevT; toast("保存失败：" + err.message); }
     };
   }
 
@@ -859,7 +908,7 @@
     const res = getDrawResult();
     if (!res) {
       return '<div class="draw-card">' +
-        '<div class="draw-head"><span class="draw-title">🎴 今日心选</span><span class="draw-sub">从待盘玩/盘玩中/放置中/已盘好里抽 3 串</span></div>' +
+        '<div class="draw-head"><span class="draw-title">🎴 今日心选</span><span class="draw-sub">从待盘玩/盘玩中/已盘好里抽 3 串</span></div>' +
         '<button type="button" class="btn primary" id="btnDraw" style="width:100%">✨ 抽取今日心选串串</button>' +
         '<div class="draw-empty">点一下，今天盘这三串</div>' +
         "</div>";
@@ -999,7 +1048,6 @@
         '<option value="unplayed">未盘玩</option>' +
         '<option value="ready">待盘玩</option>' +
         '<option value="playing">盘玩中</option>' +
-        '<option value="resting">放置中</option>' +
         '<option value="done">已盘好</option>' +
         '<option value="puzzle_pending">待拼</option>' +
         '<option value="puzzle_done">已拼</option>' +
@@ -1551,7 +1599,6 @@
     else if (filter === "unplayed") list = list.filter((i) => isBeadCat(i.category || "") && (i.playStatus === "unplayed" || !i.playStatus));
     else if (filter === "ready") list = list.filter((i) => isBeadCat(i.category || "") && i.playStatus === "ready");
     else if (filter === "playing") list = list.filter((i) => isBeadCat(i.category || "") && i.playStatus === "playing");
-    else if (filter === "resting") list = list.filter((i) => isBeadCat(i.category || "") && i.playStatus === "resting");
     else if (filter === "done") list = list.filter((i) => isBeadCat(i.category || "") && i.playStatus === "done");
     else if (filter === "puzzle_pending") list = list.filter((i) => i.playStatus === "puzzle_pending");
     else if (filter === "puzzle_done") list = list.filter((i) => i.playStatus === "puzzle_done");
@@ -1594,7 +1641,6 @@
     const gifted = allItems.filter((i) => i.gifted).length;
     const playing = allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus === "playing").length;
     const ready = allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus === "ready").length;
-    const resting = allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus === "resting").length;
     const unfinished = allItems.filter((i) => i.playStatus === "puzzle_pending").length;
     const done = allItems.filter((i) => i.playStatus === "puzzle_done" || (isBeadCat(i.category || "") && i.playStatus === "done")).length;
 
@@ -1631,7 +1677,6 @@
       '<span class="stat-pill">在库 <b>' + inStock + '</b></span>' +
       '<span class="stat-pill">盘玩 <b>' + playing + '</b></span>' +
       '<span class="stat-pill">待盘 <b>' + ready + '</b></span>' +
-      '<span class="stat-pill">放置 <b>' + resting + '</b></span>' +
       '<span class="stat-pill">待拼 <b>' + unfinished + '</b></span>' +
       '<span class="stat-pill">已好 <b>' + done + '</b></span>' +
       '<span class="stat-pill">已送 <b>' + gifted + '</b></span>' +
@@ -1639,7 +1684,7 @@
 
     html += '<div class="filters">' +
       chip("all", "全部") + chip("instock", "在库") +
-      chip("unplayed", "未盘玩") + chip("ready", "待盘玩") + chip("playing", "盘玩中") + chip("resting", "放置中") + chip("done", "已盘好") +
+      chip("unplayed", "未盘玩") + chip("ready", "待盘玩") + chip("playing", "盘玩中") + chip("done", "已盘好") +
       chip("puzzle_pending", "待拼") + chip("puzzle_done", "已拼") + chip("gifted", "已送人") +
       '</div>';
 
@@ -2056,6 +2101,11 @@
     html += infoItem("工艺", it.craft || "—");
     html += infoItem("入手价格", it.price != null && it.price !== "" ? "¥" + esc(String(it.price)) : "—");
     html += infoItem("购买店铺", esc(it.shop || "—"), true);
+    // 盘玩时长（上次盘玩 → 现在），仅珠子类且盘玩中/已盘好有记录时显示；可手动设置上次盘玩时间
+    if (isBeadCat(it.category || "") && it.lastPlayedAt) {
+      const restDays = Math.floor((Date.now() - it.lastPlayedAt) / 86400000);
+      html += infoItem("盘玩时长", "已放置 " + restDays + " 天 <button type=\"button\" class=\"link-btn\" id=\"editLastPlayed\">修改</button>", true);
+    }
     if (it.gifted && it.giftedAt) html += infoItem("送人时间", fmtDate(it.giftedAt), true);
     if (it.finishedAt) html += infoItem("拼图完成", fmtDate(it.finishedAt), true);
     html += "</div>";
@@ -2117,6 +2167,12 @@
       } catch (err) { it.fav = prev; toast("操作失败：" + err.message); }
     };
     $("#btnEdit").onclick = () => location.hash = "#/edit/" + it.id;
+    // 修改上次盘玩时间（手动纠偏，用于精确计算放置时长）
+    const elp = $("#editLastPlayed");
+    if (elp) elp.onclick = (e) => {
+      e.stopPropagation();
+      promptSetLastPlayed(it, () => renderDetail(id));
+    };
     $("#btnDel").onclick = async () => {
       const ok = await confirmModal("删除这件宝贝？", "删除后不可恢复，请确认。", "删除", true);
       if (ok) { await DB.remove(it.id); await loadItems(); toast("已删除"); location.hash = "#/"; }
@@ -2362,9 +2418,9 @@
     }
 
 
-    // 盘玩记录：珠子类（盘玩中/放置中/已盘好）才显示输入框
+    // 盘玩记录：珠子类（盘玩中/已盘好）才显示输入框
     const showPlayedNote = it && !it.gifted && isBeadCat(it.category || "") &&
-      (it.playStatus === "playing" || it.playStatus === "resting" || it.playStatus === "done" || it.playedNote);
+      (it.playStatus === "playing" || it.playStatus === "done" || it.playedNote);
     if (!showPlayedNote) { const pw = $("#playedNoteWrap"); if (pw) pw.style.display = "none"; }
 
     const photos = (it ? (it.photos || []) : []).map((p) => ({ ...p }));

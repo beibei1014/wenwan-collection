@@ -336,6 +336,7 @@ img { display:block; }
 .info-item .v { font-size:15px; font-weight:600; color:var(--text); }
 .info-item.full { grid-column:1/-1; }
 .info-item .v.note { font-weight:400; font-size:14px; line-height:1.6; white-space:pre-wrap; }
+.link-btn { font-size:12px; color:var(--gold); cursor:pointer; margin-left:6px; background:none; border:none; text-decoration:underline; }
 .photo-strip { display:flex; gap:8px; overflow-x:auto; margin-top:14px; padding-bottom:4px; scrollbar-width:none; }
 .photo-strip::-webkit-scrollbar { display:none; }
 .photo-strip img { width:90px; height:90px; object-fit:cover; border-radius:10px; border:1px solid var(--line); flex-shrink:0; }
