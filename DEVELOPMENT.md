@@ -32,7 +32,7 @@ sw.js               # Service Worker（网络优先）；每次发版必须 bump
 manifest.json       # PWA 清单
 gallery.html        # 动态展厅（公开可访问的分享网页，读 URL ?data= 参数，无需登录）
 js/config.js        # SUPABASE_CONFIG（url + anonKey，publishable key，客户端安全）
-js/color.js         # V手串主色识别（中心区域主色→10类颜色）+ COLOR_LIST
+js/color.js         # 手串主色识别（中心区域主色→7类）+ COLOR_LIST（按浅→深排序顺序）
 js/db.js            # 数据层：CRUD + 图片上传/删除 + 精确降级 + 天数计算
 js/app.js           # 全部 UI 与逻辑（约 3200 行，IIFE）
 js/categories.js    # 分类 → 品种/品牌联动；拼图分类才有 pieceCount/finishedAt
@@ -64,7 +64,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 - `play_status`：菩提类 `unplayed`(未盘玩) / `ready`(待盘玩) / `playing`(盘玩中) / `done`(已盘好)；拼图类 `puzzle_pending` / `puzzle_done`；`` '' `` 归一为 unplayed
 - `last_played_at`：上次盘玩时间（timestamptz），盘玩时长/抽卡进池判断靠它
 - `fav`：特别喜欢标记（boolean），喜欢展示柜用
-- `color`：主色类别（text，如 green/brown/mixed/other 等），颜色排序筛选用
+- `color`：主色类别（text，v47 改为 7 类：white 白/原生态 / green 绿 / yellowbrown 黄棕 / blackgray 黑灰 / duo 多宝敦煌 / lightflower 浅花 / deepflower 深花），颜色排序筛选用；`normColor()` 兼容旧值（yellow/brown→yellowbrown、black→blackgray、red→deepflower、mixed/purple/blue→duo 等）
 - `category`：菩提/水晶/玉石/拼图/动漫周边/盲盒/其他（用户可自定义增删，存 localStorage `ww_categories`）
 - `photos`/`screenshots`：jsonb 数组，每项 `{url, name, ...}`（Blob 只在本地上传前存在）
 - `profiles` 表：`id, display_name, updated_at`（昵称）
@@ -83,7 +83,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 6. **菩提盘玩状态机（v37 简化为 4 态，仅「菩提」分类）**：`unplayed`(未盘玩) / `ready`(待盘玩) / `playing`(盘玩中) / `done`(已盘好)。每个菩提记录 `lastPlayedAt`；**盘玩中显示"已放置 X 天"**（今天−上次盘玩）；点状态徽章弹状态选择器，含"✅ 今日盘过"（记录今天盘了→转盘玩中）；详情页"盘玩时长"字段可**手动设置上次盘玩时间**（日历）
    - 兼容：旧 `resting`(放置中) → `playing`；旧 `idle` → `ready`；旧 `"" / null` → `unplayed`（在 `loadItems()` 和 `normBeadStatus()` 处理）
 7. **今日心选抽卡（仅抽菩提）**：首页"🎴 今日心选"栏目，用户**主动点击抽取**，候选池 = 待盘玩/盘玩中（距上次盘玩>1天或从未盘过）+ 已盘好（随时可抽）；按**当天日期种子**随机抽 3 串，当天固定、次日变化；点"🔄 重抽"用随机盐换一批；结果存 localStorage（`ww_draw_YYYY-M-D`）；拼图/周边/水晶/玉石不参与
-8. **手串主色识别（js/color.js，v44）**：分析照片**中心区域**主色映射到 10 类（绿/黄/棕/黑/红/白/紫/蓝/花/其他）。保存宝贝时自动识别；**登录后后台给无颜色且有照片的旧宝贝补色**（backfillColors）；详情/编辑可手动改色；**排序加"🎨 颜色"、筛选 chips 加颜色**；批量编辑加"批量设置主色"
+8. **手串主色识别（js/color.js，v47）**：分析照片**中心区域**主色映射到 **7 类**（绿/多宝敦煌/黑灰/黄棕/白原生态/浅花/深花），`COLOR_LIST` 顺序即浅→深排序顺序。保存时自动识别；登录后后台给旧宝贝补色（backfillColors）；详情/编辑/批量编辑可手动改色；**排序改 3 按钮（入库/创建/颜色，点击切换升/降序带箭头）**；筛选 chips 加颜色；`normColor()` 兼容旧颜色值
 9. **大图查看器**：点图放大，底部数字按钮切换多图（每次切换重新绑定事件）
 10. **分类盒子页**：按分类展示 + 收集进度（品种/品牌收集率）
 11. **批量录入**：一次填多行；**多选操作**：勾选卡片（≤20）批量编辑（转分类/状态/上次盘玩时间/大小/品种/主色/删除）+ 生成图鉴海报
