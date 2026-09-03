@@ -1659,7 +1659,7 @@
       item.fav = next;
       try {
         const saved = await DB.put(item);
-        if (saved && saved.fav !== next) { item.fav = prev; toast("⚠️ 未保存：数据库缺少 fav 字段"); }
+        if (saved && saved.fav !== next) { item.fav = prev; toast("⚠️ 未保存：数据库缺 fav 列（详见开发文档 SQL）"); }
         else {
           toast(next ? "❤️ 已加入喜欢" : "已取消喜欢");
           if (document.getElementById("gridHolder")) updateGrid();
@@ -2003,7 +2003,7 @@
       it.fav = next;
       try {
         const saved = await DB.put(it);
-        if (saved && saved.fav !== next) { it.fav = prev; toast("⚠️ 未保存：数据库缺少 fav 字段"); }
+        if (saved && saved.fav !== next) { it.fav = prev; toast("⚠️ 未保存：数据库缺 fav 列（详见开发文档 SQL）"); }
         else { toast(next ? "❤️ 已加入喜欢" : "已取消喜欢"); renderDetail(id); }
       } catch (err) { it.fav = prev; toast("操作失败：" + err.message); }
     };

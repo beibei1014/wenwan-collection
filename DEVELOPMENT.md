@@ -50,10 +50,11 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 - 配置入口：js/config.js；建表脚本：`supabase-schema.sql`
 
 **`bracelets` 表字段**（注意：历史迭代多次 alter，脚本分散在多个 supabase-*.sql）：
-`id, user_id, name, species, craft, arrived_at, price, shop, gifted, gifted_at, played, played_note, note, photos(jsonb), screenshots(jsonb), created_at, updated_at, bead_size, category, finished_at, piece_count, accessory_type, play_status, last_played_at`
+`id, user_id, name, species, craft, arrived_at, price, shop, gifted, gifted_at, played, played_note, note, photos(jsonb), screenshots(jsonb), created_at, updated_at, bead_size, category, finished_at, piece_count, accessory_type, play_status, last_played_at, fav`
 
 - `play_status`（v30 改为珠子 5 态）：珠子类 `''/unplayed`(未盘玩) / `ready`(待盘玩) / `playing`(盘玩中) / `resting`(放置中) / `done`(已盘好)；拼图类 `puzzle_pending`(待拼) / `puzzle_done`(已拼)；**若用户库缺此列需执行 `alter table public.bracelets add column if not exists play_status text not null default '';`**（db.js 会静默降级，不会崩，但状态保存无效）
 - `last_played_at`（v30 新增）：上次盘玩时间（timestamptz），抽卡/放置天数靠它；**需执行 `alter table public.bracelets add column if not exists last_played_at timestamptz;`**（db.js 已加入 OPTIONAL_FIELDS 降级）
+- `fav`（v32 新增）：特别喜欢/收藏标记（boolean），喜欢展示柜用；**需执行 `alter table public.bracelets add column if not exists fav boolean not null default false;`**（db.js 已加入 OPTIONAL_FIELDS 降级；未建列时收藏会提示"未保存"）
 - `category`：菩提/水晶/玉石/拼图/动漫周边/盲盒/其他（用户可自定义增删，存 localStorage `ww_categories`）
 - `photos`/`screenshots`：jsonb 数组，每项 `{url, name, ...}`（Blob 只在本地上传前存在）
 - `profiles` 表：`id, display_name, updated_at`（昵称）
