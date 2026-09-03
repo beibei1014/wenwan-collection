@@ -892,6 +892,44 @@
     };
   }
 
+  /* 设置主色弹窗 */
+  function promptSetColor(item, onDone) {
+    const mask = $("#modalMask");
+    const modal = $("#modal");
+    const cur = item.color || "other";
+    let html = '<h3 style="text-align:center">主色</h3>';
+    html += '<p style="text-align:center;color:var(--text-2);font-size:12px;margin-bottom:12px">选择这件宝贝的主色</p>';
+    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
+    (window.Color ? window.Color.COLOR_LIST : []).forEach((c) => {
+      const active = cur === c.v ? ' style="outline:3px solid var(--gold)"' : "";
+      const dotStyle = c.hex === "mix" ? 'background:linear-gradient(135deg,#e53935,#fbc02d,#4caf50,#1976d2)' : ("background:" + c.hex);
+      const dotBorder = c.v === "white" ? "border:1px solid #ddd" : "";
+      html += '<button type="button" data-color="' + c.v + '" class="btn ghost" style="flex-direction:column;gap:6px;padding:10px;' + (cur === c.v ? "border-color:var(--gold)" : "") + '"' + active + '>' +
+        '<span style="display:block;width:26px;height:26px;border-radius:50%;margin:0 auto;' + dotStyle + ';' + dotBorder + '"></span>' +
+        '<span style="font-size:12px">' + c.label + "</span></button>";
+    });
+    html += "</div>";
+    html += '<button type="button" id="mCancel" class="btn ghost" style="width:100%;margin-top:12px">关闭</button>';
+
+    modal.innerHTML = html;
+    modal.style.display = "block";
+    mask.hidden = false;
+
+    const done = () => { modal.style.display = "none"; mask.hidden = true; };
+    $("#mCancel").onclick = done;
+
+    modal.querySelectorAll("[data-color]").forEach((btn) => btn.onclick = async () => {
+      const v = btn.dataset.color;
+      const prev = item.color;
+      item.color = v;
+      try {
+        const saved = await DB.put(item);
+        if (!saved || (saved.color || "other") !== v) { item.color = prev; toast("⚠️ 未保存：缺少 color 字段"); }
+        else { done(); toast("已设置主色：" + (window.Color ? window.Color.colorLabel(v) : v)); onDone && onDone(); }
+      } catch (err) { item.color = prev; toast("保存失败：" + err.message); }
+    });
+  }
+
   /* 修改密码弹窗 */
   function showChangePasswordModal() {
     const mask = $("#modalMask");
@@ -1652,6 +1690,31 @@
       }
     });
     sortItems();
+    backfillColors(); // 后台静默补颜色（不阻塞）
+  }
+
+  // 为无颜色但有照片的宝贝后台补识别主色（逐个识别保存，完成后刷新）
+  let _backfilling = false;
+  async function backfillColors() {
+    if (_backfilling || !window.Color) return;
+    _backfilling = true;
+    try {
+      const need = allItems.filter((i) => !i.color && i.photos && i.photos[0]);
+      if (!need.length) return;
+      let changed = 0;
+      for (const it of need) {
+        const src = it.photos[0].url || (it.photos[0].data ? URL.createObjectURL(it.photos[0].data) : "");
+        if (!src) continue;
+        try {
+          const c = await window.Color.detectColor(src);
+          if (c && !it.color) { it.color = c; await DB.put(it); changed++; }
+        } catch (e) {}
+      }
+      if (changed && document.getElementById("gridHolder")) updateGrid();
+    } catch (e) {
+    } finally {
+      _backfilling = false;
+    }
   }
 
   // 排序：newest=入库降序，oldest=入库升序，created_desc=创建时间降序，created_asc=创建时间升序
@@ -1662,6 +1725,12 @@
       case "oldest": allItems.sort((a, b) => key(a) - key(b)); break;
       case "created_desc": allItems.sort((a, b) => createdKey(b) - createdKey(a)); break;
       case "created_asc": allItems.sort((a, b) => createdKey(a) - createdKey(b)); break;
+      case "color": {
+        const order = (window.Color ? window.Color.COLOR_LIST : []).map((c) => c.v);
+        const idx = (c) => { const i = order.indexOf(c); return i === -1 ? order.length : i; };
+        allItems.sort((a, b) => idx(b.color) - idx(a.color)); // 靠后的颜色在前，无颜色最后
+        break;
+      }
       default: allItems.sort((a, b) => key(b) - key(a)); // newest
     }
   }
@@ -1677,6 +1746,11 @@
     else if (filter === "done") list = list.filter((i) => isBeadCat(i.category || "") && i.playStatus === "done");
     else if (filter === "puzzle_pending") list = list.filter((i) => i.playStatus === "puzzle_pending");
     else if (filter === "puzzle_done") list = list.filter((i) => i.playStatus === "puzzle_done");
+    // 颜色筛选（filter="color:x"）
+    else if (filter.indexOf("color:") === 0) {
+      const c = filter.slice(6);
+      list = list.filter((i) => (i.color || "other") === c);
+    }
     if (categoryFilter === "__uncat") {
       list = list.filter((i) => !i.category);
     } else if (categoryFilter) {
@@ -1763,6 +1837,11 @@
       chip("puzzle_pending", "待拼") + chip("puzzle_done", "已拼") + chip("gifted", "已送人") +
       '</div>';
 
+    // 颜色筛选行（按主色）
+    html += '<div class="filters">' +
+      (window.Color ? window.Color.COLOR_LIST.map((c) => '<button class="chip' + (filter === "color:" + c.v ? " active" : "") + '" data-f="color:' + c.v + '">' + c.label + "</button>").join("") : "") +
+      '</div>';
+
     // 分类筛选行
     const cats = getCategories();
     html += '<div class="filters">' +
@@ -1778,6 +1857,7 @@
       '<button type="button" data-sort="oldest" class="' + (sortMode === "oldest" ? "active" : "") + '">📜 入库最早</button>' +
       '<button type="button" data-sort="created_desc" class="' + (sortMode === "created_desc" ? "active" : "") + '">🆕 创建最新</button>' +
       '<button type="button" data-sort="created_asc" class="' + (sortMode === "created_asc" ? "active" : "") + '">🗓 创建最早</button>' +
+      '<button type="button" data-sort="color" class="' + (sortMode === "color" ? "active" : "") + '">🎨 颜色</button>' +
       "</div></div>";
     html += "</div>";
 
@@ -2186,6 +2266,14 @@
         html += infoItem("盘玩时长", "未记录 <button type=\"button\" class=\"link-btn\" id=\"editLastPlayed\">设置上次盘玩</button>", true);
       }
     }
+    // 颜色：显示主色 + 可点击修改
+    {
+      const cLabel = Color ? Color.colorLabel(it.color) : "其他";
+      const cHex = Color ? Color.colorHex(it.color) : "#9e9e9e";
+      const dotStyle = it.color === "mixed" ? 'background:linear-gradient(135deg,#e53935,#fbc02d,#4caf50,#1976d2)' : ("background:" + cHex);
+      const dotBorder = it.color === "white" ? "border:1px solid #ddd" : "";
+      html += infoItem("主色", '<span style="display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:-2px;margin-right:5px;' + dotStyle + ';' + dotBorder + '"></span>' + esc(cLabel) + ' <button type="button" class="link-btn" id="editColor">修改</button>', true);
+    }
     if (it.gifted && it.giftedAt) html += infoItem("送人时间", fmtDate(it.giftedAt), true);
     if (it.finishedAt) html += infoItem("拼图完成", fmtDate(it.finishedAt), true);
     html += "</div>";
@@ -2252,6 +2340,12 @@
     if (elp) elp.onclick = (e) => {
       e.stopPropagation();
       promptSetLastPlayed(it, () => renderDetail(id));
+    };
+    // 修改主色
+    const ec = $("#editColor");
+    if (ec) ec.onclick = (e) => {
+      e.stopPropagation();
+      promptSetColor(it, () => renderDetail(id));
     };
     $("#btnDel").onclick = async () => {
       const ok = await confirmModal("删除这件宝贝？", "删除后不可恢复，请确认。", "删除", true);
@@ -2687,6 +2781,15 @@
             if (op.path && !keptShots.has(op.url)) delTasks.push(DB.deletePhoto(op.path));
           });
           await Promise.all(delTasks);
+        }
+
+        // 自动识别主色：有照片且未手动设颜色时，识别第一张主照片的颜色
+        if (!item.color && item.photos.length && window.Color) {
+          const first = item.photos[0];
+          const src = first.url || (first.data ? URL.createObjectURL(first.data) : "");
+          if (src) {
+            try { const c = await window.Color.detectColor(src); if (c) item.color = c; } catch (e) {}
+          }
         }
 
         await DB.put(item);
