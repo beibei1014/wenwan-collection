@@ -17,6 +17,7 @@
   let categoryFilter = "";   // 收藏盒子筛选
   const selectFilters = new Set(); // 多选状态筛选（空=全部）
   const selectColors = new Set();  // 多选颜色筛选（空=不限）
+  let hideGifted = localStorage.getItem("ww_hide_gifted") !== "0"; // 默认开=隐藏已送人
   let search = "";
   let viewMode = localStorage.getItem("ww_viewmode") || "card"; // card | list
   let sortMode = localStorage.getItem("ww_sortmode") || "arrived"; // arrived(入库) | created(创建) | color(颜色)
@@ -1804,6 +1805,10 @@
 
   function filtered() {
     let list = allItems;
+    // 隐藏已送人开关：默认隐藏，除非用户手动筛了"已送人/gifted"
+    if (hideGifted && !selectFilters.has("gifted")) {
+      list = list.filter((i) => !i.gifted);
+    }
     // 多选状态筛选（selectFilters 空 = 全部）
     if (selectFilters.size) {
       list = list.filter((i) => {
@@ -1915,6 +1920,11 @@
       "</button>";
 
     html += '<div id="filterPanel" style="display:none">';
+    // 隐藏已送人开关
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px">' +
+      '<div><div style="font-size:13px;font-weight:600;color:var(--text)">🙈 隐藏已送人</div>' +
+      '<div style="font-size:11px;color:var(--text-2);margin-top:2px">关闭后显示所有宝贝，含已出库</div></div>' +
+      '<label class="switch"><input type="checkbox" id="hideGifted"' + (hideGifted ? " checked" : "") + '><span class="switch-slider"></span></label></div>';
     html += '<div class="home-head"><div class="stat-pills">' +
       '<span class="stat-pill">共 <b>' + allItems.length + '</b></span>' +
       '<span class="stat-pill">在库 <b>' + inStock + '</b></span>' +
@@ -2090,6 +2100,13 @@
       const open = panel.style.display !== "none";
       panel.style.display = open ? "none" : "";
       if (arrow) arrow.style.transform = open ? "" : "rotate(180deg)";
+    };
+    // 隐藏已送人开关
+    const hg = $("#hideGifted");
+    if (hg) hg.onchange = () => {
+      hideGifted = hg.checked;
+      localStorage.setItem("ww_hide_gifted", hideGifted ? "1" : "0");
+      renderHome();
     };
     // 视图切换
     const vt = $("#btnViewToggle");
