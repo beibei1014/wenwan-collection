@@ -3320,6 +3320,7 @@
     html += '<button class="setting-item" id="btnExport"><div><div class="t">📤 导出备份</div><div class="d">下载全部数据为备份文件（含图片链接）</div></div><span class="arrow">›</span></button>';
     html += '<button class="setting-item" id="btnImport"><div><div class="t">📥 导入备份</div><div class="d">从备份文件恢复数据（会覆盖当前数据）</div></div><span class="arrow">›</span></button>';
     html += '<button class="setting-item" id="btnClear"><div><div class="t">🗑 清空全部数据</div><div class="d">删除所有收藏记录（不可恢复）</div></div><span class="arrow">›</span></button>';
+    html += '<button class="setting-item" id="btnAiKey"><div><div class="t">🤖 AI 助手密钥</div><div class="d">默认用内置 key；可填你自己的 DeepSeek key（存本机，更安全）</div></div><span class="arrow">›</span></button>';
     html += '<button class="setting-item" id="btnLogout"><div><div class="t">🚪 退出登录</div><div class="d">退出后本机不再保留登录状态</div></div><span class="arrow">›</span></button>';
     html += "</div>";
 
@@ -3496,13 +3497,34 @@
       toast("已添加盒子：" + v);
     };
     $("#catInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#catAdd").click(); });
+    $("#btnAiKey").onclick = async () => {
+      const cur = getAiKey();
+      const mask = $("#modalMask");
+      const modal = $("#modal");
+      modal.innerHTML =
+        '<h3 style="text-align:center">🤖 AI 助手密钥</h3>' +
+        '<p style="text-align:center;color:var(--text-2);font-size:12px;margin-bottom:12px">填你自己的 DeepSeek API key（以 sk- 开头）。key 只存在本机浏览器（localStorage），不写入代码、不入开源仓库，不会上传。到 platform.deepseek.com 可申请。</p>' +
+        '<input class="form-input" id="aiKeyInput" placeholder="sk-..." value="' + esc(cur) + '">' +
+        '<button class="btn primary" id="aiKeySave" style="width:100%;margin-top:12px">保存</button>' +
+        '<button class="btn ghost" id="mCancel" style="width:100%;margin-top:8px">取消</button>';
+      modal.style.display = "block";
+      mask.hidden = false;
+      const done = () => { modal.style.display = "none"; mask.hidden = true; };
+      $("#mCancel").onclick = done;
+      const save = () => {
+        const v = ($("#aiKeyInput").value || "").trim();
+        try { localStorage.setItem("ww_dskey", v); } catch (e) {}
+        toast(v ? "已保存你的 DeepSeek key（只存在本机）" : "已清除 key，AI 助手需先填 key");
+        done(); renderSettings();
+      };
+      $("#aiKeySave").onclick = save;
+    };
     $("#btnLogout").onclick = async () => {
       const ok = await confirmModal("退出登录？", "退出后本机需要重新登录才能查看。", "退出");
       if (!ok) return;
       await DB.signOut();
       location.hash = "#/auth";
-      renderAuth();
-    };
+      renderAuth();    };
   }
 
   /* ---------- 路由 ---------- */
@@ -3628,6 +3650,7 @@
       }
       const ok = await enterApp();
       if (ok) {
+        bindAI();
         if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
           navigator.serviceWorker.register("sw.js").then((reg) => {
             // 检测到新 SW 等待激活时，立即跳过等待并刷新页面
@@ -3646,6 +3669,151 @@
       }
     } catch (err) {
       view.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><p>初始化失败：' + esc(err.message) + "</p></div>";
+    }
+  }
+
+  /* ---------- AI 小助手（DeepSeek，纯前端直连，数据经你确认后发送） ---------- */
+  // 不内置任何 API key（避免开源泄露）；key 由用户在设置页填写，存本机 localStorage
+  const AI_BASE = "https://api.deepseek.com"; // OpenAI 兼容；模型名 deepseek-v4-flash
+  const AI_MODEL = "deepseek-v4-flash";
+  function getAiKey() {
+    try { const k = localStorage.getItem("ww_dskey"); return (k && k.trim()) ? k.trim() : ""; } catch (e) { return ""; }
+  }
+  function hasAiKey() { return !!getAiKey(); }
+
+  // 构造收藏摘要（给 AI 的上下文，只含文本，不含图片）
+  function buildCollSummary() {
+    const items = allItems || [];
+    const lines = ["这是我收藏馆目前的宝贝信息（共 " + items.length + " 件）："];
+    items.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).forEach((i) => {
+      const parts = [];
+      if (i.name) parts.push(i.name);
+      if (i.species) parts.push(i.species);
+      if (i.category) parts.push(i.category);
+      if (i.craft) parts.push(i.craft);
+      if (i.price != null && i.price !== "") parts.push("¥" + i.price);
+      if (i.arrivedAt) { const d = new Date(i.arrivedAt); parts.push(d.getFullYear() + "年" + (d.getMonth() + 1) + "月"); }
+      if (i.playStatus) {
+        const ps = i.playStatus;
+        if (ps === "playing") parts.push("盘玩中");
+        else if (ps === "done") parts.push("已盘好");
+        else if (ps === "ready") parts.push("待盘玩");
+        else if (ps === "puzzle_done") parts.push("已拼");
+      }
+      if (i.lastPlayedAt) { const d = new Date(i.lastPlayedAt); parts.push("上次盘玩" + d.getMonth() + 1 + "/" + d.getDate()); }
+      if (i.playCount) parts.push("盘玩" + i.playCount + "次");
+      if (i.star) parts.push(i.star + "星");
+      lines.push("- " + parts.join(" | "));
+    });
+    return lines.join("\n");
+  }
+
+  // 把收藏摘要 + 用户问题发给 DeepSeek，返回回答
+  async function askAI(userMessage) {
+    const key = getAiKey();
+    if (!key) throw new Error("还未配置 DeepSeek API key，请到「设置 → AI 助手密钥」填写你自己的 key");
+    const summary = buildCollSummary();
+    const sysMsg = "你是我的收藏馆AI小助手，懂文玩/手串/拼图/收藏。请用简体中文、简短友好地回答。可结合我收藏里的信息回答。收藏信息如下：\n" + summary;
+    const body = {
+      model: AI_MODEL,
+      messages: [
+        { role: "system", content: sysMsg },
+        { role: "user", content: userMessage },
+      ],
+      temperature: 0.7,
+      max_tokens: 800,
+      stream: false,
+    };
+    const resp = await fetch(AI_BASE + "/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      let msg = "请求失败";
+      try { const j = await resp.json(); msg = j.error && j.error.message ? j.error.message : msg; } catch (e) {}
+      throw new Error("DeepSeek " + resp.status + "：" + msg);
+    }
+    const data = await resp.json();
+    return (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "";
+  }
+
+  // AI 面板 UI
+  function pushChatMsg(role, text) {
+    const chat = $("#aiChat");
+    if (!chat) return;
+    if (!chat.children.length) chat.innerHTML = '<div class="ai-greeting">👋 我是你的收藏馆小助手。试试下面的快捷问题，或直接输入你的问题（例如「总结我 9 月的盘串记录」）。</div>';
+    const div = document.createElement("div");
+    div.className = "ai-msg " + role;
+    div.textContent = text;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+  }
+  function setAiLoading(show) {
+    const s = $("#aiSend");
+    if (s) { s.disabled = show; s.textContent = show ? "…" : "发送"; }
+    if (show && !$("#aiInput")) return;
+  }
+  async function sendAI() {
+    const input = $("#aiInput");
+    const msg = input ? input.value.trim() : "";
+    if (!msg) return;
+    if (input) input.value = "";
+    pushChatMsg("user", msg);
+    pushChatMsg("ai", "正在思考…");
+    setAiLoading(true);
+    try {
+      const ans = await askAI(msg);
+      const chat = $("#aiChat");
+      if (chat) chat.lastElementChild.textContent = ans || "（没有返回内容）";
+    } catch (err) {
+      const chat = $("#aiChat");
+      if (chat) chat.lastElementChild.textContent = "⚠️ 出错了：" + err.message;
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  // AI 面板 open/close + 事件
+  function bindAI() {
+    const fab = $("#aiFab");
+    const panel = $("#aiPanel");
+    const open = () => {
+      if (panel) panel.hidden = false;
+      // 首次打开：若无 key，先提示去设置页填（不自动发请求）
+      if (!$("#aiChat").children.length) {
+        pushChatMsg("ai", hasAiKey()
+          ? "👋 我是你的收藏馆小助手。试试下面的快捷问题，或直接输入你的问题（例如「总结我 9 月的盘串记录」）。"
+          : "⚠️ 还没配置 DeepSeek API key。请点右下角进入「设置 → AI 助手密钥」，填你自己的 sk-... key（只存本机，不入开源）。填好后回来就能问我了。");
+      }
+    };
+    const close = () => { if (panel) panel.hidden = true; };
+    if (fab) fab.onclick = open;
+    const ac = $("#aiClose"); if (ac) ac.onclick = close;
+    // 点击面板外关闭
+    document.addEventListener("click", (e) => {
+      if (panel && !panel.hidden && !panel.contains(e.target) && e.target !== fab && !fab.contains(e.target)) close();
+    });
+    const send = $("#aiSend"); if (send) send.onclick = sendAI;
+    const inp = $("#aiInput");
+    if (inp) {
+      inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAI(); }
+      });
+      // 输入框自适应高度
+      inp.addEventListener("input", () => { inp.style.height = "auto"; inp.style.height = Math.min(inp.scrollHeight, 120) + "px"; });
+    }
+    // 快捷问题
+    const qs = $("#aiQuick");
+    if (qs) {
+      // 用事件委托，避免重复绑定
+      if (!qs._bound) {
+        qs.addEventListener("click", (e) => {
+          const b = e.target.closest(".ai-q");
+          if (b) { const inp2 = $("#aiInput"); if (inp2) inp2.value = b.dataset.q; sendAI(); }
+        });
+        qs._bound = true;
+      }
     }
   }
 
