@@ -144,19 +144,15 @@
       try {
         const saved = await DB.put(item);
         if (saved && itemStars(saved) !== next) {
-          // 云端缺 star 列（未执行 alter SQL）：保留本机星级，提示执行
-          item.star = next; // 本机先生效，不把用户的选择回滚
-          toast("⭐ 星级已在本机生效；云端未保存（数据库缺 star 列，请在 Supabase 执行 alter，详见开发文档）");
-          if (document.getElementById("gridHolder")) updateGrid();
-          else if (location.hash === "#/fav") renderFavPage();
-          else router();
+          // 云端缺 star 列（未执行 alter SQL）：评分无法真正存云端，回滚并明确提示
+          item.star = prev; // 回滚：评分以云端为准，不假装保存
+          toast("⚠️ 评分未保存：数据库缺 star 列，请先在 Supabase 执行 alter 建列（详见开发文档）。执行后评分即可跨设备同步");
+          return;
         }
-        else {
-          toast(next >= 5 ? "⭐ 5 星，已进入喜欢展柜" : (next > 0 ? "已设为 " + next + " 星" : "已取消星级"));
-          if (document.getElementById("gridHolder")) updateGrid();
-          else if (location.hash === "#/fav") renderFavPage();
-          else router();
-        }
+        toast(next >= 5 ? "⭐ 5 星，已进入喜欢展柜" : (next > 0 ? "已设为 " + next + " 星，已同步云端" : "已取消星级（已同步）"));
+        if (document.getElementById("gridHolder")) updateGrid();
+        else if (location.hash === "#/fav") renderFavPage();
+        else router();
       } catch (err) { item.star = prev; toast("操作失败：" + err.message); }
     }));
   }
