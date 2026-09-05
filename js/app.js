@@ -487,7 +487,6 @@
       distSection("🎨 主色", dist.colors, "#b8860b") +
       distSection("🗂️ 收藏盒子", dist.cats, "#8d6e63") +
       distSection("🔄 状态", dist.statuses, "#4caf50") +
-      distSection("💰 价格", dist.prices, "#ffb300") +
       "</div>" +
       "</div>";
 

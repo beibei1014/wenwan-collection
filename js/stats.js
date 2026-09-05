@@ -341,21 +341,9 @@
       .filter((s) => st[s.key] > 0)
       .map((s) => ({ label: s.label, count: st[s.key], pct: Math.round((st[s.key] / total) * 100), color: s.color }));
 
-    // —— 价格区间分布（互斥，不重复计数；未记价/0 元单独归"未记价"） ——
-    const bands = [
-      { label: "¥100 以下", test: (p) => p > 0 && p < 100, color: "#4caf50" },
-      { label: "¥100–300", test: (p) => p >= 100 && p < 300, color: "#8bc34a" },
-      { label: "¥300–800", test: (p) => p >= 300 && p < 800, color: "#ffb300" },
-      { label: "¥800–2000", test: (p) => p >= 800 && p < 2000, color: "#ef6c00" },
-      { label: "¥2000+", test: (p) => p >= 2000, color: "#c62828" },
-      { label: "未记价", test: (p) => p == null || !isFinite(p) || p <= 0, color: "#9e9e9e" },
-    ];
-    const priceDist = bands.map((b) => {
-      const count = items.reduce((s, i) => s + (b.test(Number(i.price)) ? 1 : 0), 0);
-      return { label: b.label, count, pct: Math.round((count / total) * 100), color: b.color };
-    });
+    // —— 价格分布：已按用户要求移除（用户收藏多为 100 以下，价格分布无区分度） ——
 
-    return { colors: colorDist, cats: catDist, statuses: statusDist, prices: priceDist, total: items.length };
+    return { colors: colorDist, cats: catDist, statuses: statusDist, total: items.length };
   }
 
   // 菩提类（有盘玩状态）判定：目前仅"菩提"分类
@@ -444,17 +432,66 @@
     if (idle && DB.daysWith(idle) >= 30) {
       facts.push({ icon: "😪", text: "「" + (idle.name || "未命名") + "」陪了你 " + DB.formatDays(DB.daysWith(idle)) + " 却还没盘，是时候上手了" });
     }
-    // 累计陪伴总天数
-    const totalDays = items.reduce((s, i) => s + DB.daysWith(i), 0);
-    if (totalDays >= 30) {
-      facts.push({ icon: "🕰️", text: "所有宝贝累计陪伴你 " + DB.formatDays(totalDays) + " 啦" });
-    }
     // 花费占比（最贵的占累计比例）
     if (stats.totalSpent > 0 && stats.mostExpensive) {
       const pct = Math.round((Number(stats.mostExpensive.price) / stats.totalSpent) * 100);
       if (pct >= 30) {
         facts.push({ icon: "👑", text: "「" + (stats.mostExpensive.name || "未命名") + "」就占了总花费的 " + pct + "%，是真爱" });
       }
+    }
+    // 壕无人性：单月入库最多
+    const monthCol = {};
+    items.forEach((i) => {
+      const ts = i.arrivedAt || i.createdAt;
+      if (!ts) return;
+      const d = new Date(ts);
+      const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+      monthCol[key] = (monthCol[key] || 0) + 1;
+    });
+    const topMonth = Object.entries(monthCol).sort((a, b) => b[1] - a[1])[0];
+    if (topMonth && topMonth[1] >= 3) {
+      const [ym, n] = topMonth;
+      const [py, pm] = ym.split("-");
+      facts.push({ icon: "💸", text: "你在 " + py + " 年 " + (+pm) + " 月一口入了 " + n + " 件宝贝，壕无人性" });
+    }
+    // 手都冒烟了：单月盘玩最多（按 lastPlayedAt 月份）
+    const monthPlay = {};
+    items.forEach((i) => {
+      const ts = i.lastPlayedAt;
+      if (!ts) return;
+      const d = new Date(ts);
+      const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+      monthPlay[key] = (monthPlay[key] || 0) + 1;
+    });
+    const topPlay = Object.entries(monthPlay).sort((a, b) => b[1] - a[1])[0];
+    if (topPlay && topPlay[1] >= 2) {
+      const [ym, n] = topPlay;
+      const [py, pm] = ym.split("-");
+      facts.push({ icon: "🔥", text: "你在 " + py + " 年 " + (+pm) + " 月盘了 " + n + " 条串，手都冒烟了" });
+    }
+    // 天道酬勤：某件已盘好的菩提，从入库到现在陪伴了多少天（盘完它花了多少天）
+    const doneItems = items.filter((i) => (i.category === "菩提" && i.playStatus === "done") || i.playStatus === "puzzle_done");
+    if (doneItems.length) {
+      const d = doneItems.sort((a, b) => DB.daysWith(b) - DB.daysWith(a))[0];
+      const days = DB.daysWith(d);
+      if (days >= 1) {
+        facts.push({ icon: "🌾", text: "你把「" + (d.name || "未命名") + "」盘完花了 " + DB.formatDays(days) + "，天道酬勤" });
+      }
+    }
+    // 五杀进货：分类收藏最多（某个盒子收得最多）
+    const catCount = {};
+    items.forEach((i) => {
+      const c = i.category || "未分类";
+      catCount[c] = (catCount[c] || 0) + 1;
+    });
+    const topCat = Object.entries(catCount).sort((a, b) => b[1] - a[1])[0];
+    if (topCat && topCat[1] >= 3 && topCat[0] !== "未分类") {
+      facts.push({ icon: "🗃️", text: "「" + topCat[0] + "」盒子已经塞了 " + topCat[1] + " 件，快满了" });
+    }
+    // 连续进货天（最近一次入库到现在多少天没买）
+    const noBuy = window.Game && window.Game.daysSinceLastBuy ? window.Game.daysSinceLastBuy(items) : 0;
+    if (noBuy >= 7) {
+      facts.push({ icon: "🧘", text: "已经 " + noBuy + " 天没买新宝贝了，手收得真稳" });
     }
     return facts;
   }
