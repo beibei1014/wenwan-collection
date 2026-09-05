@@ -143,7 +143,14 @@
       item.star = next;
       try {
         const saved = await DB.put(item);
-        if (saved && itemStars(saved) !== next) { item.star = prev; toast("⚠️ 未保存：数据库缺 star 列（详见开发文档 SQL，需执行 alter）"); }
+        if (saved && itemStars(saved) !== next) {
+          // 云端缺 star 列（未执行 alter SQL）：保留本机星级，提示执行
+          item.star = next; // 本机先生效，不把用户的选择回滚
+          toast("⭐ 星级已在本机生效；云端未保存（数据库缺 star 列，请在 Supabase 执行 alter，详见开发文档）");
+          if (document.getElementById("gridHolder")) updateGrid();
+          else if (location.hash === "#/fav") renderFavPage();
+          else router();
+        }
         else {
           toast(next >= 5 ? "⭐ 5 星，已进入喜欢展柜" : (next > 0 ? "已设为 " + next + " 星" : "已取消星级"));
           if (document.getElementById("gridHolder")) updateGrid();
@@ -1196,26 +1203,41 @@
   /* ---------- 盘玩计划（轻量提醒，非打卡；紧凑网格 3-4/行，最多 2 行） ---------- */
   function renderPlayPlanSection() {
     const plan = Game.playPlan(allItems); // 全部候选池
-    if (!plan.total) return ""; // 没有符合条件的串则不显示
-    // 展示数量按档位向下取：0/1/3/6/9（满足 4 个→展示 3；满足 7 个→展示 6 等），最多 9
-    const tier = plan.total >= 9 ? 9 : plan.total >= 6 ? 6 : plan.total >= 3 ? 3 : plan.total >= 1 ? 1 : 0;
+    // 展示数量：小于 3 个 → 有几个展示几个；≥3 按档位 3/6/9（最多 9）
+    const t = plan.total;
+    const tier = t === 0 || t === 1 || t === 2 ? t : t >= 9 ? 9 : t >= 6 ? 6 : 3;
     const shown = plan.items.slice(0, tier);
-    const cells = shown.map((x) => {
-      const it = x.item;
-      const p = it.photos && it.photos[0];
-      const img = p ? '<img src="' + photoUrl(p) + '" loading="lazy" alt="">' : '<div class="placeholder">📿</div>';
-      return '<div class="plan-cell" data-id="' + it.id + '" title="' + esc(it.name || "未命名") + '">' +
-        '<div class="plan-photo">' + img + "</div>" +
-        '<div class="plan-days' + (x.urgent ? " urgent" : "") + '">' + esc(x.text) + "</div>" +
-        "</div>";
-    }).join("");
     const urgentCount = shown.filter((x) => x.urgent).length;
     const moreCount = plan.total - shown.length;
+
+    let bodyHtml;
+    if (!shown.length) {
+      // 没有需要盘的串：显示好玩文案（随机挑一条）
+      const chill = [
+        "没有需要盘的串，雨露均沾的无情铁手太棒了 🙌",
+        "所有串都盘得妥妥的，你简直是不知疲倦的无情铁手 ✋",
+        "最近没有串在等你，去喝杯茶享受一下吧 🍵",
+        "盘玩计划空空如也，你的手是真的稳 👏",
+      ];
+      bodyHtml = '<div class="plan-empty">' + (chill[Math.floor(Math.random() * chill.length)]) + "</div>";
+    } else {
+      const cells = shown.map((x) => {
+        const it = x.item;
+        const p = it.photos && it.photos[0];
+        const img = p ? '<img src="' + photoUrl(p) + '" loading="lazy" alt="">' : '<div class="placeholder">📿</div>';
+        return '<div class="plan-cell" data-id="' + it.id + '" title="' + esc(it.name || "未命名") + '">' +
+          '<div class="plan-photo">' + img + "</div>" +
+          '<div class="plan-days' + (x.urgent ? " urgent" : "") + '">' + esc(x.text) + "</div>" +
+          "</div>";
+      }).join("");
+      bodyHtml = '<div class="plan-grid">' + cells + "</div>";
+    }
+
     return '<div class="plan-card">' +
       '<div class="draw-head"><span class="draw-title">🧭 盘玩计划</span>' +
-      '<span class="draw-sub">' + (urgentCount ? urgentCount + " 串该盘啦 · 温和提醒" : "顺手盘一串，不着急") +
+      '<span class="draw-sub">' + (urgentCount ? urgentCount + " 串该盘啦 · 温和提醒" : (shown.length ? "顺手盘一串，不着急" : "全部盘得很好")) +
       (moreCount > 0 ? " · 还有 " + moreCount + " 串" : "") + "</span></div>" +
-      '<div class="plan-grid">' + cells + "</div>" +
+      bodyHtml +
       "</div>";
   }
 
