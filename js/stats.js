@@ -88,20 +88,25 @@
   }
 
   /* ---------- 统计计算 ---------- */
+  // 有效价格：>0 且 < 99999（99999 等视为占位/异常数据，不计入金额统计）
+  function validPrice(i) {
+    const p = Number(i.price);
+    return isFinite(p) && p > 0 && p < 99999 ? p : 0;
+  }
   function computeStats(items) {
     const owned = items.filter((i) => !i.gifted);
-    const totalSpent = items.reduce((s, i) => s + (Number(i.price) || 0), 0);
-    const activeSpent = owned.reduce((s, i) => s + (Number(i.price) || 0), 0);
-    const prices = items.map((i) => Number(i.price)).filter((p) => p > 0);
+    const totalSpent = items.reduce((s, i) => s + validPrice(i), 0);
+    const activeSpent = owned.reduce((s, i) => s + validPrice(i), 0);
+    const prices = items.map(validPrice).filter((p) => p > 0);
     const maxPrice = prices.length ? Math.max(...prices) : 0;
     const minPrice = prices.length ? Math.min(...prices) : 0;
-    const mostExpensive = maxPrice ? items.find((i) => Number(i.price) === maxPrice) : null;
-    const cheapest = minPrice ? items.find((i) => Number(i.price) === minPrice) : null;
+    const mostExpensive = maxPrice ? items.find((i) => validPrice(i) === maxPrice) : null;
+    const cheapest = minPrice ? items.find((i) => validPrice(i) === minPrice) : null;
 
     // 性价比：按"陪伴天数/价格"计算（陪伴久+便宜 = 高性价比）
     const valueItems = items
       .map((i) => {
-        const p = Number(i.price) || 0;
+        const p = validPrice(i);
         const days = DB.daysWith(i);
         return { item: i, score: p > 0 ? days / p : 0 };
       })
@@ -114,7 +119,7 @@
       gifted: items.filter((i) => i.gifted).length,
       totalSpent,
       activeSpent,
-      avgPrice: prices.length ? totalSpent / items.length : 0,
+      avgPrice: prices.length ? totalSpent / prices.length : 0,
       maxPrice,
       mostExpensive,
       cheapest,
@@ -358,22 +363,32 @@
     return ["菩提"].includes(cat);
   }
 
+  // 金额显示：保留 1 位小数（整数则不带小数）
+  function fmtMoney(n) {
+    const v = Number(n);
+    if (!isFinite(v)) return "0";
+    const r = Math.round(v * 10) / 10;
+    if (r <= 0) return "0";
+    // 整数不带小数；否则保留 1 位
+    return Number.isInteger(r) ? String(r) : r.toFixed(1);
+  }
+
   /* ---------- 有趣小统计 ---------- */
   function funFacts(items, stats) {
     const facts = [];
     // 最贵
     if (stats.mostExpensive) {
-      facts.push({ icon: "🔥", text: "最贵的宝贝「" + (stats.mostExpensive.name || "未命名") + "」花了 ¥" + stats.mostExpensive.price });
+      facts.push({ icon: "🔥", text: "最贵的宝贝「" + (stats.mostExpensive.name || "未命名") + "」花了 ¥" + fmtMoney(stats.mostExpensive.price) });
     }
     // 最便宜
     if (stats.cheapest && stats.cheapest !== stats.mostExpensive) {
-      facts.push({ icon: "🕵️", text: "最省的宝贝「" + (stats.cheapest.name || "未命名") + "」只要 ¥" + stats.cheapest.price });
+      facts.push({ icon: "🕵️", text: "最省的宝贝「" + (stats.cheapest.name || "未命名") + "」只要 ¥" + fmtMoney(stats.cheapest.price) });
     }
     // 性价比
     if (stats.bestValue) {
       const b = stats.bestValue;
       const days = DB.daysWith(b);
-      facts.push({ icon: "🧮", text: "性价比之王「" + (b.name || "未命名") + "」¥" + (Number(b.price) || 0) + " 陪了你 " + days + " 天" });
+      facts.push({ icon: "🧮", text: "性价比之王「" + (b.name || "未命名") + "」¥" + fmtMoney(b.price) + " 陪了你 " + days + " 天" });
     }
     // 陪伴最久
     const oldest = items.slice().sort((a, b) => DB.daysWith(b) - DB.daysWith(a))[0];
@@ -381,8 +396,8 @@
       facts.push({ icon: "⏳", text: "陪伴最久的是「" + (oldest.name || "未命名") + "」共 " + DB.formatDays(DB.daysWith(oldest)) });
     }
     // 平均单价
-    if (stats.total > 0) {
-      facts.push({ icon: "💡", text: "平均每件花了 ¥" + Math.round(stats.totalSpent / stats.total) });
+    if (stats.total > 0 && stats.totalSpent > 0) {
+      facts.push({ icon: "💡", text: "平均每件花了 ¥" + fmtMoney(stats.avgPrice) });
     }
     // 最常收藏的品种/品牌
     const speciesCount = {};
@@ -403,8 +418,46 @@
     if (stats.gifted > 0) {
       facts.push({ icon: "🎁", text: "送出了 " + stats.gifted + " 件宝贝，把快乐分享给了别人" });
     }
+    // 最受宠爱（5 星最多/星级最高的宝贝）
+    const loved = items
+      .filter((i) => (Number(i.star) || 0) >= 5)
+      .sort((a, b) => (Number(b.star) - Number(a.star)));
+    if (loved.length) {
+      const l = loved[0];
+      facts.push({ icon: "💖", text: "最受宠爱的是「" + (l.name || "未命名") + "」⭐⭐⭐⭐⭐，打满了 5 星" });
+    } else if (items.length) {
+      const anyStar = items.filter((i) => (Number(i.star) || 0) > 0);
+      if (anyStar.length) {
+        const top = anyStar.sort((a, b) => (Number(b.star) - Number(a.star)))[0];
+        facts.push({ icon: "💖", text: "目前评分最高的是「" + (top.name || "未命名") + "」" + (Number(top.star) || 0) + " 星，打到 5 星会进展柜哦" });
+      }
+    }
+    // 盘玩最多（菩提：playCount 最高）
+    const played = items.filter((i) => (Number(i.playCount) || 0) > 0).sort((a, b) => (Number(b.playCount) || 0) - (Number(a.playCount) || 0));
+    if (played.length) {
+      const p = played[0];
+      facts.push({ icon: "🤲", text: "盘得最多的是「" + (p.name || "未命名") + "」已盘 " + (Number(p.playCount) || 0) + " 次，真·盘串狂魔" });
+    }
+    // 摆烂最多（菩提：待盘/未盘但陪伴很久）
+    const idle = items.filter((i) => i.category === "菩提" && !i.gifted && (i.playStatus === "ready" || !i.playStatus))
+      .sort((a, b) => DB.daysWith(b) - DB.daysWith(a))[0];
+    if (idle && DB.daysWith(idle) >= 30) {
+      facts.push({ icon: "😪", text: "「" + (idle.name || "未命名") + "」陪了你 " + DB.formatDays(DB.daysWith(idle)) + " 却还没盘，是时候上手了" });
+    }
+    // 累计陪伴总天数
+    const totalDays = items.reduce((s, i) => s + DB.daysWith(i), 0);
+    if (totalDays >= 30) {
+      facts.push({ icon: "🕰️", text: "所有宝贝累计陪伴你 " + DB.formatDays(totalDays) + " 啦" });
+    }
+    // 花费占比（最贵的占累计比例）
+    if (stats.totalSpent > 0 && stats.mostExpensive) {
+      const pct = Math.round((Number(stats.mostExpensive.price) / stats.totalSpent) * 100);
+      if (pct >= 30) {
+        facts.push({ icon: "👑", text: "「" + (stats.mostExpensive.name || "未命名") + "」就占了总花费的 " + pct + "%，是真爱" });
+      }
+    }
     return facts;
   }
 
-  window.Stats = { renderCalendar, computeStats, getAchievements, funFacts, distributions, ACHIEVEMENT_GROUPS, resolveTier };
+  window.Stats = { renderCalendar, computeStats, getAchievements, funFacts, distributions, fmtMoney, ACHIEVEMENT_GROUPS, resolveTier };
 })();

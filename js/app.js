@@ -461,7 +461,7 @@
       '<div><div class="n">' + stats.total + '</div><div class="l">全部宝贝</div></div>' +
       '<div><div class="n">' + stats.owned + '</div><div class="l">在库</div></div>' +
       '<div><div class="n">' + stats.gifted + '</div><div class="l">已送人</div></div>' +
-      '<div><div class="n">' + (hideSpend ? "¥•••" : "¥" + (stats.totalSpent || 0)) + '</div>' +
+      '<div><div class="n">' + (hideSpend ? "¥•••" : "¥" + (window.Stats ? window.Stats.fmtMoney(stats.totalSpent) : stats.totalSpent)) + '</div>' +
       '<div class="l">累计花费 <button class="eye-btn" id="btnEye">' + (hideSpend ? "👁️" : "🙈") + "</button></div></div>" +
       "</div></div>";
 
@@ -481,26 +481,30 @@
       return '<div class="dist-block"><div class="dist-head">' + esc(title) + "</div>" +
         data.map((d) => distBar(d, fallbackColor)).join("") + "</div>";
     };
-    html += '<div class="section-title">📊 收藏分布</div>';
-    html += '<div class="stats-card" style="padding:14px">' +
+    html += '<button type="button" class="section-collapse" id="collDist" data-open="0"><span class="section-title" style="margin:0">📊 收藏分布</span><span class="collapse-arrow" id="collDistArrow">▸</span></button>';
+    html += '<div id="distBody" style="display:none">' +
+      '<div class="stats-card" style="padding:14px">' +
       distSection("🎨 主色", dist.colors, "#b8860b") +
       distSection("🗂️ 收藏盒子", dist.cats, "#8d6e63") +
       distSection("🔄 状态", dist.statuses, "#4caf50") +
       distSection("💰 价格", dist.prices, "#ffb300") +
+      "</div>" +
       "</div>";
 
     // 月历
     html += '<div class="section-title">📅 入库月历</div>';
     html += '<div class="cal-card" id="calBox"></div>';
 
-    // 有趣小统计
-    html += '<div class="section-title">✨ 有趣发现</div>';
+    // 有趣小统计（每次进入随机挑 5 条，动态更新）
+    html += '<div class="section-title">✨ 有趣发现 <small style="color:var(--text-2);font-weight:400">随机 5 条 · 每次不同</small></div>';
+    // 洗牌取 5 条（每次进入随机）
+    const factShuffled = facts.slice().sort(() => Math.random() - 0.5).slice(0, 5);
     html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 14px">';
-    facts.forEach((f) => {
+    factShuffled.forEach((f) => {
       html += '<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px dashed var(--line);font-size:14px">' +
         '<span>' + f.icon + "</span><span style='line-height:1.6'>" + esc(f.text) + "</span></div>";
     });
-    if (!facts.length) html += '<div style="padding:12px 0;font-size:13px;color:var(--text-2);text-align:center">还没有数据，先去收藏几件宝贝吧</div>';
+    if (!factShuffled.length) html += '<div style="padding:12px 0;font-size:13px;color:var(--text-2);text-align:center">还没有数据，先去收藏几件宝贝吧</div>';
     html += "</div>";
 
     // 成就（分组递进展示 + tier 进阶）
@@ -580,6 +584,17 @@
       const next = !getHideSpend();
       setHideSpend(next);
       renderStatsPage();
+    };
+
+    // 收藏分布折叠/展开（默认折叠）
+    const collDist = $("#collDist");
+    if (collDist) collDist.onclick = () => {
+      const body = $("#distBody");
+      const arrow = $("#collDistArrow");
+      const open = body.style.display !== "none";
+      body.style.display = open ? "none" : "";
+      collDist.dataset.open = open ? "0" : "1";
+      if (arrow) arrow.style.transform = open ? "" : "rotate(90deg)";
     };
 
     // 成就分组折叠
