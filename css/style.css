@@ -457,6 +457,16 @@ img { display:block; }
 .stats-nums .l { font-size:11px; opacity:.75; }
 .stats-nums div div:last-child { margin-top:2px; }
 
+/* ============ 收藏分布条 ============ */
+.dist-block { margin-bottom:14px; }
+.dist-block:last-child { margin-bottom:0; }
+.dist-head { font-size:12px; font-weight:700; color:var(--wood); margin-bottom:8px; }
+.dist-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.dist-label { flex:0 0 84px; font-size:12px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dist-track { flex:1; height:10px; background:color-mix(in srgb, var(--line) 45%, transparent); border-radius:6px; overflow:hidden; }
+.dist-fill { display:block; height:100%; border-radius:6px; min-width:6px; transition:width .3s; }
+.dist-num { flex:0 0 62px; font-size:11px; color:var(--text-2); text-align:right; white-space:nowrap; }
+
 /* ============ 统计页 ============ */
 .cal-card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
 .cal-head { font-size:14px; font-weight:700; color:var(--wood); }
@@ -830,3 +840,10 @@ img { display:block; }
 .draw-status { position:absolute; left:6px; bottom:6px; font-size:10px; padding:2px 8px; border-radius:10px; background:rgba(0,0,0,.55); color:#fff; }
 .draw-name { font-size:13px; font-weight:600; margin-top:7px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text); }
 .draw-sub { font-size:11px; color:var(--text-2); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* ============ 盘玩计划 ============ */
+.plan-card { border:1px solid rgba(46,125,50,.35); }
+.draw-status.urgent { background:#c62828; font-weight:700; }
+.plan-more { cursor:pointer; }
+.plan-more .draw-thumb { display:flex; align-items:center; justify-content:center; }
+

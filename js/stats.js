@@ -275,6 +275,89 @@
     });
   }
 
+  /* ---------- 收藏分布（颜色 / 分类 / 状态 / 价格区间） ---------- */
+  function distributions(items) {
+    const total = items.length || 1;
+
+    // —— 颜色分布 ——
+    const colorCount = {};
+    items.forEach((i) => {
+      const c = window.Color ? window.Color.normColor(i.color) : i.color;
+      const key = c || "__none";
+      colorCount[key] = (colorCount[key] || 0) + 1;
+    });
+    const colorDist = Object.entries(colorCount).map(([key, count]) => {
+      const pct = Math.round((count / total) * 100);
+      if (key === "__none") return { label: "未分色", count, pct, hex: "#9e9e9e", empty: true };
+      const hex = window.Color ? window.Color.colorHex(key) : "#9e9e9e";
+      const label = window.Color ? window.Color.colorLabel(key) : key;
+      return { label, count, pct, hex };
+    }).sort((a, b) => b.count - a.count);
+
+    // —— 分类（收藏盒子）分布 ——
+    const catCount = {};
+    items.forEach((i) => {
+      const key = i.category || "__none";
+      catCount[key] = (catCount[key] || 0) + 1;
+    });
+    const catDist = Object.entries(catCount).map(([key, count]) => ({
+      label: key === "__none" ? "未分类" : key,
+      count,
+      pct: Math.round((count / total) * 100),
+    })).sort((a, b) => b.count - a.count);
+
+    // —— 状态分布（盘玩 4 态 + 拼图 2 态 + 在库/已送人） ——
+    const st = { unplayed: 0, ready: 0, playing: 0, done: 0, puzzle_pending: 0, puzzle_done: 0, gifted: 0, plain: 0 };
+    items.forEach((i) => {
+      if (i.gifted) { st.gifted++; return; }
+      const cat = i.category || "";
+      const isPuzzle = window.Categories && window.Categories.isPuzzleCategory(cat);
+      if (isPuzzle) {
+        if (i.playStatus === "puzzle_done") st.puzzle_done++; else st.puzzle_pending++;
+        return;
+      }
+      // 无盘玩状态分类（水晶/玉石/周边/盲盒/其他等）
+      const noPlay = !isBeadLike(cat);
+      if (noPlay) { st.plain++; return; }
+      const s = i.playStatus || "unplayed";
+      if (st[s] != null) st[s]++; else st.unplayed++;
+    });
+    const statusLabels = [
+      { key: "playing", label: "盘玩中", color: "#2e7d32" },
+      { key: "ready", label: "待盘玩", color: "#ef6c00" },
+      { key: "done", label: "已盘好", color: "#6a1b9a" },
+      { key: "unplayed", label: "未盘玩", color: "#78909c" },
+      { key: "puzzle_pending", label: "待拼", color: "#d98ba6" },
+      { key: "puzzle_done", label: "已拼", color: "#2e7d32" },
+      { key: "plain", label: "常规在库", color: "#8d6e63" },
+      { key: "gifted", label: "已送人", color: "#b0bec5" },
+    ];
+    const statusDist = statusLabels
+      .filter((s) => st[s.key] > 0)
+      .map((s) => ({ label: s.label, count: st[s.key], pct: Math.round((st[s.key] / total) * 100), color: s.color }));
+
+    // —— 价格区间分布（互斥，不重复计数；未记价/0 元单独归"未记价"） ——
+    const bands = [
+      { label: "¥100 以下", test: (p) => p > 0 && p < 100, color: "#4caf50" },
+      { label: "¥100–300", test: (p) => p >= 100 && p < 300, color: "#8bc34a" },
+      { label: "¥300–800", test: (p) => p >= 300 && p < 800, color: "#ffb300" },
+      { label: "¥800–2000", test: (p) => p >= 800 && p < 2000, color: "#ef6c00" },
+      { label: "¥2000+", test: (p) => p >= 2000, color: "#c62828" },
+      { label: "未记价", test: (p) => p == null || !isFinite(p) || p <= 0, color: "#9e9e9e" },
+    ];
+    const priceDist = bands.map((b) => {
+      const count = items.reduce((s, i) => s + (b.test(Number(i.price)) ? 1 : 0), 0);
+      return { label: b.label, count, pct: Math.round((count / total) * 100), color: b.color };
+    });
+
+    return { colors: colorDist, cats: catDist, statuses: statusDist, prices: priceDist, total: items.length };
+  }
+
+  // 菩提类（有盘玩状态）判定：目前仅"菩提"分类
+  function isBeadLike(cat) {
+    return ["菩提"].includes(cat);
+  }
+
   /* ---------- 有趣小统计 ---------- */
   function funFacts(items, stats) {
     const facts = [];
@@ -323,5 +406,5 @@
     return facts;
   }
 
-  window.Stats = { renderCalendar, computeStats, getAchievements, funFacts, ACHIEVEMENT_GROUPS, resolveTier };
+  window.Stats = { renderCalendar, computeStats, getAchievements, funFacts, distributions, ACHIEVEMENT_GROUPS, resolveTier };
 })();

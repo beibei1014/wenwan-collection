@@ -276,6 +276,48 @@
     };
   }
 
+  /* ---------- 盘玩计划：轻量提醒哪些串该盘了（温和建议，非打卡） ---------- */
+  // 只针对「菩提」分类中 待盘玩/盘玩中 的串；按闲置天数排序，闲置越久越在前面
+  // 从未盘过的最优先提示；极端闲置（≥7 天）标记为"该盘"加重提醒
+  function playPlan(items, limit) {
+    limit = limit || 6;
+    const now = Date.now();
+    const day = 86400000;
+    const pool = items
+      .filter((i) => i && !i.gifted && (i.category || "") === "菩提" &&
+        (i.playStatus === "ready" || i.playStatus === "playing"))
+      .map((i) => {
+        const last = i.lastPlayedAt;
+        const idleDays = last ? Math.floor((now - last) / day) : null; // null = 从未盘过
+        const arrived = Math.floor((now - (i.arrivedAt || i.createdAt || now)) / day);
+        return { item: i, idleDays, arrived };
+      })
+      .sort((a, b) => {
+        if (a.idleDays == null && b.idleDays != null) return -1;   // 从未盘过优先
+        if (a.idleDays != null && b.idleDays == null) return 1;
+        if (a.idleDays == null && b.idleDays == null) return b.arrived - a.arrived;
+        return b.idleDays - a.idleDays;                             // 闲置越久越靠前
+      });
+
+    return {
+      items: pool.slice(0, limit).map((x) => {
+        const idle = x.idleDays;
+        let text;
+        if (idle == null) text = "还没开始盘";
+        else if (idle <= 0) text = "今天盘过啦";
+        else if (idle <= 3) text = "刚盘 " + idle + " 天";
+        else text = "已 " + idle + " 天没盘";
+        return {
+          item: x.item,
+          idleDays: idle,
+          text,
+          urgent: idle == null || idle >= 7,   // 该引起注意
+        };
+      }),
+      total: pool.length,
+    };
+  }
+
   /* ---------- 收集进度（每个盒子） ---------- */
   function boxProgress(items) {
     const cats = Categories ? Categories.getCategoryConfig("") : null;
@@ -299,5 +341,5 @@
     return result;
   }
 
-  window.Game = { computeXp, getLevel, dailyTasks, noBuyChallenge, boxProgress, daysSinceLastBuy, drawRecommendation, isDrawable };
+  window.Game = { computeXp, getLevel, dailyTasks, noBuyChallenge, boxProgress, daysSinceLastBuy, drawRecommendation, isDrawable, playPlan };
 })();

@@ -427,6 +427,30 @@
       '<div class="l">累计花费 <button class="eye-btn" id="btnEye">' + (hideSpend ? "👁️" : "🙈") + "</button></div></div>" +
       "</div></div>";
 
+    // 收藏分布（颜色 / 分类 / 状态 / 价格区间）
+    const dist = Stats.distributions(allItems);
+    const distBar = (d, fallbackColor) => {
+      if (!d.count) return "";
+      const pct = Math.max(8, d.pct); // 最小宽度让标签可读
+      const color = d.color || fallbackColor || "#b8860b";
+      return '<div class="dist-row">' +
+        '<span class="dist-label">' + esc(d.label) + '</span>' +
+        '<span class="dist-track"><span class="dist-fill" style="width:' + pct + '%;background:' + color + '"></span></span>' +
+        '<span class="dist-num">' + d.count + " · " + d.pct + "%</span></div>";
+    };
+    const distSection = (title, data, fallbackColor) => {
+      if (!data || !data.length) return "";
+      return '<div class="dist-block"><div class="dist-head">' + esc(title) + "</div>" +
+        data.map((d) => distBar(d, fallbackColor)).join("") + "</div>";
+    };
+    html += '<div class="section-title">📊 收藏分布</div>';
+    html += '<div class="stats-card" style="padding:14px">' +
+      distSection("🎨 主色", dist.colors, "#b8860b") +
+      distSection("🗂️ 收藏盒子", dist.cats, "#8d6e63") +
+      distSection("🔄 状态", dist.statuses, "#4caf50") +
+      distSection("💰 价格", dist.prices, "#ffb300") +
+      "</div>";
+
     // 月历
     html += '<div class="section-title">📅 入库月历</div>';
     html += '<div class="cal-card" id="calBox"></div>';
@@ -1030,6 +1054,32 @@
       '<div class="draw-head"><span class="draw-title">🎴 今日心选</span><span class="draw-sub">' + res.date + ' · 点击可重新抽</span>' +
       '<button type="button" class="draw-redraw" id="btnRedraw">🔄 重抽</button></div>' +
       '<div class="draw-grid">' + cards + "</div>" +
+      "</div>";
+  }
+
+  /* ---------- 盘玩计划（轻量提醒，非打卡） ---------- */
+  function renderPlayPlanSection() {
+    const plan = Game.playPlan(allItems, 6);
+    if (!plan.total) return ""; // 没有菩提在待盘/盘玩中则不显示
+    const cards = plan.items.map((x) => {
+      const it = x.item;
+      const p = it.photos && it.photos[0];
+      const img = p ? '<img src="' + photoUrl(p) + '" alt="">' : '<div class="placeholder" style="font-size:26px">📿</div>';
+      return '<div class="draw-item" data-id="' + it.id + '">' +
+        '<div class="draw-thumb">' + img +
+        '<span class="draw-status' + (x.urgent ? " urgent" : "") + '">' + esc(x.text) + '</span></div>' +
+        '<div class="draw-name">' + esc(it.name || "未命名") + "</div>" +
+        '<div class="draw-sub">' + esc(cardSubText(it)) + "</div>" +
+        "</div>";
+    }).join("");
+    const urgentCount = plan.items.filter((x) => x.urgent).length;
+    return '<div class="draw-card plan-card">' +
+      '<div class="draw-head"><span class="draw-title">🧭 盘玩计划</span>' +
+      '<span class="draw-sub">' + (urgentCount ? urgentCount + " 串该盘啦 · 温和提醒" : "顺手盘一串，不着急") + "</span></div>" +
+      '<div class="draw-grid">' + cards + (plan.total > plan.items.length
+        ? '<div class="draw-item plan-more" data-more="1"><div class="draw-thumb" style="background:var(--card);border:2px dashed var(--line)"><span style="font-size:22px;color:var(--text-2)">＋' + (plan.total - plan.items.length) + "</span></div>" +
+          '<div class="draw-name" style="color:var(--text-2)">还有更多待盘</div></div>'
+        : "") + "</div>" +
       "</div>";
   }
 
@@ -1788,6 +1838,22 @@
     const dir = sortDir === "asc" ? 1 : -1; // asc: 小→大；desc: 大→小
     switch (sortMode) {
       case "created": allItems.sort((a, b) => (createdKey(a) - createdKey(b)) * dir); break;
+      case "price": {
+        // 未记价的宝贝永远排最后（无论升降序），不污染排序
+        const pr = (i) => {
+          if (i.price == null || i.price === "" || !isFinite(Number(i.price)) || Number(i.price) <= 0) return null;
+          return Number(i.price);
+        };
+        allItems.sort((a, b) => {
+          const pa = pr(a), pb = pr(b);
+          if (pa == null && pb == null) return 0;
+          if (pa == null) return 1;
+          if (pb == null) return -1;
+          return (pa - pb) * dir;
+        });
+        break;
+      }
+      case "days": allItems.sort((a, b) => (DB.daysWith(a) - DB.daysWith(b)) * dir); break;
       case "color": {
         // 按颜色浅→深排；方向：desc=浅→深（白在前），asc=深→浅
         const order = (window.Color ? window.Color.COLOR_LIST : []).map((c) => c.v);
@@ -1862,19 +1928,37 @@
         isBeadCat(i.category || "") ? (i.playStatus === "ready" ? "待盘玩" : beadStatusText(i)) :
         (isPuzzleCat(i.category || "") ? (i.playStatus === "puzzle_pending" ? "待拼" : "已拼") :
          "");
-      list = list.filter((i) =>
-        (i.name || "").toLowerCase().includes(q) ||
-        (i.species || "").toLowerCase().includes(q) ||
-        (i.shop || "").toLowerCase().includes(q) ||
-        (i.note || "").toLowerCase().includes(q) ||
-        (i.category || "").toLowerCase().includes(q) ||
-        (i.craft || "").toLowerCase().includes(q) ||
-        (i.accessoryType || "").toLowerCase().includes(q) ||
-        statusText(i).toLowerCase().includes(q) ||
-        (i.price != null && String(i.price).includes(q)) ||
-        (i.beadSize ? String(i.beadSize).includes(q) : false) ||
-        (i.pieceCount ? String(i.pieceCount).includes(q) : false)
-      );
+      // 颜色搜索：匹配颜色名（如"绿""黄棕"）或颜色值（如"green"）
+      const colorText = (i) => {
+        const nc = window.Color ? window.Color.normColor(i.color) : i.color;
+        if (!nc) return "";
+        const label = window.Color ? window.Color.colorLabel(nc) : "";
+        return (label + " " + nc).toLowerCase();
+      };
+      // 价格区间查询解析：支持 "100-300" / "100-300元" / ">500" / "<100" / ">=200" / "≤50"
+      const priceTest = (() => {
+        let m;
+        if ((m = q.match(/^([<>])=?\s*(\d+)$/))) { const n = +m[2]; const op = m[1] + (m[0].indexOf("=") >= 0 ? "=" : ""); return (p) => op === ">=" ? p >= n : op === "<=" ? p <= n : op === ">" ? p > n : p < n; }
+        if ((m = q.match(/^(\d+)\s*[-~]\s*(\d+)/))) { const lo = +m[1], hi = +m[2]; return (p) => p >= lo && p <= hi; }
+        return null;
+      })();
+      list = list.filter((i) => {
+        const p = Number(i.price);
+        const hasP = i.price != null && i.price !== "" && isFinite(p);
+        if (priceTest) return hasP && priceTest(p);
+        return (i.name || "").toLowerCase().includes(q) ||
+          (i.species || "").toLowerCase().includes(q) ||
+          (i.shop || "").toLowerCase().includes(q) ||
+          (i.note || "").toLowerCase().includes(q) ||
+          (i.category || "").toLowerCase().includes(q) ||
+          (i.craft || "").toLowerCase().includes(q) ||
+          (i.accessoryType || "").toLowerCase().includes(q) ||
+          statusText(i).toLowerCase().includes(q) ||
+          colorText(i).includes(q) ||
+          (i.price != null && String(i.price).includes(q)) ||
+          (i.beadSize ? String(i.beadSize).includes(q) : false) ||
+          (i.pieceCount ? String(i.pieceCount).includes(q) : false);
+      });
     }
     return list;
   }
@@ -1956,22 +2040,28 @@
       cats.map((c) => '<button class="chip' + (categoryFilter === c ? " active" : "") + '" data-cat="' + esc(c) + '">' + esc(c) + "</button>").join("") +
       "</div>";
 
-    // 排序（3 个按钮，点一下切换升/降序，箭头指示当前方向）
+    // 排序（5 个按钮，点一下切换升/降序，箭头指示当前方向）
     const arrow = (m) => (sortMode === m ? (sortDir === "asc" ? " ▲" : " ▼") : "");
     html += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text-2)">' +
       '<span>排序</span>' +
       '<div class="seg" id="sortSeg" style="flex:1;flex-wrap:wrap">' +
-      '<button type="button" data-sort="arrived" class="' + (sortMode === "arrived" ? "active" : "") + '">🕐 入库时间' + arrow("arrived") + "</button>" +
-      '<button type="button" data-sort="created" class="' + (sortMode === "created" ? "active" : "") + '">🆕 创建时间' + arrow("created") + "</button>" +
+      '<button type="button" data-sort="arrived" class="' + (sortMode === "arrived" ? "active" : "") + '">🕐 入库' + arrow("arrived") + "</button>" +
+      '<button type="button" data-sort="created" class="' + (sortMode === "created" ? "active" : "") + '">🆕 创建' + arrow("created") + "</button>" +
+      '<button type="button" data-sort="price" class="' + (sortMode === "price" ? "active" : "") + '">💰 价格' + arrow("price") + "</button>" +
+      '<button type="button" data-sort="days" class="' + (sortMode === "days" ? "active" : "") + '">⏳ 陪伴' + arrow("days") + "</button>" +
       '<button type="button" data-sort="color" class="' + (sortMode === "color" ? "active" : "") + '">🎨 颜色' + arrow("color") + "</button>" +
       "</div></div>";
     html += "</div>";
 
-    html += '<div class="search-box"><input id="searchInput" placeholder="搜索名字 / 品种 / 工艺 / 状态…" value="' + esc(search) + '"></div>';
+    html += '<div class="search-box"><input id="searchInput" placeholder="搜索名字/品种/工艺/状态/颜色，或输入价格范围如 100-300、>500…" value="' + esc(search) + '"></div>';
 
     // ===== 今日心选抽卡栏目（主动点击抽取，当天固定） =====
     drawHtml = renderDrawSection();
     if (drawHtml) html += drawHtml;
+
+    // ===== 盘玩计划栏目（轻量提醒，非打卡） =====
+    const planHtml = renderPlayPlanSection();
+    if (planHtml) html += planHtml;
 
     html += '<div style="display:flex;gap:8px;margin-bottom:12px">' +
       '<button class="batch-entry" id="btnBatch" style="flex:1">🗂 批量录入</button>' +
@@ -2160,7 +2250,8 @@
         sortDir = sortDir === "asc" ? "desc" : "asc";
       } else {
         sortMode = chosen;
-        sortDir = chosen === "color" ? "asc" : "desc"; // 颜色默认浅→深(asc)，时间默认新→旧(desc)
+        // 颜色默认浅→深(asc)；价格/陪伴默认大→小(desc)；时间默认新→旧(desc)
+        sortDir = chosen === "color" ? "asc" : "desc";
       }
       localStorage.setItem("ww_sortmode", sortMode);
       localStorage.setItem("ww_sortdir", sortDir);
@@ -2186,8 +2277,22 @@
       renderHome();
       toast("已重新抽取");
     };
-    // 抽卡结果点击卡片 → 详情
-    view.querySelectorAll(".draw-item").forEach((d) => d.addEventListener("click", () => location.hash = "#/item/" + d.dataset.id));
+    // 抽卡结果点击卡片 → 详情（无 data-id 的"更多待盘"卡片跳过，避免跳到 undefined）
+    view.querySelectorAll(".draw-item").forEach((d) => d.addEventListener("click", (e) => {
+      if (d.dataset.more) return; // 交给下面的"更多"专门处理
+      if (!d.dataset.id) return;
+      e.stopPropagation();
+      location.hash = "#/item/" + d.dataset.id;
+    }));
+    // 盘玩计划：点"还有更多待盘"→ 筛选待盘/盘玩中；点卡片 → 详情
+    view.querySelectorAll(".draw-item[data-more]").forEach((d) => d.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectFilters.clear();
+      selectFilters.add("ready");
+      selectFilters.add("playing");
+      renderHome();
+      window.scrollTo(0, 0);
+    }));
   }
 
   function updateGrid() {
