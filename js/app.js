@@ -1195,9 +1195,12 @@
 
   /* ---------- 盘玩计划（轻量提醒，非打卡；紧凑网格 3-4/行，最多 2 行） ---------- */
   function renderPlayPlanSection() {
-    const plan = Game.playPlan(allItems, 8); // 最多 8 个 = 2 行 × 4
-    if (!plan.total) return ""; // 没有菩提在待盘/盘玩中则不显示
-    const cells = plan.items.map((x) => {
+    const plan = Game.playPlan(allItems); // 全部候选池
+    if (!plan.total) return ""; // 没有符合条件的串则不显示
+    // 展示数量按档位向下取：0/1/3/6/9（满足 4 个→展示 3；满足 7 个→展示 6 等），最多 9
+    const tier = plan.total >= 9 ? 9 : plan.total >= 6 ? 6 : plan.total >= 3 ? 3 : plan.total >= 1 ? 1 : 0;
+    const shown = plan.items.slice(0, tier);
+    const cells = shown.map((x) => {
       const it = x.item;
       const p = it.photos && it.photos[0];
       const img = p ? '<img src="' + photoUrl(p) + '" loading="lazy" alt="">' : '<div class="placeholder">📿</div>';
@@ -1206,10 +1209,12 @@
         '<div class="plan-days' + (x.urgent ? " urgent" : "") + '">' + esc(x.text) + "</div>" +
         "</div>";
     }).join("");
-    const urgentCount = plan.items.filter((x) => x.urgent).length;
+    const urgentCount = shown.filter((x) => x.urgent).length;
+    const moreCount = plan.total - shown.length;
     return '<div class="plan-card">' +
       '<div class="draw-head"><span class="draw-title">🧭 盘玩计划</span>' +
-      '<span class="draw-sub">' + (urgentCount ? urgentCount + " 串该盘啦 · 温和提醒" : "顺手盘一串，不着急") + "</span></div>" +
+      '<span class="draw-sub">' + (urgentCount ? urgentCount + " 串该盘啦 · 温和提醒" : "顺手盘一串，不着急") +
+      (moreCount > 0 ? " · 还有 " + moreCount + " 串" : "") + "</span></div>" +
       '<div class="plan-grid">' + cells + "</div>" +
       "</div>";
   }

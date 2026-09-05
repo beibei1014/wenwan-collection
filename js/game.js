@@ -277,21 +277,22 @@
   }
 
   /* ---------- 盘玩计划：轻量提醒哪些串该盘了（温和建议，非打卡） ---------- */
-  // 只针对「菩提」分类中 待盘玩/盘玩中 的串；按闲置天数排序，闲置越久越在前面
-  // 从未盘过的最优先提示；极端闲置（≥7 天）标记为"该盘"加重提醒
-  function playPlan(items, limit) {
-    limit = limit || 6;
+  // 重点展示：待盘玩(ready) + 放置时间>2天(上次盘玩距现在≥2天，或从未盘过) 的串
+  // 按闲置时间排序（从未盘过最优先，然后闲置越久越靠前）；返回完整候选池，数量由调用方按档位取
+  function playPlan(items) {
     const now = Date.now();
     const day = 86400000;
     const pool = items
       .filter((i) => i && !i.gifted && (i.category || "") === "菩提" &&
-        (i.playStatus === "ready" || i.playStatus === "playing"))
+        (i.playStatus === "ready" || i.playStatus === "playing" || i.playStatus === "done"))
       .map((i) => {
         const last = i.lastPlayedAt;
         const idleDays = last ? Math.floor((now - last) / day) : null; // null = 从未盘过
         const arrived = Math.floor((now - (i.arrivedAt || i.createdAt || now)) / day);
         return { item: i, idleDays, arrived };
       })
+      // 只保留：待盘玩，或 放置>2 天（含从未盘过）
+      .filter((x) => x.item.playStatus === "ready" || x.idleDays == null || x.idleDays > 2)
       .sort((a, b) => {
         if (a.idleDays == null && b.idleDays != null) return -1;   // 从未盘过优先
         if (a.idleDays != null && b.idleDays == null) return 1;
@@ -300,7 +301,7 @@
       });
 
     return {
-      items: pool.slice(0, limit).map((x) => {
+      items: pool.map((x) => {
         const idle = x.idleDays;
         let text;
         if (idle == null) text = "还没开始盘";
