@@ -740,6 +740,7 @@
       '<button type="button" data-sort="created" class="' + (sortMode === "created" ? "active" : "") + '">🆕 创建' + arrow("created") + "</button>" +
       '<button type="button" data-sort="price" class="' + (sortMode === "price" ? "active" : "") + '">💰 价格' + arrow("price") + "</button>" +
       '<button type="button" data-sort="playcount" class="' + (sortMode === "playcount" ? "active" : "") + '">🤲 盘玩次数' + arrow("playcount") + "</button>" +
+      '<button type="button" data-sort="star" class="' + (sortMode === "star" ? "active" : "") + '">⭐ 星级' + arrow("star") + "</button>" +
       '<button type="button" data-sort="color" class="' + (sortMode === "color" ? "active" : "") + '">🎨 颜色' + arrow("color") + "</button>" +
       "</div></div>";
     html += "</div>"; // 关闭 filterPanel
@@ -2034,6 +2035,7 @@
         break;
       }
       case "playcount": arr.sort((a, b) => ((Number(a.playCount) || 0) - (Number(b.playCount) || 0)) * dir); break;
+      case "star": arr.sort((a, b) => ((Number(a.star) || 0) - (Number(b.star) || 0)) * dir); break; // desc=高星在前；asc=低星在前
       case "color": {
         // 按颜色浅→深排；方向：desc=浅→深（白在前），asc=深→浅
         const order = (window.Color ? window.Color.COLOR_LIST : []).map((c) => c.v);
@@ -2245,6 +2247,7 @@
       '<button type="button" data-sort="created" class="' + (sortMode === "created" ? "active" : "") + '">🆕 创建' + arrow("created") + "</button>" +
       '<button type="button" data-sort="price" class="' + (sortMode === "price" ? "active" : "") + '">💰 价格' + arrow("price") + "</button>" +
       '<button type="button" data-sort="playcount" class="' + (sortMode === "playcount" ? "active" : "") + '">🤲 盘玩次数' + arrow("playcount") + "</button>" +
+      '<button type="button" data-sort="star" class="' + (sortMode === "star" ? "active" : "") + '">⭐ 星级' + arrow("star") + "</button>" +
       '<button type="button" data-sort="color" class="' + (sortMode === "color" ? "active" : "") + '">🎨 颜色' + arrow("color") + "</button>" +
       "</div></div>";
     filterHtml += "</div>"; // 关闭 filterPanel
