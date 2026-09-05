@@ -58,6 +58,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 - `play_status`：`alter table public.bracelets add column if not exists play_status text not null default '';`
 - `last_played_at`：`alter table public.bracelets add column if not exists last_played_at timestamptz;`
 - `play_count`：`alter table public.bracelets add column if not exists play_count int not null default 0;`
+- `star`：`alter table public.bracelets add column if not exists star int not null default 0;`
 - `fav`：`alter table public.bracelets add column if not exists fav boolean not null default false;`
 - `color`：`alter table public.bracelets add column if not exists color text not null default '';`
 
@@ -65,6 +66,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 - `play_status`：菩提类 `unplayed`(未盘玩) / `ready`(待盘玩) / `playing`(盘玩中) / `done`(已盘好)；拼图类 `puzzle_pending` / `puzzle_done`；`` '' `` 归一为 unplayed
 - `last_played_at`：上次盘玩时间（timestamptz），盘玩时长/抽卡进池判断靠它
 - `play_count`：盘玩次数（int，默认 0），「今日盘过」和手动设置上次盘玩时间时 +1，排序用（v54）
+- `star`：星级（int，0-5，默认 0），5 星自动进喜欢/收藏展示柜；toFront 兼容旧 fav（旧 fav=true → 5 星，旧 fav=false → 0 星）；fav 字段保留并写为 `star>=5`（v55）
 - `fav`：特别喜欢标记（boolean），喜欢展示柜用
 - `color`：主色类别（text，v47 改为 7 类：white 白/原生态 / green 绿 / yellowbrown 黄棕 / blackgray 黑灰 / duo 多宝敦煌 / lightflower 浅花 / deepflower 深花），颜色排序筛选用；`normColor()` 兼容旧值（yellow/brown→yellowbrown、black→blackgray、red→deepflower、mixed/purple/blue→duo 等）
 - `category`：菩提/水晶/玉石/拼图/动漫周边/盲盒/其他（用户可自定义增删，存 localStorage `ww_categories`）
@@ -73,7 +75,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v54）
+## 五、功能清单（截至 v55）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -106,6 +108,9 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 26. **筛选统计联动「隐藏已送人」（v54）**：打开「🙈 隐藏已送人」时，所有筛选统计（共/在库/各状态/颜色计数）与筛选按钮上的数字**都排除已送人**；关闭时算全部
 27. **盘玩计划改紧凑网格（v54）**：首页「🧭 盘玩计划」从大卡片改为**紧凑网格**（一行 3-4 个，最多 2 行），每格只显示**照片 + 几天没盘**，不再显示名称/品种；点格进详情，点「＋更多」筛出全部待盘/盘玩中
 28. **盘玩次数统计与排序（v54）**：新增 `play_count` 字段（今日盘过/手动设上次盘玩时 +1）；排序按钮「⏳ 陪伴时长」改为「🤲 盘玩次数」，降序=盘得多在前，方便看哪些盘得多、哪些该多盘；详情页「盘玩时长」下方显示「盘玩次数」
+29. **盘玩计划/列表细节（v55）**：盘玩计划改为紧凑网格后，去掉「＋更多待盘」格子（点小格直接进详情）；宝贝列表视图右下角把「⏳ 陪伴天数」改成「🤲 盘 N 次」
+30. **收藏盒子页接入筛选+排序+搜索（v55）**：点进某分类盒子的宝贝展示页**保留整套筛选/排序/搜索**，且筛选内容与分类对应（拼图盒只显示待拼/已拼，菩提盒显示盘玩 4 态，其他盒只显示在库/已送人）；复用全局筛选状态（状态/颜色/隐藏送人/排序/搜索）
+31. **手串分级系统 0-5 星（v55）**：把原来的「❤️/🤍 喜欢」改为 **0-5 星**（卡片/列表右上角点星直接设级；详情页完整 5 星选择器；展柜页也可改星）。**5 星的宝贝自动进入「喜欢/收藏展示柜」**（底部收藏 tab 与展柜海报只收录 5 星）；旧 fav=true 的数据自动迁移为 5 星、fav=false 为 0 星。`filtered()`/`sortItems()` 改为可传入基准列表（供盒子页复用）
 
 ## 六、用户偏好与重要决策（历史讨论结论）
 

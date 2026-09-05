@@ -117,6 +117,43 @@
     return "unplayed";
   }
 
+  /* ---------- 星级（0-5 星；5 星自动进喜欢/收藏展柜） ---------- */
+  function itemStars(it) { return Math.max(0, Math.min(5, Number(it.star) || 0)); }
+  // 可点击的 5 星控件（点第 N 颗设 N 星；点当前最高星则可清为 0）
+  function starHtml(it, cls) {
+    const s = itemStars(it);
+    let h = '<span class="star-widget' + (cls ? " " + cls : "") + '" data-id="' + it.id + '" title="评分 ' + s + ' 星">';
+    for (let i = 1; i <= 5; i++) {
+      const on = i <= s;
+      h += '<button type="button" class="star-btn' + (on ? " on" : "") + '" data-id="' + it.id + '" data-star="' + i + '">' + (on ? "★" : "☆") + "</button>";
+    }
+    return h + "</span>";
+  }
+
+  // 绑定 5 星控件点击：设/清星级
+  function bindStars() {
+    view.querySelectorAll(".star-btn").forEach((b) => b.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const item = allItems.find((x) => x.id === b.dataset.id);
+      if (!item) return;
+      const val = Number(b.dataset.star);
+      const prev = itemStars(item);
+      // 点当前最高星 → 清为 0；否则设为该星数
+      const next = (val === prev) ? 0 : val;
+      item.star = next;
+      try {
+        const saved = await DB.put(item);
+        if (saved && itemStars(saved) !== next) { item.star = prev; toast("⚠️ 未保存：数据库缺 star 列（详见开发文档 SQL，需执行 alter）"); }
+        else {
+          toast(next >= 5 ? "⭐ 5 星，已进入喜欢展柜" : (next > 0 ? "已设为 " + next + " 星" : "已取消星级"));
+          if (document.getElementById("gridHolder")) updateGrid();
+          else if (location.hash === "#/fav") renderFavPage();
+          else router();
+        }
+      } catch (err) { item.star = prev; toast("操作失败：" + err.message); }
+    }));
+  }
+
   /* ---------- 工具 ---------- */
   const _urlCache = new Map();
   function photoUrl(photo) {
@@ -586,7 +623,7 @@
     });
   }
 
-  /* ---------- 收藏盒子二级页（专注展示该分类） ---------- */
+  /* ---------- 收藏盒子二级页（专注展示该分类，保留筛选+排序+搜索） ---------- */
   function renderBoxPage(cat) {
     const isUncat = cat === "__uncat";
     const displayName = isUncat ? "未分类" : cat;
@@ -594,19 +631,20 @@
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
 
-    let list = allItems;
-    if (isUncat) list = list.filter((i) => !i.category);
-    else list = list.filter((i) => (i.category || "") === cat);
+    const raw = allItems;
+    let base = raw;
+    if (isUncat) base = base.filter((i) => !i.category);
+    else base = base.filter((i) => (i.category || "") === cat);
 
     // 收集进度（仅非未分类盒子显示）
     let progressHtml = "";
     if (!isUncat) {
       const cfg = Categories.getCategoryConfig(cat);
       const target = cfg.options.length || 1;
-      const pct = Math.min(100, Math.round((list.length / target) * 100));
+      const pct = Math.min(100, Math.round((base.length / target) * 100));
       progressHtml = '<div class="box-progress">' +
         '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">' +
-        '<span style="color:var(--text-2)">收集进度：' + list.length + ' / ' + target + ' 种' + (cfg.field === "brand" ? "品牌" : "品种") + '</span>' +
+        '<span style="color:var(--text-2)">收集进度：' + base.length + ' / ' + target + ' 种' + (cfg.field === "brand" ? "品牌" : "品种") + '</span>' +
         '<span style="color:var(--gold);font-weight:600">' + pct + '%</span></div>' +
         '<div class="xp-track"><div class="xp-fill" style="width:' + pct + '%;background:linear-gradient(90deg,#b8860b,#d4a96a)"></div></div>' +
         '<div style="font-size:10px;color:var(--text-2);margin-top:4px">继续收集，解锁更多' + esc(cfg.label || "品种") + '！</div>' +
@@ -614,16 +652,71 @@
     }
 
     let html = progressHtml;
-    html += '<div class="home-head" style="margin-bottom:12px">' +
-      '<div class="stat-pills">' +
-      '<span class="stat-pill">共 <b>' + list.length + '</b></span>' +
-      '<span class="stat-pill">在库 <b>' + list.filter((i) => !i.gifted).length + '</b></span>' +
-      '<span class="stat-pill">已送 <b>' + list.filter((i) => i.gifted).length + '</b></span>' +
+    // 折叠筛选区：按钮 + 可展开面板（复用同一套选择状态与排序，仅作用于本盒子）
+    html += '<button class="filter-toggle" id="filterToggle">' +
+      '<span>📊 筛选与统计</span><span class="filter-badge">' + base.length + ' 件</span><span class="filter-arrow" id="filterArrow" style="transform:' + (filterOpen ? "rotate(180deg)" : "") + '">▾</span>' +
+      "</button>";
+    html += '<div id="filterPanel" style="display:' + (filterOpen ? "" : "none") + '">';
+    // 隐藏已送人开关
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px">' +
+      '<div><div style="font-size:13px;font-weight:600;color:var(--text)">🙈 隐藏已送人</div>' +
+      '<div style="font-size:11px;color:var(--text-2);margin-top:2px">关闭后显示所有宝贝，含已出库</div></div>' +
+      '<label class="switch"><input type="checkbox" id="hideGifted"' + (hideGifted ? " checked" : "") + '><span class="switch-slider"></span></label></div>';
+
+    // 状态筛选（按本分类对应显示：拼图→待拼/已拼，菩提→盘玩4态，其他→只 在库/已送人）
+    const st = { instock: base.filter((i) => !i.gifted).length, gifted: base.filter((i) => i.gifted).length };
+    const bBase = base.filter((i) => isBeadCat((i.category || "")));
+    const pBase = base.filter((i) => isPuzzleCat((i.category || "")));
+    const stChip = (k, label, n) => '<button type="button" class="chip' + (selectFilters.has(k) ? " active" : "") + '" data-mf="' + k + '">' + label + '<span class="chip-num">' + n + '</span></button>';
+    let statusChips = '<div class="filters"><span class="chip total-chip">共 <b>' + base.length + '</b></span>' + stChip("instock", "在库", st.instock);
+    if (isBeadCat(cat) || isUncat) {
+      statusChips += stChip("unplayed", "未盘玩", bBase.filter((i) => i.playStatus === "unplayed" || !i.playStatus).length) +
+        stChip("ready", "待盘玩", bBase.filter((i) => i.playStatus === "ready").length) +
+        stChip("playing", "盘玩中", bBase.filter((i) => i.playStatus === "playing").length) +
+        stChip("done", "已盘好", bBase.filter((i) => i.playStatus === "done").length);
+    }
+    if (isPuzzleCat(cat) || isUncat) {
+      statusChips += stChip("puzzle_pending", "待拼", pBase.filter((i) => i.playStatus === "puzzle_pending").length) +
+        stChip("puzzle_done", "已拼", pBase.filter((i) => i.playStatus === "puzzle_done").length);
+    }
+    statusChips += stChip("gifted", "已送人", st.gifted) +
+      (selectFilters.size ? '<button type="button" class="chip clear-chip" id="clearSt">✕ 清除状态</button>' : "") +
+      '</div>';
+    html += statusChips;
+
+    // 颜色多选 chips（带计数）
+    const colorCount = {};
+    base.forEach((i) => { const c = window.Color ? window.Color.normColor(i.color) : i.color; if (c) colorCount[c] = (colorCount[c] || 0) + 1; });
+    html += '<div class="filters">' +
+      (window.Color ? window.Color.COLOR_LIST.map((c) => '<button type="button" class="chip' + (selectColors.has(c.v) ? " active" : "") + '" data-mcolor="' + c.v + '">' + c.label + '<span class="chip-num">' + (colorCount[c.v] || 0) + '</span></button>').join("") : "") +
+      (selectColors.size ? '<button type="button" class="chip clear-chip" id="clearColor">✕ 清除颜色</button>' : "") +
+      '</div>';
+
+    // 排序
+    const arrow = (m) => (sortMode === m ? (sortDir === "asc" ? " ▲" : " ▼") : "");
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text-2)">' +
+      '<span>排序</span>' +
+      '<div class="seg" id="sortSeg" style="flex:1;flex-wrap:wrap">' +
+      '<button type="button" data-sort="arrived" class="' + (sortMode === "arrived" ? "active" : "") + '">🕐 入库' + arrow("arrived") + "</button>" +
+      '<button type="button" data-sort="created" class="' + (sortMode === "created" ? "active" : "") + '">🆕 创建' + arrow("created") + "</button>" +
+      '<button type="button" data-sort="price" class="' + (sortMode === "price" ? "active" : "") + '">💰 价格' + arrow("price") + "</button>" +
+      '<button type="button" data-sort="playcount" class="' + (sortMode === "playcount" ? "active" : "") + '">🤲 盘玩次数' + arrow("playcount") + "</button>" +
+      '<button type="button" data-sort="color" class="' + (sortMode === "color" ? "active" : "") + '">🎨 颜色' + arrow("color") + "</button>" +
       "</div></div>";
+    html += "</div>"; // 关闭 filterPanel
+
+    // 搜索
+    html += '<div class="search-box"><input id="searchInput" placeholder="搜索名字/品种/工艺/状态/颜色，或输入价格范围如 100-300、>500…" value="' + esc(search) + '"></div>';
+
+    // 应用筛选 + 排序
+    let list = filtered(base);
+    sortItems(list);
+    list = list.slice(); // 避免影响原数组
 
     if (!list.length) {
-      html += '<div class="empty"><div class="empty-icon">📦</div><p>这个盒子里还没有宝贝\n点击下方 ＋ 添加一件吧</p></div>';
+      html += '<div class="empty"><div class="empty-icon">📦</div><p>这个盒子里还没有匹配的宝贝</p></div>';
       view.innerHTML = html;
+      bindBoxEvents(cat, base);
       return;
     }
 
@@ -633,12 +726,10 @@
       const img = p ? '<img src="' + photoUrl(p) + '" loading="lazy" alt="">' : '<div class="placeholder">📿</div>';
       const badge = it.gifted ? '<span class="badge gifted">已送人</span>' : '<span class="badge instock">在库</span>';
       const statusBadge = statusBadgeHtml(it);
-      const favBtn = it.fav
-        ? '<button type="button" class="fav-heart faved" data-id="' + it.id + '" title="取消喜欢">❤️</button>'
-        : '<button type="button" class="fav-heart" data-id="' + it.id + '" title="标记喜欢">🤍</button>';
+      const stars = starHtml(it);
       const days = DB.formatDays(DB.daysWith(it));
       html += '<div class="card" data-id="' + it.id + '">' +
-        '<div class="card-thumb">' + img + badge + statusBadge + favBtn + "</div>" +
+        '<div class="card-thumb">' + img + badge + statusBadge + stars + "</div>" +
         '<div class="card-body">' +
         '<div class="card-name">' + esc(it.name || "未命名") + "</div>" +
         '<div class="card-sub"><span>' + esc(it.species || it.beadSize ? (it.beadSize ? it.beadSize + "mm" : it.species || "") : "") + '</span><span class="days">' + esc(days) + "</span></div>" +
@@ -649,7 +740,45 @@
     view.innerHTML = html;
     view.querySelectorAll(".card").forEach((c) => c.addEventListener("click", () => location.hash = "#/item/" + c.dataset.id));
     bindStatusToggles();
-    bindFavToggles();
+    bindStars();
+    bindBoxEvents(cat, base);
+  }
+
+  /* 盒子页：绑定折叠筛选按钮 + 状态/颜色 chips + 排序 + 搜索（复用于首页同款逻辑） */
+  function bindBoxEvents(cat, base) {
+    const ft = $("#filterToggle");
+    if (ft) ft.onclick = () => {
+      filterOpen = !filterOpen;
+      try { localStorage.setItem("ww_filter_open", filterOpen ? "1" : "0"); } catch (e) {}
+      const panel = $("#filterPanel");
+      const arrow = $("#filterArrow");
+      if (panel) panel.style.display = filterOpen ? "" : "none";
+      if (arrow) arrow.style.transform = filterOpen ? "rotate(180deg)" : "";
+    };
+    view.querySelectorAll(".chip[data-mf]").forEach((c) => c.addEventListener("click", () => {
+      const k = c.dataset.mf;
+      if (selectFilters.has(k)) selectFilters.delete(k); else selectFilters.add(k);
+      renderBoxPage(cat);
+    }));
+    view.querySelectorAll(".chip[data-mcolor]").forEach((c) => c.addEventListener("click", () => {
+      const k = c.dataset.mcolor;
+      if (selectColors.has(k)) selectColors.delete(k); else selectColors.add(k);
+      renderBoxPage(cat);
+    }));
+    const cs = $("#clearSt"); if (cs) cs.onclick = () => { selectFilters.clear(); renderBoxPage(cat); };
+    const cc = $("#clearColor"); if (cc) cc.onclick = () => { selectColors.clear(); renderBoxPage(cat); };
+    view.querySelectorAll("#sortSeg button").forEach((b) => b.onclick = () => {
+      const chosen = b.dataset.sort;
+      if (sortMode === chosen) sortDir = sortDir === "asc" ? "desc" : "asc";
+      else { sortMode = chosen; sortDir = chosen === "color" ? "asc" : "desc"; }
+      localStorage.setItem("ww_sortmode", sortMode);
+      localStorage.setItem("ww_sortdir", sortDir);
+      renderBoxPage(cat);
+    });
+    const si = $("#searchInput");
+    if (si) si.addEventListener("input", () => { search = si.value.trim(); renderBoxPage(cat); });
+    const hg = $("#hideGifted");
+    if (hg) hg.onchange = () => { hideGifted = hg.checked; localStorage.setItem("ww_hide_gifted", hideGifted ? "1" : "0"); renderBoxPage(cat); };
   }
 
   /* ---------- 喜欢展示柜页（沉浸式一屏一宝贝 + 左右滑动切换） ---------- */
@@ -659,15 +788,15 @@
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
 
-    const favs = allItems.filter((i) => i.fav);
+    const favs = allItems.filter((i) => (Number(i.star) || 0) >= 5); // 5 星自动进喜欢展柜
     if (favIdx >= favs.length) favIdx = 0;
     if (favIdx < 0) favIdx = 0;
 
     let html = "";
     if (!favs.length) {
-      html += '<div class="section-title">❤️ 我特别喜欢的宝贝</div>';
-      html += '<div class="empty"><div class="empty-icon">🤍</div>' +
-        "<p>还没有标记喜欢的宝贝\n在卡片或详情页点 ❤️ 收藏到这里</p></div>";
+      html += '<div class="section-title">⭐ 我特别喜欢的宝贝</div>';
+      html += '<div class="empty"><div class="empty-icon">⭐</div>' +
+        "<p>还没有 5 星的宝贝\n在卡片或详情页给宝贝打 ⭐⭐⭐⭐⭐ 收藏到这里</p></div>";
       view.innerHTML = html;
       return;
     }
@@ -693,7 +822,6 @@
     html += '<div class="fav-stage">';
     html += '<div class="fav-frame">' + img +
       '<div class="fav-shine"></div>' +
-      '<button type="button" class="fav-heart faved" data-id="' + it.id + '" title="取消喜欢">❤️</button>' +
       '</div>';
     html += '<div class="fav-nav">' +
       '<button type="button" class="fav-arrow" id="favPrev">◀</button>' +
@@ -704,6 +832,7 @@
       '<div class="fav-name">' + esc(it.name || "未命名") + "</div>" +
       '<div class="fav-sub">' + esc(cardSubText(it)) + (it.category ? " · " + esc(it.category) : "") + "</div>" +
       (stTxt ? '<div class="fav-status"><span class="tag ' + stCls + '">' + esc(stTxt) + "</span></div>" : "") +
+      '<div class="fav-stars">' + starHtml(it, "fav-stars") + ' <small style="color:var(--text-2)">' + itemStars(it) + ' 星 · 点星可调整</small></div>' +
       '<div class="fav-count">第 ' + (favIdx + 1) + " / " + favs.length + " 件</div>" +
       "</div>";
     // 操作按钮行
@@ -722,21 +851,8 @@
     if (prev) prev.onclick = () => show(favIdx - 1);
     if (next) next.onclick = () => show(favIdx + 1);
     view.querySelectorAll(".fav-dot").forEach((d) => d.onclick = () => show(+d.dataset.i));
-    // 取消喜欢
-    const heart = view.querySelector(".fav-heart");
-    if (heart) heart.onclick = async (e) => {
-      e.stopPropagation();
-      const item = allItems.find((x) => x.id === heart.dataset.id);
-      if (!item) return;
-      const nextFav = !item.fav;
-      const prevFav = item.fav;
-      item.fav = nextFav;
-      try {
-        const saved = await DB.put(item);
-        if (saved && saved.fav !== nextFav) { item.fav = prevFav; toast("⚠️ 未保存：数据库缺 fav 列（详见开发文档 SQL）"); }
-        else { toast("已取消喜欢"); if (favIdx >= favs.length - 1) favIdx = 0; renderFavPage(); }
-      } catch (err) { item.fav = prevFav; toast("操作失败：" + err.message); }
-    };
+    // 星星评分（改星/降星）
+    bindStars();
     // 查看详情
     const fv = $("#favView");
     if (fv) fv.onclick = () => location.hash = "#/item/" + it.id;
@@ -1080,12 +1196,7 @@
     return '<div class="plan-card">' +
       '<div class="draw-head"><span class="draw-title">🧭 盘玩计划</span>' +
       '<span class="draw-sub">' + (urgentCount ? urgentCount + " 串该盘啦 · 温和提醒" : "顺手盘一串，不着急") + "</span></div>" +
-      '<div class="plan-grid">' + cells +
-      (plan.total > plan.items.length
-        ? '<div class="plan-cell plan-more" data-more="1" title="还有更多待盘"><div class="plan-photo"><span style="font-size:18px;color:var(--text-2)">＋' + (plan.total - plan.items.length) + "</span></div>" +
-          '<div class="plan-days">更多</div></div>'
-        : "") +
-      "</div>" +
+      '<div class="plan-grid">' + cells + "</div>" +
       "</div>";
   }
 
@@ -1838,19 +1949,22 @@
   }
 
   // 排序：newest=入库降序，oldest=入库升序，created_desc=创建时间降序，created_asc=创建时间升序
-  function sortItems() {
+  // 排序：newest=入库降序，oldest=入库升序，created_desc=创建时间降序，created_asc=创建时间升序
+  // 传入 items 可对指定集合（如某收藏盒子）排序，缺省对全量 allItems
+  function sortItems(items) {
+    const arr = items || allItems;
     const key = (i) => i.arrivedAt || i.createdAt || 0;
     const createdKey = (i) => i.createdAt || i.arrivedAt || 0;
     const dir = sortDir === "asc" ? 1 : -1; // asc: 小→大；desc: 大→小
     switch (sortMode) {
-      case "created": allItems.sort((a, b) => (createdKey(a) - createdKey(b)) * dir); break;
+      case "created": arr.sort((a, b) => (createdKey(a) - createdKey(b)) * dir); break;
       case "price": {
         // 未记价的宝贝永远排最后（无论升降序），不污染排序
         const pr = (i) => {
           if (i.price == null || i.price === "" || !isFinite(Number(i.price)) || Number(i.price) <= 0) return null;
           return Number(i.price);
         };
-        allItems.sort((a, b) => {
+        arr.sort((a, b) => {
           const pa = pr(a), pb = pr(b);
           if (pa == null && pb == null) return 0;
           if (pa == null) return 1;
@@ -1859,7 +1973,7 @@
         });
         break;
       }
-      case "playcount": allItems.sort((a, b) => ((Number(a.playCount) || 0) - (Number(b.playCount) || 0)) * dir); break;
+      case "playcount": arr.sort((a, b) => ((Number(a.playCount) || 0) - (Number(b.playCount) || 0)) * dir); break;
       case "color": {
         // 按颜色浅→深排；方向：desc=浅→深（白在前），asc=深→浅
         const order = (window.Color ? window.Color.COLOR_LIST : []).map((c) => c.v);
@@ -1868,15 +1982,16 @@
           const i = order.indexOf(c);
           return i === -1 ? order.length : i;
         };
-        allItems.sort((a, b) => (idx(a) - idx(b)) * dir);
+        arr.sort((a, b) => (idx(a) - idx(b)) * dir);
         break;
       }
-      default: allItems.sort((a, b) => (key(a) - key(b)) * dir); // arrived
+      default: arr.sort((a, b) => (key(a) - key(b)) * dir); // arrived
     }
   }
 
-  function filtered() {
-    let list = allItems;
+  function filtered(base) {
+    const src = base || allItems;
+    let list = src;
     // 隐藏已送人开关：默认隐藏，除非用户手动筛了"已送人/gifted"
     if (hideGifted && !selectFilters.has("gifted")) {
       list = list.filter((i) => !i.gifted);
@@ -1904,28 +2019,30 @@
         return selectColors.has(ic || "");
       });
     }
-    // 兼容旧的单值 filter（保留，避免影响其他页面）
-    if (!selectFilters.size && !selectColors.size) {
-      if (filter === "instock") list = allItems.filter((i) => !i.gifted);
-      else if (filter === "gifted") list = allItems.filter((i) => i.gifted);
-      else if (filter === "unplayed") list = allItems.filter((i) => isBeadCat(i.category || "") && (i.playStatus === "unplayed" || !i.playStatus));
-      else if (filter === "ready") list = allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus === "ready");
-      else if (filter === "playing") list = allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus === "playing");
-      else if (filter === "done") list = allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus === "done");
-      else if (filter === "puzzle_pending") list = allItems.filter((i) => i.playStatus === "puzzle_pending");
-      else if (filter === "puzzle_done") list = allItems.filter((i) => i.playStatus === "puzzle_done");
+    // 兼容旧的单值 filter（仅对全量生效，避免影响盒子页等局部列表）
+    if (!base && !selectFilters.size && !selectColors.size) {
+      if (filter === "instock") list = src.filter((i) => !i.gifted);
+      else if (filter === "gifted") list = src.filter((i) => i.gifted);
+      else if (filter === "unplayed") list = src.filter((i) => isBeadCat(i.category || "") && (i.playStatus === "unplayed" || !i.playStatus));
+      else if (filter === "ready") list = src.filter((i) => isBeadCat(i.category || "") && i.playStatus === "ready");
+      else if (filter === "playing") list = src.filter((i) => isBeadCat(i.category || "") && i.playStatus === "playing");
+      else if (filter === "done") list = src.filter((i) => isBeadCat(i.category || "") && i.playStatus === "done");
+      else if (filter === "puzzle_pending") list = src.filter((i) => i.playStatus === "puzzle_pending");
+      else if (filter === "puzzle_done") list = src.filter((i) => i.playStatus === "puzzle_done");
       else if (filter.indexOf("color:") === 0) {
         const c = filter.slice(6);
-        list = allItems.filter((i) => {
+        list = src.filter((i) => {
           const ic = window.Color ? window.Color.normColor(i.color) : i.color;
           return (ic || "") === c;
         });
       }
     }
-    if (categoryFilter === "__uncat") {
-      list = list.filter((i) => !i.category);
-    } else if (categoryFilter) {
-      list = list.filter((i) => (i.category || "") === categoryFilter);
+    if (!base) {
+      if (categoryFilter === "__uncat") {
+        list = list.filter((i) => !i.category);
+      } else if (categoryFilter) {
+        list = list.filter((i) => (i.category || "") === categoryFilter);
+      }
     }
     if (search) {
       const q = search.toLowerCase();
@@ -2000,14 +2117,15 @@
       '<span class="quest-hint-text">今日任务<br><b>' + taskDone + '/' + tasks.length + '</b></span>' +
       "</button></div>";
 
-    // 折叠筛选区：按钮 + 可展开面板
-    html += '<button class="filter-toggle" id="filterToggle">' +
+    // 折叠筛选区：按钮 + 可展开面板（先构建，最后在宝贝列表上方渲染，紧挨宝贝）
+    let filterHtml = '';
+    filterHtml += '<button class="filter-toggle" id="filterToggle">' +
       '<span>📊 筛选与统计</span><span class="filter-badge">' + base.length + ' 件</span><span class="filter-arrow" id="filterArrow" style="transform:' + (filterOpen ? "rotate(180deg)" : "") + '">▾</span>' +
       "</button>";
 
-    html += '<div id="filterPanel" style="display:' + (filterOpen ? "" : "none") + '">';
+    filterHtml += '<div id="filterPanel" style="display:' + (filterOpen ? "" : "none") + '">';
     // 隐藏已送人开关
-    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px">' +
+    filterHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px">' +
       '<div><div style="font-size:13px;font-weight:600;color:var(--text)">🙈 隐藏已送人</div>' +
       '<div style="font-size:11px;color:var(--text-2);margin-top:2px">关闭后显示所有宝贝，含已出库</div></div>' +
       '<label class="switch"><input type="checkbox" id="hideGifted"' + (hideGifted ? " checked" : "") + '><span class="switch-slider"></span></label></div>';
@@ -2037,7 +2155,7 @@
 
     // 状态多选 chips（每项带计数；未盘玩/待盘玩/盘玩中/已盘好 只在菩提分类存在时显示）
     const stChip = (k, label) => '<button type="button" class="chip' + (selectFilters.has(k) ? " active" : "") + '" data-mf="' + k + '">' + label + '<span class="chip-num">' + (nBy[k] || 0) + '</span></button>';
-    html += '<div class="filters">' +
+    filterHtml += '<div class="filters">' +
       '<span class="chip total-chip">共 <b>' + base.length + '</b></span>' +
       stChip("instock", "在库") +
       (hasBeadCat ? stChip("unplayed", "未盘玩") + stChip("ready", "待盘玩") + stChip("playing", "盘玩中") + stChip("done", "已盘好") : "") +
@@ -2047,20 +2165,20 @@
       '</div>';
 
     // 颜色多选 chips（每项带计数）
-    html += '<div class="filters">' +
+    filterHtml += '<div class="filters">' +
       (window.Color ? window.Color.COLOR_LIST.map((c) => '<button type="button" class="chip' + (selectColors.has(c.v) ? " active" : "") + '" data-mcolor="' + c.v + '">' + c.label + '<span class="chip-num">' + (colorCount[c.v] || 0) + '</span></button>').join("") : "") +
       (selectColors.size ? '<button type="button" class="chip clear-chip" id="clearColor">✕ 清除颜色</button>' : "") +
       '</div>';
 
     // 分类筛选行
-    html += '<div class="filters">' +
+    filterHtml += '<div class="filters">' +
       '<button class="chip' + (!categoryFilter ? " active" : "") + '" data-cat="">全部分类</button>' +
       cats.map((c) => '<button class="chip' + (categoryFilter === c ? " active" : "") + '" data-cat="' + esc(c) + '">' + esc(c) + "</button>").join("") +
       "</div>";
 
     // 排序（5 个按钮，点一下切换升/降序，箭头指示当前方向）
     const arrow = (m) => (sortMode === m ? (sortDir === "asc" ? " ▲" : " ▼") : "");
-    html += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text-2)">' +
+    filterHtml += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text-2)">' +
       '<span>排序</span>' +
       '<div class="seg" id="sortSeg" style="flex:1;flex-wrap:wrap">' +
       '<button type="button" data-sort="arrived" class="' + (sortMode === "arrived" ? "active" : "") + '">🕐 入库' + arrow("arrived") + "</button>" +
@@ -2069,9 +2187,9 @@
       '<button type="button" data-sort="playcount" class="' + (sortMode === "playcount" ? "active" : "") + '">🤲 盘玩次数' + arrow("playcount") + "</button>" +
       '<button type="button" data-sort="color" class="' + (sortMode === "color" ? "active" : "") + '">🎨 颜色' + arrow("color") + "</button>" +
       "</div></div>";
-    html += "</div>";
+    filterHtml += "</div>"; // 关闭 filterPanel
 
-    html += '<div class="search-box"><input id="searchInput" placeholder="搜索名字/品种/工艺/状态/颜色，或输入价格范围如 100-300、>500…" value="' + esc(search) + '"></div>';
+    filterHtml += '<div class="search-box"><input id="searchInput" placeholder="搜索名字/品种/工艺/状态/颜色，或输入价格范围如 100-300、>500…" value="' + esc(search) + '"></div>';
 
     // ===== 今日心选抽卡栏目（主动点击抽取，当天固定） =====
     drawHtml = renderDrawSection();
@@ -2086,6 +2204,9 @@
       '<button class="batch-entry" id="btnShareMode" style="flex:1;background:linear-gradient(135deg,#b8860b,#a06b2c)">📤 多选</button>' +
       '<button class="batch-entry" id="btnViewToggle" style="flex:none;width:52px;background:var(--card);color:var(--wood);border:1px solid var(--line)" title="切换视图">' + (viewMode === "card" ? "📋" : "🗂") + "</button>" +
       "</div>";
+
+    // 筛选与统计 + 搜索：放在宝贝列表上方，紧挨宝贝列表
+    html += filterHtml;
 
     html += '<div id="gridHolder"></div>';
 
@@ -2119,7 +2240,8 @@
           (isPuzzleIt ? (it.playStatus === "puzzle_done" ? "g" : "yl") :
             isBeadIt ? beadStatusCls(it) : "");
         const price = it.price != null && it.price !== "" ? "¥" + it.price : "";
-        const favBtn = '<button type="button" class="fav-heart list-fav' + (it.fav ? " faved" : "") + '" data-id="' + it.id + '" title="喜欢">' + (it.fav ? "❤️" : "🤍") + "</button>";
+        const playCount = Number(it.playCount) || 0;
+        const stars = starHtml(it, "list-stars");
         h += '<div class="list-item" data-id="' + it.id + '">' +
           '<div class="list-thumb">' + img + "</div>" +
           '<div class="list-info">' +
@@ -2128,7 +2250,7 @@
           '<div class="list-meta">' +
           (it.shop ? '<span class="list-shop">🏪 ' + esc(it.shop) + "</span>" : "") +
           (price ? '<span class="list-price">' + price + "</span>" : "") +
-          '<span class="list-days">⏳ ' + esc(DB.formatDays(DB.daysWith(it))) + "</span>" +
+          '<span class="list-days">🤲 盘 ' + playCount + " 次</span>" +
           "</div>" +
           "</div>" +
           '<div class="list-right">' +
@@ -2138,7 +2260,7 @@
             : (isPuzzleIt || isBeadIt
               ? '<button type="button" class="list-status ' + statusCls + ' status-toggle" data-id="' + it.id + '" title="点击切换状态">' + statusTxt + "</button>"
               : "")) +
-          favBtn +
+          stars +
           "</div>" +
           "</div>";
       }
@@ -2152,12 +2274,10 @@
         '<div class="placeholder">📿</div>';
       const badge = it.gifted ? '<span class="badge gifted">已送人</span>' : '<span class="badge instock">在库</span>';
       const statusBadge = statusBadgeHtml(it);
-      const favBtn = it.fav
-        ? '<button type="button" class="fav-heart faved" data-id="' + it.id + '" title="取消喜欢">❤️</button>'
-        : '<button type="button" class="fav-heart" data-id="' + it.id + '" title="标记喜欢">🤍</button>';
+      const stars = starHtml(it, "card-stars");
       const days = DB.formatDays(DB.daysWith(it));
       h += '<div class="card" data-id="' + it.id + '">' +
-        '<div class="card-thumb">' + img + badge + statusBadge + favBtn + "</div>" +
+        '<div class="card-thumb">' + img + badge + statusBadge + stars + "</div>" +
         '<div class="card-body">' +
         '<div class="card-name">' + esc(it.name || "未命名") + "</div>" +
         '<div class="card-sub">' + colorTagHtml(it) + '<span class="days">' + esc(days) + "</span></div>" +
@@ -2169,31 +2289,10 @@
   function bindCardEvents() {
     view.querySelectorAll(".card, .list-item").forEach((c) => c.addEventListener("click", () => location.hash = "#/item/" + c.dataset.id));
     bindStatusToggles();
-    bindFavToggles();
+    bindStars();
   }
 
   /* 喜欢/取消喜欢（卡片 + 列表，点击 ❤️/🤍） */
-  function bindFavToggles() {
-    view.querySelectorAll(".fav-heart").forEach((b) => b.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const item = allItems.find((x) => x.id === b.dataset.id);
-      if (!item) return;
-      const next = !item.fav;
-      const prev = item.fav;
-      item.fav = next;
-      try {
-        const saved = await DB.put(item);
-        if (saved && saved.fav !== next) { item.fav = prev; toast("⚠️ 未保存：数据库缺 fav 列（详见开发文档 SQL）"); }
-        else {
-          toast(next ? "❤️ 已加入喜欢" : "已取消喜欢");
-          if (document.getElementById("gridHolder")) updateGrid();
-          else if (location.hash === "#/fav") renderFavPage();
-          else router();
-        }
-      } catch (err) { item.fav = prev; toast("操作失败：" + err.message); }
-    }));
-  }
-
   function bindHomeEvents() {
     // 等级条 → 任务页
     const lb = $("#levelBar");
@@ -2303,18 +2402,10 @@
       e.stopPropagation();
       location.hash = "#/item/" + d.dataset.id;
     }));
-    // 盘玩计划：点"还有更多待盘"→ 筛选待盘/盘玩中；点卡片 → 详情
+    // 盘玩计划：点卡片 → 详情
     view.querySelectorAll(".plan-cell[data-id]").forEach((c) => c.addEventListener("click", (e) => {
       e.stopPropagation();
       location.hash = "#/item/" + c.dataset.id;
-    }));
-    view.querySelectorAll(".plan-cell[data-more]").forEach((d) => d.addEventListener("click", (e) => {
-      e.stopPropagation();
-      selectFilters.clear();
-      selectFilters.add("ready");
-      selectFilters.add("playing");
-      renderHome();
-      window.scrollTo(0, 0);
     }));
   }
 
@@ -2568,11 +2659,12 @@
 
     html += '<button class="btn ghost" id="btnTips" style="width:100%;margin-top:14px">📖 养护小知识</button>';
     html += '<div class="detail-actions">';
-    html += '<button class="btn ghost" id="btnFav" style="flex:1">' + (it.fav ? "❤️ 已喜欢" : "🤍 喜欢") + '</button>';
-    html += '<button class="btn ghost" id="btnShare" style="flex:1">分享</button>';
-    html += '<button class="btn primary" id="btnEdit">编辑</button>';
-    html += '<button class="btn danger" id="btnDel">删除</button>';
-    html += "</div></div>";
+    html += '<div class="detail-actions">' +
+      '<div class="detail-stars"><span class="detail-stars-label">⭐ 评分</span>' + starHtml(it, "detail-stars") + '<span class="detail-stars-hint">' + itemStars(it) + ' 星' + (itemStars(it) >= 5 ? " · 已进喜欢展柜" : "") + '</span></div>' +
+      '<button class="btn ghost" id="btnShare" style="flex:1">分享</button>' +
+      '<button class="btn primary" id="btnEdit">编辑</button>' +
+      '<button class="btn danger" id="btnDel">删除</button>' +
+      "</div></div>";
 
     view.innerHTML = html;
 
@@ -2593,17 +2685,8 @@
     $("#viewerClose").onclick = () => { $("#viewer").classList.remove("show"); };
 
     $("#btnTips").onclick = () => showTipsModal(it);
-    $("#btnFav").onclick = async () => {
-      const next = !it.fav;
-      const prev = it.fav;
-      it.fav = next;
-      try {
-        const saved = await DB.put(it);
-        if (saved && saved.fav !== next) { it.fav = prev; toast("⚠️ 未保存：数据库缺 fav 列（详见开发文档 SQL）"); }
-        else { toast(next ? "❤️ 已加入喜欢" : "已取消喜欢"); renderDetail(id); }
-      } catch (err) { it.fav = prev; toast("操作失败：" + err.message); }
-    };
     $("#btnEdit").onclick = () => location.hash = "#/edit/" + it.id;
+    bindStars(); // 详情页 5 星评分
     // 修改上次盘玩时间（手动纠偏，用于精确计算放置时长）
     const elp = $("#editLastPlayed");
     if (elp) elp.onclick = (e) => {
