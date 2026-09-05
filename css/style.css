@@ -206,6 +206,12 @@ img { display:block; }
 }
 .chip.active { background:var(--wood); color:#f5f0e8; border-color:var(--wood); font-weight:600; }
 .clear-chip { background:#fdecea; border-color:#f5c6c6; color:var(--red); }
+/* 筛选 chip 上的计数（如 在库 29） */
+.chip-num { margin-left:4px; font-size:11px; font-weight:700; opacity:.75; }
+.chip.active .chip-num { opacity:.95; }
+/* "共 N" 总计数标识（非交互） */
+.total-chip { background:transparent; border:1px dashed var(--line); color:var(--text-2); font-weight:700; }
+.total-chip b { color:var(--wood); margin-left:2px; }
 .search-box { position:relative; margin-bottom:12px; }
 .search-box input {
   width:100%; padding:10px 14px 10px 38px; border-radius:12px; border:1px solid var(--line);

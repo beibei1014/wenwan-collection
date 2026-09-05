@@ -18,6 +18,7 @@
   const selectFilters = new Set(); // 多选状态筛选（空=全部）
   const selectColors = new Set();  // 多选颜色筛选（空=不限）
   let hideGifted = localStorage.getItem("ww_hide_gifted") !== "0"; // 默认开=隐藏已送人
+  let filterOpen = localStorage.getItem("ww_filter_open") === "1"; // 筛选面板展开态（点筛选不自动收起）
   let search = "";
   let viewMode = localStorage.getItem("ww_viewmode") || "card"; // card | list
   let sortMode = localStorage.getItem("ww_sortmode") || "arrived"; // arrived(入库) | created(创建) | color(颜色)
@@ -1969,13 +1970,6 @@
     btnBack.style.visibility = "hidden";
     btnSettings.style.visibility = "visible";
 
-    const inStock = allItems.filter((i) => !i.gifted).length;
-    const gifted = allItems.filter((i) => i.gifted).length;
-    const playing = allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus === "playing").length;
-    const ready = allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus === "ready").length;
-    const unfinished = allItems.filter((i) => i.playStatus === "puzzle_pending").length;
-    const done = allItems.filter((i) => i.playStatus === "puzzle_done" || (isBeadCat(i.category || "") && i.playStatus === "done")).length;
-
     // 等级经验条（游戏化）
     const gameInfo = Game.computeXp(allItems);
     const lvInfo = Game.getLevel(gameInfo.xp);
@@ -2000,41 +1994,57 @@
 
     // 折叠筛选区：按钮 + 可展开面板
     html += '<button class="filter-toggle" id="filterToggle">' +
-      '<span>📊 筛选与统计</span><span class="filter-badge">' + allItems.length + ' 件</span><span class="filter-arrow" id="filterArrow">▾</span>' +
+      '<span>📊 筛选与统计</span><span class="filter-badge">' + allItems.length + ' 件</span><span class="filter-arrow" id="filterArrow" style="transform:' + (filterOpen ? "rotate(180deg)" : "") + '">▾</span>' +
       "</button>";
 
-    html += '<div id="filterPanel" style="display:none">';
+    html += '<div id="filterPanel" style="display:' + (filterOpen ? "" : "none") + '">';
     // 隐藏已送人开关
     html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px">' +
       '<div><div style="font-size:13px;font-weight:600;color:var(--text)">🙈 隐藏已送人</div>' +
       '<div style="font-size:11px;color:var(--text-2);margin-top:2px">关闭后显示所有宝贝，含已出库</div></div>' +
       '<label class="switch"><input type="checkbox" id="hideGifted"' + (hideGifted ? " checked" : "") + '><span class="switch-slider"></span></label></div>';
-    html += '<div class="home-head"><div class="stat-pills">' +
-      '<span class="stat-pill">共 <b>' + allItems.length + '</b></span>' +
-      '<span class="stat-pill">在库 <b>' + inStock + '</b></span>' +
-      '<span class="stat-pill">盘玩 <b>' + playing + '</b></span>' +
-      '<span class="stat-pill">待盘 <b>' + ready + '</b></span>' +
-      '<span class="stat-pill">待拼 <b>' + unfinished + '</b></span>' +
-      '<span class="stat-pill">已好 <b>' + done + '</b></span>' +
-      '<span class="stat-pill">已送 <b>' + gifted + '</b></span>' +
-      '</div></div>';
 
-    // 状态多选 chips
-    const stChip = (k, label) => '<button type="button" class="chip' + (selectFilters.has(k) ? " active" : "") + '" data-mf="' + k + '">' + label + "</button>";
+    // 各筛选项的实时数量（在 chip 上直接显示数字）
+    const nBy = {
+      instock: allItems.filter((i) => !i.gifted).length,
+      unplayed: allItems.filter((i) => isBeadCat(i.category || "") && (i.playStatus === "unplayed" || !i.playStatus)).length,
+      ready: allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus === "ready").length,
+      playing: allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus === "playing").length,
+      done: allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus === "done").length,
+      puzzle_pending: allItems.filter((i) => i.playStatus === "puzzle_pending").length,
+      puzzle_done: allItems.filter((i) => i.playStatus === "puzzle_done").length,
+      gifted: allItems.filter((i) => i.gifted).length,
+    };
+    // 颜色数量（归一化后统计）
+    const colorCount = {};
+    allItems.forEach((i) => {
+      const c = window.Color ? window.Color.normColor(i.color) : i.color;
+      if (c) colorCount[c] = (colorCount[c] || 0) + 1;
+    });
+    // 用户分类是否包含"拼图"：无拼图则不出现拼图相关状态（待拼/已拼）
+    const cats = getCategories();
+    const hasPuzzleCat = cats.includes("拼图") || allItems.some((i) => isPuzzleCat(i.category || ""));
+    // 菩提分类是否存在：存在才显示盘玩状态（未盘玩/待盘玩/盘玩中/已盘好）
+    const hasBeadCat = cats.includes("菩提") || allItems.some((i) => isBeadCat(i.category || ""));
+
+    // 状态多选 chips（每项带计数；未盘玩/待盘玩/盘玩中/已盘好 只在菩提分类存在时显示）
+    const stChip = (k, label) => '<button type="button" class="chip' + (selectFilters.has(k) ? " active" : "") + '" data-mf="' + k + '">' + label + '<span class="chip-num">' + (nBy[k] || 0) + '</span></button>';
     html += '<div class="filters">' +
-      stChip("instock", "在库") + stChip("unplayed", "未盘玩") + stChip("ready", "待盘玩") + stChip("playing", "盘玩中") + stChip("done", "已盘好") +
-      stChip("puzzle_pending", "待拼") + stChip("puzzle_done", "已拼") + stChip("gifted", "已送人") +
+      '<span class="chip total-chip">共 <b>' + allItems.length + '</b></span>' +
+      stChip("instock", "在库") +
+      (hasBeadCat ? stChip("unplayed", "未盘玩") + stChip("ready", "待盘玩") + stChip("playing", "盘玩中") + stChip("done", "已盘好") : "") +
+      (hasPuzzleCat ? stChip("puzzle_pending", "待拼") + stChip("puzzle_done", "已拼") : "") +
+      stChip("gifted", "已送人") +
       (selectFilters.size ? '<button type="button" class="chip clear-chip" id="clearSt">✕ 清除状态</button>' : "") +
       '</div>';
 
-    // 颜色多选 chips
+    // 颜色多选 chips（每项带计数）
     html += '<div class="filters">' +
-      (window.Color ? window.Color.COLOR_LIST.map((c) => '<button type="button" class="chip' + (selectColors.has(c.v) ? " active" : "") + '" data-mcolor="' + c.v + '">' + c.label + "</button>").join("") : "") +
+      (window.Color ? window.Color.COLOR_LIST.map((c) => '<button type="button" class="chip' + (selectColors.has(c.v) ? " active" : "") + '" data-mcolor="' + c.v + '">' + c.label + '<span class="chip-num">' + (colorCount[c.v] || 0) + '</span></button>').join("") : "") +
       (selectColors.size ? '<button type="button" class="chip clear-chip" id="clearColor">✕ 清除颜色</button>' : "") +
       '</div>';
 
     // 分类筛选行
-    const cats = getCategories();
     html += '<div class="filters">' +
       '<button class="chip' + (!categoryFilter ? " active" : "") + '" data-cat="">全部分类</button>' +
       cats.map((c) => '<button class="chip' + (categoryFilter === c ? " active" : "") + '" data-cat="' + esc(c) + '">' + esc(c) + "</button>").join("") +
@@ -2182,14 +2192,15 @@
     if (lb) lb.onclick = () => location.hash = "#/quest";
     const qh = $("#btnQuestHint");
     if (qh) qh.onclick = () => location.hash = "#/quest";
-    // 折叠筛选面板
+    // 折叠筛选面板（展开态持久化，点击筛选 chip 不收起）
     const ft = $("#filterToggle");
     if (ft) ft.onclick = () => {
+      filterOpen = !filterOpen;
+      try { localStorage.setItem("ww_filter_open", filterOpen ? "1" : "0"); } catch (e) {}
       const panel = $("#filterPanel");
       const arrow = $("#filterArrow");
-      const open = panel.style.display !== "none";
-      panel.style.display = open ? "none" : "";
-      if (arrow) arrow.style.transform = open ? "" : "rotate(180deg)";
+      if (panel) panel.style.display = filterOpen ? "" : "none";
+      if (arrow) arrow.style.transform = filterOpen ? "rotate(180deg)" : "";
     };
     // 隐藏已送人开关
     const hg = $("#hideGifted");
