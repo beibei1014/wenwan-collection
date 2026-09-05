@@ -847,9 +847,31 @@ img { display:block; }
 .draw-name { font-size:13px; font-weight:600; margin-top:7px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text); }
 .draw-sub { font-size:11px; color:var(--text-2); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-/* ============ 盘玩计划 ============ */
-.plan-card { border:1px solid rgba(46,125,50,.35); }
-.draw-status.urgent { background:#c62828; font-weight:700; }
+/* ============ 盘玩计划（紧凑网格） ============ */
+.plan-card {
+  background:var(--card); border:1px solid rgba(46,125,50,.28);
+  border-radius:14px; padding:12px; margin-bottom:14px;
+}
+.plan-grid {
+  display:grid; grid-template-columns:repeat(4,1fr); gap:8px;
+}
+.plan-cell {
+  cursor:pointer; text-align:center;
+}
+.plan-photo {
+  position:relative; aspect-ratio:1/1; border-radius:10px; overflow:hidden;
+  background:linear-gradient(160deg,#efe9dd,#e6dcc8);
+  display:flex; align-items:center; justify-content:center;
+}
+.plan-photo img { width:100%; height:100%; object-fit:contain; }
+.plan-photo .placeholder { font-size:20px; color:#c9b89c; }
+.plan-days {
+  margin-top:4px; font-size:10px; line-height:1.2; color:var(--text-2);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.plan-days.urgent { color:#c62828; font-weight:700; }
 .plan-more { cursor:pointer; }
-.plan-more .draw-thumb { display:flex; align-items:center; justify-content:center; }
+.plan-more .plan-photo { background:var(--card); border:1px dashed var(--line); }
+@media (max-width:380px) { .plan-grid { grid-template-columns:repeat(3,1fr); } }
+
 

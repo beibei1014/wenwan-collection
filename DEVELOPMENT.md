@@ -57,12 +57,14 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 **用户需自行执行的 alter SQL**（db.js 会静默降级不崩，但字段保存无效）：
 - `play_status`：`alter table public.bracelets add column if not exists play_status text not null default '';`
 - `last_played_at`：`alter table public.bracelets add column if not exists last_played_at timestamptz;`
+- `play_count`：`alter table public.bracelets add column if not exists play_count int not null default 0;`
 - `fav`：`alter table public.bracelets add column if not exists fav boolean not null default false;`
 - `color`：`alter table public.bracelets add column if not exists color text not null default '';`
 
 **字段含义**：
 - `play_status`：菩提类 `unplayed`(未盘玩) / `ready`(待盘玩) / `playing`(盘玩中) / `done`(已盘好)；拼图类 `puzzle_pending` / `puzzle_done`；`` '' `` 归一为 unplayed
 - `last_played_at`：上次盘玩时间（timestamptz），盘玩时长/抽卡进池判断靠它
+- `play_count`：盘玩次数（int，默认 0），「今日盘过」和手动设置上次盘玩时间时 +1，排序用（v54）
 - `fav`：特别喜欢标记（boolean），喜欢展示柜用
 - `color`：主色类别（text，v47 改为 7 类：white 白/原生态 / green 绿 / yellowbrown 黄棕 / blackgray 黑灰 / duo 多宝敦煌 / lightflower 浅花 / deepflower 深花），颜色排序筛选用；`normColor()` 兼容旧值（yellow/brown→yellowbrown、black→blackgray、red→deepflower、mixed/purple/blue→duo 等）
 - `category`：菩提/水晶/玉石/拼图/动漫周边/盲盒/其他（用户可自定义增删，存 localStorage `ww_categories`）
@@ -71,7 +73,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v53）
+## 五、功能清单（截至 v54）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -101,6 +103,9 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 23. **搜索/排序增强（v52）**：搜索框支持**颜色名/颜色值**（如"绿""yellowbrown"）与**价格区间**（`100-300`、`>500`、`<=200`、`100~300`）；排序按钮从 3 个扩到 5 个（入库/创建/**价格**/**陪伴时长**/颜色），价格排序时**未记价的宝贝永远排最后**（不污染升降序）
 24. **盘玩计划（v52，首页栏目）**：game.js 新增 `playPlan()`，温和提醒哪些「菩提」串该盘了——只针对 待盘玩/盘玩中 的串，按「距上次盘玩天数」排序，**从未盘过的最优先**，闲置 ≥7 天标红「该盘啦」；轻量非打卡，无进度条/无强行打卡，点卡片进详情，点「＋更多待盘」筛选出所有待盘/盘玩中
 25. **筛选面板改版（v53）**：去掉首页折叠面板顶部的**纯数据统计行**（共/在库/盘玩/待盘/待拼/已好/已送），把数量**直接内嵌到筛选 chip 上**（状态与颜色 chips 都显示实时数量）；状态行首加「共 N」总计数标识（非交互）；**拼图相关状态（待拼/已拼）仅当分类含「拼图」时才出现**，盘玩状态（未盘玩/待盘玩/盘玩中/已盘好）仅当分类含「菩提」时才出现；**筛选面板展开态持久化**（localStorage `ww_filter_open`），点击筛选 chip 不再自动收起，方便多选
+26. **筛选统计联动「隐藏已送人」（v54）**：打开「🙈 隐藏已送人」时，所有筛选统计（共/在库/各状态/颜色计数）与筛选按钮上的数字**都排除已送人**；关闭时算全部
+27. **盘玩计划改紧凑网格（v54）**：首页「🧭 盘玩计划」从大卡片改为**紧凑网格**（一行 3-4 个，最多 2 行），每格只显示**照片 + 几天没盘**，不再显示名称/品种；点格进详情，点「＋更多」筛出全部待盘/盘玩中
+28. **盘玩次数统计与排序（v54）**：新增 `play_count` 字段（今日盘过/手动设上次盘玩时 +1）；排序按钮「⏳ 陪伴时长」改为「🤲 盘玩次数」，降序=盘得多在前，方便看哪些盘得多、哪些该多盘；详情页「盘玩时长」下方显示「盘玩次数」
 
 ## 六、用户偏好与重要决策（历史讨论结论）
 
