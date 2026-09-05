@@ -283,8 +283,19 @@
       { key: "play", icon: "🤲", title: "盘玩技巧" },
       { key: "trivia", icon: "💡", title: "冷知识" },
     ];
+    // 按工艺的差异化内容（干磨/水磨/干抛）——有工艺时插入一节
+    if (tips.craft) {
+      sections.unshift({ key: "craft", icon: "⚙️", title: "「" + (tips.craftName || "工艺") + "」专属" });
+    }
     sections.forEach((s, i) => {
-      const list = tips[s.key] || [];
+      let list;
+      if (s.key === "craft") {
+        // 工艺专属：intro + care + play 合并展示
+        const c = tips.craft;
+        list = [c.intro].concat(c.care, c.play);
+      } else {
+        list = tips[s.key] || [];
+      }
       html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden">' +
         '<button type="button" data-sec="' + s.key + '" style="width:100%;padding:12px 14px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;color:var(--wood);background:none;border:none;text-align:left">' +
         '<span>' + s.icon + "</span><span>" + s.title + "</span><span style='margin-left:auto;color:var(--text-2);font-size:12px'>" + list.length + " 条</span>" +
@@ -293,6 +304,17 @@
         list.map((t) => '<div style="font-size:14px;color:var(--text);line-height:1.7;padding:6px 0;border-top:1px dashed var(--line)">' + esc(t) + "</div>").join("") +
         "</div></div>";
     });
+
+    // 名词解释（每次随机 4 条，不同）
+    if (tips.terms && tips.terms.length) {
+      html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden">' +
+        '<button type="button" data-sec="terms" style="width:100%;padding:12px 14px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;color:var(--wood);background:none;border:none;text-align:left">' +
+        '<span>📚</span><span>名词解释</span><span style="margin-left:auto;color:var(--text-2);font-size:12px">' + tips.terms.length + " 条 · 随机</span>" +
+        '<span style="margin-left:4px;color:var(--gold);transition:transform .2s" data-arrow="terms">▾</span></button>' +
+        '<div data-body="terms" style="display:none;padding:0 14px 14px">' +
+        tips.terms.map((t) => '<div style="font-size:14px;color:var(--text);line-height:1.7;padding:6px 0;border-top:1px dashed var(--line)"><b style="color:var(--wood)">' + esc(t.name) + "</b>：" + esc(t.desc) + "</div>").join("") +
+        "</div></div>";
+    }
 
     html += '<button class="btn primary" id="mCloseTips" style="width:100%">知道了</button>';
 
@@ -1600,7 +1622,8 @@
         '<div class="seg" id="dCraft">' +
         '<button type="button" data-v="干磨" class="' + (it.craft === "干磨" || !it.craft ? "active" : "") + '">干磨</button>' +
         '<button type="button" data-v="水磨" class="' + (it.craft === "水磨" ? "active" : "") + '">水磨</button>' +
-        '<button type="button" data-v="" class="' + (it.craft && it.craft !== "干磨" && it.craft !== "水磨" ? "active" : "") + '">其他</button>' +
+        '<button type="button" data-v="干抛" class="' + (it.craft === "干抛" ? "active" : "") + '">干抛</button>' +
+        '<button type="button" data-v="" class="' + (it.craft && it.craft !== "干磨" && it.craft !== "水磨" && it.craft !== "干抛" ? "active" : "") + '">其他</button>' +
         "</div></div>";
       html += '<div class="form-row">';
       html += '<div class="form-group"><div class="form-label">到货时间</div>' +
@@ -2816,7 +2839,8 @@
       '<div class="seg" id="fCraft">' +
       '<button type="button" data-v="干磨" class="' + (!it || it.craft === "干磨" ? "active" : "") + '">干磨</button>' +
       '<button type="button" data-v="水磨" class="' + (it && it.craft === "水磨" ? "active" : "") + '">水磨</button>' +
-      '<button type="button" data-v="" class="' + (it && it.craft && it.craft !== "干磨" && it.craft !== "水磨" ? "active" : "") + '">其他</button>' +
+      '<button type="button" data-v="干抛" class="' + (it && it.craft === "干抛" ? "active" : "") + '">干抛</button>' +
+      '<button type="button" data-v="" class="' + (it && it.craft && it.craft !== "干磨" && it.craft !== "水磨" && it.craft !== "干抛" ? "active" : "") + '">其他</button>' +
       "</div></div>";
 
     // 拼图完成时间（仅拼图分类显示）
