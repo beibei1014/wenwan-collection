@@ -3725,7 +3725,7 @@
         { role: "user", content: userMessage },
       ],
       temperature: 0.7,
-      max_tokens: 800,
+      max_tokens: 2000, // V4 思考模式会先输出 reasoning_content，需留足空间给正文
       stream: false,
     };
     const resp = await fetch(AI_BASE + "/chat/completions", {
@@ -3739,7 +3739,10 @@
       throw new Error("DeepSeek " + resp.status + "：" + msg);
     }
     const data = await resp.json();
-    return (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "";
+    const msg = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message : null;
+    if (!msg) return "";
+    // V4 思考模式：正文在 content；若为空则回退到 reasoning_content，避免"没有返回内容"
+    return (msg.content && msg.content.trim()) ? msg.content.trim() : (msg.reasoning_content || "");
   }
 
   // AI 面板 UI
