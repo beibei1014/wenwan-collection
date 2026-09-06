@@ -3643,6 +3643,8 @@
   async function init() {
     try {
       initTheme();
+      // 提前绑定 AI 小助手（不依赖登录态），确保猫猫图标任何时候都能点击
+      bindAI();
       // 检查 Supabase 是否已配置
       const cfg = window.SUPABASE_CONFIG || {};
       if (!cfg.url || cfg.url.indexOf("PASTE_") === 0) {
@@ -3653,7 +3655,6 @@
       }
       const ok = await enterApp();
       if (ok) {
-        bindAI();
         if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
           navigator.serviceWorker.register("sw.js").then((reg) => {
             // 检测到新 SW 等待激活时，立即跳过等待并刷新页面
