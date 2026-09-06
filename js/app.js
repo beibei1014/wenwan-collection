@@ -3724,9 +3724,10 @@
         { role: "system", content: sysMsg },
         { role: "user", content: userMessage },
       ],
-      temperature: 0.7,
-      max_tokens: 2000, // V4 思考模式会先输出 reasoning_content，需留足空间给正文
+      max_tokens: 1000,
       stream: false,
+      // 关闭 DeepSeek V4 思考模式：只返回结论(content)，不再输出 reasoning_content
+      thinking: { type: "disabled" },
     };
     const resp = await fetch(AI_BASE + "/chat/completions", {
       method: "POST",
@@ -3741,7 +3742,7 @@
     const data = await resp.json();
     const msg = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message : null;
     if (!msg) return "";
-    // V4 思考模式：正文在 content；若为空则回退到 reasoning_content，避免"没有返回内容"
+    // 关闭思考后正文在 content；仍留 reasoning_content 兜底以防某些情况
     return (msg.content && msg.content.trim()) ? msg.content.trim() : (msg.reasoning_content || "");
   }
 
