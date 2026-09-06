@@ -908,12 +908,14 @@ img { display:block; }
 /* ============ AI 小助手 ============ */
 .ai-fab {
   position:fixed; right:16px; bottom:88px; z-index:60;
-  width:52px; height:52px; border-radius:50%; border:none; cursor:pointer;
-  background:linear-gradient(135deg,#b8860b,#a06b2c); color:#fff; font-size:26px;
+  width:56px; height:56px; border-radius:50%; border:none; cursor:pointer; padding:0;
+  background:linear-gradient(135deg,#b8860b,#a06b2c); color:#fff;
   box-shadow:0 4px 14px rgba(0,0,0,.28); display:flex; align-items:center; justify-content:center;
   transition:transform .15s;
 }
+.ai-fab svg { width:30px; height:30px; }
 .ai-fab:active { transform:scale(.92); }
+.ai-panel[hidden] { display:none !important; }
 .ai-panel {
   position:fixed; right:14px; bottom:150px; left:14px; max-width:440px; margin:0 auto;
   z-index:61; background:var(--card); border:1px solid var(--line); border-radius:16px;

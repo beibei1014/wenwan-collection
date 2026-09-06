@@ -11,7 +11,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
-  <link rel="stylesheet" href="css/style.css?v=20260924">
+  <link rel="stylesheet" href="css/style.css?v=20260925">
 </head>
 <body>
   <!-- 顶部标题栏 -->
@@ -47,10 +47,32 @@
   </div>
 
   <!-- AI 小助手：浮动按钮 + 对话面板 -->
-  <button class="ai-fab" id="aiFab" aria-label="问 AI 助手">🤖</button>
+  <button class="ai-fab" id="aiFab" aria-label="问 AI 助手">
+    <!-- 英短蓝白小猫 -->
+    <svg viewBox="0 0 48 48" width="30" height="30" fill="none" aria-hidden="true">
+      <ellipse cx="24" cy="28.5" rx="17.5" ry="15.5" fill="#ffffff"/>
+      <path d="M6 25 L3 9 L16 15 Z" fill="#8fa8c8"/>
+      <path d="M42 25 L45 9 L32 15 Z" fill="#8fa8c8"/>
+      <path d="M9 16 Q24 6 39 16 L38 20.5 Q24 13 10 20.5 Z" fill="#8fa8c8"/>
+      <path d="M6 24 L4 12 L13 16 Z" fill="#f4eef7"/>
+      <path d="M42 24 L44 12 L35 16 Z" fill="#f4eef7"/>
+      <circle cx="16.5" cy="26.5" r="2.5" fill="#2f2f2f"/>
+      <circle cx="31.5" cy="26.5" r="2.5" fill="#2f2f2f"/>
+      <circle cx="17.3" cy="25.6" r="0.9" fill="#fff"/>
+      <circle cx="32.3" cy="25.6" r="0.9" fill="#fff"/>
+      <path d="M24 30 L21.8 32.8 Q24 35 26.2 32.8 Z" fill="#f7a8b0"/>
+      <path d="M21.4 33.6 Q24 36.6 26.6 33.6" stroke="#2f2f2f" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+      <ellipse cx="15" cy="31.5" rx="2.6" ry="1.7" fill="#f7cdd2" opacity="0.9"/>
+      <ellipse cx="33" cy="31.5" rx="2.6" ry="1.7" fill="#f7cdd2" opacity="0.9"/>
+      <path d="M7 30 Q2 31 3 36" stroke="#8fa8c8" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+      <path d="M6.5 33.5 Q1.5 34 2.5 39" stroke="#8fa8c8" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+      <path d="M41 30 Q46 31 45 36" stroke="#8fa8c8" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+      <path d="M41.5 33.5 Q46.5 34 45.5 39" stroke="#8fa8c8" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+    </svg>
+  </button>
   <div class="ai-panel" id="aiPanel" hidden>
     <div class="ai-head">
-      <div class="ai-title">🤖 AI 小助手 <small>DeepSeek</small></div>
+      <div class="ai-title">🐱 收藏喵 AI 小助手 <small>DeepSeek</small></div>
       <button class="ai-close" id="aiClose">✕</button>
     </div>
     <div class="ai-body" id="aiBody">
