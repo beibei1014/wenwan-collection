@@ -21,7 +21,7 @@
   let filterOpen = localStorage.getItem("ww_filter_open") === "1"; // 筛选面板展开态（点筛选不自动收起）
   let search = "";
   let viewMode = localStorage.getItem("ww_viewmode") || "card"; // card | list
-  let sortMode = localStorage.getItem("ww_sortmode") || "arrived"; // arrived(入库) | created(创建) | color(颜色)
+  let sortMode = localStorage.getItem("ww_sortmode") || "arrived"; // arrived(入库) | created(放置时间) | price(价格) | playcount(盘玩次数) | star(星级) | color(颜色)
   let sortDir = localStorage.getItem("ww_sortdir") || "desc"; // asc | desc（箭头指向）
   let user = null;           // 当前登录用户
   let _onBack = null;        // 当前页面的自定义返回钩子（如批量编辑页设回首页，离开时清空）
@@ -737,7 +737,7 @@
       '<span>排序</span>' +
       '<div class="seg" id="sortSeg" style="flex:1;flex-wrap:wrap">' +
       '<button type="button" data-sort="arrived" class="' + (sortMode === "arrived" ? "active" : "") + '">🕐 入库' + arrow("arrived") + "</button>" +
-      '<button type="button" data-sort="created" class="' + (sortMode === "created" ? "active" : "") + '">🆕 创建' + arrow("created") + "</button>" +
+      '<button type="button" data-sort="created" class="' + (sortMode === "created" ? "active" : "") + '">⏱ 放置' + arrow("created") + "</button>" +
       '<button type="button" data-sort="price" class="' + (sortMode === "price" ? "active" : "") + '">💰 价格' + arrow("price") + "</button>" +
       '<button type="button" data-sort="playcount" class="' + (sortMode === "playcount" ? "active" : "") + '">🤲 盘玩次数' + arrow("playcount") + "</button>" +
       '<button type="button" data-sort="star" class="' + (sortMode === "star" ? "active" : "") + '">⭐ 星级' + arrow("star") + "</button>" +
@@ -2009,16 +2009,25 @@
     }
   }
 
-  // 排序：newest=入库降序，oldest=入库升序，created_desc=创建时间降序，created_asc=创建时间升序
-  // 排序：newest=入库降序，oldest=入库升序，created_desc=创建时间降序，created_asc=创建时间升序
+  // 排序：arrived=入库时间(desc) | created=放置时间(desc=放置最长在前) | price=价格 | playcount=盘玩次数 | star=星级 | color=颜色
   // 传入 items 可对指定集合（如某收藏盒子）排序，缺省对全量 allItems
   function sortItems(items) {
     const arr = items || allItems;
     const key = (i) => i.arrivedAt || i.createdAt || 0;
-    const createdKey = (i) => i.createdAt || i.arrivedAt || 0;
+    const restKey = (i) => (i.lastPlayedAt ? Date.now() - i.lastPlayedAt : null); // 放置时长：距上次盘玩（ms）
     const dir = sortDir === "asc" ? 1 : -1; // asc: 小→大；desc: 大→小
     switch (sortMode) {
-      case "created": arr.sort((a, b) => (createdKey(a) - createdKey(b)) * dir); break;
+      case "created": {
+        // 放置时间：距上次盘玩的时长(=now - lastPlayedAt)；desc=放置最长在前；无盘玩记录恒排最后
+        arr.sort((a, b) => {
+          const ra = restKey(a), rb = restKey(b);
+          if (ra == null && rb == null) return 0;
+          if (ra == null) return 1; // 未盘玩/无记录排最后
+          if (rb == null) return -1;
+          return (ra - rb) * dir;
+        });
+        break;
+      }
       case "price": {
         // 未记价的宝贝永远排最后（无论升降序），不污染排序
         const pr = (i) => {
@@ -2244,7 +2253,7 @@
       '<span>排序</span>' +
       '<div class="seg" id="sortSeg" style="flex:1;flex-wrap:wrap">' +
       '<button type="button" data-sort="arrived" class="' + (sortMode === "arrived" ? "active" : "") + '">🕐 入库' + arrow("arrived") + "</button>" +
-      '<button type="button" data-sort="created" class="' + (sortMode === "created" ? "active" : "") + '">🆕 创建' + arrow("created") + "</button>" +
+      '<button type="button" data-sort="created" class="' + (sortMode === "created" ? "active" : "") + '">⏱ 放置' + arrow("created") + "</button>" +
       '<button type="button" data-sort="price" class="' + (sortMode === "price" ? "active" : "") + '">💰 价格' + arrow("price") + "</button>" +
       '<button type="button" data-sort="playcount" class="' + (sortMode === "playcount" ? "active" : "") + '">🤲 盘玩次数' + arrow("playcount") + "</button>" +
       '<button type="button" data-sort="star" class="' + (sortMode === "star" ? "active" : "") + '">⭐ 星级' + arrow("star") + "</button>" +
