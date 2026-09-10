@@ -312,7 +312,7 @@ img { display:block; }
 .fav-heart.list-fav.faved { background:none; }
 .card-body { padding:8px 10px 10px; }
 .card-name { font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.card-sub { font-size:11px; color:var(--text-2); margin-top:2px; display:flex; justify-content:space-between; align-items:center; }
+.card-sub { font-size:11px; color:var(--text-2); margin-top:2px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px; }
 .days { color:var(--gold); font-weight:600; }
 
 .empty {
@@ -762,6 +762,8 @@ img { display:block; }
   border-radius:10px; background:var(--bg); border:1px solid var(--line); color:var(--text-2); flex-shrink:0;
 }
 .color-tag.no-color { background:#fdecea; border-color:#f5c6c6; color:var(--red); font-weight:600; }
+/* 珠型标签（卡片/列表）：蓝色调与主色标签区分 */
+.color-tag.shape-tag { background:#eef4ff; border-color:#d6e2f5; color:#3b5bdb; font-weight:600; }
 /* 列表右侧（主色 + 状态 + 收藏）纵向 */
 .list-right { display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex-shrink:0; }
 

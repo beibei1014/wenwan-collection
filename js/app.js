@@ -17,6 +17,7 @@
   let categoryFilter = "";   // 收藏盒子筛选
   const selectFilters = new Set(); // 多选状态筛选（空=全部）
   const selectColors = new Set();  // 多选颜色筛选（空=不限）
+  const selectShapes = new Set();  // 多选珠型筛选（空=不限）
   let hideGifted = localStorage.getItem("ww_hide_gifted") !== "0"; // 默认开=隐藏已送人
   let filterOpen = localStorage.getItem("ww_filter_open") === "1"; // 筛选面板展开态（点筛选不自动收起）
   let search = "";
@@ -105,6 +106,40 @@
       : ("background:" + hex);
     const border = nc === "white" ? "border:1px solid #ddd" : "";
     return '<span class="color-tag" title="主色：' + esc(label) + '"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:0;margin-right:4px;' + grad + ';' + border + '"></span>' + esc(label) + "</span>";
+  }
+
+  /* ---------- 珠型（bead shape）----------
+   * 手工选择（不自动识别）；卡片/列表展示标签，筛选面板可多选。
+   * 新增/调整珠型只需改这份数组（v 存库，label 展示）。
+   */
+  const SHAPE_LIST = [
+    { v: "round", label: "圆珠" },
+    { v: "barrel", label: "桶珠" },
+    { v: "apple", label: "苹果圆" },
+    { v: "abacus", label: "算盘珠" },
+    { v: "saucer", label: "飞碟珠" },
+    { v: "lantern", label: "灯笼珠" },
+    { v: "melon", label: "瓜珠" },
+    { v: "drum", label: "鼓珠" },
+    { v: "oldtype", label: "老型珠" },
+    { v: "carved", label: "雕刻" },
+    { v: "freeform", label: "随形" },
+    { v: "gourd", label: "葫芦" },
+    { v: "peacebuckle", label: "平安扣" },
+    { v: "plaque", label: "无事牌" },
+    { v: "other", label: "其他" },
+  ];
+  // 珠型值 → 中文名（未知值原样返回，兼容手工写入的旧值）
+  function shapeLabel(v) {
+    if (!v) return "";
+    const s = SHAPE_LIST.find((x) => x.v === v);
+    return s ? s.label : v;
+  }
+  // 珠型标签（卡片/列表复用）；未设置珠型不显示
+  function shapeTagHtml(it) {
+    if (!it.beadShape) return "";
+    const label = shapeLabel(it.beadShape);
+    return '<span class="color-tag shape-tag" title="珠型：' + esc(label) + '">📿 ' + esc(label) + "</span>";
   }
 
   // 珠子状态徽章颜色（CSS 类）
@@ -731,6 +766,15 @@
       (selectColors.size ? '<button type="button" class="chip clear-chip" id="clearColor">✕ 清除颜色</button>' : "") +
       '</div>';
 
+    // 珠型多选 chips（带计数）
+    const shapeCount = {};
+    base.forEach((i) => { if (i.beadShape) shapeCount[i.beadShape] = (shapeCount[i.beadShape] || 0) + 1; });
+    html += '<div class="filters">' +
+      '<span class="chip total-chip">珠型</span>' +
+      SHAPE_LIST.map((s) => '<button type="button" class="chip' + (selectShapes.has(s.v) ? " active" : "") + '" data-mshape="' + s.v + '">' + s.label + '<span class="chip-num">' + (shapeCount[s.v] || 0) + '</span></button>').join("") +
+      (selectShapes.size ? '<button type="button" class="chip clear-chip" id="clearShape">✕ 清除珠型</button>' : "") +
+      '</div>';
+
     // 排序
     const arrow = (m) => (sortMode === m ? (sortDir === "asc" ? " ▲" : " ▼") : "");
     html += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--text-2)">' +
@@ -772,7 +816,7 @@
         '<div class="card-thumb">' + img + badge + statusBadge + stars + "</div>" +
         '<div class="card-body">' +
         '<div class="card-name">' + esc(it.name || "未命名") + "</div>" +
-        '<div class="card-sub"><span>' + esc(it.species || it.beadSize ? (it.beadSize ? it.beadSize + "mm" : it.species || "") : "") + '</span><span class="days">' + esc(days) + "</span></div>" +
+        '<div class="card-sub">' + shapeTagHtml(it) + '<span>' + esc(it.species || it.beadSize ? (it.beadSize ? it.beadSize + "mm" : it.species || "") : "") + '</span><span class="days">' + esc(days) + "</span></div>" +
         "</div></div>";
     }
     html += "</div>";
@@ -805,8 +849,14 @@
       if (selectColors.has(k)) selectColors.delete(k); else selectColors.add(k);
       renderBoxPage(cat);
     }));
+    view.querySelectorAll(".chip[data-mshape]").forEach((c) => c.addEventListener("click", () => {
+      const k = c.dataset.mshape;
+      if (selectShapes.has(k)) selectShapes.delete(k); else selectShapes.add(k);
+      renderBoxPage(cat);
+    }));
     const cs = $("#clearSt"); if (cs) cs.onclick = () => { selectFilters.clear(); renderBoxPage(cat); };
     const cc = $("#clearColor"); if (cc) cc.onclick = () => { selectColors.clear(); renderBoxPage(cat); };
+    const csh = $("#clearShape"); if (csh) csh.onclick = () => { selectShapes.clear(); renderBoxPage(cat); };
     view.querySelectorAll("#sortSeg button").forEach((b) => b.onclick = () => {
       const chosen = b.dataset.sort;
       if (sortMode === chosen) sortDir = sortDir === "asc" ? "desc" : "asc";
@@ -1133,6 +1183,42 @@
         else { done(); toast("已设置主色：" + (window.Color ? window.Color.colorLabel(v) : v)); onDone && onDone(); }
       } catch (err) { item.color = prev; toast("保存失败：" + err.message); }
     });
+  }
+
+  /* 珠型选择弹窗（详情页"设置/修改珠型"） */
+  function promptSetShape(item, onDone) {
+    const mask = $("#modalMask");
+    const modal = $("#modal");
+    const cur = item.beadShape || "";
+    let html = '<h3 style="text-align:center">珠型</h3>';
+    html += '<p style="text-align:center;color:var(--text-2);font-size:12px;margin-bottom:12px">选择这件宝贝的珠型</p>';
+    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">';
+    SHAPE_LIST.forEach((s) => {
+      const on = cur === s.v;
+      html += '<button type="button" data-shape="' + s.v + '" class="btn ghost" style="padding:10px 4px;' + (on ? "border-color:var(--gold);outline:2px solid var(--gold)" : "") + '">' + esc(s.label) + "</button>";
+    });
+    html += "</div>";
+    html += '<button type="button" id="mClearShape" class="btn ghost" style="width:100%;margin-top:10px">清除珠型</button>';
+    html += '<button type="button" id="mCancel" class="btn ghost" style="width:100%;margin-top:8px">关闭</button>';
+
+    modal.innerHTML = html;
+    modal.style.display = "block";
+    mask.hidden = false;
+
+    const done = () => { modal.style.display = "none"; mask.hidden = true; };
+    $("#mCancel").onclick = done;
+
+    async function saveShape(v) {
+      const prev = item.beadShape;
+      item.beadShape = v;
+      try {
+        const saved = await DB.put(item);
+        if (!saved || (saved.beadShape || "") !== v) { item.beadShape = prev; toast("⚠️ 未保存：缺少 bead_shape 字段"); }
+        else { done(); toast(v ? "已设置珠型：" + shapeLabel(v) : "已清除珠型"); onDone && onDone(); }
+      } catch (err) { item.beadShape = prev; toast("保存失败：" + err.message); }
+    }
+    $("#mClearShape").onclick = () => saveShape("");
+    modal.querySelectorAll("[data-shape]").forEach((btn) => btn.onclick = () => saveShape(btn.dataset.shape));
   }
 
   /* 修改密码弹窗 */
@@ -2090,8 +2176,12 @@
         return selectColors.has(ic || "");
       });
     }
+    // 多选珠型筛选（selectShapes 空 = 不限）
+    if (selectShapes.size) {
+      list = list.filter((i) => selectShapes.has(i.beadShape || ""));
+    }
     // 兼容旧的单值 filter（仅对全量生效，避免影响盒子页等局部列表）
-    if (!base && !selectFilters.size && !selectColors.size) {
+    if (!base && !selectFilters.size && !selectColors.size && !selectShapes.size) {
       if (filter === "instock") list = src.filter((i) => !i.gifted);
       else if (filter === "gifted") list = src.filter((i) => i.gifted);
       else if (filter === "unplayed") list = src.filter((i) => isBeadCat(i.category || "") && (i.playStatus === "unplayed" || !i.playStatus));
@@ -2146,6 +2236,7 @@
           (i.note || "").toLowerCase().includes(q) ||
           (i.category || "").toLowerCase().includes(q) ||
           (i.craft || "").toLowerCase().includes(q) ||
+          shapeLabel(i.beadShape).toLowerCase().includes(q) ||
           (i.accessoryType || "").toLowerCase().includes(q) ||
           statusText(i).toLowerCase().includes(q) ||
           colorText(i).includes(q) ||
@@ -2218,6 +2309,9 @@
       const c = window.Color ? window.Color.normColor(i.color) : i.color;
       if (c) colorCount[c] = (colorCount[c] || 0) + 1;
     });
+    // 珠型数量（随"隐藏已送人"开关变化）
+    const shapeCount = {};
+    base.forEach((i) => { if (i.beadShape) shapeCount[i.beadShape] = (shapeCount[i.beadShape] || 0) + 1; });
     // 用户分类是否包含"拼图"：无拼图则不出现拼图相关状态（待拼/已拼）
     const cats = getCategories();
     const hasPuzzleCat = cats.includes("拼图") || allItems.some((i) => isPuzzleCat(i.category || ""));
@@ -2239,6 +2333,13 @@
     filterHtml += '<div class="filters">' +
       (window.Color ? window.Color.COLOR_LIST.map((c) => '<button type="button" class="chip' + (selectColors.has(c.v) ? " active" : "") + '" data-mcolor="' + c.v + '">' + c.label + '<span class="chip-num">' + (colorCount[c.v] || 0) + '</span></button>').join("") : "") +
       (selectColors.size ? '<button type="button" class="chip clear-chip" id="clearColor">✕ 清除颜色</button>' : "") +
+      '</div>';
+
+    // 珠型多选 chips（每项带计数）
+    filterHtml += '<div class="filters">' +
+      '<span class="chip total-chip">珠型</span>' +
+      SHAPE_LIST.map((s) => '<button type="button" class="chip' + (selectShapes.has(s.v) ? " active" : "") + '" data-mshape="' + s.v + '">' + s.label + '<span class="chip-num">' + (shapeCount[s.v] || 0) + '</span></button>').join("") +
+      (selectShapes.size ? '<button type="button" class="chip clear-chip" id="clearShape">✕ 清除珠型</button>' : "") +
       '</div>';
 
     // 分类筛选行
@@ -2327,6 +2428,7 @@
           "</div>" +
           '<div class="list-right">' +
           colorTagHtml(it) +
+          shapeTagHtml(it) +
           (it.gifted
             ? '<span class="list-status ' + statusCls + '">' + statusTxt + "</span>"
             : (isPuzzleIt || isBeadIt
@@ -2352,7 +2454,7 @@
         '<div class="card-thumb">' + img + badge + statusBadge + stars + "</div>" +
         '<div class="card-body">' +
         '<div class="card-name">' + esc(it.name || "未命名") + "</div>" +
-        '<div class="card-sub">' + colorTagHtml(it) + '<span class="days">' + esc(days) + "</span></div>" +
+        '<div class="card-sub">' + colorTagHtml(it) + shapeTagHtml(it) + '<span class="days">' + esc(days) + "</span></div>" +
         "</div></div>";
     }
     return h + "</div>";
@@ -2423,9 +2525,17 @@
       else selectColors.add(k);
       renderHome();
     }));
-    // 清除状态/颜色筛选
+    // 多选珠型 chips（data-mshape）
+    view.querySelectorAll(".chip[data-mshape]").forEach((c) => c.addEventListener("click", () => {
+      const k = c.dataset.mshape;
+      if (selectShapes.has(k)) selectShapes.delete(k);
+      else selectShapes.add(k);
+      renderHome();
+    }));
+    // 清除状态/颜色/珠型筛选
     const cs = $("#clearSt"); if (cs) cs.onclick = () => { selectFilters.clear(); renderHome(); };
     const cc = $("#clearColor"); if (cc) cc.onclick = () => { selectColors.clear(); renderHome(); };
+    const csh = $("#clearShape"); if (csh) csh.onclick = () => { selectShapes.clear(); renderHome(); };
     // 分类 chips（用 data-cat 区分）
     view.querySelectorAll(".chip[data-cat]").forEach((c) => c.addEventListener("click", () => {
       categoryFilter = c.dataset.cat || "";
@@ -2665,6 +2775,7 @@
         ? '<span class="tag ' + beadStatusCls(it) + '">' + esc(beadStatusText(it)) + "</span>"
         : (isPuzzleCat(it.category || "") ? (it.playStatus === "puzzle_done" ? '<span class="tag g">已拼</span>' : '<span class="tag yl">待拼</span>') : "")) +
       (it.craft ? '<span class="tag">' + esc(it.craft) + "</span>" : "") +
+      (it.beadShape ? '<span class="tag">📿 ' + esc(shapeLabel(it.beadShape)) + "</span>" : "") +
       (it.category ? '<span class="tag">' + esc(it.category) + "</span>" : "");
 
     let html = "";
@@ -2684,6 +2795,8 @@
     else if (dSizeField === "bead") html += infoItem("珠子大小", it.beadSize ? it.beadSize + " mm" : "—");
     else if (it.accessoryType) html += infoItem("周边类型", esc(it.accessoryType));
     html += infoItem("工艺", it.craft || "—");
+    // 珠型：显示 + 可点击修改
+    html += infoItem("珠型", (it.beadShape ? esc(shapeLabel(it.beadShape)) : "—") + ' <button type="button" class="link-btn" id="editShape">' + (it.beadShape ? "修改" : "设置") + "</button>", true);
     html += infoItem("入手价格", it.price != null && it.price !== "" ? "¥" + esc(String(it.price)) : "—");
     html += infoItem("购买店铺", esc(it.shop || "—"), true);
     // 盘玩时长（上次盘玩 → 现在）：所有菩提类都显示，可手动设置上次盘玩时间
@@ -2770,6 +2883,12 @@
     if (ec) ec.onclick = (e) => {
       e.stopPropagation();
       promptSetColor(it, () => renderDetail(id));
+    };
+    // 修改珠型
+    const esh = $("#editShape");
+    if (esh) esh.onclick = (e) => {
+      e.stopPropagation();
+      promptSetShape(it, () => renderDetail(id));
     };
     $("#btnDel").onclick = async () => {
       const ok = await confirmModal("删除这件宝贝？", "删除后不可恢复，请确认。", "删除", true);
@@ -2912,6 +3031,17 @@
         '<div class="filters" id="fColorChips">' + colorChips + "</div></div>";
     }
 
+    // 珠型选择（手工，可清除）
+    {
+      const curShape = it ? (it.beadShape || "") : "";
+      let shapeChips = '<button type="button" class="color-chip' + (!curShape ? " active" : "") + '" data-shape="">未选</button>';
+      SHAPE_LIST.forEach((s) => {
+        shapeChips += '<button type="button" class="color-chip' + (curShape === s.v ? " active" : "") + '" data-shape="' + s.v + '">' + esc(s.label) + "</button>";
+      });
+      html += '<div class="form-group"><div class="form-label">珠型 <small>手工选择</small></div>' +
+        '<div class="filters" id="fShapeChips">' + shapeChips + "</div></div>";
+    }
+
     html += '<div class="form-group" id="giftedWrap"' + ((curStatus === "gifted" || giftStatus === "gifted") ? "" : ' style="display:none"') + '><div class="form-label">送人时间</div>' +
       '<input class="form-input" id="fGiftedDate" type="date" value="' + (it && it.giftedAt ? fmtDateInput(it.giftedAt) : "") + '"></div>';
 
@@ -3034,6 +3164,14 @@
     if (fColorChips) {
       fColorChips.querySelectorAll(".color-chip").forEach((b) => b.onclick = () => {
         fColorChips.querySelectorAll(".color-chip").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+      });
+    }
+    // 珠型 chips 点击切换
+    const fShapeChips = $("#fShapeChips");
+    if (fShapeChips) {
+      fShapeChips.querySelectorAll(".color-chip").forEach((b) => b.onclick = () => {
+        fShapeChips.querySelectorAll(".color-chip").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
       });
     }
@@ -3233,6 +3371,10 @@
         // 优先用手动选的主色（表单 color-chip）
         const colorChip = view.querySelector("#fColorChips .color-chip.active");
         if (colorChip) item.color = colorChip.dataset.color || "";
+
+        // 珠型（表单 shape-chip；选"未选"则为空）
+        const shapeChip = view.querySelector("#fShapeChips .color-chip.active");
+        item.beadShape = shapeChip ? (shapeChip.dataset.shape || "") : "";
 
         // 自动识别主色：未手动选色且照片存在时，识别第一张主照片的颜色
         if (!item.color && item.photos.length && window.Color) {

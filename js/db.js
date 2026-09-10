@@ -43,6 +43,7 @@
       star: Number(item.star) || 0,
       fav: (Number(item.star) || 0) >= 5, // 5 星自动视为喜欢/进展柜
       color: item.color || "",
+      bead_shape: item.beadShape || "",
       piece_count: (item.pieceCount == null || item.pieceCount === "") ? null : Number(item.pieceCount),
       accessory_type: item.accessoryType || "",
       photos: (item.photos || []).map(stripBlob),
@@ -76,6 +77,7 @@
       star: row.star != null && row.star !== "" ? Number(row.star) : (row.fav ? 5 : 0), // 旧 fav=true → 5 星
       fav: !!row.fav,
       color: row.color || "",
+      beadShape: row.bead_shape || "",
       pieceCount: row.piece_count,
       accessoryType: row.accessory_type || "",
       photos: row.photos || [],
@@ -160,7 +162,7 @@
 
   /* ---------- CRUD ---------- */
   // 可能尚未在数据库建好的新字段（未执行 SQL 时自动降级）
-  const OPTIONAL_FIELDS = ["piece_count", "accessory_type", "play_status", "finished_at", "last_played_at", "play_count", "star", "fav", "color"];
+  const OPTIONAL_FIELDS = ["piece_count", "accessory_type", "play_status", "finished_at", "last_played_at", "play_count", "star", "fav", "color", "bead_shape"];
 
   function isMissingColumnErr(error) {
     return error && error.message && error.message.includes("Could not find the") && error.message.includes("column");

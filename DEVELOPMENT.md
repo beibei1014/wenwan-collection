@@ -34,7 +34,7 @@ gallery.html        # 动态展厅（公开可访问的分享网页，读 URL ?d
 js/config.js        # SUPABASE_CONFIG（url + anonKey，publishable key，客户端安全）
 js/color.js         # 手串主色识别（中心区域主色→7类）+ COLOR_LIST（按浅→深排序顺序）
 js/db.js            # 数据层：CRUD + 图片上传/删除 + 精确降级 + 天数计算
-js/app.js           # 全部 UI 与逻辑（约 3200 行，IIFE）
+js/app.js           # 全部 UI 与逻辑（约 4000 行，IIFE；珠型表 SHAPE_LIST 也在其中）
 js/categories.js    # 分类 → 品种/品牌联动；拼图分类才有 pieceCount/finishedAt
 js/stats.js         # 统计：月历热力图、成就分组、有趣发现
 js/game.js          # 游戏化：XP/等级/每日任务（按日期种子随机）/不买挑战/抽卡
@@ -52,7 +52,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 - 配置入口：js/config.js；建表脚本：`supabase-schema.sql`
 
 **`bracelets` 表字段**（注意：历史迭代多次 alter，脚本分散在多个 supabase-*.sql）：
-`id, user_id, name, species, craft, arrived_at, price, shop, gifted, gifted_at, played, played_note, note, photos(jsonb), screenshots(jsonb), created_at, updated_at, bead_size, category, finished_at, piece_count, accessory_type, play_status, last_played_at, fav, color`
+`id, user_id, name, species, craft, arrived_at, price, shop, gifted, gifted_at, played, played_note, note, photos(jsonb), screenshots(jsonb), created_at, updated_at, bead_size, category, finished_at, piece_count, accessory_type, play_status, last_played_at, fav, color, bead_shape`
 
 **用户需自行执行的 alter SQL**（db.js 会静默降级不崩，但字段保存无效）：
 - `play_status`：`alter table public.bracelets add column if not exists play_status text not null default '';`
@@ -61,6 +61,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 - `star`：`alter table public.bracelets add column if not exists star int not null default 0;`
 - `fav`：`alter table public.bracelets add column if not exists fav boolean not null default false;`
 - `color`：`alter table public.bracelets add column if not exists color text not null default '';`
+- `bead_shape`：`alter table public.bracelets add column if not exists bead_shape text not null default '';`
 
 **字段含义**：
 - `play_status`：菩提类 `unplayed`(未盘玩) / `ready`(待盘玩) / `playing`(盘玩中) / `done`(已盘好)；拼图类 `puzzle_pending` / `puzzle_done`；`` '' `` 归一为 unplayed
@@ -69,13 +70,14 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 - `star`：星级（int，0-5，默认 0），5 星自动进喜欢/收藏展示柜；toFront 兼容旧 fav（旧 fav=true → 5 星，旧 fav=false → 0 星）；fav 字段保留并写为 `star>=5`（v55）
 - `fav`：特别喜欢标记（boolean），喜欢展示柜用
 - `color`：主色类别（text，v47 改为 7 类：white 白/原生态 / green 绿 / yellowbrown 黄棕 / blackgray 黑灰 / duo 多宝敦煌 / lightflower 浅花 / deepflower 深花），颜色排序筛选用；`normColor()` 兼容旧值（yellow/brown→yellowbrown、black→blackgray、red→deepflower、mixed/purple/blue→duo 等）
+- `bead_shape`：珠型（text，默认 `''`，v70 新增），存英文枚举：`round/barrel/apple/abacus/saucer/lantern/melon/drum/oldtype/carved/freeform/gourd/peacebuckle/plaque/other`；中文名由 `SHAPE_LIST` 映射（`shapeLabel()`）；**手工选择，不做自动识别**；`shapeLabel()` 对未知值原样返回（兼容手工写入）
 - `category`：菩提/水晶/玉石/拼图/动漫周边/盲盒/其他（用户可自定义增删，存 localStorage `ww_categories`）
 - `photos`/`screenshots`：jsonb 数组，每项 `{url, name, ...}`（Blob 只在本地上传前存在）
 - `profiles` 表：`id, display_name, updated_at`（昵称）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v69）
+## 五、功能清单（截至 v70）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -126,6 +128,12 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 44. **AI 助手"一问三不知"修复（v67）**：DeepSeek V4 为思考模式，回复正文在 `message.content`，但 `max_tokens` 较小时预算被 `reasoning_content` 吃光导致正文为空（显示"没有返回内容"）。已把 `max_tokens` 800→2000 并增加**正文回退**（`content` 为空时用 `reasoning_content`），实测 V4 正常返回
 45. **AI 助手只给结论（v68）**：用户反馈返回的是思考过程而非结论。已按 DeepSeek 官方在请求体加 **`thinking:{type:"disabled"}`** 关闭思考模式——实测 `reasoning_content` 长度=0、`content` 直接返回结论，模型保持 `deepseek-v4-flash`
 46. **『创建时间』排序改为『放置时间』（v69）**：首页与收藏盒子页排序栏的「🆕 创建」按钮改为「⏱ 放置」；`sortItems` 中 `created` 档排序键从 `createdAt` 改为**距上次盘玩时长**（`now - lastPlayedAt`，与详情"已放置 X 天"同口径）；**默认降序 = 放置最长在前**，可点击切换升/降序；**无盘玩记录（`lastPlayedAt` 为空）的宝贝恒排最后**；内部键值仍为 `created`，**无需迁移旧 localStorage**；缓存 v69
+47. **珠型（bead shape）选择 / 展示 / 筛选（v70）**：新增 `bead_shape` 字段（text），在 `js/app.js` 内以 `SHAPE_LIST` 定义 **15 种珠型**（圆珠 round / 桶珠 barrel / 苹果圆 apple / 算盘珠 abacus / 飞碟珠 saucer / 灯笼珠 lantern / 瓜珠 melon / 鼓珠 drum / 老型珠 oldtype / 雕刻 carved / 随形 freeform / 葫芦 gourd / 平安扣 peacebuckle / 无事牌 plaque / 其他 other），**手工选择、不做自动识别**。
+    - **详情页**：标签行显示「📿 珠型」；基本信息新增「珠型」项，点「设置/修改」弹出 `promptSetShape()` 选择弹窗（含「清除珠型」）；保存失败会明确提示缺列
+    - **编辑 / 新建表单**：新增 `#fShapeChips` chips（与主色 chips 同款式，含「未选」）
+    - **列表 / 卡片页**：新增蓝色珠型标签（`📿 xxx`，CSS 类 `.color-tag.shape-tag`），与主色标签并排（`.card-sub` 已加 `flex-wrap` 防挤压）
+    - **筛选面板**（首页 + 收藏盒子页）：新增可多选珠型 chips，带实时计数与「✕ 清除珠型」（`selectShapes` Set）；搜索框也匹配珠型名
+    - **需执行 `bead_shape` 的 alter SQL**（见第四节），否则保存会提示「⚠️ 未保存：缺少 bead_shape 字段」；缓存 v70
 
 ## 六、用户偏好与重要决策（历史讨论结论）
 
@@ -207,5 +215,7 @@ a12db69 珠子状态机重构(未盘玩/待盘玩/盘玩中/放置中/已盘好)
 - 改天数/统计逻辑会同时影响 stats.js / game.js / poster.js（都调 `DB.daysWith`）
 - **新增可空字段**：db.js 的 `toDB/toFront` 加映射 + `OPTIONAL_FIELDS` 数组加字段名（防止未建列时报错降级）
 - 颜色识别逻辑在 `js/color.js`（`detectColor/classifyRgb/COLOR_LIST`），排序用 `window.Color.COLOR_LIST` 顺序
+- 珠型（bead shape）在 `js/app.js` 的 `SHAPE_LIST`（唯一数据源）：加/改珠型只改这个数组；筛选靠 `selectShapes` Set + `data-mshape` chips，展示靠 `shapeLabel()` / `shapeTagHtml()`
+- 新增可空字段（v70 例：`bead_shape`）：db.js 的 `toDB/toFront` 加映射 + `OPTIONAL_FIELDS` 加字段名，**并让用户执行 alter SQL**
 - 每次改动后 `node --check js/*.js` 验语法；本地起服务用 headless Chrome 实测
 - 用户是中文交流，回复请用中文
