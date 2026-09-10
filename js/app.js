@@ -1369,6 +1369,8 @@
         const checked = selected.has(it.id);
         // 主色标签
         const colorTag = colorTagHtml(it);
+        // 珠型标签
+        const shapeTag = shapeTagHtml(it);
         // 盘玩状态标签（珠子/拼图）
         const isPuzzleIt = isPuzzleCat(it.category || "");
         const isBeadIt = isBeadCat(it.category || "");
@@ -1386,7 +1388,7 @@
           '<div class="list-info">' +
           '<div class="list-name">' + esc(it.name || "未命名") + "</div>" +
           '<div class="list-sub">' + esc(cardSubText(it)) + (it.category ? " · " + esc(it.category) : "") + "</div>" +
-          '<div class="list-meta">' + colorTag + statusTag + "</div>" +
+          '<div class="list-meta">' + colorTag + shapeTag + statusTag + "</div>" +
           "</div>" +
           '<span class="multi-check">' + (checked ? "✓" : "") + "</span>" +
           "</div>";
@@ -1527,6 +1529,18 @@
           '<button class="btn primary" id="bApplyColor" style="width:100%">应用到所选宝贝</button></div>';
       }
 
+      // 批量设置珠型（选「未选」= 清空所选宝贝的珠型）
+      {
+        let shapeChips = '<button type="button" class="color-chip" data-bshape="">未选</button>';
+        SHAPE_LIST.forEach((s) => {
+          shapeChips += '<button type="button" class="color-chip" data-bshape="' + s.v + '">' + esc(s.label) + "</button>";
+        });
+        html += '<div class="batch-op">' +
+          '<div class="batch-op-title">📿 批量设置珠型</div>' +
+          '<div class="filters" id="bShapeChips" style="margin-bottom:8px">' + shapeChips + "</div>" +
+          '<button class="btn primary" id="bApplyShape" style="width:100%">应用到所选宝贝</button></div>';
+      }
+
       // 批量删除
       html += '<div class="batch-op" style="border-color:#f8bbd0">' +
         '<div class="batch-op-title" style="color:var(--red)">🗑️ 批量删除（' + items.length + ' 个）</div>' +
@@ -1597,6 +1611,22 @@
       $("#bApplyColor").onclick = async () => {
         if (!bColorChoice) { toast("请先选择颜色"); return; }
         await applyToItems(items, async (it) => { it.color = bColorChoice; });
+      };
+      // 批量设置珠型：chips 选择 + 应用到所选（「未选」= 清空珠型）
+      let bShapeChoice = "";
+      let bShapePicked = false;
+      const bShapeChips = $("#bShapeChips");
+      if (bShapeChips) {
+        bShapeChips.querySelectorAll(".color-chip").forEach((b) => b.onclick = () => {
+          bShapeChips.querySelectorAll(".color-chip").forEach((x) => x.classList.remove("active"));
+          b.classList.add("active");
+          bShapeChoice = b.dataset.bshape || "";
+          bShapePicked = true;
+        });
+      }
+      $("#bApplyShape").onclick = async () => {
+        if (!bShapePicked) { toast("请先选择珠型（选「未选」可清空）"); return; }
+        await applyToItems(items, async (it) => { it.beadShape = bShapeChoice; });
       };
       // 批量删除
       $("#bDelete").onclick = async () => {
