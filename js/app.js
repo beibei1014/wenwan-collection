@@ -111,17 +111,20 @@
   /* ---------- 珠型（bead shape）----------
    * 手工选择（不自动识别）；卡片/列表展示标签，筛选面板可多选。
    * 新增/调整珠型只需改这份数组（v 存库，label 展示）。
+   * 数组顺序 = 各处 chips 的展示顺序：最常买的四种放最前，两两相邻。
    */
   const SHAPE_LIST = [
+    // —— 买得最多的四种：圆珠 / 苹果圆 / 正桶 / 老型桶（放最前）——
     { v: "round", label: "圆珠" },
-    { v: "barrel", label: "桶珠" },
     { v: "apple", label: "苹果圆" },
+    { v: "barrel", label: "正桶" },
+    { v: "oldtype", label: "老型桶" },
+    // —— 其他珠型 ——
     { v: "abacus", label: "算盘珠" },
     { v: "saucer", label: "飞碟珠" },
     { v: "lantern", label: "灯笼珠" },
     { v: "melon", label: "瓜珠" },
     { v: "drum", label: "鼓珠" },
-    { v: "oldtype", label: "老型珠" },
     { v: "carved", label: "雕刻" },
     { v: "freeform", label: "随形" },
     { v: "gourd", label: "葫芦" },

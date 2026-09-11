@@ -77,7 +77,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v71）
+## 五、功能清单（截至 v72）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -128,13 +128,14 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 44. **AI 助手"一问三不知"修复（v67）**：DeepSeek V4 为思考模式，回复正文在 `message.content`，但 `max_tokens` 较小时预算被 `reasoning_content` 吃光导致正文为空（显示"没有返回内容"）。已把 `max_tokens` 800→2000 并增加**正文回退**（`content` 为空时用 `reasoning_content`），实测 V4 正常返回
 45. **AI 助手只给结论（v68）**：用户反馈返回的是思考过程而非结论。已按 DeepSeek 官方在请求体加 **`thinking:{type:"disabled"}`** 关闭思考模式——实测 `reasoning_content` 长度=0、`content` 直接返回结论，模型保持 `deepseek-v4-flash`
 46. **『创建时间』排序改为『放置时间』（v69）**：首页与收藏盒子页排序栏的「🆕 创建」按钮改为「⏱ 放置」；`sortItems` 中 `created` 档排序键从 `createdAt` 改为**距上次盘玩时长**（`now - lastPlayedAt`，与详情"已放置 X 天"同口径）；**默认降序 = 放置最长在前**，可点击切换升/降序；**无盘玩记录（`lastPlayedAt` 为空）的宝贝恒排最后**；内部键值仍为 `created`，**无需迁移旧 localStorage**；缓存 v69
-47. **珠型（bead shape）选择 / 展示 / 筛选（v70）**：新增 `bead_shape` 字段（text），在 `js/app.js` 内以 `SHAPE_LIST` 定义 **15 种珠型**（圆珠 round / 桶珠 barrel / 苹果圆 apple / 算盘珠 abacus / 飞碟珠 saucer / 灯笼珠 lantern / 瓜珠 melon / 鼓珠 drum / 老型珠 oldtype / 雕刻 carved / 随形 freeform / 葫芦 gourd / 平安扣 peacebuckle / 无事牌 plaque / 其他 other），**手工选择、不做自动识别**。
+47. **珠型（bead shape）选择 / 展示 / 筛选（v70）**：新增 `bead_shape` 字段（text），在 `js/app.js` 内以 `SHAPE_LIST` 定义 **15 种珠型**，**数组顺序 = 各处 chips 的展示顺序**：最常买的四种放最前且两两相邻 —— 圆珠 round / 苹果圆 apple / 正桶 barrel / 老型桶 oldtype，其后为 算盘珠 abacus / 飞碟珠 saucer / 灯笼珠 lantern / 瓜珠 melon / 鼓珠 drum / 雕刻 carved / 随形 freeform / 葫芦 gourd / 平安扣 peacebuckle / 无事牌 plaque / 其他 other；**手工选择、不做自动识别**。
     - **详情页**：标签行显示「📿 珠型」；基本信息新增「珠型」项，点「设置/修改」弹出 `promptSetShape()` 选择弹窗（含「清除珠型」）；保存失败会明确提示缺列
     - **编辑 / 新建表单**：新增 `#fShapeChips` chips（与主色 chips 同款式，含「未选」）
     - **列表 / 卡片页**：新增蓝色珠型标签（`📿 xxx`，CSS 类 `.color-tag.shape-tag`），与主色标签并排（`.card-sub` 已加 `flex-wrap` 防挤压）
     - **筛选面板**（首页 + 收藏盒子页）：新增可多选珠型 chips，带实时计数与「✕ 清除珠型」（`selectShapes` Set）；搜索框也匹配珠型名
     - **需执行 `bead_shape` 的 alter SQL**（见第四节），否则保存会提示「⚠️ 未保存：缺少 bead_shape 字段」；缓存 v70
 48. **批量编辑支持珠型（v71）**：多选（≤20 个）→「⚙ 批量编辑」面板新增「📿 批量设置珠型」区块（`#bShapeChips` chips + 「应用到所选宝贝」按钮，`data-bshape`）；选「未选」再应用 = **批量清空**所选宝贝的珠型（用 `bShapePicked` 标记区分"没选"与"选了未选"，避免误清空）；多选列表里每个宝贝也新增珠型标签，方便勾选时辨认。缓存 v71
+49. **珠型词条改名与排序（v72）**：应需求把「桶珠」→**正桶**、「老型珠」→**老型桶**；并把买得最多的四种（圆珠 / 苹果圆 / 正桶 / 老型桶）**排到最前且两两相邻**。`v` 值（`barrel` / `oldtype`）保持不变、**旧数据无需迁移**，只改 `SHAPE_LIST` 的 label 与顺序（筛选 / 表单 / 批量编辑 / 弹窗 chips 的顺序全部随之变化）；缓存 v72
 
 ## 六、用户偏好与重要决策（历史讨论结论）
 
