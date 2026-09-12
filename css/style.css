@@ -874,8 +874,13 @@ img { display:block; }
 }
 .plan-photo img { width:100%; height:100%; object-fit:contain; }
 .plan-photo .placeholder { font-size:20px; color:#c9b89c; }
+/* 串名（区分相似的串） */
+.plan-name {
+  margin-top:5px; font-size:11px; font-weight:700; color:var(--text); line-height:1.2;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
 .plan-days {
-  margin-top:4px; font-size:10px; line-height:1.2; color:var(--text-2);
+  margin-top:2px; font-size:10px; line-height:1.2; color:var(--text-2);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .plan-days.urgent { color:#c62828; font-weight:700; }
@@ -885,13 +890,14 @@ img { display:block; }
 @media (max-width:380px) { .plan-grid { grid-template-columns:repeat(3,1fr); } }
 
 /* 「今日已盘」快捷打卡按钮 + 完成动画 */
+/* 默认：未打卡 = 灰色；打卡后 = 绿色 */
 .plan-done-btn {
   position:absolute; right:5px; bottom:5px; z-index:2;
   width:26px; height:26px; border-radius:50%; border:2px solid rgba(255,255,255,.85);
-  background:linear-gradient(135deg,#43a047,#2e7d32); color:#fff;
+  background:rgba(110,110,110,.72); color:#fff;
   font-size:14px; font-weight:800; line-height:1; padding:0; cursor:pointer;
   display:flex; align-items:center; justify-content:center;
-  box-shadow:0 2px 8px rgba(0,0,0,.35); transition:transform .12s, background .2s;
+  box-shadow:0 2px 8px rgba(0,0,0,.3); transition:transform .12s, background .2s;
   -webkit-tap-highlight-color:transparent;
 }
 .plan-done-btn:active { transform:scale(.82); }

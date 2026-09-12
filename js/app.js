@@ -1357,6 +1357,7 @@
           '<div class="plan-photo">' + img +
           '<button type="button" class="plan-done-btn" data-id="' + it.id + '" title="今天盘过它了？点一下打卡">✓</button>' +
           "</div>" +
+          '<div class="plan-name">' + esc(it.name || "未命名") + "</div>" +
           '<div class="plan-days' + (x.urgent ? " urgent" : "") + '">' + esc(x.text) + "</div>" +
           "</div>";
       }).join("");
