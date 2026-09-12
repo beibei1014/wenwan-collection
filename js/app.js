@@ -3872,15 +3872,29 @@
   // 构造收藏摘要（给 AI 的上下文，只含文本，不含图片）
   function buildCollSummary() {
     const items = allItems || [];
-    const lines = ["这是我收藏馆目前的宝贝信息（共 " + items.length + " 件）："];
+    const now = new Date();
+    const dayMs = 86400000;
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const todayCn = now.getFullYear() + "年" + (now.getMonth() + 1) + "月" + now.getDate() + "日";
+    const todayIso = now.getFullYear() + "-" + pad2(now.getMonth() + 1) + "-" + pad2(now.getDate());
+
+    const lines = [];
+    // 【关键】必须告诉 AI 今天的日期，否则它无法判断「今天/最近」
+    lines.push("【当前日期】今天是 " + todayCn + "（" + todayIso + "，星期" + "日一二三四五六"[now.getDay()] + "）。判断「今天」「昨天」「最近」等一律以这个日期为基准，不要臆测其他日期。");
+    lines.push("【收藏总览】共 " + items.length + " 件宝贝。");
+
+    const todayPlayed = []; // 今天盘过的串
+    const itemLines = [];
     items.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).forEach((i) => {
       const parts = [];
       if (i.name) parts.push(i.name);
       if (i.species) parts.push(i.species);
       if (i.category) parts.push(i.category);
       if (i.craft) parts.push(i.craft);
+      if (i.beadShape) parts.push("珠型:" + shapeLabel(i.beadShape));
       if (i.price != null && i.price !== "") parts.push("¥" + i.price);
-      if (i.arrivedAt) { const d = new Date(i.arrivedAt); parts.push(d.getFullYear() + "年" + (d.getMonth() + 1) + "月"); }
+      if (i.arrivedAt) { const d = new Date(i.arrivedAt); parts.push("入库" + d.getFullYear() + "年" + (d.getMonth() + 1) + "月"); }
       if (i.playStatus) {
         const ps = i.playStatus;
         if (ps === "playing") parts.push("盘玩中");
@@ -3888,11 +3902,30 @@
         else if (ps === "ready") parts.push("待盘玩");
         else if (ps === "puzzle_done") parts.push("已拼");
       }
-      if (i.lastPlayedAt) { const d = new Date(i.lastPlayedAt); parts.push("上次盘玩" + d.getMonth() + 1 + "/" + d.getDate()); }
-      if (i.playCount) parts.push("盘玩" + i.playCount + "次");
+      // 上次盘玩：换算成相对今天的天数，明确标注「今天盘过」
+      if (i.lastPlayedAt) {
+        const lp = new Date(i.lastPlayedAt);
+        const lpStart = new Date(lp.getFullYear(), lp.getMonth(), lp.getDate()).getTime();
+        const diff = Math.round((todayStart - lpStart) / dayMs);
+        if (diff <= 0) { parts.push("【今天盘过】"); todayPlayed.push(i); }
+        else if (diff === 1) parts.push("昨天盘过");
+        else parts.push(diff + "天前盘过");
+      }
+      if (i.playCount) parts.push("累计盘玩" + i.playCount + "次");
       if (i.star) parts.push(i.star + "星");
-      lines.push("- " + parts.join(" | "));
+      if (i.note) parts.push("备注:" + String(i.note).slice(0, 30));
+      itemLines.push("- " + parts.join(" | "));
     });
+
+    // 今日盘玩汇总（直接给结论，AI 不会再算错）
+    if (todayPlayed.length) {
+      lines.push("【今日已盘】今天一共盘了 " + todayPlayed.length + " 串：" + todayPlayed.map((i) => i.name || "未命名").join("、") + "。");
+    } else {
+      lines.push("【今日已盘】根据记录，今天还没有盘过任何串（没有任何宝贝的 lastPlayedAt 是今天）。");
+    }
+    lines.push("");
+    lines.push("【宝贝明细】");
+    lines.push(itemLines.join("\n"));
     return lines.join("\n");
   }
 
@@ -3901,7 +3934,9 @@
     const key = getAiKey();
     if (!key) throw new Error("还未配置 DeepSeek API key，请到「设置 → AI 助手密钥」填写你自己的 key");
     const summary = buildCollSummary();
-    const sysMsg = "你是我的收藏馆AI小助手，懂文玩/手串/拼图/收藏。请用简体中文、简短友好地回答。可结合我收藏里的信息回答。收藏信息如下：\n" + summary;
+    const sysMsg = "你是我的收藏馆AI小助手，懂文玩/手串/拼图/收藏。请用简体中文、简短友好地回答。\n"
+      + "规则：1) 回答涉及时间的问题时，必须以【当前日期】为基准，不要臆测日期；2) 判断「今天有没有盘串」「今天盘了几串」时，直接依据【今日已盘】和明细里标注的【今天盘过】统计，不要凭空说没有；3) 数据里没有的不要编造。\n"
+      + "以下是收藏数据：\n" + summary;
     const body = {
       model: AI_MODEL,
       messages: [
