@@ -515,7 +515,7 @@
 
     const stats = Stats.computeStats(allItems);
     const facts = Stats.funFacts(allItems, stats);
-    const achievements = Stats.getAchievements(allItems);
+    const achievements = Stats.getAchievements(allItems, playDays);
 
     let html = "";
 
@@ -2368,6 +2368,27 @@
       '<span class="quest-hint-text">今日任务<br><b>' + taskDone + '/' + tasks.length + '</b></span>' +
       "</button></div>";
 
+    // 连续打卡条（收藏等级下方）
+    const sNow = Game.currentStreak(playDays);
+    const sBest = Game.bestStreak(playDays);
+    if (sNow >= 1) {
+      html += '<button class="streak-bar on" id="streakBar" title="去盘玩计划打卡">' +
+        '<span class="streak-fire">🔥</span>' +
+        '<span class="streak-txt">已连续盘串 <b>' + sNow + '</b> 天</span>' +
+        '<span class="streak-best">' + (sBest > sNow ? "最长 " + sBest + " 天" : "保持住！") + "</span>" +
+        "</button>";
+    } else if (sBest >= 2) {
+      html += '<button class="streak-bar" id="streakBar" title="去盘玩计划打卡">' +
+        '<span class="streak-fire dim">🔥</span>' +
+        '<span class="streak-txt">最长连续 <b>' + sBest + '</b> 天 · 今天盘一串继续</span>' +
+        "</button>";
+    } else {
+      html += '<button class="streak-bar" id="streakBar" title="去盘玩计划打卡">' +
+        '<span class="streak-fire dim">🔥</span>' +
+        '<span class="streak-txt">今天盘一串，开启连续打卡</span>' +
+        "</button>";
+    }
+
     // 折叠筛选区：按钮 + 可展开面板（先构建，最后在宝贝列表上方渲染，紧挨宝贝）
     let filterHtml = '';
     filterHtml += '<button class="filter-toggle" id="filterToggle">' +
@@ -2562,6 +2583,12 @@
     if (lb) lb.onclick = () => location.hash = "#/quest";
     const qh = $("#btnQuestHint");
     if (qh) qh.onclick = () => location.hash = "#/quest";
+    // 连续打卡条 → 滚动到盘玩计划
+    const sb = $("#streakBar");
+    if (sb) sb.onclick = () => {
+      const plan = document.querySelector(".plan-card");
+      if (plan) plan.scrollIntoView({ behavior: "smooth", block: "center" });
+    };
     // 折叠筛选面板（展开态持久化，点击筛选 chip 不收起）
     const ft = $("#filterToggle");
     if (ft) ft.onclick = () => {
@@ -3529,7 +3556,7 @@
 
     // 称号/徽章数据
     const lvGame = Game.getLevel(Game.computeXp(allItems, playDays).xp);
-    const allAch = Stats.getAchievements(allItems);
+    const allAch = Stats.getAchievements(allItems, playDays);
     const badgeIds = getBadgeIds();
     const badgeAch = [];
     const unlockedList = [];

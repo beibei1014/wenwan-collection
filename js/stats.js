@@ -141,6 +141,13 @@
   function nGift(items, s) { return s.gifted; }
   function nTotal(items, s) { return s.total; }
   function nSpent(items, s) { return s.totalSpent; }
+  // 累计盘玩次数（所有宝贝 playCount 之和）
+  function nPlays(items) { return items.reduce((s, i) => s + (Number(i.playCount) || 0), 0); }
+  // 历史最长连续打卡（依赖 game.js 的 bestStreak；未加载时降级为 0）
+  function nStreak(items, s, playDays) {
+    if (window.Game && window.Game.bestStreak) return window.Game.bestStreak(playDays || []);
+    return 0;
+  }
 
   const ACHIEVEMENT_GROUPS = [
     {
@@ -169,6 +176,26 @@
           { min: 100, icon: "👴", name: "菩提祖师", desc: "收藏 100 件菩提类宝贝，道法自然" },
           { min: 300, icon: "🦖", name: "菩提始祖", desc: "收藏 300 件菩提类宝贝，开山立派" },
           { min: 1000, icon: "🌱🌱", name: "菩提之神", desc: "收藏 1000 件菩提类宝贝，人间菩提" },
+        ] } },
+      ],
+    },
+    {
+      id: "play", title: "🤲 盘玩之道", icon: "🤲", desc: "盘串的修行（不靠买也能升级）",
+      items: [
+        { id: "play10", icon: "🤲", name: "初学盘串", desc: "累计盘玩 10 次", check: (s, items) => nPlays(items) >= 10 },
+        { id: "play50", icon: "💪", name: "手上有活", desc: "累计盘玩 50 次", check: (s, items) => nPlays(items) >= 50 },
+        { id: "streak3", icon: "🔥", name: "三日不辍", desc: "连续打卡 3 天", check: (s, items, pd) => nStreak(items, s, pd) >= 3 },
+        { id: "streak7", icon: "🔥", name: "一周铁手", desc: "连续打卡 7 天", check: (s, items, pd) => nStreak(items, s, pd) >= 7 },
+        { id: "streak30", icon: "🏔️", name: "月满功成", desc: "连续打卡 30 天", check: (s, items, pd) => nStreak(items, s, pd) >= 30 },
+        { id: "tier_play", icon: "🤲", name: "盘玩大师", desc: "累计盘玩继续精进", tier: { getValue: (items) => nPlays(items), levels: [
+          { min: 100, icon: "🤲", name: "盘玩大师", desc: "累计盘玩 100 次" },
+          { min: 300, icon: "✋", name: "无情铁手", desc: "累计盘玩 300 次" },
+          { min: 1000, icon: "🔥", name: "手都冒烟了", desc: "累计盘玩 1000 次" },
+        ] } },
+        { id: "tier_streak", icon: "🔥", name: "盘玩恒心", desc: "连续打卡的坚持", tier: { getValue: (items, s, pd) => nStreak(items, s, pd), levels: [
+          { min: 14, icon: "🔥", name: "半月不辍", desc: "连续打卡 14 天" },
+          { min: 100, icon: "🌋", name: "百日铁手", desc: "连续打卡 100 天" },
+          { min: 365, icon: "🌟", name: "全年无休", desc: "连续打卡 365 天" },
         ] } },
       ],
     },
@@ -252,8 +279,8 @@
   ];
 
   // tier 成就计算：返回 { current: 当前称号, next: 下一级, progress: 进度 }
-  function resolveTier(tierCfg, stats, items) {
-    const value = tierCfg.getValue(items, stats);
+  function resolveTier(tierCfg, stats, items, playDays) {
+    const value = tierCfg.getValue(items, stats, playDays);
     let current = null, next = null;
     for (const lv of tierCfg.levels) {
       if (value >= lv.min) current = lv;
@@ -266,15 +293,16 @@
     return { value, current, next, progress, unlocked: !!current };
   }
 
-  // 展开所有成就
-  function getAchievements(items) {
+  // 展开所有成就（playDays：盘玩打卡日期数组，用于盘玩/连续打卡成就）
+  function getAchievements(items, playDays) {
     const stats = computeStats(items);
     return ACHIEVEMENT_GROUPS.map((g) => {
       const resolved = g.items.map((a) => {
         if (a.tier) {
-          return { ...a, tierResolved: resolveTier(a.tier, stats, items), unlocked: !!resolveTier(a.tier, stats, items).current };
+          const tr = resolveTier(a.tier, stats, items, playDays);
+          return { ...a, tierResolved: tr, unlocked: !!tr.current };
         }
-        return { ...a, unlocked: a.check(stats, items) };
+        return { ...a, unlocked: a.check(stats, items, playDays) };
       });
       return { ...g, unlockedCount: resolved.filter((a) => a.unlocked).length, items: resolved };
     });
