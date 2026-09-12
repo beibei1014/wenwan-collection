@@ -11,7 +11,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
-  <link rel="stylesheet" href="css/style.css?v=20260928">
+  <link rel="stylesheet" href="css/style.css?v=20260929">
 </head>
 <body>
   <!-- 顶部标题栏 -->
@@ -54,7 +54,10 @@
   <div class="ai-panel" id="aiPanel" hidden>
     <div class="ai-head">
       <div class="ai-title"><span class="ai-head-cat"><img src="cat.png" alt="猫猫"></span> 收藏喵 AI 小助手 <small>DeepSeek</small></div>
-      <button class="ai-close" id="aiClose">✕</button>
+      <div class="ai-head-actions">
+        <button class="ai-clear" id="aiClear" title="清空对话">🧹</button>
+        <button class="ai-close" id="aiClose">✕</button>
+      </div>
     </div>
     <div class="ai-body" id="aiBody">
       <div class="ai-chat" id="aiChat"></div>
@@ -63,6 +66,8 @@
       <button class="ai-q" data-q="总结我最近的收藏情况">📊 总结收藏</button>
       <button class="ai-q" data-q="看看我这个月盘了哪些串">🤲 本月盘串</button>
       <button class="ai-q" data-q="我这个月买了什么">🛒 本月买串</button>
+      <button class="ai-q" data-q="哪些串该盘了？帮我按放置时间排个优先级">⏱ 哪些该盘</button>
+      <button class="ai-q" data-q="我这个月一共花了多少钱？">💰 本月花费</button>
     </div>
     <div class="ai-inputbar">
       <textarea id="aiInput" rows="1" placeholder="问问你的收藏馆，比如：帮我总结9月的盘串记录"></textarea>

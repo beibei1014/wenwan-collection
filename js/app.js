@@ -1308,6 +1308,26 @@
       "</div>";
   }
 
+  /* 标记「今日已盘」：记录今天盘过（lastPlayedAt=现在、状态=盘玩中、盘玩次数+1）
+     与详情页「✅ 今日盘过」同一套逻辑；失败自动回滚并抛出错误 */
+  async function markPlayedToday(item) {
+    const prevT = item.lastPlayedAt, prevSt = item.playStatus, prevC = item.playCount;
+    item.lastPlayedAt = Date.now();
+    item.playStatus = "playing";       // 盘完 → 盘玩中（放置时长从今天算起）
+    item.playCount = (item.playCount || 0) + 1;
+    try {
+      const saved = await DB.put(item);
+      if (!saved || (saved.lastPlayedAt == null && saved.playStatus !== "playing")) {
+        item.lastPlayedAt = prevT; item.playStatus = prevSt; item.playCount = prevC;
+        throw new Error("未保存：数据库缺 last_played_at 字段（请执行 alter SQL）");
+      }
+      return true;
+    } catch (err) {
+      item.lastPlayedAt = prevT; item.playStatus = prevSt; item.playCount = prevC;
+      throw err;
+    }
+  }
+
   /* ---------- 盘玩计划（轻量提醒，非打卡；紧凑网格 3-4/行，最多 2 行） ---------- */
   function renderPlayPlanSection() {
     const plan = Game.playPlan(allItems); // 全部候选池
@@ -1333,8 +1353,10 @@
         const it = x.item;
         const p = it.photos && it.photos[0];
         const img = p ? '<img src="' + photoUrl(p) + '" loading="lazy" alt="">' : '<div class="placeholder">📿</div>';
-        return '<div class="plan-cell" data-id="' + it.id + '" title="' + esc(it.name || "未命名") + '">' +
-          '<div class="plan-photo">' + img + "</div>" +
+        return '<div class="plan-cell" data-id="' + it.id + '" title="' + esc(it.name || "未命名") + '（点这里看详情）">' +
+          '<div class="plan-photo">' + img +
+          '<button type="button" class="plan-done-btn" data-id="' + it.id + '" title="今天盘过它了？点一下打卡">✓</button>' +
+          "</div>" +
           '<div class="plan-days' + (x.urgent ? " urgent" : "") + '">' + esc(x.text) + "</div>" +
           "</div>";
       }).join("");
@@ -1344,7 +1366,8 @@
     return '<div class="plan-card">' +
       '<div class="draw-head"><span class="draw-title">🧭 盘玩计划</span>' +
       '<span class="draw-sub">' + (urgentCount ? urgentCount + " 串该盘啦 · 温和提醒" : (shown.length ? "顺手盘一串，不着急" : "全部盘得很好")) +
-      (moreCount > 0 ? " · 还有 " + moreCount + " 串" : "") + "</span></div>" +
+      (moreCount > 0 ? " · 还有 " + moreCount + " 串" : "") +
+      (shown.length ? " · 点 ✓ 记今日已盘" : "") + "</span></div>" +
       bodyHtml +
       "</div>";
   }
@@ -2252,31 +2275,36 @@
         const label = window.Color ? window.Color.colorLabel(nc) : "";
         return (label + " " + nc).toLowerCase();
       };
-      // 价格区间查询解析：支持 "100-300" / "100-300元" / ">500" / "<100" / ">=200" / "≤50"
-      const priceTest = (() => {
+      // 价格区间查询解析：支持 "100-300" / ">500" / "<100" / ">=200"
+      const parsePriceTest = (str) => {
         let m;
-        if ((m = q.match(/^([<>])=?\s*(\d+)$/))) { const n = +m[2]; const op = m[1] + (m[0].indexOf("=") >= 0 ? "=" : ""); return (p) => op === ">=" ? p >= n : op === "<=" ? p <= n : op === ">" ? p > n : p < n; }
-        if ((m = q.match(/^(\d+)\s*[-~]\s*(\d+)/))) { const lo = +m[1], hi = +m[2]; return (p) => p >= lo && p <= hi; }
+        if ((m = str.match(/^([<>])=?\s*(\d+)$/))) { const n = +m[2]; const op = m[1] + (m[0].indexOf("=") >= 0 ? "=" : ""); return (p) => op === ">=" ? p >= n : op === "<=" ? p <= n : op === ">" ? p > n : p < n; }
+        if ((m = str.match(/^(\d+)\s*[-~]\s*(\d+)/))) { const lo = +m[1], hi = +m[2]; return (p) => p >= lo && p <= hi; }
         return null;
-      })();
-      list = list.filter((i) => {
+      };
+      // 单个关键词是否命中（多关键词按空格分隔、全部命中 = AND）
+      const matchTerm = (i, term) => {
+        const pt = parsePriceTest(term);
         const p = Number(i.price);
         const hasP = i.price != null && i.price !== "" && isFinite(p);
-        if (priceTest) return hasP && priceTest(p);
-        return (i.name || "").toLowerCase().includes(q) ||
-          (i.species || "").toLowerCase().includes(q) ||
-          (i.shop || "").toLowerCase().includes(q) ||
-          (i.note || "").toLowerCase().includes(q) ||
-          (i.category || "").toLowerCase().includes(q) ||
-          (i.craft || "").toLowerCase().includes(q) ||
-          shapeLabel(i.beadShape).toLowerCase().includes(q) ||
-          (i.accessoryType || "").toLowerCase().includes(q) ||
-          statusText(i).toLowerCase().includes(q) ||
-          colorText(i).includes(q) ||
-          (i.price != null && String(i.price).includes(q)) ||
-          (i.beadSize ? String(i.beadSize).includes(q) : false) ||
-          (i.pieceCount ? String(i.pieceCount).includes(q) : false);
-      });
+        if (pt) return hasP && pt(p);
+        return (i.name || "").toLowerCase().includes(term) ||
+          (i.species || "").toLowerCase().includes(term) ||
+          (i.shop || "").toLowerCase().includes(term) ||
+          (i.note || "").toLowerCase().includes(term) ||
+          (i.category || "").toLowerCase().includes(term) ||
+          (i.craft || "").toLowerCase().includes(term) ||
+          shapeLabel(i.beadShape).toLowerCase().includes(term) ||
+          (i.accessoryType || "").toLowerCase().includes(term) ||
+          statusText(i).toLowerCase().includes(term) ||
+          colorText(i).includes(term) ||
+          (i.price != null && String(i.price).includes(term)) ||
+          (i.beadSize ? String(i.beadSize).includes(term) : false) ||
+          (i.pieceCount ? String(i.pieceCount).includes(term) : false);
+      };
+      // 支持多关键词：搜索"菩提 绿"= 同时含"菩提"且含"绿"
+      const terms = q.split(/\s+/).filter(Boolean);
+      if (terms.length) list = list.filter((i) => terms.every((t) => matchTerm(i, t)));
     }
     return list;
   }
@@ -2621,6 +2649,34 @@
     view.querySelectorAll(".plan-cell[data-id]").forEach((c) => c.addEventListener("click", (e) => {
       e.stopPropagation();
       location.hash = "#/item/" + c.dataset.id;
+    }));
+    // 盘玩计划：点 ✓ → 今日已盘（带完成动画）
+    view.querySelectorAll(".plan-done-btn").forEach((b) => b.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const item = allItems.find((x) => x.id === b.dataset.id);
+      if (!item) return;
+      if (b.disabled) return;
+      b.disabled = true;
+      const cell = b.closest(".plan-cell");
+      try {
+        await markPlayedToday(item);
+        // 播放「完成」动画
+        b.classList.add("done");
+        if (cell) {
+          cell.classList.add("celebrate");
+          const days = cell.querySelector(".plan-days");
+          if (days) { days.textContent = "今天盘过 ✓"; days.classList.remove("urgent"); days.classList.add("done-today"); }
+        }
+        toast("✅ 已完成！今天盘过「" + (item.name || "未命名") + "」");
+        // 让动画播完再刷新（刷新后它就从计划里消失了）
+        setTimeout(() => {
+          const onHome = (location.hash === "#/" || location.hash === "" || location.hash === "#");
+          if (onHome && document.getElementById("gridHolder")) renderHome();
+        }, 900);
+      } catch (err) {
+        b.disabled = false;
+        toast("记录失败：" + err.message);
+      }
     }));
   }
 
@@ -3930,17 +3986,21 @@
   }
 
   // 把收藏摘要 + 用户问题发给 DeepSeek，返回回答
+  // 多轮对话：保留最近几轮上下文，便于追问（如「那第 2 串呢？」）
+  let aiHistory = []; // [{role:"user"|"assistant", content:string}]
+  const AI_HISTORY_MAX = 6; // 最多保留 6 条（3 轮问答）
   async function askAI(userMessage) {
     const key = getAiKey();
     if (!key) throw new Error("还未配置 DeepSeek API key，请到「设置 → AI 助手密钥」填写你自己的 key");
     const summary = buildCollSummary();
     const sysMsg = "你是我的收藏馆AI小助手，懂文玩/手串/拼图/收藏。请用简体中文、简短友好地回答。\n"
-      + "规则：1) 回答涉及时间的问题时，必须以【当前日期】为基准，不要臆测日期；2) 判断「今天有没有盘串」「今天盘了几串」时，直接依据【今日已盘】和明细里标注的【今天盘过】统计，不要凭空说没有；3) 数据里没有的不要编造。\n"
+      + "规则：1) 回答涉及时间的问题时，必须以【当前日期】为基准，不要臆测日期；2) 判断「今天有没有盘串」「今天盘了几串」时，直接依据【今日已盘】和明细里标注的【今天盘过】统计，不要凭空说没有；3) 数据里没有的不要编造；4) 记住前面的对话，用户可能用「它/这个/第2串」指代上文。\n"
       + "以下是收藏数据：\n" + summary;
     const body = {
       model: AI_MODEL,
       messages: [
         { role: "system", content: sysMsg },
+        ...aiHistory,
         { role: "user", content: userMessage },
       ],
       max_tokens: 1000,
@@ -3962,7 +4022,21 @@
     const msg = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message : null;
     if (!msg) return "";
     // 关闭思考后正文在 content；仍留 reasoning_content 兜底以防某些情况
-    return (msg.content && msg.content.trim()) ? msg.content.trim() : (msg.reasoning_content || "");
+    const answer = (msg.content && msg.content.trim()) ? msg.content.trim() : (msg.reasoning_content || "");
+    // 记入历史（限制长度，避免越积越多）
+    if (answer) {
+      aiHistory.push({ role: "user", content: userMessage });
+      aiHistory.push({ role: "assistant", content: answer });
+      if (aiHistory.length > AI_HISTORY_MAX) aiHistory = aiHistory.slice(-AI_HISTORY_MAX);
+    }
+    return answer;
+  }
+
+  // 清空 AI 对话（DOM + 历史）
+  function clearAIChat() {
+    aiHistory = [];
+    const chat = $("#aiChat");
+    if (chat) chat.innerHTML = '<div class="ai-greeting">🧹 对话已清空。有什么想问的尽管说～</div>';
   }
 
   // AI 面板 UI
@@ -4017,6 +4091,7 @@
     const close = () => { if (panel) panel.hidden = true; };
     if (fab) fab.onclick = open;
     const ac = $("#aiClose"); if (ac) ac.onclick = close;
+    const clr = $("#aiClear"); if (clr) clr.onclick = (e) => { e.stopPropagation(); clearAIChat(); };
     // 点击面板外关闭
     document.addEventListener("click", (e) => {
       if (panel && !panel.hidden && !panel.contains(e.target) && e.target !== fab && !fab.contains(e.target)) close();
