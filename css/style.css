@@ -903,6 +903,13 @@ img { display:block; }
 .plan-done-btn:active { transform:scale(.82); }
 .plan-done-btn.done { background:linear-gradient(135deg,#66bb6a,#43a047); transform:scale(1.25); }
 .plan-days.done-today { color:#2e7d32; font-weight:700; }
+/* 连续打卡火苗 */
+.plan-streak {
+  flex-shrink:0; font-size:11px; font-weight:700; color:#e65100;
+  background:linear-gradient(135deg,#fff3e0,#ffe0b2); border:1px solid #ffcc80;
+  border-radius:12px; padding:2px 8px; white-space:nowrap;
+}
+.plan-streak.dim { color:#9e9e9e; background:var(--bg); border-color:var(--line); }
 /* 格子完成动画：弹一下 + 绿色光环扩散 */
 .plan-cell.celebrate { animation:planPop .55s cubic-bezier(.34,1.56,.64,1); }
 @keyframes planPop {

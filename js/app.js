@@ -13,6 +13,7 @@
   const btnSettings = $("#btnSettings");
 
   let allItems = [];
+  let playDays = [];   // 盘玩打卡日期数组（YYYY-MM-DD），用于连续打卡
   let filter = "all";        // 兼容旧：单值；现用多选 selectFilters
   let categoryFilter = "";   // 收藏盒子筛选
   const selectFilters = new Set(); // 多选状态筛选（空=全部）
@@ -449,7 +450,7 @@
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
 
-    const game = Game.computeXp(allItems);
+    const game = Game.computeXp(allItems, playDays);
     const level = Game.getLevel(game.xp);
     const tasks = Game.dailyTasks(allItems);
     const noBuy = Game.noBuyChallenge(allItems);
@@ -574,7 +575,7 @@
     const totalUnlocked = achievements.reduce((s, g) => s + g.unlockedCount, 0);
 
     // 称号栏（等级称号 + 自选徽章）
-    const lvGame = Game.getLevel(Game.computeXp(allItems).xp);
+    const lvGame = Game.getLevel(Game.computeXp(allItems, playDays).xp);
     const badgeIds = getBadgeIds();
     const badgeAch = [];
     achievements.forEach((g) => g.items.forEach((a) => { if (a.unlocked && badgeIds.includes(a.id)) badgeAch.push(a); }));
@@ -1083,17 +1084,14 @@
     });
 
     $("#btnPlayedToday").onclick = async () => {
-      const prevSt = item.playStatus;
-      const prevT = item.lastPlayedAt;
-      const prevC = item.playCount;
-      item.lastPlayedAt = Date.now();
-      item.playStatus = "playing"; // 盘完 → 盘玩中（放置时长从今天算起）
-      item.playCount = (item.playCount || 0) + 1; // 记录盘玩次数
       try {
-        const saved = await DB.put(item);
-        if (!saved || (saved.lastPlayedAt == null && saved.playStatus !== "playing")) { item.lastPlayedAt = prevT; item.playStatus = prevSt; item.playCount = prevC; toast("⚠️ 未保存：缺少 last_played_at 字段"); }
-        else { done(); toast("✅ 已记录今天盘过，开始放置"); refreshAfterToggle(); }
-      } catch (err) { item.playStatus = prevSt; item.playCount = prevC; toast("记录失败：" + err.message); }
+        await markPlayedToday(item);
+        done();
+        toast("✅ 已记录今天盘过，开始放置");
+        refreshAfterToggle();
+      } catch (err) {
+        toast("记录失败：" + err.message);
+      }
     };
   }
 
@@ -1309,7 +1307,7 @@
   }
 
   /* 标记「今日已盘」：记录今天盘过（lastPlayedAt=现在、状态=盘玩中、盘玩次数+1）
-     与详情页「✅ 今日盘过」同一套逻辑；失败自动回滚并抛出错误 */
+     同时把今天加入打卡日期（连续打卡）；与详情页「✅ 今日盘过」同一套逻辑 */
   async function markPlayedToday(item) {
     const prevT = item.lastPlayedAt, prevSt = item.playStatus, prevC = item.playCount;
     item.lastPlayedAt = Date.now();
@@ -1321,10 +1319,30 @@
         item.lastPlayedAt = prevT; item.playStatus = prevSt; item.playCount = prevC;
         throw new Error("未保存：数据库缺 last_played_at 字段（请执行 alter SQL）");
       }
+      // 记录今天的打卡（用于连续打卡；失败不阻断主流程）
+      await recordPlayDay();
       return true;
     } catch (err) {
       item.lastPlayedAt = prevT; item.playStatus = prevSt; item.playCount = prevC;
       throw err;
+    }
+  }
+
+  // 把「今天」记入打卡日期并保存（幂等：今天已存在则不重复）
+  async function recordPlayDay() {
+    const tk = Game.todayKey();
+    if (playDays.includes(tk)) return true;      // 今天已记过
+    const prev = playDays.slice();
+    playDays = Game.normDays(playDays.concat([tk]));
+    try {
+      const ok = await DB.setPlayDays(user.id, playDays);
+      if (!ok) { /* 缺 play_days 列：本机保留、提示一次 */ 
+        if (!recordPlayDay._warned) { recordPlayDay._warned = true; toast("🔥 连续打卡已在本机记录；云端未保存（profiles 缺 play_days 列，请执行 alter SQL）"); }
+      }
+      return ok;
+    } catch (e) {
+      playDays = prev;                            // 保存失败则回滚
+      return false;
     }
   }
 
@@ -1364,9 +1382,16 @@
       bodyHtml = '<div class="plan-grid">' + cells + "</div>";
     }
 
+    // 连续打卡（当前 / 历史最长）
+    const streakNow = Game.currentStreak(playDays);
+    const streakBest = Game.bestStreak(playDays);
+    const streakTxt = streakNow >= 1
+      ? '<span class="plan-streak" title="当前连续打卡 ' + streakNow + ' 天；历史最长 ' + streakBest + ' 天">🔥 连续 ' + streakNow + ' 天</span>'
+      : (streakBest >= 2 ? '<span class="plan-streak dim" title="历史最长 ' + streakBest + ' 天，今天还没打卡">🔥 最长 ' + streakBest + ' 天</span>' : "");
+
     return '<div class="plan-card">' +
-      '<div class="draw-head"><span class="draw-title">🧭 盘玩计划</span>' +
-      '<span class="draw-sub">' + (urgentCount ? urgentCount + " 串该盘啦 · 温和提醒" : (shown.length ? "顺手盘一串，不着急" : "全部盘得很好")) +
+      '<div class="draw-head"><span class="draw-title">🧭 盘玩计划</span>' + streakTxt +
+      '<span class="draw-sub">' + (urgentCount ? urgentCount + " 串该盘啦" : (shown.length ? "顺手盘一串" : "全部盘得很好")) +
       (moreCount > 0 ? " · 还有 " + moreCount + " 串" : "") +
       (shown.length ? " · 点 ✓ 记今日已盘" : "") + "</span></div>" +
       bodyHtml +
@@ -2104,6 +2129,8 @@
       const prof = await DB.getProfile(user.id);
       user.displayName = prof.display_name || "";
       await loadItems();
+      // 加载盘玩打卡日期（连续打卡用；缺列时静默为空）
+      try { playDays = Game.normDays(await DB.getPlayDays(user.id)); } catch (e) { playDays = []; }
     } catch (e) { /* 表未建好时显示错误 */ }
     // 首次登录：无显示名则引导设置
     if (user && !user.displayName && location.hash !== "#/profile") {
@@ -2317,7 +2344,7 @@
     btnSettings.style.visibility = "visible";
 
     // 等级经验条（游戏化）
-    const gameInfo = Game.computeXp(allItems);
+    const gameInfo = Game.computeXp(allItems, playDays);
     const lvInfo = Game.getLevel(gameInfo.xp);
 
     // 今日任务完成情况
@@ -3501,7 +3528,7 @@
     const played = allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus !== "" && i.playStatus !== "unplayed").length;
 
     // 称号/徽章数据
-    const lvGame = Game.getLevel(Game.computeXp(allItems).xp);
+    const lvGame = Game.getLevel(Game.computeXp(allItems, playDays).xp);
     const allAch = Stats.getAchievements(allItems);
     const badgeIds = getBadgeIds();
     const badgeAch = [];
@@ -3802,7 +3829,7 @@
   /* ---------- 升级弹窗 ---------- */
   function checkLevelUp() {
     try {
-      const game = Game.computeXp(allItems);
+      const game = Game.computeXp(allItems, playDays);
       const lv = Game.getLevel(game.xp);
       const prev = parseInt(localStorage.getItem("ww_level") || "0", 10);
       if (prev > 0 && lv.level > prev) {

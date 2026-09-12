@@ -6,8 +6,48 @@
 (function () {
   "use strict";
 
+  /* ---------- 盘玩打卡（连续天数 / 历史最长） ---------- */
+  function dayKeyFromTs(ts) {
+    const d = new Date(ts);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function todayKey() { return dayKeyFromTs(Date.now()); }
+  function dayKeyToTs(key) { const p = String(key).split("-").map(Number); return new Date(p[0], p[1] - 1, p[2]).getTime(); }
+  // 规整打卡日期数组：去重 + 升序（只保留 YYYY-MM-DD）
+  function normDays(days) {
+    const set = new Set((days || []).filter((x) => typeof x === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x)));
+    return Array.from(set).sort();
+  }
+  // 历史最长连续打卡（只增不减 → 用于 XP，避免断签降级）
+  function bestStreak(days) {
+    const arr = normDays(days);
+    if (!arr.length) return 0;
+    let best = 1, cur = 1;
+    for (let i = 1; i < arr.length; i++) {
+      const diff = Math.round((dayKeyToTs(arr[i]) - dayKeyToTs(arr[i - 1])) / 86400000);
+      if (diff === 1) cur++;
+      else if (diff > 1) cur = 1;
+      if (cur > best) best = cur;
+    }
+    return best;
+  }
+  // 当前连续打卡（今天没打则从昨天往前算；断了返回 0）
+  function currentStreak(days) {
+    const set = new Set(normDays(days));
+    if (!set.size) return 0;
+    const DAY = 86400000;
+    const todayTs = dayKeyToTs(todayKey());
+    let ts;
+    if (set.has(todayKey())) ts = todayTs;
+    else if (set.has(dayKeyFromTs(todayTs - DAY))) ts = todayTs - DAY;
+    else return 0;
+    let n = 0;
+    while (set.has(dayKeyFromTs(ts))) { n++; ts -= DAY; }
+    return n;
+  }
+
   /* ---------- 经验里程碑（达到即得经验，幂等可重复计算） ---------- */
-  function computeXp(items) {
+  function computeXp(items, playDays) {
     const stats = Stats.computeStats(items);
     const playedCount = items.filter((i) => i.playStatus === "playing").length;
     const puzzleDone = items.filter((i) => i.playStatus === "puzzle_done").length;
@@ -61,11 +101,27 @@
       if (catCount >= c) { xp += catXp[i]; milestones.push({ icon: "🗃️", name: "覆盖 " + c + " 个收藏盒子", xp: catXp[i] }); }
     });
 
-    // 盘玩
+    // 盘玩（正在盘玩的条数）
     const plays = [1, 5];
     const playXp = [50, 200];
     plays.forEach((c, i) => {
       if (playedCount >= c) { xp += playXp[i]; milestones.push({ icon: "🤲", name: c + " 条正在盘玩", xp: playXp[i] }); }
+    });
+
+    // 累计盘玩次数（只增不减 → 盘串也能升级，不靠买买买）
+    const totalPlays = items.reduce((s, i) => s + (Number(i.playCount) || 0), 0);
+    const playCnts = [10, 50, 100, 300, 1000];
+    const playCntXp = [60, 200, 500, 1500, 4000];
+    playCnts.forEach((c, i) => {
+      if (totalPlays >= c) { xp += playCntXp[i]; milestones.push({ icon: "🤲", name: "累计盘玩 " + c + " 次", xp: playCntXp[i] }); }
+    });
+
+    // 连续打卡（用「历史最长」算 XP → 只增不减，断签不会掉级）
+    const bStreak = bestStreak(playDays);
+    const streakCnts = [3, 7, 14, 30, 100];
+    const streakXp = [80, 200, 450, 1200, 4000];
+    streakCnts.forEach((c, i) => {
+      if (bStreak >= c) { xp += streakXp[i]; milestones.push({ icon: "🔥", name: "连续打卡 " + c + " 天", xp: streakXp[i] }); }
     });
 
     // 陪伴总天数
@@ -90,7 +146,7 @@
       if (noBuyDays >= c) { xp += noBuyXp[i]; milestones.push({ icon: "🧘", name: "不买挑战 " + c + " 天", xp: noBuyXp[i] }); }
     });
 
-    return { xp, milestones, stats, noBuyDays, puzzleDone, playedCount, catCount, photoCount, totalDays };
+    return { xp, milestones, stats, noBuyDays, puzzleDone, playedCount, catCount, photoCount, totalDays, totalPlays, bestStreak: bStreak, currentStreak: currentStreak(playDays) };
   }
 
   /* ---------- 不买挑战：距离上次购买天数 ---------- */
@@ -340,5 +396,5 @@
     return result;
   }
 
-  window.Game = { computeXp, getLevel, dailyTasks, noBuyChallenge, boxProgress, daysSinceLastBuy, drawRecommendation, isDrawable, playPlan };
+  window.Game = { computeXp, getLevel, dailyTasks, noBuyChallenge, boxProgress, daysSinceLastBuy, drawRecommendation, isDrawable, playPlan, bestStreak, currentStreak, todayKey, normDays };
 })();

@@ -155,6 +155,35 @@
     return display_name;
   }
 
+  /* ---------- 盘玩打卡日期（连续打卡用；存 profiles.play_days，jsonb 数组） ---------- */
+  const PLAY_DAYS_COL = "play_days";
+  async function getPlayDays(userId) {
+    const sb = getSupabase();
+    const { data, error } = await sb.from("profiles").select(PLAY_DAYS_COL).eq("id", userId).maybeSingle();
+    if (error) {
+      // 表/列不存在 → 静默降级为空（不崩）
+      if (error.code === "PGRST116") return [];
+      if (error.message && (error.message.includes("Could not find the table") || error.message.includes("Could not find the"))) return [];
+      throw error;
+    }
+    const v = data ? data[PLAY_DAYS_COL] : null;
+    return Array.isArray(v) ? v : [];
+  }
+  // 返回是否成功写入（缺列时返回 false，由上层提示执行 SQL）
+  async function setPlayDays(userId, days) {
+    const sb = getSupabase();
+    const arr = Array.isArray(days) ? days : [];
+    const { error } = await sb.from("profiles").upsert(
+      { id: userId, [PLAY_DAYS_COL]: arr, updated_at: new Date().toISOString() },
+      { onConflict: "id" }
+    );
+    if (error) {
+      if (error.message && error.message.includes("Could not find the")) return false; // 缺列 → 降级
+      throw error;
+    }
+    return true;
+  }
+
   function onAuthChange(cb) {
     const sb = getSupabase();
     sb.auth.onAuthStateChange((event, session) => cb(event, session));
@@ -337,7 +366,7 @@
   window.DB = {
     getSupabase,
     getSession, signUp, signIn, signOut, updatePassword, onAuthChange,
-    getProfile, setDisplayName,
+    getProfile, setDisplayName, getPlayDays, setPlayDays,
     getAll, getById, put, remove,
     uploadPhoto, deletePhoto,
     exportBackup, importBackup,
