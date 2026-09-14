@@ -2139,6 +2139,8 @@
       await loadItems();
       // 加载盘玩打卡日期（连续打卡用；缺列时静默为空）
       try { playDays = Game.normDays(await DB.getPlayDays(user.id)); } catch (e) { playDays = []; }
+      // 历史数据回填：给已盘过的老串补「首次盘玩时间」（用系统里最早的盘玩记录）
+      try { await backfillFirstPlayed(); } catch (e) {}
     } catch (e) { /* 表未建好时显示错误 */ }
     // 首次登录：无显示名则引导设置
     if (user && !user.displayName && location.hash !== "#/profile") {
@@ -2184,6 +2186,38 @@
     } catch (e) {
     } finally {
       _backfilling = false;
+    }
+  }
+
+  /* 历史数据回填：给「有盘玩记录但没首次盘玩时间」的宝贝补上「系统里已有的最早盘玩记录」
+     （优先取打卡历史最早的日期；没有打卡历史则取所有 lastPlayedAt 里最早的） */
+  let _backfillFirst = false;
+  async function backfillFirstPlayed() {
+    if (_backfillFirst) return;
+    const need = allItems.filter((i) => !i.firstPlayedAt && ((Number(i.playCount) || 0) > 0 || i.lastPlayedAt));
+    if (!need.length) return;
+    // 1) 打卡历史里最早的日期
+    let earliest = null;
+    if (playDays && playDays.length) {
+      const t = new Date(playDays[0] + "T12:00:00").getTime(); // playDays 已按升序规整
+      if (isFinite(t)) earliest = t;
+    }
+    // 2) 退路：所有宝贝 lastPlayedAt 里最早的那个
+    if (earliest == null) {
+      allItems.forEach((i) => { if (i.lastPlayedAt && (earliest == null || i.lastPlayedAt < earliest)) earliest = i.lastPlayedAt; });
+    }
+    if (earliest == null) return; // 系统里完全没有盘玩记录 → 不回填
+    _backfillFirst = true;
+    try {
+      let changed = 0;
+      for (const it of need) {
+        it.firstPlayedAt = earliest;
+        try { await DB.put(it); changed++; } catch (e) { it.firstPlayedAt = null; }
+      }
+      if (changed && document.getElementById("gridHolder")) updateGrid();
+    } catch (e) {
+    } finally {
+      _backfillFirst = false;
     }
   }
 
