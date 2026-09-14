@@ -1155,6 +1155,50 @@
     };
   }
 
+  /* 手动设置「首次盘玩时间」（用于看从开始盘到盘好用了多久） */
+  function promptSetFirstPlayed(item, onDone) {
+    const mask = $("#modalMask");
+    const modal = $("#modal");
+    const cur = item.firstPlayedAt ? new Date(item.firstPlayedAt) : new Date();
+    const curVal = cur.getFullYear() + "-" + String(cur.getMonth() + 1).padStart(2, "0") + "-" + String(cur.getDate()).padStart(2, "0");
+
+    let html = '<h3 style="text-align:center">设置首次盘玩时间</h3>';
+    html += '<p style="text-align:center;color:var(--text-2);font-size:12px;margin-bottom:12px">这是你第一次开始盘它的时间，用来算「从开始盘到盘好」用了多久</p>';
+    html += '<input class="form-input" id="fpDate" type="date" value="' + curVal + '">';
+    html += '<button type="button" id="fpSave" class="btn primary" style="width:100%;margin-top:10px">保存</button>';
+    html += '<button type="button" id="fpClear" class="btn ghost" style="width:100%;margin-top:8px">清除首次盘玩时间</button>';
+    html += '<button type="button" id="mCancel" class="btn ghost" style="width:100%;margin-top:8px">取消</button>';
+
+    modal.innerHTML = html;
+    modal.hidden = false; modal.style.display = "";
+    mask.hidden = false;
+
+    const done = () => { modal.hidden = true; modal.style.display = ""; mask.hidden = true; };
+    $("#mCancel").onclick = done;
+
+    async function save(v) {
+      const prev = item.firstPlayedAt;
+      item.firstPlayedAt = v;
+      try {
+        const saved = await DB.put(item);
+        if (!saved || (v && !saved.firstPlayedAt)) {
+          item.firstPlayedAt = prev;
+          toast("⚠️ 未保存：数据库缺 first_played_at 字段（请执行 alter SQL）");
+          return;
+        }
+        done();
+        toast(v ? "✅ 已设置首次盘玩时间" : "已清除首次盘玩时间");
+        onDone && onDone();
+      } catch (err) { item.firstPlayedAt = prev; toast("保存失败：" + err.message); }
+    }
+    $("#fpSave").onclick = () => {
+      const dv = $("#fpDate").value;
+      if (!dv) { toast("请选择日期"); return; }
+      save(new Date(dv + "T12:00:00").getTime());
+    };
+    $("#fpClear").onclick = () => save(null);
+  }
+
   /* 设置主色弹窗 */
   function promptSetColor(item, onDone) {
     const mask = $("#modalMask");
@@ -3119,15 +3163,17 @@
         html += infoItem("盘玩时长", "未记录 <button type=\"button\" class=\"link-btn\" id=\"editLastPlayed\">设置上次盘玩</button>", true);
       }
       html += infoItem("盘玩次数", (Number(it.playCount) || 0) + " 次", true);
-      // 首次盘玩时间 + 盘玩周期（从开始盘到盘好大概多久）
+      // 首次盘玩时间（可手动设置）+ 盘玩周期（从开始盘到盘好大概多久）
       if (it.firstPlayedAt) {
         const fp = new Date(it.firstPlayedAt);
         const spanDays = Math.floor((Date.now() - it.firstPlayedAt) / 86400000);
-        html += infoItem("首次盘玩", (fp.getMonth() + 1) + "月" + fp.getDate() + "日" + (spanDays > 0 ? "（从开始盘至今 " + DB.formatDays(spanDays) + "）" : "（就是今天）"), true);
+        html += infoItem("首次盘玩", (fp.getMonth() + 1) + "月" + fp.getDate() + "日" + (spanDays > 0 ? "（从开始盘至今 " + DB.formatDays(spanDays) + "）" : "（就是今天）") + '<button type="button" class="link-btn" id="editFirstPlayed">修改</button>', true);
         if (it.playStatus === "done" && it.lastPlayedAt && it.lastPlayedAt >= it.firstPlayedAt) {
           const cycle = Math.max(1, Math.round((it.lastPlayedAt - it.firstPlayedAt) / 86400000));
           html += infoItem("盘玩周期", "从开始盘到盘好约 " + DB.formatDays(cycle) + " 🌾", true);
         }
+      } else {
+        html += infoItem("首次盘玩", '未记录 <button type="button" class="link-btn" id="editFirstPlayed">设置</button>', true);
       }
     }
     // 颜色：显示主色 + 可点击修改（旧值归一化）
@@ -3197,6 +3243,12 @@
     if (elp) elp.onclick = (e) => {
       e.stopPropagation();
       promptSetLastPlayed(it, () => renderDetail(id));
+    };
+    // 修改首次盘玩时间（用于算「从开始盘到盘好」多久）
+    const efp = $("#editFirstPlayed");
+    if (efp) efp.onclick = (e) => {
+      e.stopPropagation();
+      promptSetFirstPlayed(it, () => renderDetail(id));
     };
     // 修改主色
     const ec = $("#editColor");
