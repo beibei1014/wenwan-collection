@@ -249,10 +249,12 @@ img { display:block; }
   position:relative;
 }
 .card:active { transform:scale(.97); }
-.card-thumb { position:relative; aspect-ratio:1/1; background:var(--ph-bg, #efe9dd); overflow:hidden; }
-.card-thumb img { width:100%; height:100%; object-fit:cover; }
+/* 同样用 padding-top 正方形方案（不依赖 aspect-ratio），保证卡片等大 */
+.card-thumb { position:relative; width:100%; padding-top:100%; height:0; background:var(--ph-bg, #efe9dd); overflow:hidden; }
+.card-thumb img { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; }
 .card-thumb .placeholder {
-  width:100%; height:100%; display:flex; align-items:center; justify-content:center;
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  display:flex; align-items:center; justify-content:center;
   font-size:34px; color:#c9b89c; background:linear-gradient(135deg,#efe9dd,var(--ph-bg2, #e6dcc8));
 }
 .badge { position:absolute; top:8px; left:8px; font-size:11px; padding:2px 8px; border-radius:10px; color:#fff; }
@@ -386,10 +388,10 @@ img { display:block; }
 .check-row input { width:20px; height:20px; accent-color:var(--wood); }
 
 .upload-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
-.upload-cell { position:relative; aspect-ratio:1/1; border-radius:10px; overflow:hidden; border:1px dashed var(--line); background:var(--card); }
+.upload-cell { position:relative; width:100%; padding-top:100%; height:0; border-radius:10px; overflow:hidden; border:1px dashed var(--line); background:var(--card); }
 .upload-cell.has { border-style:solid; }
-.upload-cell img { width:100%; height:100%; object-fit:cover; }
-.upload-add { display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--text-2); font-size:11px; gap:2px; }
+.upload-cell img { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; }
+.upload-add { position:absolute; top:0; left:0; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--text-2); font-size:11px; gap:2px; }
 .upload-add .plus { font-size:24px; line-height:1; }
 .upload-del { position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%; background:rgba(0,0,0,.55); color:#fff; font-size:13px; display:flex; align-items:center; justify-content:center; }
 .ocr-hint { margin-top:8px; font-size:12px; color:var(--gold); background:#fff8e1; border:1px solid #ffecb3; padding:8px 10px; border-radius:10px; line-height:1.6; display:none; }
