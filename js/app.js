@@ -208,6 +208,15 @@
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
+  // 名字太长在窄格子里会挤成一团：统一按「字数上限」截断（中文按 1 个字算，超出用 …）
+  // 只影响显示，原名字保存在数据里不变；title 属性仍给完整名字（长按/悬停可见）
+  const NAME_MAX = { plan: 5, card: 9, list: 14 };
+  function clipName(s, max) {
+    const t = String(s == null ? "" : s).replace(/\s+/g, " ").trim();
+    if (!t) return "未命名";
+    const chars = Array.from(t);            // 按码点切，避免把 emoji 切坏
+    return chars.length > max ? chars.slice(0, max).join("") + "…" : t;
+  }
   function fmtDate(ts) {
     if (!ts) return "—";
     const d = new Date(ts);
@@ -822,7 +831,7 @@
       html += '<div class="card" data-id="' + it.id + '">' +
         '<div class="card-thumb">' + img + badge + statusBadge + stars + "</div>" +
         '<div class="card-body">' +
-        '<div class="card-name">' + esc(it.name || "未命名") + "</div>" +
+        '<div class="card-name">' + esc(clipName(it.name, NAME_MAX.card)) + "</div>" +
         '<div class="card-sub">' + shapeTagHtml(it) + '<span>' + esc(it.species || it.beadSize ? (it.beadSize ? it.beadSize + "mm" : it.species || "") : "") + '</span><span class="days">' + esc(days) + "</span></div>" +
         "</div></div>";
     }
@@ -1427,7 +1436,7 @@
           '<div class="plan-photo">' + img +
           '<button type="button" class="plan-done-btn" data-id="' + it.id + '" title="今天盘过它了？点一下打卡">✓</button>' +
           "</div>" +
-          '<div class="plan-name">' + esc(it.name || "未命名") + "</div>" +
+          '<div class="plan-name" title="' + esc(it.name || "未命名") + '">' + esc(clipName(it.name, NAME_MAX.plan)) + "</div>" +
           '<div class="plan-days' + (x.urgent ? " urgent" : "") + '">' + esc(x.text) + "</div>" +
           "</div>";
       }).join("");
@@ -1490,7 +1499,7 @@
         html += '<div class="list-item multi-item' + (checked ? " checked" : "") + '" data-id="' + it.id + '">' +
           '<div class="list-thumb">' + img + "</div>" +
           '<div class="list-info">' +
-          '<div class="list-name">' + esc(it.name || "未命名") + "</div>" +
+          '<div class="list-name">' + esc(clipName(it.name, NAME_MAX.list)) + "</div>" +
           '<div class="list-sub">' + esc(cardSubText(it)) + (it.category ? " · " + esc(it.category) : "") + "</div>" +
           '<div class="list-meta">' + colorTag + shapeTag + statusTag + "</div>" +
           "</div>" +
@@ -1798,7 +1807,7 @@
         html += '<div class="card" data-i="' + i + '">' +
           '<div class="card-thumb">' + img + "</div>" +
           '<div class="card-body">' +
-          '<div class="card-name">' + esc(it.name || "未命名·第" + (i + 1) + "条") + "</div>" +
+          '<div class="card-name">' + esc(it.name ? clipName(it.name, NAME_MAX.card) : "未命名·第" + (i + 1) + "条") + "</div>" +
           '<div class="card-sub"><span>' + esc(it.shop || "") + '</span><span class="days">' + (it.price != null ? "¥" + it.price : "") + "</span></div>" +
           "</div></div>";
       });
@@ -2632,7 +2641,7 @@
           '<div class="list-item" data-id="' + it.id + '">' +
           '<div class="list-thumb">' + img + "</div>" +
           '<div class="list-info">' +
-          '<div class="list-name">' + esc(it.name || "未命名") + "</div>" +
+          '<div class="list-name">' + esc(clipName(it.name, NAME_MAX.list)) + "</div>" +
           '<div class="list-sub">' + esc(cardSubText(it)) + (it.category ? " · " + esc(it.category) : "") + "</div>" +
           '<div class="list-meta">' +
           (it.shop ? '<span class="list-shop">🏪 ' + esc(it.shop) + "</span>" : "") +
@@ -2667,7 +2676,7 @@
       h += '<div class="card" data-id="' + it.id + '">' +
         '<div class="card-thumb">' + img + badge + statusBadge + stars + "</div>" +
         '<div class="card-body">' +
-        '<div class="card-name">' + esc(it.name || "未命名") + "</div>" +
+        '<div class="card-name">' + esc(clipName(it.name, NAME_MAX.card)) + "</div>" +
         '<div class="card-sub">' + colorTagHtml(it) + shapeTagHtml(it) + '<span class="days">' + esc(days) + "</span></div>" +
         "</div></div>";
     }

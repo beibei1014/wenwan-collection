@@ -82,7 +82,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v83）
+## 五、功能清单（截至 v84）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -172,6 +172,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
     - 缓存 v81
 62. **缩略图方格改用 padding-top 方案（v82）**：v81 只把 `object-fit` 改成 `cover`，但**根因是 `aspect-ratio` 在部分手机浏览器/内置 WebView 不生效**——容器高度会跟随图片自然高度，不同比例的图仍"有大有小"。改为 **`width:100%; padding-top:100%; height:0`** 的经典正方形方案（padding 百分比相对宽度计算），图片/占位符改 `position:absolute` 填满：`.plan-photo`（cover）与 `.draw-thumb`（保留 contain 不裁剪）同时加固，**不依赖 `aspect-ratio`，所有浏览器都严格等大**。缓存 v82
 63. **正方形方案推广到全部缩略图（v83）**：把 v82 的 padding-top 方案继续覆盖 **首页卡片网格 `.card-thumb`** 与 **编辑页照片上传格 `.upload-cell`**（图片 `position:absolute` 填满、`object-fit:cover`，占位符同样绝对定位居中）。现在**全站所有图片方格**（卡片/上传格/盘玩计划/今日心选）都不依赖 `aspect-ratio`，任何比例的照片、任何浏览器渲染出来都严格等大。缓存 v83
+64. **名字按字数截断（v84）**：新增 `clipName(s, max)` + `NAME_MAX = { plan: 5, card: 9, list: 14 }`——**盘玩计划格 5 字、首页卡片 9 字、列表 14 字**，超出显示 `…`；`Array.from` 按码点切分（emoji/组合符号不会被切坏）、连续空白折叠为 1 个空格、空名字回落「未命名」。**只影响显示，数据库里的原名字不动**；盘玩计划格的 `title` 仍带完整名字。作用范围：`gridHtml` 卡片、盘玩计划格、两处列表行、多选编辑卡片（详情页大标题保留完整名字）。实测（375px 手机宽、真实 CSS）：4 张不同比例图 `.plan-photo` 全为 119×119、格子全为 119×151、名字行全为 1 行 13px 无溢出。缓存 v84
 
 > ⚠️ 教训：**不要用 PowerShell `Get-Content`/`Set-Content` 批量替换这些文件**（中文会被当 GBK 读写导致双重编码乱码，v77 开发中曾误损坏 app.js）。改代码请用 `edit` 工具；若损坏，用 `git checkout -- <file>` 从已提交版本恢复后重做。
 
@@ -203,6 +204,8 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 4. `git add -A && git commit && git push` → GitHub Pages 自动部署（约 1-2 分钟）
 5. 用 headless Chrome 验证线上（或让用户刷新验证）
 6. **新增数据库字段时，要让用户执行 alter SQL**（见第四节），db.js 会降级不崩
+
+> ⚠️ **推送一定要确认真的成功了**：本机网络对 `github.com` 经常 `Recv failure: Connection was reset`（GitHub 的解析 IP 会变，老 IP `140.82.x.x` 已连不通 TLS，2026 年可用 `20.27.177.113`）。v82 那次就是推送失败但没复查，导致用户手机上一直是旧 CSS、以为「图还是有大有小」。做法：临时在 hosts 里把 `github.com/api.github.com/codeload.github.com` 指到可用 IP → 循环重试 `git push` → **推送后必须还原 hosts**（用 `git status -sb` 确认 `## main...origin/main` 没有 `[ahead N]`）。
 
 > 注意：仓库文件行尾是 CRLF；js 是 IIFE 闭包，外部无法直接调用内部函数；新增字段要在 db.js 的 `toDB/toFront` + `OPTIONAL_FIELDS` 里都加。
 
