@@ -890,7 +890,8 @@ img { display:block; }
   background:linear-gradient(160deg,#efe9dd,#e6dcc8);
   display:flex; align-items:center; justify-content:center;
 }
-.plan-photo img { width:100%; height:100%; object-fit:contain; }
+/* 统一缩略图尺寸：cover 填满方格，避免不同比例的图看起来"有大有小" */
+.plan-photo img { width:100%; height:100%; object-fit:cover; display:block; }
 .plan-photo .placeholder { font-size:20px; color:#c9b89c; }
 /* 串名（区分相似的串） */
 .plan-name {

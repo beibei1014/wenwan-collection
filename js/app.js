@@ -2233,30 +2233,43 @@
     }
   }
 
-  /* 历史数据回填：给「有盘玩记录但没首次盘玩时间」的宝贝补上「系统里已有的最早盘玩记录」
-     （优先取打卡历史最早的日期；没有打卡历史则取所有 lastPlayedAt 里最早的） */
+  /* 计算某件宝贝合理的「首次盘玩时间」估计值：
+     - 锚点 = 入库时间（没有则创建时间）——「拿到手就开始盘」是最合理的估计
+     - 硬约束：不能晚于最后一次盘玩时间（没有入库/盘玩记录则返回 null 不回填） */
+  function estimateFirstPlayed(it) {
+    const anchor = it.arrivedAt || it.createdAt || null;
+    const lp = it.lastPlayedAt || null;
+    let v = anchor != null ? anchor : lp;
+    if (v == null) return null;
+    if (lp != null && v > lp) v = lp;   // 首次不能晚于最后一次盘玩
+    return v;
+  }
+
+  /* 历史数据回填 / 纠正：
+     1) 「有盘玩记录但没有首次盘玩时间」→ 按上面的估计值补上
+     2) 已被回填成**违反约束**的值（晚于 lastPlayedAt、或早于 arrivedAt）→ 纠正过来
+     注意：用户手动设置且不违反约束的值不会被改动 */
   let _backfillFirst = false;
   async function backfillFirstPlayed() {
     if (_backfillFirst) return;
-    const need = allItems.filter((i) => !i.firstPlayedAt && ((Number(i.playCount) || 0) > 0 || i.lastPlayedAt));
+    const need = allItems.filter((i) => {
+      const hasPlay = (Number(i.playCount) || 0) > 0 || i.lastPlayedAt;
+      if (!hasPlay) return false;
+      if (!i.firstPlayedAt) return true;                                  // 缺 → 补
+      if (i.lastPlayedAt && i.firstPlayedAt > i.lastPlayedAt) return true; // 晚于最后盘玩 → 纠正
+      if (i.arrivedAt && i.firstPlayedAt < i.arrivedAt) return true;       // 早于入库 → 纠正
+      return false;
+    });
     if (!need.length) return;
-    // 1) 打卡历史里最早的日期
-    let earliest = null;
-    if (playDays && playDays.length) {
-      const t = new Date(playDays[0] + "T12:00:00").getTime(); // playDays 已按升序规整
-      if (isFinite(t)) earliest = t;
-    }
-    // 2) 退路：所有宝贝 lastPlayedAt 里最早的那个
-    if (earliest == null) {
-      allItems.forEach((i) => { if (i.lastPlayedAt && (earliest == null || i.lastPlayedAt < earliest)) earliest = i.lastPlayedAt; });
-    }
-    if (earliest == null) return; // 系统里完全没有盘玩记录 → 不回填
     _backfillFirst = true;
     try {
       let changed = 0;
       for (const it of need) {
-        it.firstPlayedAt = earliest;
-        try { await DB.put(it); changed++; } catch (e) { it.firstPlayedAt = null; }
+        const v = estimateFirstPlayed(it);
+        if (v == null || v === it.firstPlayedAt) continue;
+        const prev = it.firstPlayedAt;
+        it.firstPlayedAt = v;
+        try { await DB.put(it); changed++; } catch (e) { it.firstPlayedAt = prev; }
       }
       if (changed && document.getElementById("gridHolder")) updateGrid();
     } catch (e) {
