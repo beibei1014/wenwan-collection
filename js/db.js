@@ -39,6 +39,7 @@
       finished_at: item.finishedAt ? new Date(item.finishedAt).toISOString() : null,
       play_status: item.playStatus || "",
       last_played_at: item.lastPlayedAt ? new Date(item.lastPlayedAt).toISOString() : null,
+      first_played_at: item.firstPlayedAt ? new Date(item.firstPlayedAt).toISOString() : null,
       play_count: item.playCount != null ? Number(item.playCount) || 0 : 0,
       star: Number(item.star) || 0,
       fav: (Number(item.star) || 0) >= 5, // 5 星自动视为喜欢/进展柜
@@ -73,6 +74,7 @@
       finishedAt: row.finished_at ? new Date(row.finished_at).getTime() : null,
       playStatus: row.play_status || "",
       lastPlayedAt: row.last_played_at ? new Date(row.last_played_at).getTime() : null,
+      firstPlayedAt: row.first_played_at ? new Date(row.first_played_at).getTime() : null,
       playCount: Number(row.play_count) || 0,
       star: row.star != null && row.star !== "" ? Number(row.star) : (row.fav ? 5 : 0), // 旧 fav=true → 5 星
       fav: !!row.fav,
@@ -191,7 +193,7 @@
 
   /* ---------- CRUD ---------- */
   // 可能尚未在数据库建好的新字段（未执行 SQL 时自动降级）
-  const OPTIONAL_FIELDS = ["piece_count", "accessory_type", "play_status", "finished_at", "last_played_at", "play_count", "star", "fav", "color", "bead_shape"];
+  const OPTIONAL_FIELDS = ["piece_count", "accessory_type", "play_status", "finished_at", "last_played_at", "first_played_at", "play_count", "star", "fav", "color", "bead_shape"];
 
   function isMissingColumnErr(error) {
     return error && error.message && error.message.includes("Could not find the") && error.message.includes("column");

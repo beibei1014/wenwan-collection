@@ -238,7 +238,8 @@
         "<button class='btn " + (danger ? "danger" : "primary") + "' id='mOk'>" + esc(okText) + "</button></div>";
       mask.hidden = false;
       modal.hidden = false;
-      const done = (v) => { mask.hidden = true; modal.hidden = true; resolve(v); };
+      modal.style.display = ""; // 清除历史弹窗残留的 inline display，避免"遮罩显示但弹窗不可见"
+      const done = (v) => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; resolve(v); };
       $("#mCancel").onclick = () => done(false);
       $("#mOk").onclick = () => done(true);
       mask.onclick = () => done(false);
@@ -301,6 +302,7 @@
       modal.innerHTML = html;
       mask.hidden = false;
       modal.hidden = false;
+      modal.style.display = "";
       $("#mCloseTips").onclick = () => { mask.hidden = true; modal.hidden = true; };
       mask.onclick = () => { mask.hidden = true; modal.hidden = true; };
       return;
@@ -360,6 +362,7 @@
     modal.innerHTML = html;
     mask.hidden = false;
     modal.hidden = false;
+    modal.style.display = "";
 
     modal.querySelectorAll("[data-sec]").forEach((b) => b.onclick = () => {
       const key = b.dataset.sec;
@@ -1066,10 +1069,10 @@
     html += '<button type="button" id="mCancel" class="btn ghost" style="width:100%;margin-top:8px">关闭</button>';
 
     modal.innerHTML = html;
-    modal.style.display = "block";
+    modal.hidden = false; modal.style.display = "";
     mask.hidden = false;
 
-    const done = () => { modal.style.display = "none"; mask.hidden = true; };
+    const done = () => { modal.hidden = true; modal.style.display = ""; mask.hidden = true; };
     $("#mCancel").onclick = done;
 
     modal.querySelectorAll("[data-st]").forEach((btn) => btn.onclick = async () => {
@@ -1119,10 +1122,10 @@
     html += '<button type="button" id="mCancel" class="btn ghost" style="width:100%;margin-top:8px">取消</button>';
 
     modal.innerHTML = html;
-    modal.style.display = "block";
+    modal.hidden = false; modal.style.display = "";
     mask.hidden = false;
 
-    const done = () => { modal.style.display = "none"; mask.hidden = true; };
+    const done = () => { modal.hidden = true; modal.style.display = ""; mask.hidden = true; };
     $("#mCancel").onclick = done;
 
     modal.querySelectorAll("[data-d]").forEach((btn) => btn.onclick = () => {
@@ -1135,16 +1138,20 @@
       const dv = $("#lpDate").value;
       const prevT = item.lastPlayedAt;
       const prevC = item.playCount;
+      const prevF = item.firstPlayedAt;
       item.lastPlayedAt = dv ? new Date(dv + "T12:00:00").getTime() : null;
       // 若设置了时间且当前是未盘玩，自动转为盘玩中
       if (dv && (item.playStatus === "unplayed" || !item.playStatus)) item.playStatus = "playing";
-      // 设置了一次盘玩时间 → 记为一次盘玩次数
-      if (dv) item.playCount = (item.playCount || 0) + 1;
+      // 设置了一次盘玩时间 → 记为一次盘玩次数，并补记首次盘玩时间
+      if (dv) {
+        item.playCount = (item.playCount || 0) + 1;
+        if (!item.firstPlayedAt || item.lastPlayedAt < item.firstPlayedAt) item.firstPlayedAt = item.lastPlayedAt;
+      }
       try {
         const saved = await DB.put(item);
-        if (!saved || (saved.lastPlayedAt === null && dv)) { item.lastPlayedAt = prevT; item.playCount = prevC; toast("⚠️ 未保存：缺少 last_played_at 字段"); }
+        if (!saved || (saved.lastPlayedAt === null && dv)) { item.lastPlayedAt = prevT; item.playCount = prevC; item.firstPlayedAt = prevF; toast("⚠️ 未保存：缺少 last_played_at 字段"); }
         else { done(); toast(dv ? "✅ 已设置上次盘玩时间" : "已清除盘玩时间"); onDone && onDone(); }
-      } catch (err) { item.lastPlayedAt = prevT; item.playCount = prevC; toast("保存失败：" + err.message); }
+      } catch (err) { item.lastPlayedAt = prevT; item.playCount = prevC; item.firstPlayedAt = prevF; toast("保存失败：" + err.message); }
     };
   }
 
@@ -1168,10 +1175,10 @@
     html += '<button type="button" id="mCancel" class="btn ghost" style="width:100%;margin-top:12px">关闭</button>';
 
     modal.innerHTML = html;
-    modal.style.display = "block";
+    modal.hidden = false; modal.style.display = "";
     mask.hidden = false;
 
-    const done = () => { modal.style.display = "none"; mask.hidden = true; };
+    const done = () => { modal.hidden = true; modal.style.display = ""; mask.hidden = true; };
     $("#mCancel").onclick = done;
 
     modal.querySelectorAll("[data-color]").forEach((btn) => btn.onclick = async () => {
@@ -1203,10 +1210,10 @@
     html += '<button type="button" id="mCancel" class="btn ghost" style="width:100%;margin-top:8px">关闭</button>';
 
     modal.innerHTML = html;
-    modal.style.display = "block";
+    modal.hidden = false; modal.style.display = "";
     mask.hidden = false;
 
-    const done = () => { modal.style.display = "none"; mask.hidden = true; };
+    const done = () => { modal.hidden = true; modal.style.display = ""; mask.hidden = true; };
     $("#mCancel").onclick = done;
 
     async function saveShape(v) {
@@ -1237,10 +1244,10 @@
     html += '<button type="button" id="mCancel" class="btn ghost" style="width:100%;margin-top:8px">取消</button>';
 
     modal.innerHTML = html;
-    modal.style.display = "block";
+    modal.hidden = false; modal.style.display = "";
     mask.hidden = false;
 
-    const done = () => { modal.style.display = "none"; mask.hidden = true; };
+    const done = () => { modal.hidden = true; modal.style.display = ""; mask.hidden = true; };
     const msg = $("#pwdMsg");
     $("#mCancel").onclick = done;
 
@@ -1309,21 +1316,22 @@
   /* 标记「今日已盘」：记录今天盘过（lastPlayedAt=现在、状态=盘玩中、盘玩次数+1）
      同时把今天加入打卡日期（连续打卡）；与详情页「✅ 今日盘过」同一套逻辑 */
   async function markPlayedToday(item) {
-    const prevT = item.lastPlayedAt, prevSt = item.playStatus, prevC = item.playCount;
+    const prevT = item.lastPlayedAt, prevSt = item.playStatus, prevC = item.playCount, prevF = item.firstPlayedAt;
     item.lastPlayedAt = Date.now();
     item.playStatus = "playing";       // 盘完 → 盘玩中（放置时长从今天算起）
     item.playCount = (item.playCount || 0) + 1;
+    if (!item.firstPlayedAt) item.firstPlayedAt = item.lastPlayedAt; // 记录「第一次盘玩时间」
     try {
       const saved = await DB.put(item);
       if (!saved || (saved.lastPlayedAt == null && saved.playStatus !== "playing")) {
-        item.lastPlayedAt = prevT; item.playStatus = prevSt; item.playCount = prevC;
+        item.lastPlayedAt = prevT; item.playStatus = prevSt; item.playCount = prevC; item.firstPlayedAt = prevF;
         throw new Error("未保存：数据库缺 last_played_at 字段（请执行 alter SQL）");
       }
       // 记录今天的打卡（用于连续打卡；失败不阻断主流程）
       await recordPlayDay();
       return true;
     } catch (err) {
-      item.lastPlayedAt = prevT; item.playStatus = prevSt; item.playCount = prevC;
+      item.lastPlayedAt = prevT; item.playStatus = prevSt; item.playCount = prevC; item.firstPlayedAt = prevF;
       throw err;
     }
   }
@@ -2525,7 +2533,12 @@
         const price = it.price != null && it.price !== "" ? "¥" + it.price : "";
         const playCount = Number(it.playCount) || 0;
         const stars = starHtml(it, "list-stars");
-        h += '<div class="list-item" data-id="' + it.id + '">' +
+        h += '<div class="swipe-row" data-id="' + it.id + '">' +
+          '<div class="swipe-actions">' +
+          '<button type="button" class="swipe-btn cancel" data-swipe-cancel="1">取消</button>' +
+          '<button type="button" class="swipe-btn del" data-swipe-del="' + it.id + '">删除</button>' +
+          "</div>" +
+          '<div class="list-item" data-id="' + it.id + '">' +
           '<div class="list-thumb">' + img + "</div>" +
           '<div class="list-info">' +
           '<div class="list-name">' + esc(it.name || "未命名") + "</div>" +
@@ -2546,7 +2559,7 @@
               : "")) +
           stars +
           "</div>" +
-          "</div>";
+          "</div></div>";
       }
       return h + "</div>";
     }
@@ -2570,10 +2583,129 @@
     return h + "</div>";
   }
 
+  /* 删除宝贝：统一确认弹窗 + 删除 + 刷新（详情页/左滑/长按共用） */
+  async function deleteItem(id) {
+    const item = allItems.find((x) => x.id === id);
+    if (!item) return false;
+    const ok = await confirmModal("删除这件宝贝？", "删除「" + (item.name || "未命名") + "」后不可恢复，请确认。", "删除", true);
+    if (!ok) return false;
+    try {
+      await DB.remove(id);
+      await loadItems();
+      toast("已删除「" + (item.name || "未命名") + "」");
+      if (document.getElementById("gridHolder")) updateGrid();
+      else router();
+      return true;
+    } catch (err) {
+      toast("删除失败：" + err.message);
+      return false;
+    }
+  }
+
+  /* 列表视图：左滑露出「取消 / 删除」；卡片视图：长按弹出删除确认 */
+  function bindSwipeDelete() {
+    const OPEN = 152; // 两个按钮总宽
+    let openRow = null;
+    const closeRow = (row) => {
+      if (!row) return;
+      const c = row.querySelector(".list-item");
+      if (c) { c.style.transition = "transform .2s"; c.style.transform = ""; }
+      row.dataset.open = "";
+      if (openRow === row) openRow = null;
+    };
+    view.querySelectorAll(".swipe-row").forEach((row) => {
+      const content = row.querySelector(".list-item");
+      if (!content) return;
+      let sx = 0, sy = 0, dx = 0, dragging = false, decided = false, swiped = false;
+      content.addEventListener("touchstart", (e) => {
+        if (e.touches.length !== 1) return;
+        sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+        dx = row.dataset.open === "1" ? -OPEN : 0;
+        dragging = true; decided = false; swiped = false;
+        content.style.transition = "none";
+      }, { passive: true });
+      content.addEventListener("touchmove", (e) => {
+        if (!dragging) return;
+        const t = e.touches[0];
+        const mx = t.clientX - sx, my = t.clientY - sy;
+        if (!decided) {
+          if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+          decided = true;
+          // 竖向位移占优 → 判定为滚动，放弃滑动删除
+          if (Math.abs(mx) <= Math.abs(my)) { dragging = false; content.style.transition = ""; return; }
+        }
+        const base = row.dataset.open === "1" ? -OPEN : 0;
+        dx = Math.max(-OPEN, Math.min(0, base + mx));
+        e.preventDefault();          // 阻止页面横向/纵向滚动
+        content.style.transform = "translateX(" + dx + "px)";
+        swiped = true;
+      }, { passive: false });
+      const finish = () => {
+        if (!dragging) return;
+        dragging = false;
+        content.style.transition = "transform .2s";
+        if (dx < -OPEN / 2) {
+          content.style.transform = "translateX(-" + OPEN + "px)";
+          row.dataset.open = "1";
+          if (openRow && openRow !== row) closeRow(openRow);
+          openRow = row;
+        } else {
+          content.style.transform = "";
+          row.dataset.open = "";
+          if (openRow === row) openRow = null;
+        }
+        content.dataset.swiped = swiped ? "1" : "";
+      };
+      content.addEventListener("touchend", finish);
+      content.addEventListener("touchcancel", finish);
+    });
+    // 删除 / 取消 按钮
+    view.querySelectorAll("[data-swipe-del]").forEach((b) => b.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const row = b.closest(".swipe-row");
+      await deleteItem(b.dataset.swipeDel);
+      closeRow(row);
+    }));
+    view.querySelectorAll("[data-swipe-cancel]").forEach((b) => b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeRow(b.closest(".swipe-row"));
+    }));
+    // 卡片视图长按 → 删除确认（桌面鼠标按住亦可）
+    view.querySelectorAll(".card").forEach((c) => {
+      let timer = null, moved = false;
+      const start = () => {
+        moved = false;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => { timer = null; if (!moved) deleteItem(c.dataset.id); }, 550);
+      };
+      const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+      c.addEventListener("touchstart", start, { passive: true });
+      c.addEventListener("touchmove", () => { moved = true; cancel(); }, { passive: true });
+      c.addEventListener("touchend", cancel);
+      c.addEventListener("touchcancel", cancel);
+      c.addEventListener("mousedown", start);
+      c.addEventListener("mouseup", cancel);
+      c.addEventListener("mouseleave", cancel);
+    });
+  }
+
   function bindCardEvents() {
-    view.querySelectorAll(".card, .list-item").forEach((c) => c.addEventListener("click", () => location.hash = "#/item/" + c.dataset.id));
+    view.querySelectorAll(".card, .list-item").forEach((c) => c.addEventListener("click", (e) => {
+      // 左滑过 / 当前处于滑开状态 → 不跳详情（先收起）
+      const row = c.closest ? c.closest(".swipe-row") : null;
+      if (row && row.dataset.open === "1") {
+        e.preventDefault(); e.stopPropagation();
+        const cc = row.querySelector(".list-item");
+        if (cc) { cc.style.transition = "transform .2s"; cc.style.transform = ""; }
+        row.dataset.open = "";
+        return;
+      }
+      if (c.dataset.swiped === "1") { c.dataset.swiped = ""; return; }
+      location.hash = "#/item/" + c.dataset.id;
+    }));
     bindStatusToggles();
     bindStars();
+    bindSwipeDelete();
   }
 
   /* 喜欢/取消喜欢（卡片 + 列表，点击 ❤️/🤍） */
@@ -2953,6 +3085,16 @@
         html += infoItem("盘玩时长", "未记录 <button type=\"button\" class=\"link-btn\" id=\"editLastPlayed\">设置上次盘玩</button>", true);
       }
       html += infoItem("盘玩次数", (Number(it.playCount) || 0) + " 次", true);
+      // 首次盘玩时间 + 盘玩周期（从开始盘到盘好大概多久）
+      if (it.firstPlayedAt) {
+        const fp = new Date(it.firstPlayedAt);
+        const spanDays = Math.floor((Date.now() - it.firstPlayedAt) / 86400000);
+        html += infoItem("首次盘玩", (fp.getMonth() + 1) + "月" + fp.getDate() + "日" + (spanDays > 0 ? "（从开始盘至今 " + DB.formatDays(spanDays) + "）" : "（就是今天）"), true);
+        if (it.playStatus === "done" && it.lastPlayedAt && it.lastPlayedAt >= it.firstPlayedAt) {
+          const cycle = Math.max(1, Math.round((it.lastPlayedAt - it.firstPlayedAt) / 86400000));
+          html += infoItem("盘玩周期", "从开始盘到盘好约 " + DB.formatDays(cycle) + " 🌾", true);
+        }
+      }
     }
     // 颜色：显示主色 + 可点击修改（旧值归一化）
     {
@@ -3035,8 +3177,8 @@
       promptSetShape(it, () => renderDetail(id));
     };
     $("#btnDel").onclick = async () => {
-      const ok = await confirmModal("删除这件宝贝？", "删除后不可恢复，请确认。", "删除", true);
-      if (ok) { await DB.remove(it.id); await loadItems(); toast("已删除"); location.hash = "#/"; }
+      const ok = await deleteItem(it.id);
+      if (ok) location.hash = "#/";
     };
     $("#btnShare").onclick = async () => {
       const btn = $("#btnShare");
@@ -3805,9 +3947,9 @@
         '<input class="form-input" id="aiKeyInput" placeholder="sk-..." value="' + esc(cur) + '">' +
         '<button class="btn primary" id="aiKeySave" style="width:100%;margin-top:12px">保存</button>' +
         '<button class="btn ghost" id="mCancel" style="width:100%;margin-top:8px">取消</button>';
-      modal.style.display = "block";
+      modal.hidden = false; modal.style.display = "";
       mask.hidden = false;
-      const done = () => { modal.style.display = "none"; mask.hidden = true; };
+      const done = () => { modal.hidden = true; modal.style.display = ""; mask.hidden = true; };
       $("#mCancel").onclick = done;
       const save = () => {
         const v = ($("#aiKeyInput").value || "").trim();
@@ -3881,6 +4023,7 @@
       "</div>";
     mask.hidden = false;
     modal.hidden = false;
+    modal.style.display = "";
     $("#mOkLv").onclick = () => { mask.hidden = true; modal.hidden = true; };
     mask.onclick = () => { mask.hidden = true; modal.hidden = true; };
   }

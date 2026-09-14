@@ -62,6 +62,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 - `fav`：`alter table public.bracelets add column if not exists fav boolean not null default false;`
 - `color`：`alter table public.bracelets add column if not exists color text not null default '';`
 - `bead_shape`：`alter table public.bracelets add column if not exists bead_shape text not null default '';`
+- `first_played_at`：`alter table public.bracelets add column if not exists first_played_at timestamptz;`（v78，详情页「首次盘玩/盘玩周期」用）
 
 **`profiles` 表（连续打卡用）**：
 - `play_days`：`alter table public.profiles add column if not exists play_days jsonb not null default '[]'::jsonb;`
@@ -81,7 +82,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v77）
+## 五、功能清单（截至 v78）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -155,6 +156,13 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 57. **连续打卡上首页 + 盘玩成就（v77）**：
     - **首页等级条下方新增「连续打卡条」**（`.streak-bar`）：已连续时显示橙色渐变「🔥 已连续盘串 N 天」（右侧显示最长天数或「保持住！」）；断签但历史 ≥2 天时显示灰色「最长连续 N 天 · 今天盘一串继续」；从未连续时显示「今天盘一串，开启连续打卡」。点击该条会平滑滚动到盘玩计划卡片
     - **新增成就组「🤲 盘玩之道」**（stats.js）：累计盘玩 10/50 次、连续打卡 3/7/30 天、以及两个 tier 称号——「盘玩大师→无情铁手→手都冒烟了」（累计次数）与「半月不辍→百日铁手→全年无休」（连续天数）；`getAchievements(items, playDays)` 与 `resolveTier(..., playDays)` 新增 playDays 参数供 check/getValue 使用。缓存 v77
+58. **修复删除弹窗 + 左右滑删除 + 首次盘玩时间（v78）**：
+    - **🐞 修复详情页「删除」点了没反应（变灰但没按钮）**：根因是代码里**两套弹窗机制混用**——`showBeadStatusPicker / promptSetLastPlayed / promptSetColor / promptSetShape / AI密钥` 用 `modal.style.display` 开关，而 `confirmModal / showTipsModal / 升级弹窗` 用 `modal.hidden`。**内联 `display:none` 残留后优先级高于 `hidden` 属性**，导致遮罩（变灰）出现但弹窗内容不可见。修法：全部统一到 `hidden` 机制，并在每次开关时清空内联 `style.display`（`modal.style.display = ""`）
+    - **列表左滑删除**：列表视图每项包一层 `.swipe-row`，左滑露出「取消 / 删除」两个按钮（`.swipe-btn`）；只在**水平位移占优**时才拦截（`|dx|>|dy|`）避免与竖向滚动冲突；滑开后再点内容先收起不跳详情
+    - **卡片长按删除**：卡片视图（网格无左滑空间）改为**长按 550ms** 弹出删除确认，桌面鼠标按住同样有效
+    - **统一 `deleteItem(id)`**：详情页删除 / 左滑删除 / 长按删除共用同一确认+删除+刷新流程
+    - **详情页新增「首次盘玩」与「盘玩周期」**：新增 `first_played_at` 字段（首次标记盘玩时写入），详情页显示「首次盘玩 X月X日（从开始盘至今 N 天）」；已盘好时额外显示「盘玩周期：从开始盘到盘好约 N 天 🌾」
+    - **需执行 `first_played_at` 的 alter SQL**（见第四节）；缓存 v78
 
 > ⚠️ 教训：**不要用 PowerShell `Get-Content`/`Set-Content` 批量替换这些文件**（中文会被当 GBK 读写导致双重编码乱码，v77 开发中曾误损坏 app.js）。改代码请用 `edit` 工具；若损坏，用 `git checkout -- <file>` 从已提交版本恢复后重做。
 
