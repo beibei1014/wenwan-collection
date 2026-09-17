@@ -27,6 +27,10 @@
   let sortDir = localStorage.getItem("ww_sortdir") || "desc"; // asc | desc（箭头指向）
   let user = null;           // 当前登录用户
   let _onBack = null;        // 当前页面的自定义返回钩子（如批量编辑页设回首页，离开时清空）
+  let _lastHash = null;      // 上一次的路由（用于判断「从哪个页面进的详情」）
+  let _backMemo = null;      // 进详情前记下的来源页 { hash, y }：返回时回到原位（不再跳顶部）
+  let _navList = [];         // 进详情时记下的「当前页面宝贝顺序」：详情页可切换上一个/下一个
+  let _detailSwipedAt = 0;   // 详情页刚左右滑动的时间戳（避免滑动后顺手打开大图）
 
   /* ---------- 状态定义 ---------- */
   // 珠子类 4 态：未盘玩(unplayed) / 待盘玩(ready) / 盘玩中(playing) / 已盘好(done)
@@ -3134,6 +3138,65 @@
   }
 
   /* ---------- 详情页 ---------- */
+  /* ---------- 详情页：上一个 / 下一个宝贝 ---------- */
+  // 哪些页面算「列表页」（从这些页面进详情，返回时要回到原位）
+  function isListHash(h) {
+    return h === "#/" || h === "#" || h === "#/fav" || (h || "").startsWith("#/box/");
+  }
+  // 收集当前页面上「正在显示」的宝贝顺序（就是用户眼前看到的排列，含筛选/排序结果）
+  function currentNavIds() {
+    const h = location.hash || "#/";
+    // 喜欢展柜是轮播（没有 data-id），按同样规则取 5 星宝贝
+    if (h === "#/fav") return allItems.filter((i) => (Number(i.star) || 0) >= 5).map((i) => i.id);
+    const ids = [];
+    const push = (el) => {
+      const id = el.dataset.id;
+      if (id && ids.indexOf(id) < 0) ids.push(id);
+    };
+    // 优先取收藏列表主体（卡片/列表视图），跳过今日心选与盘玩计划
+    view.querySelectorAll(".grid [data-id], .list-view [data-id], .list-item[data-id]").forEach(push);
+    if (ids.length) return ids;
+    view.querySelectorAll("[data-id]").forEach(push);
+    return ids;
+  }
+  // 当前详情在浏览序列中的位置
+  function detailNavInfo(id) {
+    let list = _navList && _navList.length ? _navList.slice() : [];
+    // 兜底：直接开链接进详情（没有来源页）时，用首页当前筛选排序后的列表
+    if (list.indexOf(id) < 0) list = filtered().map((x) => x.id);
+    const i = list.indexOf(id);
+    return {
+      index: i < 0 ? 0 : i,
+      total: list.length,
+      prevId: i > 0 ? list[i - 1] : null,
+      nextId: i >= 0 && i < list.length - 1 ? list[i + 1] : null,
+    };
+  }
+  // 左右滑动主图切换上一个/下一个
+  function bindDetailSwipe(navInfo) {
+    const hero = view.querySelector(".detail-hero");
+    if (!hero || navInfo.total < 2) return;
+    let sx = 0, sy = 0, tracking = false;
+    hero.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1) { tracking = false; return; }
+      tracking = true;
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+    }, { passive: true });
+    hero.addEventListener("touchend", (e) => {
+      if (!tracking) return;
+      tracking = false;
+      const t = e.changedTouches && e.changedTouches[0];
+      if (!t) return;
+      const dx = t.clientX - sx, dy = t.clientY - sy;
+      // 只认「明显的横向滑动」，竖向滑动/轻点不处理
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      _detailSwipedAt = Date.now();
+      const target = dx < 0 ? navInfo.nextId : navInfo.prevId;   // 左滑=下一个，右滑=上一个
+      if (target) location.hash = "#/item/" + target;
+      else toast(dx < 0 ? "已经是最后一个啦" : "已经是第一个啦");
+    }, { passive: true });
+  }
+
   function renderDetail(id) {
     const it = allItems.find((x) => x.id === id);
     if (!it) { location.hash = "#/"; return; }
@@ -3155,6 +3218,15 @@
       (it.category ? '<span class="tag">' + esc(it.category) + "</span>" : "");
 
     let html = "";
+    // 上一个 / 下一个（不用返回列表再进来；sticky 固定在顶栏下方，翻多久都在）
+    const navInfo = detailNavInfo(id);
+    if (navInfo.total > 1) {
+      html += '<div class="detail-nav">' +
+        '<button type="button" class="detail-nav-btn" id="navPrev"' + (navInfo.prevId ? "" : " disabled") + '>‹ 上一个</button>' +
+        '<span class="detail-nav-pos">' + (navInfo.index + 1) + " / " + navInfo.total + "</span>" +
+        '<button type="button" class="detail-nav-btn" id="navNext"' + (navInfo.nextId ? "" : " disabled") + '>下一个 ›</button>' +
+        "</div>";
+    }
     html += '<div class="detail-hero" data-view="0">' + hero + "</div>";
 
     html += '<div class="detail-body">';
@@ -3241,6 +3313,12 @@
 
     view.innerHTML = html;
 
+    // 上一个 / 下一个按钮 + 主图左右滑动切换
+    const navPrevBtn = $("#navPrev"), navNextBtn = $("#navNext");
+    if (navPrevBtn) navPrevBtn.onclick = () => { if (navInfo.prevId) location.hash = "#/item/" + navInfo.prevId; };
+    if (navNextBtn) navNextBtn.onclick = () => { if (navInfo.nextId) location.hash = "#/item/" + navInfo.nextId; };
+    bindDetailSwipe(navInfo);
+
     const openViewer = (idx) => {
       if (!allPics.length) return;
       const viewer = $("#viewer");
@@ -3254,7 +3332,11 @@
       };
       show(idx);
     };
-    view.querySelectorAll("[data-view]").forEach((el) => el.addEventListener("click", () => openViewer(+el.dataset.view)));
+    view.querySelectorAll("[data-view]").forEach((el) => el.addEventListener("click", () => {
+      // 刚左右滑动切了串，不要顺手把大图打开
+      if (Date.now() - _detailSwipedAt < 400) return;
+      openViewer(+el.dataset.view);
+    }));
     $("#viewerClose").onclick = () => { $("#viewer").classList.remove("show"); };
 
     $("#btnTips").onclick = () => showTipsModal(it);
@@ -4083,24 +4165,39 @@
       renderAuth(); return;
     }
     if (!user) { renderAuth(); return; }
-    if (h === "#/profile") { renderProfile(); return; }
-    if (h === "#/cat") { renderCatPage(); return; }
-    if (h === "#/stats") { renderStatsPage(); return; }
-    if (h === "#/quest") { renderQuestPage(); return; }
-    if (h === "#/fav") { renderFavPage(); return; }
-    if (h.startsWith("#/box/")) {
-      const box = decodeURIComponent(h.slice(6));
-      renderBoxPage(box);
-      return;
+
+    // 从列表页点进详情：先记住「来源页 + 滚动位置 + 眼前这页的宝贝顺序」
+    // 返回时才能回到原来那一屏（不再跳回顶部），详情页也能上一个/下一个翻
+    if (h.startsWith("#/item/") && _lastHash && _lastHash !== h && isListHash(_lastHash)) {
+      _backMemo = { hash: _lastHash, y: window.scrollY || 0 };
+      _navList = currentNavIds();
     }
-    if (h === "#/" || h === "#") { renderHome(); }
-    else if (h.startsWith("#/item/")) { renderDetail(h.slice(7)); }
-    else if (h.startsWith("#/edit/")) { renderForm(h.slice(7)); }
-    else if (h === "#/new") { renderForm(null); }
-    else if (h === "#/settings") { renderSettings(); }
-    else { renderHome(); }
+
+    if (h === "#/profile") renderProfile();
+    else if (h === "#/cat") renderCatPage();
+    else if (h === "#/stats") renderStatsPage();
+    else if (h === "#/quest") renderQuestPage();
+    else if (h === "#/fav") renderFavPage();
+    else if (h.startsWith("#/box/")) renderBoxPage(decodeURIComponent(h.slice(6)));
+    else if (h === "#/" || h === "#") renderHome();
+    else if (h.startsWith("#/item/")) renderDetail(h.slice(7));
+    else if (h.startsWith("#/edit/")) renderForm(h.slice(7));
+    else if (h === "#/new") renderForm(null);
+    else if (h === "#/settings") renderSettings();
+    else renderHome();
+
     updateTabbar();
-    window.scrollTo(0, 0);
+
+    // 回到来源列表页：恢复原来的滚动位置（只恢复一次）
+    const memo = _backMemo && _backMemo.hash === h ? _backMemo : null;
+    if (memo) {
+      _backMemo = null;
+      window.scrollTo(0, 0);
+      requestAnimationFrame(() => window.scrollTo(0, memo.y));
+    } else {
+      window.scrollTo(0, 0);
+    }
+    _lastHash = h;
   }
 
   /* ---------- 升级弹窗 ---------- */
@@ -4141,7 +4238,11 @@
     // 当前页面设置了自定义返回钩子（如批量编辑页），优先用它
     if (_onBack) { const b = _onBack; _onBack = null; btnBack.onclick = goBack; b(); return; }
     const h = location.hash;
-    if (h.startsWith("#/item/")) { location.hash = "#/"; return; }         // 详情 → 首页
+    // 详情 → 回到点进来的那个列表页（盒子/喜欢/首页），位置由 router 恢复
+    if (h.startsWith("#/item/")) {
+      location.hash = (_backMemo && isListHash(_backMemo.hash)) ? _backMemo.hash : "#/";
+      return;
+    }
     if (h.startsWith("#/edit/")) {
       const id = h.slice(7);
       location.hash = id ? "#/item/" + id : "#/";                            // 编辑 → 详情/首页
@@ -4189,6 +4290,8 @@
   async function init() {
     try {
       initTheme();
+      // 滚动位置由我们自己管（进详情/返回列表时保持原位），关掉浏览器自动恢复，避免互相打架
+      try { if ("scrollRestoration" in history) history.scrollRestoration = "manual"; } catch (e) { /* 忽略 */ }
       // 提前绑定 AI 小助手（不依赖登录态），确保猫猫图标任何时候都能点击
       bindAI();
       // 检查 Supabase 是否已配置
