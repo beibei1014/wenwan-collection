@@ -407,10 +407,20 @@ img { display:block; }
 .check-row input { width:20px; height:20px; accent-color:var(--wood); }
 
 .upload-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+/* 正方形用 padding-top 方案（不依赖 aspect-ratio）；img/占位符/删除按钮都绝对定位填满 */
 .upload-cell { position:relative; width:100%; padding-top:100%; height:0; border-radius:10px; overflow:hidden; border:1px dashed var(--line); background:var(--card); }
 .upload-cell.has { border-style:solid; }
 .upload-cell img { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; }
-.upload-add { position:absolute; top:0; left:0; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--text-2); font-size:11px; gap:2px; }
+.upload-cell .placeholder { position:absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:22px; color:#c9b89c; }
+/* ⚠️ 「＋ 照片」这个 label 本身就是格子（class="upload-cell upload-add"）：
+   千万不要给它 position:absolute（会脱离格子铺满整页、把表单其它字段盖住）。
+   它继续用 .upload-cell 的 padding 撑正方形，里面的内容交给 .upload-add-inner 绝对定位居中。 */
+.upload-add { display:block; }
+.upload-add-inner {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  color:var(--text-2); font-size:11px; gap:2px;
+}
 .upload-add .plus { font-size:24px; line-height:1; }
 .upload-del { position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%; background:rgba(0,0,0,.55); color:#fff; font-size:13px; display:flex; align-items:center; justify-content:center; }
 .ocr-hint { margin-top:8px; font-size:12px; color:var(--gold); background:#fff8e1; border:1px solid #ffecb3; padding:8px 10px; border-radius:10px; line-height:1.6; display:none; }

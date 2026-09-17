@@ -1992,7 +1992,7 @@
             '<button type="button" class="upload-del" data-i="' + i + '">✕</button></div>';
         });
         if ((it.photos || []).length < 9) {
-          h += '<label class="upload-cell upload-add" style="cursor:pointer"><span class="plus">＋</span><span>照片</span></label>';
+          h += '<label class="upload-cell upload-add" style="cursor:pointer"><span class="upload-add-inner"><span class="plus">＋</span><span>照片</span></span></label>';
         }
         grid.innerHTML = h;
         grid.querySelectorAll(".upload-del").forEach((b) => b.onclick = () => {
@@ -3670,7 +3670,7 @@
           '<button type="button" class="upload-del" data-i="' + i + '">✕</button></div>';
       });
       if (list.length < 9) {
-        html += '<label class="upload-cell upload-add" style="cursor:pointer"><span class="plus">＋</span><span>' + (isShot ? "截图" : "照片") + "</span></label>";
+        html += '<label class="upload-cell upload-add" style="cursor:pointer"><span class="upload-add-inner"><span class="plus">＋</span><span>' + (isShot ? "截图" : "照片") + "</span></span></label>";
       }
       grid.innerHTML = html;
       grid.querySelectorAll(".upload-del").forEach((b) => b.onclick = () => {

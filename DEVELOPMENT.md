@@ -82,7 +82,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v85）
+## 五、功能清单（截至 v86）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -175,6 +175,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 64. **名字按字数截断（v84）**：新增 `clipName(s, max)` + `NAME_MAX = { plan: 5, card: 9, list: 14 }`——**盘玩计划格 5 字、首页卡片 9 字、列表 14 字**，超出显示 `…`；`Array.from` 按码点切分（emoji/组合符号不会被切坏）、连续空白折叠为 1 个空格、空名字回落「未命名」。**只影响显示，数据库里的原名字不动**；盘玩计划格的 `title` 仍带完整名字。作用范围：`gridHtml` 卡片、盘玩计划格、两处列表行、多选编辑卡片（详情页大标题保留完整名字）。实测（375px 手机宽、真实 CSS）：4 张不同比例图 `.plan-photo` 全为 119×119、格子全为 119×151、名字行全为 1 行 13px 无溢出。缓存 v84
 65. **详情页可切换上一个/下一个（v85）**：详情页顶部新增 **`.detail-nav`** 条（`‹ 上一个` / `第 x / y 个` / `下一个 ›`），**`position:sticky` 吸在顶栏下方**（`top:calc(env(safe-area-inset-top) + 63px)`），翻到详情页多深都能点；首尾自动置灰禁用。翻页顺序 = **点进来那一页眼前看到的顺序**（`currentNavIds()` 在进详情前抓当前 DOM 里的 `[data-id]`，卡片/列表视图优先，跳过今日心选与盘玩计划；喜欢展柜按 5 星规则取）。另支持 **主图左右滑动切换**（左滑=下一个，右滑=上一个，横向位移 >60px 才触发，避免误触；滑动后 400ms 内不打开大图查看器）。直接开链接进详情（无来源页）时兜底用当前筛选排序列表。缓存 v85
 66. **返回列表页回到原来那一屏（v85）**：以前从详情返回一律跳回**页面顶部**，翻几十条后很痛苦。现在 `router()` 在「列表页 → 详情」这一步先记下 `_backMemo = { hash, y }`（来源页 + `window.scrollY`）和浏览顺序，返回时渲染完列表后用 `requestAnimationFrame` 还原滚动位置；同时 **`goBack()` 从详情返回「点进来的那个页面」**（首页 / 分类盒子页 / 喜欢展柜，不再是永远回首页）。配套 `history.scrollRestoration = "manual"`（避免浏览器自作主张和我们的还原打架）。**回归验证**：搭了「假 Supabase + 真 app.js」的端到端无头测试（临时 harness，测完即删），**29 项断言全绿**——40 条数据滚到 1200 → 进详情（21/40）→ 下一个（22/40）→ 上一个（21/40）→ 返回后 `scrollY` 仍为 1200、导航条消失；盒子页进详情返回回到 `#/box/菩提` 且 `scrollY` 恢复 900；首尾禁用；导航条吸顶 `top=63`。缓存 v85
+67. **🚨 修复 v83 引入的「新增/编辑表单被照片块盖住」回归（v86）**：用户报「新增宝贝界面没有写名字的地方了，开头就是传图片，单个录入和批量录入都有问题」。**根因**：v83 为了做正方形把 `.upload-add`（「＋ 照片」）写成了 `position:absolute; top:0; left:0; width:100%; height:100%`，**但这个元素自己就是格子**（`<label class="upload-cell upload-add">`）——它于是脱离格子、以**初始包含块**（整页）为参照铺满宽高，加上 `.upload-cell` 的白底，直接把表单顶部的「串的名字」等字段整块盖掉（两个上传区 = 两块覆盖层）。**修法**：`.upload-add` 回到普通流（继续用 `.upload-cell` 的 `padding-top` 撑正方形），新增 **`.upload-add-inner`** 绝对定位在格子内居中显示「＋/照片」；`renderUploadGrid()` 与批量草稿 `renderPhotoGrid()` 两处 label 同步加内层 span；顺手补上漏掉的 `.upload-cell .placeholder` 绝对定位（无图时占位符原本会被 `overflow:hidden` 裁掉）。**通用教训**：给「padding 撑高」的格子元素加绝对定位前，先确认这个元素是**容器**还是**容器本身**；已复查其余同类（`.card-thumb`/`.draw-thumb`/`.plan-photo` 的子元素 `.badge`/`.card-stars`/`.draw-status`/`.plan-done-btn`/`.upload-del` 全是绝对定位 ✓）。**验证升级到 31 项端到端断言全绿**，并新增两类通用探针：① 关键字段「中心点 `elementFromPoint` 命中自身」= 没被遮挡（覆盖 `#fName/#fCategory/#fSpecies/#fPrice/#fDate/#fShop/#fNote/#btnSave` 与批量页 `#dName/#dCategory/#dSpecies/#dShop`）；② 「页面里不存在既铺满视口 >85% 又是 absolute/fixed 的游离元素」。真实渲染实测：名字字段 `top=100`、照片区 `top=1149`（顺序正确），「＋照片」格子 154×155（=1/3 栏宽的正方形）。缓存 v86
 
 > 🧪 **可复用的端到端测试套路（推荐）**：把 `index.html` 的 body 注入一个临时页面 → 在脚本前定义 `window.SUPABASE_CONFIG` 与假 `window.supabase.createClient`（`auth.getSession/getUser` 返回假 session，`from(t)` 返回链式对象，`then` 直接 resolve 固定数据）→ 按原顺序动态 `appendChild` 加载 `js/*.js` → `location.hash` 切路由 + 断言。这样能用真实 `app.js` 验证交互，不用登录、不碰线上库。
 
