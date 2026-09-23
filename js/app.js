@@ -2155,23 +2155,40 @@
     view.innerHTML = html;
 
     const emailEl = $("#aEmail"), passEl = $("#aPass"), msgEl = $("#authMsg");
+    const btnLogin = $("#btnLogin");
     const showMsg = (m, ok) => { msgEl.textContent = m; msgEl.style.color = ok ? "var(--green)" : "var(--red)"; };
-    const doAuth = async () => {
+    // 手机流量不稳：手动重试之外，网络错误自动再试 2 轮（每轮内部还有 3 次 fetch 重试）
+    const doAuth = async (auto) => {
       const email = emailEl.value.trim();
       const pass = passEl.value;
       if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showMsg("请输入正确的邮箱地址"); return; }
       if (pass.length < 6) { showMsg("密码至少 6 位"); return; }
-      try {
-        const res = await DB.signIn(email, pass);
-        showMsg("登录成功", true);
-        await enterApp(res.session);
-      } catch (err) {
-        showMsg(translateAuthError(err.message));
+      const maxRound = 3;
+      for (let round = 1; round <= maxRound; round++) {
+        try {
+          if (round > 1 || auto) showMsg("网络不稳定，正在重试（第 " + round + "/" + maxRound + " 次）…", true);
+          btnLogin.textContent = round > 1 ? "重试中…" : "登录中…";
+          btnLogin.disabled = true;
+          const res = await DB.signIn(email, pass);
+          btnLogin.textContent = "登 录";
+          btnLogin.disabled = false;
+          showMsg("登录成功", true);
+          await enterApp(res.session);
+          return;
+        } catch (err) {
+          btnLogin.textContent = "登 录";
+          btnLogin.disabled = false;
+          const text = translateAuthError(err.message);
+          const isNet = text.indexOf("网络") === 0 || !navigator.onLine;
+          if (isNet && round < maxRound) { await new Promise((r) => setTimeout(r, 800 * round)); continue; }
+          showMsg(text + (isNet ? "（已自动重试 " + round + " 次，可点登录再试）" : ""));
+          return;
+        }
       }
     };
-    $("#btnLogin").onclick = doAuth;
-    emailEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doAuth(); });
-    passEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doAuth(); });
+    btnLogin.onclick = () => doAuth(false);
+    emailEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doAuth(false); });
+    passEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doAuth(false); });
   }
 
   function translateAuthError(msg) {
@@ -2181,29 +2198,155 @@
     if (m.includes("Email not confirmed")) return "邮箱尚未验证，请查收确认邮件";
     if (m.includes("Password should be")) return "密码长度不符合要求";
     if (m.includes("rate limit") || m.includes("Too many")) return "操作太频繁，请稍后再试";
-    if (m.includes("fetch") || m.includes("Network") || m.includes("Failed to fetch")) return "网络错误，请检查网络后重试";
+    if (m.includes("fetch") || m.includes("Network") || m.includes("Failed to fetch") || m.includes("aborted") || m.includes("timeout")) {
+      return navigator.onLine === false ? "手机当前没有网络，请检查信号后重试" : "网络不稳定，没能连上服务器";
+    }
     return m;
   }
 
+  /* ---------- 离线缓存：网络不稳时也能打开、能看 ---------- */
+  let offlineMode = false;        // 当前是不是在用本地缓存（云端读不到）
+  function cacheKey() { return "ww_cache_" + ((user && user.id) || "guest"); }
+  // 存到本地：只留照片 URL（Blob 存不进 localStorage），去掉 data 避免恢复时 createObjectURL 报错
+  function writeItemsCache() {
+    try {
+      const slim = allItems.map((it) => {
+        const o = Object.assign({}, it);
+        o.photos = (it.photos || []).filter((p) => p && p.url).map((p) => ({ url: p.url, path: p.path }));
+        o.screenshots = (it.screenshots || []).filter((p) => p && p.url).map((p) => ({ url: p.url, path: p.path }));
+        delete o._url;
+        return o;
+      });
+      localStorage.setItem(cacheKey(), JSON.stringify({
+        at: Date.now(),
+        name: (user && user.displayName) || "",
+        playDays: playDays,
+        items: slim,
+      }));
+    } catch (e) { /* 空间不足等，忽略 */ }
+  }
+  function readItemsCache() {
+    try {
+      const raw = localStorage.getItem(cacheKey());
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      if (!obj || !Array.isArray(obj.items)) return null;
+      return obj;
+    } catch (e) { return null; }
+  }
+
+  /* ---------- 网络状态条（顶部细条：正在重试 / 离线看缓存 + 重试按钮） ---------- */
+  let netBarEl = null;
+  function netBar() {
+    if (netBarEl && document.body.contains(netBarEl)) return netBarEl;
+    netBarEl = document.createElement("div");
+    netBarEl.className = "net-bar";
+    netBarEl.hidden = true;
+    netBarEl.innerHTML = '<span class="net-bar-txt"></span><button type="button" class="net-bar-btn" id="netBarBtn">重试</button>';
+    document.body.appendChild(netBarEl);
+    netBarEl.querySelector("#netBarBtn").onclick = () => {
+      if (netBarEl.dataset.mode === "offline") syncNow();
+      else toast("网络恢复后会自动同步");
+    };
+    return netBarEl;
+  }
+  // 手动/自动重新同步（离线模式用）
+  async function syncNow() {
+    offlineMode = false;
+    toast("正在重新连接…");
+    try {
+      await loadItems();
+      writeItemsCache();
+      toast("已同步最新数据 ✅");
+      renderHome();
+    } catch (e) {
+      offlineMode = true;
+      toast("还是连不上，继续看本地缓存");
+    }
+    refreshNetBar();
+  }
+  // 离线时每 20 秒自动试一次；网络恢复事件 / 切回前台也立刻试
+  let _offlineRetryTimer = null;
+  function startOfflineRetry() {
+    if (_offlineRetryTimer) return;
+    _offlineRetryTimer = setInterval(() => {
+      if (!offlineMode) { clearInterval(_offlineRetryTimer); _offlineRetryTimer = null; return; }
+      syncNow();
+    }, 20000);
+  }
+  function bindOnlineRecovery() {
+    window.addEventListener("online", () => { if (offlineMode) syncNow(); });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && offlineMode) syncNow(); });
+  }
+  function refreshNetBar(state) {
+    const el = netBar();
+    const net = state || (window.DB && DB.getNet ? DB.getNet() : { ok: true });
+    if (offlineMode) {
+      const c = readItemsCache();
+      const when = c && c.at ? new Date(c.at) : null;
+      el.dataset.mode = "offline";
+      el.querySelector(".net-bar-txt").textContent = "📴 云端连不上，正在看本地缓存" +
+        (when ? "（" + (when.getMonth() + 1) + "/" + when.getDate() + " " + String(when.getHours()).padStart(2, "0") + ":" + String(when.getMinutes()).padStart(2, "0") + "）" : "") +
+        " · 每 20 秒自动重试";
+      el.classList.add("offline");
+      el.hidden = false;
+      startOfflineRetry();
+    } else if (net && !net.ok) {
+      el.dataset.mode = "retry";
+      el.querySelector(".net-bar-txt").textContent = "📶 网络不稳定，正在自动重试…";
+      el.classList.remove("offline");
+      el.hidden = false;
+    } else {
+      el.hidden = true;
+    }
+  }
+  // 网络恢复 → 若之前在离线模式，自动重新同步
+  function onNetRecovered(state) {
+    refreshNetBar(state);
+    if (state && state.ok && offlineMode) {
+      offlineMode = false;
+      loadItems().then(() => { writeItemsCache(); if (location.hash === "#/" || location.hash === "") renderHome(); refreshNetBar(); })
+        .catch(() => { offlineMode = true; refreshNetBar(); });
+    }
+  }
   /* ---------- 进入应用（登录后） ---------- */
   async function enterApp(passedSession) {
     const session = passedSession || await DB.getSession();
     if (!session || !session.user) { location.hash = "#/auth"; return false; }
     user = session.user;
+    const cached = readItemsCache();
+    // 显示名：优先云端，连不上就用缓存里的名字
     try {
       const prof = await DB.getProfile(user.id);
       user.displayName = prof.display_name || "";
+    } catch (e) {
+      user.displayName = user.displayName || (cached && cached.name) || "";
+    }
+    try {
       await loadItems();
-      // 加载盘玩打卡日期（连续打卡用；缺列时静默为空）
-      try { playDays = Game.normDays(await DB.getPlayDays(user.id)); } catch (e) { playDays = []; }
-      // 历史数据回填：给已盘过的老串补「首次盘玩时间」（用系统里最早的盘玩记录）
-      try { await backfillFirstPlayed(); } catch (e) {}
-    } catch (e) { /* 表未建好时显示错误 */ }
-    // 首次登录：无显示名则引导设置
-    if (user && !user.displayName && location.hash !== "#/profile") {
+      writeItemsCache();
+      offlineMode = false;
+    } catch (e) {
+      // 云端读不到（网络不稳）：进离线模式 —— 有缓存就用缓存顶上，没有也标记离线
+      // （不标记的话会被当成"首次登录"，把人强制跳到设置用户名的页面）
+      offlineMode = true;
+      if (cached && cached.items.length) {
+        allItems = cached.items;
+        playDays = Game.normDays(cached.playDays || []);
+      }
+    }
+    // 加载盘玩打卡日期（连续打卡用；缺列时静默为空）
+    if (!offlineMode) {
+      try { playDays = Game.normDays(await DB.getPlayDays(user.id)); writeItemsCache(); } catch (e) { /* 保留缓存值 */ }
+    }
+    // 历史数据回填：给已盘过的老串补「首次盘玩时间」（联网时才做，没网等下次）
+    if (!offlineMode) { try { await backfillFirstPlayed(); } catch (e) {} }
+    // 首次登录：无显示名则引导设置（离线时不要强制跳转）
+    if (user && !user.displayName && !offlineMode && location.hash !== "#/profile") {
       location.hash = "#/profile";
     }
     router();
+    refreshNetBar();
     checkLevelUp();
     return true;
   }
@@ -2614,6 +2757,13 @@
     const list = filtered();
     let h = "";
     if (!list.length) {
+      // 离线且本地也没缓存：别显示「还没有收藏任何宝贝」（会吓人一跳，以为数据没了）
+      if (offlineMode && !allItems.length) {
+        return '<div class="empty">' +
+          '<div class="empty-icon">📴</div>' +
+          "<p>连不上云端，本地也还没有缓存<br>请换个网络（或等信号好点）后点上方「重试」<br>你的数据都在云端，不会丢</p>" +
+          "</div>";
+      }
       return '<div class="empty">' +
         '<div class="empty-icon">' + (allItems.length ? "🔍" : "📿") + "</div>" +
         "<p>" + (allItems.length ? "没有找到匹配的宝贝" : "还没有收藏任何宝贝\n点击下方 ＋ 添加第一条吧") + "</p>" +
@@ -3861,8 +4011,22 @@
           }
         }
 
-        await DB.put(item);
-        await loadItems();
+        const saved = await DB.put(item);
+        // 云端保存成功；随后重新拉列表若因网络失败，不能报「保存失败」（否则用户会重复保存）
+        try {
+          await loadItems();
+          writeItemsCache();
+        } catch (e) {
+          if (saved && saved.id) {
+            const i = allItems.findIndex((x) => x.id === saved.id);
+            if (i >= 0) allItems[i] = saved; else allItems.unshift(saved);
+            sortItems();
+          }
+          toast("已保存到云端（列表暂时没刷新，网络恢复后会同步）");
+          renderHome();
+          location.hash = "#/";
+          return;
+        }
         toast(isEdit ? "已保存修改" : "已收入收藏馆 🎉");
         renderHome();
         location.hash = "#/";
@@ -4189,11 +4353,16 @@
     updateTabbar();
 
     // 回到来源列表页：恢复原来的滚动位置（只恢复一次）
+    // 说明：列表是同步渲染的（缩略图用 padding 撑成固定方格，不会因图片加载而变高），
+    // 所以先同步恢复一次；再用 rAF 和时间兜底各补一次，防个别浏览器把位置清回顶部。
     const memo = _backMemo && _backMemo.hash === h ? _backMemo : null;
     if (memo) {
       _backMemo = null;
+      const doRestore = () => { if (memo.y > 0) window.scrollTo(0, memo.y); };
       window.scrollTo(0, 0);
-      requestAnimationFrame(() => window.scrollTo(0, memo.y));
+      doRestore();
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(doRestore);
+      [120, 420].forEach((ms) => setTimeout(() => { if (window.scrollY === 0) doRestore(); }, ms));
     } else {
       window.scrollTo(0, 0);
     }
@@ -4294,6 +4463,9 @@
       try { if ("scrollRestoration" in history) history.scrollRestoration = "manual"; } catch (e) { /* 忽略 */ }
       // 提前绑定 AI 小助手（不依赖登录态），确保猫猫图标任何时候都能点击
       bindAI();
+      // 网络状态监听：不稳/断开时顶部显示提示条，恢复后自动重新同步
+      if (DB.onNetChange) { try { DB.onNetChange(onNetRecovered); } catch (e) { /* 忽略 */ } }
+      bindOnlineRecovery();
       // 检查 Supabase 是否已配置
       const cfg = window.SUPABASE_CONFIG || {};
       if (!cfg.url || cfg.url.indexOf("PASTE_") === 0) {

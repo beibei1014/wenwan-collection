@@ -5,6 +5,75 @@
 (function () {
   "use strict";
 
+  /* ---------- 网络韧性层：超时 + 自动重试 + 网络状态广播 ----------
+     手机流量（尤其白天）经常握手失败/TLS 被重置/丢包，浏览器默认会一直挂着等，
+     用户看到的就是「网络错误，登录不上」。这里统一加：超时中止 + 指数退避自动重试 +
+     把网络状态广播给界面（好显示「网络不稳，正在重试」而不是直接报死）。 */
+  const NET = { ok: true, lastError: "", retrying: false };
+  const netListeners = [];
+  function onNetChange(fn) { netListeners.push(fn); try { fn(NET); } catch (e) { /* 忽略 */ } }
+  function emitNet() { netListeners.forEach((f) => { try { f(NET); } catch (e) { /* 忽略 */ } }); }
+  function setNet(ok, err) {
+    const changed = NET.ok !== ok || NET.lastError !== (err || "");
+    NET.ok = ok;
+    NET.lastError = ok ? "" : (err || "");
+    if (ok) NET.retrying = false;
+    if (changed) emitNet();
+  }
+  function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+  function isNetErr(err) {
+    if (!err) return false;
+    if (err.name === "AbortError") return true;                 // 超时被中止
+    const m = String(err.message || err);
+    return /Failed to fetch|NetworkError|network error|Load failed|fetch failed|timeout|timed out|ERR_|aborted/i.test(m);
+  }
+  function backoffMs(attempt) {
+    const base = [0, 500, 1500, 3000][attempt] || 3000;
+    return base + Math.floor(Math.random() * 300);              // 加抖动，避免同时重试
+  }
+  async function resilientFetch(input, init) {
+    const url = typeof input === "string" ? input : ((input && input.url) || "");
+    const isAuth = /\/auth\/v1\//.test(url);
+    const isStorage = /\/storage\/v1\//.test(url);
+    const tries = isStorage ? 2 : 3;                            // 传图文件大，少重试
+    const timeoutMs = isStorage ? 60000 : (isAuth ? 18000 : 15000);
+    let lastErr = null;
+    for (let attempt = 1; attempt <= tries; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      // 外部（SDK）自己的取消信号也要透传
+      if (init && init.signal) {
+        if (init.signal.aborted) ctrl.abort();
+        else init.signal.addEventListener("abort", () => ctrl.abort());
+      }
+      try {
+        const opts = Object.assign({}, init, { signal: ctrl.signal });
+        const res = await window.fetch(input, opts);
+        clearTimeout(timer);
+        // 服务端临时故障也重试（5xx / 限流）
+        if ((res.status >= 500 || res.status === 429) && attempt < tries) {
+          lastErr = new Error("HTTP " + res.status);
+          NET.retrying = true; emitNet();
+          await sleep(backoffMs(attempt));
+          continue;
+        }
+        setNet(true);
+        return res;
+      } catch (err) {
+        clearTimeout(timer);
+        lastErr = err;
+        if (!isNetErr(err)) { setNet(true); throw err; }        // 业务错误不算网络问题
+        if (attempt < tries) {
+          NET.retrying = true; emitNet();
+          await sleep(backoffMs(attempt));
+          continue;
+        }
+      }
+    }
+    setNet(false, (lastErr && lastErr.message) || "网络错误");
+    throw lastErr || new Error("网络错误");
+  }
+
   /* ---------- Supabase 客户端 ---------- */
   let supabase = null;
 
@@ -14,7 +83,9 @@
     if (!cfg.url || !cfg.anonKey || cfg.url.indexOf("PASTE_") === 0) {
       throw new Error("Supabase 尚未配置，请填写 js/config.js 中的 URL 和 Key");
     }
-    supabase = window.supabase.createClient(cfg.url, cfg.anonKey);
+    supabase = window.supabase.createClient(cfg.url, cfg.anonKey, {
+      global: { fetch: resilientFetch },   // 所有请求走韧性层（含登录与 Storage）
+    });
     return supabase;
   }
 
@@ -373,5 +444,6 @@
     uploadPhoto, deletePhoto,
     exportBackup, importBackup,
     fileToPhoto, daysWith, formatDays, uid,
+    onNetChange, getNet: () => NET,          // 网络状态（给界面显示「网络不稳/正在重试」）
   };
 })();
