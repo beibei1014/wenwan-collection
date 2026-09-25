@@ -358,7 +358,7 @@
     const statusLabels = [
       { key: "playing", label: "盘玩中", color: "#2e7d32" },
       { key: "ready", label: "待盘玩", color: "#ef6c00" },
-      { key: "done", label: "已盘好", color: "#6a1b9a" },
+      { key: "done", label: "已挂瓷", color: "#6a1b9a" },
       { key: "unplayed", label: "未盘玩", color: "#78909c" },
       { key: "puzzle_pending", label: "待拼", color: "#d98ba6" },
       { key: "puzzle_done", label: "已拼", color: "#2e7d32" },
@@ -497,13 +497,16 @@
       const [py, pm] = ym.split("-");
       facts.push({ icon: "🔥", text: "你在 " + py + " 年 " + (+pm) + " 月盘了 " + n + " 条串，手都冒烟了" });
     }
-    // 天道酬勤：某件已盘好的菩提，从入库到现在陪伴了多少天（盘完它花了多少天）
+    // 天道酬勤：某件已挂瓷的菩提，从入库到现在陪伴了多少天（盘到挂瓷花了多少天）
     const doneItems = items.filter((i) => (i.category === "菩提" && i.playStatus === "done") || i.playStatus === "puzzle_done");
     if (doneItems.length) {
       const d = doneItems.sort((a, b) => DB.daysWith(b) - DB.daysWith(a))[0];
       const days = DB.daysWith(d);
       if (days >= 1) {
-        facts.push({ icon: "🌾", text: "你把「" + (d.name || "未命名") + "」盘完花了 " + DB.formatDays(days) + "，天道酬勤" });
+        const isPuzzle = d.playStatus === "puzzle_done";
+        facts.push({ icon: "🌾", text: isPuzzle
+          ? "你把「" + (d.name || "未命名") + "」拼完花了 " + DB.formatDays(days) + "，天道酬勤"
+          : "你把「" + (d.name || "未命名") + "」盘到挂瓷花了 " + DB.formatDays(days) + "，天道酬勤" });
       }
     }
     // 五杀进货：分类收藏最多（某个盒子收得最多）

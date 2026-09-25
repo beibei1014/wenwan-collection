@@ -54,7 +54,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 **`bracelets` 表字段**（注意：历史迭代多次 alter，脚本分散在多个 supabase-*.sql）：
 `id, user_id, name, species, craft, arrived_at, price, shop, gifted, gifted_at, played, played_note, note, photos(jsonb), screenshots(jsonb), created_at, updated_at, bead_size, category, finished_at, piece_count, accessory_type, play_status, last_played_at, fav, color, bead_shape`
 
-**用户需自行执行的 alter SQL**（db.js 会静默降级不崩，但字段保存无效）：
+**数据库字段（✅ 用户已于 v88 前全部执行完毕，脚本留档备查，不需要再提醒用户执行）**：
 - `play_status`：`alter table public.bracelets add column if not exists play_status text not null default '';`
 - `last_played_at`：`alter table public.bracelets add column if not exists last_played_at timestamptz;`
 - `play_count`：`alter table public.bracelets add column if not exists play_count int not null default 0;`
@@ -65,11 +65,11 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 - `first_played_at`：`alter table public.bracelets add column if not exists first_played_at timestamptz;`（v78，详情页「首次盘玩/盘玩周期」用）
 
 **`profiles` 表（连续打卡用）**：
-- `play_days`：`alter table public.profiles add column if not exists play_days jsonb not null default '[]'::jsonb;`
+- `play_days`：`alter table public.profiles add column if not exists play_days jsonb not null default '[]'::jsonb;`（✅ 已执行）
   - 存打卡日期数组（`["2026-09-12", ...]`），用于「连续打卡」；缺此列时打卡仍在本机生效但云端不同步（会提示一次）
 
 **字段含义**：
-- `play_status`：菩提类 `unplayed`(未盘玩) / `ready`(待盘玩) / `playing`(盘玩中) / `done`(已盘好)；拼图类 `puzzle_pending` / `puzzle_done`；`` '' `` 归一为 unplayed
+- `play_status`：菩提类 `unplayed`(未盘玩) / `ready`(待盘玩) / `playing`(盘玩中) / `done`(**已挂瓷**，v88 前叫"已盘好")；拼图类 `puzzle_pending` / `puzzle_done`；`` '' `` 归一为 unplayed
 - `last_played_at`：上次盘玩时间（timestamptz），盘玩时长/抽卡进池判断靠它
 - `play_count`：盘玩次数（int，默认 0），「今日盘过」和手动设置上次盘玩时间时 +1，排序用（v54）
 - `star`：星级（int，0-5，默认 0），5 星自动进喜欢/收藏展示柜；toFront 兼容旧 fav（旧 fav=true → 5 星，旧 fav=false → 0 星）；fav 字段保留并写为 `star>=5`（v55）
@@ -82,7 +82,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v87）
+## 五、功能清单（截至 v88）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -184,6 +184,10 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
     - 另外：保存成功后若"重新拉列表"恰好失败，**不能再报「保存失败」**（会导致用户重复保存出两条），改为用 `DB.put` 返回的数据就地更新内存并提示「已保存到云端（列表暂时没刷新）」；离线且无缓存时首页显示专用文案「连不上云端，本地也还没有缓存…你的数据都在云端，不会丢」，且**不再把人强制跳到设置用户名页**（这个跳转原本会因为读不到 profile 而误触发）。
     - **验证**：① `resilientFetch` 11 项单元测试（失败 2 次后成功 / 三次全败 / 503 重试 / 400 不重试 / 挂住被超时中止 / Storage 只重 2 次 / 状态广播去重）全绿；② 「真 app.js + 假 Supabase + 可控故障 window.fetch」的弱网端到端：**正常网络 4/4、抖动网络 4/4（前 2 次失败后自动成功）、断网+有缓存 9/9（含"不点按钮 20 秒自动重试"）、断网+无缓存 3/3**；③ 顺带回归「详情翻页 + 返回恢复滚动位置」通过。**顺带修的隐患**：返回列表恢复滚动位置原来只靠 `requestAnimationFrame`，个别浏览器/慢设备会把位置清回顶部——改成「同步立即恢复 + rAF + 120ms/420ms 兜底各一次（仅在仍为 0 时补）」。
     - **关于「要不要换国内免费存储」**：结论是**先别迁**（v87 已针对弱网兜底，先用几天流量验证）。真要迁再评估：腾讯云开发 CloudBase（国内节点，免费环境 3,000 资源点/月 ≈ ¥3、1 个环境、**每 6 个月需手动续期**，有 Web SDK/数据库/存储/认证，但认证以微信/手机号/自定义登录为主，邮箱密码要另做）；Bmob（老牌国内后端云，REST 接口）；LeanCloud 国内版**需要已备案域名**（github.io 无法备案）→ 不适用，国际版仍是海外节点。迁移成本可控的原因：**全站数据访问都走 `window.DB` 接口**，换后端只需重写 `js/db.js`（约 450 行）+ 认证 + 图片存储 + 一次性导数据，4600+ 行的界面代码不用动。缓存 v87
+69. **状态「已盘好」改名「已挂瓷」+ 挂瓷串 5 天保养提醒（v88）**：用户要求「把状态里的已盘完改成已挂瓷」——注意**界面上的旧文案其实是「已盘好」**（用户口头叫"已盘完"），所以把全部 `已盘好` 统一替换为 **`已挂瓷`**（`app.js` 11 处：`BEAD_STATUS` 标签、`beadStatusText`、筛选 chip、今日心选副标题、批量草稿下拉、分享文案等；`stats.js` 2 处：收藏分布标签 + 天道酬勤文案）。`play_status` 的**数据库值不变**（仍是 `done`），只改显示，历史数据无需迁移。
+    - **新增「挂瓷串超过 5 天没盘才提醒」**：`game.js` 抽出 `idleLimitOf(item)` —— **已挂瓷(done) = 5 天**、其他(待盘玩/盘玩中) 仍是 **2 天**；`playPlan()`（盘玩计划）与 `isDrawable()`（今日心选抽卡）**同步改用同一口径**，避免两处提醒不一致。已挂瓷串在计划里的天数文案改成 **「挂瓷 N 天没盘」**（原来是"已 N 天没盘"），一眼能看出这是保养提醒而不是没盘完。
+    - 规则边界：**待盘玩(ready) 永远提醒**（不看天数）；**未盘玩(unplayed) 永不提醒**（用户暂时不想盘）；正好 5 天/2 天**还不提醒**（要"超过"）；从未盘过的非 unplayed 串仍可直接提醒。
+    - **验证**：① 用**真实 `game.js`**（vm 加载）跑 16 项单测全绿：挂瓷 4 天不提醒 / 6 天提醒 / 正好 5 天不提醒 / 盘玩中 3 天提醒 / 2 天不提醒 / 待盘玩一直提醒 / 未盘玩与已送人都不提醒 / 抽卡口径一致 / 排序仍按闲置天数；② 真 app.js 端到端 20 项全绿：全站再无「已盘好/已盘完」，筛选 chips 有「已挂瓷」，计划里挂瓷 6 天进、挂瓷 4 天不进，文案是「挂瓷 6 天没盘」，详情页标签、编辑页状态、统计页分布都是「已挂瓷」。缓存 v88
 
 > 🧪 **可复用的端到端测试套路（推荐）**：把 `index.html` 的 body 注入一个临时页面 → 在脚本前定义 `window.SUPABASE_CONFIG` 与假 `window.supabase.createClient`（`auth.getSession/getUser` 返回假 session，`from(t)` 返回链式对象，`then` 直接 resolve 固定数据）→ 按原顺序动态 `appendChild` 加载 `js/*.js` → `location.hash` 切路由 + 断言。这样能用真实 `app.js` 验证交互，不用登录、不碰线上库。
 

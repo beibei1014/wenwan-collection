@@ -299,19 +299,24 @@
 
   /* ---------- 抽卡系统：今日心选 3 串（按日期种子随机，当天固定、次日变化） ---------- */
   // 候选：只抽「菩提」分类（只有菩提需要盘包浆）
-  // 统一口径：放置时间 > 2 天（距上次盘玩超过 2 天；从未盘过视为放置很久，可抽）
+  // 放置阈值：已挂瓷（done）的串保养为主 → 超过 5 天没盘才再提醒；其余（待盘玩/盘玩中）> 2 天
   const DRAW_CATS = ["菩提"];
+  const IDLE_LIMIT_DONE = 5;    // 已挂瓷：超过 5 天没盘才提醒/可抽
+  const IDLE_LIMIT_NORMAL = 2;  // 待盘玩/盘玩中：放置 > 2 天
+  function idleLimitOf(item) {
+    return (item && item.playStatus === "done") ? IDLE_LIMIT_DONE : IDLE_LIMIT_NORMAL;
+  }
   function isDrawable(item, now) {
     if (!item || item.gifted) return false;
     const cat = item.category || "";
     // 只有菩提参与盘玩抽卡；拼图/周边/水晶/玉石等不参与
     if (!DRAW_CATS.includes(cat)) return false;
     if (item.playStatus === "unplayed" || item.playStatus === "") return false; // 未盘玩（暂时不想盘的）不抽
-    // 待盘玩 / 盘玩中 / 已盘好 都可参与，但必须放置 > 2 天
+    // 待盘玩 / 盘玩中 / 已挂瓷 都可参与
     const okStatus = ["ready", "playing", "done"].includes(item.playStatus);
     if (!okStatus) return false;
     if (!item.lastPlayedAt) return true; // 从未盘过 → 可抽
-    return Math.floor((now - item.lastPlayedAt) / 86400000) > 2; // 放置时间 > 2 天才可抽
+    return Math.floor((now - item.lastPlayedAt) / 86400000) > idleLimitOf(item);
   }
 
   function drawRecommendation(items, count, salt) {
@@ -331,7 +336,7 @@
   }
 
   /* ---------- 盘玩计划：轻量提醒哪些串该盘了（温和建议，非打卡） ---------- */
-  // 重点展示：待盘玩(ready) + 放置时间>2天(上次盘玩距现在≥2天，或从未盘过) 的串
+  // 重点展示：待盘玩(ready) 一直提醒；盘玩中/已挂瓷 放置超过阈值（2 天 / 挂瓷 5 天）才提醒
   // 按闲置时间排序（从未盘过最优先，然后闲置越久越靠前）；返回完整候选池，数量由调用方按档位取
   function playPlan(items) {
     const now = Date.now();
@@ -345,8 +350,8 @@
         const arrived = Math.floor((now - (i.arrivedAt || i.createdAt || now)) / day);
         return { item: i, idleDays, arrived };
       })
-      // 只保留：待盘玩，或 放置>2 天（含从未盘过）
-      .filter((x) => x.item.playStatus === "ready" || x.idleDays == null || x.idleDays > 2)
+      // 待盘玩一直提醒；其余按阈值：已挂瓷 > 5 天、盘玩中 > 2 天（含从未盘过）
+      .filter((x) => x.item.playStatus === "ready" || x.idleDays == null || x.idleDays > idleLimitOf(x.item))
       .sort((a, b) => {
         if (a.idleDays == null && b.idleDays != null) return -1;   // 从未盘过优先
         if (a.idleDays != null && b.idleDays == null) return 1;
@@ -357,9 +362,11 @@
     return {
       items: pool.map((x) => {
         const idle = x.idleDays;
+        const isDone = x.item.playStatus === "done";   // 已挂瓷：回来是"保养提醒"
         let text;
         if (idle == null) text = "还没开始盘";
         else if (idle <= 0) text = "今天盘过啦";
+        else if (isDone) text = "挂瓷 " + idle + " 天没盘";
         else if (idle <= 3) text = "刚盘 " + idle + " 天";
         else text = "已 " + idle + " 天没盘";
         return {
