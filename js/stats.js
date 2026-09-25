@@ -339,8 +339,8 @@
       pct: Math.round((count / total) * 100),
     })).sort((a, b) => b.count - a.count);
 
-    // —— 状态分布（盘玩 4 态 + 拼图 2 态 + 在库/已送人） ——
-    const st = { unplayed: 0, ready: 0, playing: 0, done: 0, puzzle_pending: 0, puzzle_done: 0, gifted: 0, plain: 0 };
+    // —— 状态分布（盘玩 4 态 + 佩戴中 + 拼图 2 态 + 在库/已送人） ——
+    const st = { unplayed: 0, ready: 0, playing: 0, done: 0, wearing: 0, puzzle_pending: 0, puzzle_done: 0, gifted: 0, plain: 0 };
     items.forEach((i) => {
       if (i.gifted) { st.gifted++; return; }
       const cat = i.category || "";
@@ -359,6 +359,7 @@
       { key: "playing", label: "盘玩中", color: "#2e7d32" },
       { key: "ready", label: "待盘玩", color: "#ef6c00" },
       { key: "done", label: "已挂瓷", color: "#6a1b9a" },
+      { key: "wearing", label: "佩戴中", color: "#00838f" },
       { key: "unplayed", label: "未盘玩", color: "#78909c" },
       { key: "puzzle_pending", label: "待拼", color: "#d98ba6" },
       { key: "puzzle_done", label: "已拼", color: "#2e7d32" },

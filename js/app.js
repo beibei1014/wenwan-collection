@@ -33,17 +33,21 @@
   let _detailSwipedAt = 0;   // 详情页刚左右滑动的时间戳（避免滑动后顺手打开大图）
 
   /* ---------- 状态定义 ---------- */
-  // 珠子类 4 态：未盘玩(unplayed) / 待盘玩(ready) / 盘玩中(playing) / 已挂瓷(done)
+  // 珠子类 5 态：未盘玩(unplayed) / 待盘玩(ready) / 盘玩中(playing) / 已挂瓷(done) / 佩戴中(wearing)
   // 放置时长（盘玩→现在）由 lastPlayedAt 推算，不再单独占用"放置中"状态
+  // 「佩戴中」= 天天戴着的串：只管戴不用盘 → 不参与盘玩计划、今日心选、盘玩状态筛选与盘玩统计
   const BEAD_STATUS = [
     { v: "unplayed", label: "未盘玩" },
     { v: "ready", label: "待盘玩" },
     { v: "playing", label: "盘玩中" },
     { v: "done", label: "已挂瓷" },
+    { v: "wearing", label: "佩戴中" },
   ];
   const BEAD_STATUS_LABEL = Object.fromEntries(BEAD_STATUS.map((s) => [s.v, s.label]));
-  // 珠子类状态的可抽卡状态集合（排除 unplayed）
-  const DRAWABLE_STATUS = ["ready", "playing", "done"];
+  // 参与「盘玩」流程的状态（佩戴中不在其中 → 不进盘玩计划 / 不参与抽卡 / 不计入盘玩统计）
+  const PLAY_FLOW_STATUS = ["ready", "playing", "done"];
+  // 珠子类状态的可抽卡状态集合（排除 unplayed 与 wearing）
+  const DRAWABLE_STATUS = PLAY_FLOW_STATUS;
   const isPuzzleCat = (cat) => Categories.isPuzzleCategory(cat);
   // 盘玩(包浆)状态机只用于「菩提」分类：未盘玩/待盘玩/盘玩中/已挂瓷
   const PLAYABLE_CATS = ["菩提"];
@@ -59,19 +63,20 @@
     if (v === "idle") return "ready";     // 旧"待盘玩" → 新"待盘玩(ready)"
     if (v === "resting") return "playing"; // 旧"放置中" → 新"盘玩中"
     if (v === "playing") return "playing"; // 旧"在盘玩" → 新"盘玩中"
-    if (["unplayed", "ready", "playing", "done"].includes(v)) return v;
+    if (["unplayed", "ready", "playing", "done", "wearing"].includes(v)) return v;
     return v; // 其他（""等）保持
   }
   // 珠子状态展示文案：盘玩中显示"已放置 X 天"（基于上次盘玩时间）
   function beadStatusText(it) {
     const st = it.playStatus || "unplayed";
+    if (st === "wearing") return "佩戴中";
     if (st === "playing") return "盘玩中" + (it.lastPlayedAt ? " · 已放置" + Math.floor((Date.now() - it.lastPlayedAt) / 86400000) + "天" : "");
     if (st === "done") return "已挂瓷";
     if (st === "ready") return "待盘玩";
     return "未盘玩";
   }
-  // 珠子状态颜色 class（4 种状态 4 种颜色）
-  const BEAD_CLS = { unplayed: "sp-unplayed", ready: "sp-ready", playing: "sp-playing", done: "sp-done" };
+  // 珠子状态颜色 class（每种状态一种颜色）
+  const BEAD_CLS = { unplayed: "sp-unplayed", ready: "sp-ready", playing: "sp-playing", done: "sp-done", wearing: "sp-wearing" };
   function beadStatusCls(it) {
     const st = it.playStatus || "unplayed";
     return BEAD_CLS[st] || BEAD_CLS.unplayed;
@@ -767,7 +772,8 @@
       statusChips += stChip("unplayed", "未盘玩", bBase.filter((i) => i.playStatus === "unplayed" || !i.playStatus).length) +
         stChip("ready", "待盘玩", bBase.filter((i) => i.playStatus === "ready").length) +
         stChip("playing", "盘玩中", bBase.filter((i) => i.playStatus === "playing").length) +
-        stChip("done", "已挂瓷", bBase.filter((i) => i.playStatus === "done").length);
+        stChip("done", "已挂瓷", bBase.filter((i) => i.playStatus === "done").length) +
+        stChip("wearing", "佩戴中", bBase.filter((i) => i.playStatus === "wearing").length);
     }
     if (isPuzzleCat(cat) || isUncat) {
       statusChips += stChip("puzzle_pending", "待拼", pBase.filter((i) => i.playStatus === "puzzle_pending").length) +
@@ -1602,6 +1608,7 @@
         '<option value="ready">待盘玩</option>' +
         '<option value="playing">盘玩中</option>' +
         '<option value="done">已挂瓷</option>' +
+        '<option value="wearing">佩戴中</option>' +
         '<option value="puzzle_pending">待拼</option>' +
         '<option value="puzzle_done">已拼</option>' +
         '<option value="gifted">已送人</option>' +
@@ -2502,6 +2509,7 @@
           if (f === "ready" && isBeadCat(i.category || "") && i.playStatus === "ready") return true;
           if (f === "playing" && isBeadCat(i.category || "") && i.playStatus === "playing") return true;
           if (f === "done" && isBeadCat(i.category || "") && i.playStatus === "done") return true;
+          if (f === "wearing" && isBeadCat(i.category || "") && i.playStatus === "wearing") return true;
           if (f === "puzzle_pending" && i.playStatus === "puzzle_pending") return true;
           if (f === "puzzle_done" && i.playStatus === "puzzle_done") return true;
         }
@@ -2664,6 +2672,7 @@
       ready: base.filter((i) => isBeadCat(i.category || "") && i.playStatus === "ready").length,
       playing: base.filter((i) => isBeadCat(i.category || "") && i.playStatus === "playing").length,
       done: base.filter((i) => isBeadCat(i.category || "") && i.playStatus === "done").length,
+      wearing: base.filter((i) => isBeadCat(i.category || "") && i.playStatus === "wearing").length,
       puzzle_pending: base.filter((i) => i.playStatus === "puzzle_pending").length,
       puzzle_done: base.filter((i) => i.playStatus === "puzzle_done").length,
       gifted: base.filter((i) => i.gifted).length,
@@ -2688,7 +2697,7 @@
     filterHtml += '<div class="filters">' +
       '<span class="chip total-chip">共 <b>' + base.length + '</b></span>' +
       stChip("instock", "在库") +
-      (hasBeadCat ? stChip("unplayed", "未盘玩") + stChip("ready", "待盘玩") + stChip("playing", "盘玩中") + stChip("done", "已挂瓷") : "") +
+      (hasBeadCat ? stChip("unplayed", "未盘玩") + stChip("ready", "待盘玩") + stChip("playing", "盘玩中") + stChip("done", "已挂瓷") + stChip("wearing", "佩戴中") : "") +
       (hasPuzzleCat ? stChip("puzzle_pending", "待拼") + stChip("puzzle_done", "已拼") : "") +
       stChip("gifted", "已送人") +
       (selectFilters.size ? '<button type="button" class="chip clear-chip" id="clearSt">✕ 清除状态</button>' : "") +
@@ -3399,6 +3408,11 @@
     html += infoItem("购买店铺", esc(it.shop || "—"), true);
     // 盘玩时长（上次盘玩 → 现在）：所有菩提类都显示，可手动设置上次盘玩时间
     if (isBeadCat(it.category || "")) {
+      if (it.playStatus === "wearing") {
+        // 佩戴中：天天戴着的串只管戴不用盘 → 不显示盘玩时长/盘玩周期，只显示佩戴说明 + 历史盘玩次数
+        html += infoItem("佩戴状态", "🖐 正在佩戴 · 不参与盘玩计划与今日心选（挂着戴就是一直在盘它）", true);
+        html += infoItem("累计盘玩次数", (Number(it.playCount) || 0) + " 次", true);
+      } else {
       if (it.lastPlayedAt) {
         const restDays = Math.floor((Date.now() - it.lastPlayedAt) / 86400000);
         const lpDate = new Date(it.lastPlayedAt);
@@ -3418,6 +3432,7 @@
         }
       } else {
         html += infoItem("首次盘玩", '未记录 <button type="button" class="link-btn" id="editFirstPlayed">设置</button>', true);
+      }
       }
     }
     // 颜色：显示主色 + 可点击修改（旧值归一化）

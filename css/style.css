@@ -268,6 +268,7 @@ img { display:block; }
 .badge.status-toggle.bead[data-bead="playing"] { background:#e67e22; }
 .badge.status-toggle.bead[data-bead="resting"] { background:#1976d2; }
 .badge.status-toggle.bead[data-bead="done"] { background:#2e7d32; }
+.badge.status-toggle.bead[data-bead="wearing"] { background:#00838f; }
 .badge.status-toggle.done { background:#2e7d32; }
 .badge.status-toggle.pending { background:#d98ba6; }
 /* 喜欢按钮（卡片右下角，固定） */
@@ -358,6 +359,7 @@ img { display:block; }
 .tag.sp-playing { background:#fde8d7; color:#e67e22; border-color:#f7c9a3; }
 .tag.sp-resting { background:#e3f2fd; color:#1976d2; border-color:#bbdefb; }
 .tag.sp-done { background:#e8f5e9; color:#2e7d32; border-color:#c8e6c9; }
+.tag.sp-wearing { background:#e0f7fa; color:#00838f; border-color:#b2ebf2; }
 .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
 .info-item { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
 .info-item .k { font-size:11px; color:var(--text-2); margin-bottom:3px; }
