@@ -2443,53 +2443,69 @@
 
   // 排序：arrived=入库时间(desc) | created=放置时间(desc=放置最长在前) | price=价格 | playcount=盘玩次数 | star=星级 | color=颜色
   // 传入 items 可对指定集合（如某收藏盒子）排序，缺省对全量 allItems
+  //
+  // v90 新增「分组压底」：列表顺序 = ① 正常串（按所选排序） → ② 未盘玩 → ③ 佩戴中（最下）
+  //   · 佩戴中的串天天戴着、不用盘，压在列表最底下，不打扰
+  //   · 未盘玩（还没开始盘）排在佩戴中上面；两组各自内部仍按所选排序方式
+  //   · 切换升/降序不会改变这两组的位置（和"未记价在价格排序时永远排最后"是同一套规则）
+  function pinRank(it) {
+    const st = it.playStatus || "";
+    if (st === "wearing") return 2;
+    if (st === "unplayed") return 1;
+    // 菩提类但状态为空：等同未盘玩（loadItems 会归一化，这里兜底）
+    if (!st && isBeadCat(it.category || "")) return 1;
+    return 0;
+  }
   function sortItems(items) {
     const arr = items || allItems;
     const key = (i) => i.arrivedAt || i.createdAt || 0;
     const restKey = (i) => (i.lastPlayedAt ? Date.now() - i.lastPlayedAt : null); // 放置时长：距上次盘玩（ms）
     const dir = sortDir === "asc" ? 1 : -1; // asc: 小→大；desc: 大→小
+    const priceNum = (i) => {
+      if (i.price == null || i.price === "" || !isFinite(Number(i.price)) || Number(i.price) <= 0) return null;
+      return Number(i.price);
+    };
+    const colorOrder = (window.Color ? window.Color.COLOR_LIST : []).map((c) => c.v);
+    const colorIdx = (it) => {
+      const c = window.Color ? window.Color.normColor(it.color) : it.color;
+      const i = colorOrder.indexOf(c);
+      return i === -1 ? colorOrder.length : i;
+    };
+    let cmp;
     switch (sortMode) {
       case "created": {
         // 放置时间：距上次盘玩的时长(=now - lastPlayedAt)；desc=放置最长在前；无盘玩记录恒排最后
-        arr.sort((a, b) => {
+        cmp = (a, b) => {
           const ra = restKey(a), rb = restKey(b);
           if (ra == null && rb == null) return 0;
           if (ra == null) return 1; // 未盘玩/无记录排最后
           if (rb == null) return -1;
           return (ra - rb) * dir;
-        });
+        };
         break;
       }
       case "price": {
         // 未记价的宝贝永远排最后（无论升降序），不污染排序
-        const pr = (i) => {
-          if (i.price == null || i.price === "" || !isFinite(Number(i.price)) || Number(i.price) <= 0) return null;
-          return Number(i.price);
-        };
-        arr.sort((a, b) => {
-          const pa = pr(a), pb = pr(b);
+        cmp = (a, b) => {
+          const pa = priceNum(a), pb = priceNum(b);
           if (pa == null && pb == null) return 0;
           if (pa == null) return 1;
           if (pb == null) return -1;
           return (pa - pb) * dir;
-        });
-        break;
-      }
-      case "playcount": arr.sort((a, b) => ((Number(a.playCount) || 0) - (Number(b.playCount) || 0)) * dir); break;
-      case "star": arr.sort((a, b) => ((Number(a.star) || 0) - (Number(b.star) || 0)) * dir); break; // desc=高星在前；asc=低星在前
-      case "color": {
-        // 按颜色浅→深排；方向：desc=浅→深（白在前），asc=深→浅
-        const order = (window.Color ? window.Color.COLOR_LIST : []).map((c) => c.v);
-        const idx = (it) => {
-          const c = window.Color ? window.Color.normColor(it.color) : it.color;
-          const i = order.indexOf(c);
-          return i === -1 ? order.length : i;
         };
-        arr.sort((a, b) => (idx(a) - idx(b)) * dir);
         break;
       }
-      default: arr.sort((a, b) => (key(a) - key(b)) * dir); // arrived
+      case "playcount": cmp = (a, b) => ((Number(a.playCount) || 0) - (Number(b.playCount) || 0)) * dir; break;
+      case "star": cmp = (a, b) => ((Number(a.star) || 0) - (Number(b.star) || 0)) * dir; break; // desc=高星在前；asc=低星在前
+      case "color": cmp = (a, b) => (colorIdx(a) - colorIdx(b)) * dir; break; // 按颜色浅→深排；desc=浅→深（白在前）
+      default: cmp = (a, b) => (key(a) - key(b)) * dir; // arrived
     }
+    // 先按「分组压底」排（普通 0 → 未盘玩 1 → 佩戴中 2），组内再用所选排序比较
+    arr.sort((a, b) => {
+      const r = pinRank(a) - pinRank(b);
+      if (r !== 0) return r;
+      return cmp(a, b);
+    });
   }
 
   function filtered(base) {
