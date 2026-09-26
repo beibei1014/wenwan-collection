@@ -360,6 +360,12 @@ img { display:block; }
 .tag.sp-resting { background:#e3f2fd; color:#1976d2; border-color:#bbdefb; }
 .tag.sp-done { background:#e8f5e9; color:#2e7d32; border-color:#c8e6c9; }
 .tag.sp-wearing { background:#e0f7fa; color:#00838f; border-color:#b2ebf2; }
+/* 软糯程度：软糯=玫红，微糯=淡紫（和状态/在库标签区分开） */
+.tag.soft-soft { background:#fce4ec; color:#c2185b; border-color:#f8bbd0; }
+.tag.soft-slight { background:#f3e5f5; color:#7b1fa2; border-color:#e1bee7; }
+.color-tag.soft-tag { border:1px solid transparent; }
+.color-tag.soft-soft { background:#fce4ec; color:#c2185b; border-color:#f8bbd0; }
+.color-tag.soft-slight { background:#f3e5f5; color:#7b1fa2; border-color:#e1bee7; }
 .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
 .info-item { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
 .info-item .k { font-size:11px; color:var(--text-2); margin-bottom:3px; }

@@ -155,6 +155,24 @@
     return '<span class="color-tag shape-tag" title="珠型：' + esc(label) + '">📿 ' + esc(label) + "</span>";
   }
 
+  /* ---------- 软糯程度（v91） ---------- */
+  // 手感的"糯"感：软糯 / 微糯；未标注则不显示标签
+  const SOFTNESS_LIST = [
+    { v: "soft", label: "软糯" },
+    { v: "slight", label: "微糯" },
+  ];
+  function softnessLabel(v) {
+    if (!v) return "";
+    const s = SOFTNESS_LIST.find((x) => x.v === v);
+    return s ? s.label : v;   // 未知值原样返回（兼容手工写入）
+  }
+  // 软糯程度标签（列表/详情复用）；未标注不显示
+  function softnessTagHtml(it) {
+    if (!it.softness) return "";
+    const label = softnessLabel(it.softness);
+    return '<span class="color-tag soft-tag soft-' + esc(it.softness) + '" title="软糯程度：' + esc(label) + '">🍡 ' + esc(label) + "</span>";
+  }
+
   // 珠子状态徽章颜色（CSS 类）
   function beadBadgeCls(it) {
     const st = it.playStatus || "unplayed";
@@ -842,7 +860,7 @@
         '<div class="card-thumb">' + img + badge + statusBadge + stars + "</div>" +
         '<div class="card-body">' +
         '<div class="card-name">' + esc(clipName(it.name, NAME_MAX.card)) + "</div>" +
-        '<div class="card-sub">' + shapeTagHtml(it) + '<span>' + esc(it.species || it.beadSize ? (it.beadSize ? it.beadSize + "mm" : it.species || "") : "") + '</span><span class="days">' + esc(days) + "</span></div>" +
+        '<div class="card-sub">' + shapeTagHtml(it) + softnessTagHtml(it) + '<span>' + esc(it.species || it.beadSize ? (it.beadSize ? it.beadSize + "mm" : it.species || "") : "") + '</span><span class="days">' + esc(days) + "</span></div>" +
         "</div></div>";
     }
     html += "</div>";
@@ -1494,6 +1512,8 @@
         const colorTag = colorTagHtml(it);
         // 珠型标签
         const shapeTag = shapeTagHtml(it);
+        // 软糯程度标签
+        const softTag = softnessTagHtml(it);
         // 盘玩状态标签（珠子/拼图）
         const isPuzzleIt = isPuzzleCat(it.category || "");
         const isBeadIt = isBeadCat(it.category || "");
@@ -1635,7 +1655,7 @@
       html += '<div class="batch-op">' +
         '<div class="batch-op-title">🏷️ 设置品种 / 品牌</div>' +
         '<div style="display:flex;gap:8px">' +
-        '<input class="form-input" id="bSpecies" placeholder="如：星月菩提 / HEYE" style="flex:1">' +
+        '<input class="form-input" id="bSpecies" placeholder="如：库克 / HEYE" style="flex:1">' +
         '<button class="btn primary" id="bApplySpecies" style="flex:none;padding:9px 14px;font-size:13px">应用</button></div></div>';
 
       // 批量设置主色
@@ -2602,6 +2622,7 @@
           (i.category || "").toLowerCase().includes(term) ||
           (i.craft || "").toLowerCase().includes(term) ||
           shapeLabel(i.beadShape).toLowerCase().includes(term) ||
+          softnessLabel(i.softness).toLowerCase().includes(term) ||   // 搜「软糯」「微糯」也能找到
           (i.accessoryType || "").toLowerCase().includes(term) ||
           statusText(i).toLowerCase().includes(term) ||
           colorText(i).includes(term) ||
@@ -2831,6 +2852,7 @@
           '<div class="list-right">' +
           colorTagHtml(it) +
           shapeTagHtml(it) +
+          softnessTagHtml(it) +
           (it.gifted
             ? '<span class="list-status ' + statusCls + '">' + statusTxt + "</span>"
             : (isPuzzleIt || isBeadIt
@@ -2856,7 +2878,7 @@
         '<div class="card-thumb">' + img + badge + statusBadge + stars + "</div>" +
         '<div class="card-body">' +
         '<div class="card-name">' + esc(clipName(it.name, NAME_MAX.card)) + "</div>" +
-        '<div class="card-sub">' + colorTagHtml(it) + shapeTagHtml(it) + '<span class="days">' + esc(days) + "</span></div>" +
+        '<div class="card-sub">' + colorTagHtml(it) + shapeTagHtml(it) + softnessTagHtml(it) + '<span class="days">' + esc(days) + "</span></div>" +
         "</div></div>";
     }
     return h + "</div>";
@@ -3390,6 +3412,7 @@
         : (isPuzzleCat(it.category || "") ? (it.playStatus === "puzzle_done" ? '<span class="tag g">已拼</span>' : '<span class="tag yl">待拼</span>') : "")) +
       (it.craft ? '<span class="tag">' + esc(it.craft) + "</span>" : "") +
       (it.beadShape ? '<span class="tag">📿 ' + esc(shapeLabel(it.beadShape)) + "</span>" : "") +
+      (it.softness ? '<span class="tag soft-' + esc(it.softness) + '">🍡 ' + esc(softnessLabel(it.softness)) + "</span>" : "") +
       (it.category ? '<span class="tag">' + esc(it.category) + "</span>" : "");
 
     let html = "";
@@ -3699,6 +3722,17 @@
         '<div class="filters" id="fShapeChips">' + shapeChips + "</div></div>";
     }
 
+    // 软糯程度（手工，可清除）
+    {
+      const curSoft = it ? (it.softness || "") : "";
+      let softChips = '<button type="button" class="color-chip' + (!curSoft ? " active" : "") + '" data-soft="">未标注</button>';
+      SOFTNESS_LIST.forEach((s) => {
+        softChips += '<button type="button" class="color-chip' + (curSoft === s.v ? " active" : "") + '" data-soft="' + s.v + '">🍡 ' + esc(s.label) + "</button>";
+      });
+      html += '<div class="form-group"><div class="form-label">软糯程度 <small>手感，可留空</small></div>' +
+        '<div class="filters" id="fSoftChips">' + softChips + "</div></div>";
+    }
+
     html += '<div class="form-group" id="giftedWrap"' + ((curStatus === "gifted" || giftStatus === "gifted") ? "" : ' style="display:none"') + '><div class="form-label">送人时间</div>' +
       '<input class="form-input" id="fGiftedDate" type="date" value="' + (it && it.giftedAt ? fmtDateInput(it.giftedAt) : "") + '"></div>';
 
@@ -3829,6 +3863,14 @@
     if (fShapeChips) {
       fShapeChips.querySelectorAll(".color-chip").forEach((b) => b.onclick = () => {
         fShapeChips.querySelectorAll(".color-chip").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+      });
+    }
+    // 软糯程度 chips 点击切换
+    const fSoftChips = $("#fSoftChips");
+    if (fSoftChips) {
+      fSoftChips.querySelectorAll(".color-chip").forEach((b) => b.onclick = () => {
+        fSoftChips.querySelectorAll(".color-chip").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
       });
     }
@@ -4032,6 +4074,10 @@
         // 珠型（表单 shape-chip；选"未选"则为空）
         const shapeChip = view.querySelector("#fShapeChips .color-chip.active");
         item.beadShape = shapeChip ? (shapeChip.dataset.shape || "") : "";
+
+        // 软糯程度（表单 soft-chip；选"未标注"则为空）
+        const softChip = view.querySelector("#fSoftChips .color-chip.active");
+        item.softness = softChip ? (softChip.dataset.soft || "") : "";
 
         // 自动识别主色：未手动选色且照片存在时，识别第一张主照片的颜色
         if (!item.color && item.photos.length && window.Color) {

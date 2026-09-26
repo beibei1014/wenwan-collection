@@ -52,7 +52,10 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 - 配置入口：js/config.js；建表脚本：`supabase-schema.sql`
 
 **`bracelets` 表字段**（注意：历史迭代多次 alter，脚本分散在多个 supabase-*.sql）：
-`id, user_id, name, species, craft, arrived_at, price, shop, gifted, gifted_at, played, played_note, note, photos(jsonb), screenshots(jsonb), created_at, updated_at, bead_size, category, finished_at, piece_count, accessory_type, play_status, last_played_at, fav, color, bead_shape`
+`id, user_id, name, species, craft, arrived_at, price, shop, gifted, gifted_at, played, played_note, note, photos(jsonb), screenshots(jsonb), created_at, updated_at, bead_size, category, finished_at, piece_count, accessory_type, play_status, last_played_at, first_played_at, play_count, star, fav, color, bead_shape, softness`
+
+**⚠️ 唯一待执行的一条（v91 软糯程度用；不执行也能用，但换手机不同步）**：
+- `softness`：`alter table public.bracelets add column if not exists softness text not null default '';`
 
 **数据库字段（✅ 用户已于 v88 前全部执行完毕，脚本留档备查，不需要再提醒用户执行）**：
 - `play_status`：`alter table public.bracelets add column if not exists play_status text not null default '';`
@@ -82,7 +85,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v90）
+## 五、功能清单（截至 v91）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -213,6 +216,16 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
     - **覆盖范围**：首页（卡片/列表视图）与**分类盒子页**共用 `sortItems`，所以两处自动一致；**详情页的「上一个/下一个」翻页顺序**取的是列表 DOM 顺序，因此也跟着一致（端到端已验证 1/7 位置正确）。
     - ⚠️ **副作用（已告知用户）**：新增菩提串的默认状态是「未盘玩」，所以**刚加的串现在会出现在列表底部那一组的最前面**（未盘玩组的首位），而不是原来"入库时间最新 → 排最前"。若要改回，只需让 `pinRank` 不对 `unplayed` 返回 1（只把佩戴中压底），或把新串默认状态改成"待盘玩"。
     - **验证**：真 app.js 端到端 **14/14** 全绿：默认排序得到 `普通×3 > 未盘玩×2 > 佩戴中×2`；切「价格」后三段位置不变且各段内部按价格 desc（500>300>100 / 700>600）；再切升序后三段位置仍不变、段内方向反转；切回入库排序顺序恢复；详情页翻页位置 1/7 与列表一致；分类盒子页同样把佩戴中压在最后。缓存 v90
+72. **🍡 新增「软糯程度」标签：软糯 / 微糯（v91）**：用户要求「增加一个在列表和详情页展示的标签，就是软糯程度，软糯，微糯」。**注意：这是手感的"糯"（包浆后的软糯感），和状态机的"挂瓷"是两回事，所以是一个独立字段**，不混进 `play_status`。
+    - **数据**：新字段 `softness`（text，值 `soft`=软糯 / `slight`=微糯 / `''`=未标注）；`db.js` 的 `toDB/toFront` 加映射 + 加入 `OPTIONAL_FIELDS`（没建列时自动降级不崩）。
+    - **展示位（4 处）**：① 首页卡片 `.card-sub`（在珠型标签后面）；② 列表视图 `.list-right`（珠型标签后）；③ **详情页标签行** `.detail-tags`；④ 多选/批量卡片。统一由 `softnessTagHtml(it)` 渲染成 **`🍡 软糯` / `🍡 微糯`**，没标注就不显示任何东西。
+    - **颜色**：软糯=**玫红**（#fce4ec/#c2185b）、微糯=**淡紫**（#f3e5f5/#7b1fa2），和状态标签（灰/金/橙/绿/青）、在库绿、已送人红都区分得开。
+    - **录入**：编辑页新增「软糯程度」chips（`未标注 / 🍡 软糯 / 🍡 微糯`，照珠型 chips 那套写），保存时从 `#fSoftChips .color-chip.active` 读 `data-soft`。
+    - **顺带**：搜索框支持搜「软糯」「微糯」（`matchTerm` 里加了 `softnessLabel(i.softness)`）。
+    - **验证**：真 app.js 端到端 **18/18** 全绿：卡片/列表/详情页都出标签且配色正确（实测 `rgb(194,24,91)` / `rgb(123,31,162)`）、未标注的不显示、编辑页 chips 三选项且默认选中「未标注」、**保存时提交的 payload 确实是 `{"softness":"soft"}`**、搜索「软糯」「微糯」各命中对应串。缓存 v91
+73. **🏷 品种（类型）选项调整：去掉「星月菩提」、新增「库克」（v91）**：用户要求「类型的地方去掉星月菩提，增加库克」。改 `js/categories.js` 里菩提类的 `options`（顺序：菩提根 → **库克** → 金刚菩提 → …）。**字段仍是自由文本**，所以：① 已存在的「星月菩提」老数据完全不受影响（照常显示、照常能搜到）；② 想再手动输入"星月菩提"也仍然可以；③ 只是**快捷 chips 里不再提供**（用户可自定义）。
+    - 顺手做的两件事：**批量录入的品种输入框 placeholder** 从「如：星月菩提 / HEYE」改成「如：库克 / HEYE」；**`js/tips.js` 补了一份「库克」的养护知识**（care/taboo/play/trivia 各 3 条：油性足上色快容易盘花、忌上油忌泡水忌暴晒、棉手套打底+盘放结合+孔道两侧都要盘到），否则选了库克在「📖 养护小知识」里只会命中兜底内容。
+    - **验证**：端到端断言「品种里不再有星月菩提 ✓ 有库克 ✓ 点库克会填进品种输入框 ✓」、点「养护小知识」标题显示**「针对「库克」的专属科普」**且正文含库克内容（不是兜底）✓。
 
 > 🧪 **可复用的端到端测试套路（推荐）**：把 `index.html` 的 body 注入一个临时页面 → 在脚本前定义 `window.SUPABASE_CONFIG` 与假 `window.supabase.createClient`（`auth.getSession/getUser` 返回假 session，`from(t)` 返回链式对象，`then` 直接 resolve 固定数据）→ 按原顺序动态 `appendChild` 加载 `js/*.js` → `location.hash` 切路由 + 断言。这样能用真实 `app.js` 验证交互，不用登录、不碰线上库。
 
