@@ -2727,8 +2727,10 @@
       "</div></div>" +
       '<div class="form-group" style="margin-top:12px"><div class="form-label">API Key <small>走免密钥通道时留空</small></div>' +
       '<input class="form-input" id="imgKey" placeholder="sk-..." value="' + esc(cfg.key || "") + '"></div>' +
-      '<div class="form-group"><div class="form-label">模型名 <small>留空用该服务商默认</small></div>' +
-      '<input class="form-input" id="imgModel" placeholder="如 Kwai-Kolors/Kolors" value="' + esc(cfg.model || "") + '"></div>' +
+      '<div class="form-group"><div class="form-label">模型名 <small>留空用该服务商默认；点下面按钮可直接拉你账号里的模型</small></div>' +
+      '<input class="form-input" id="imgModel" placeholder="如 doubao-seedream-5-0-flash-260915" value="' + esc(cfg.model || "") + '">' +
+      '<div id="imgModelPick" style="margin-top:6px"></div>' +
+      '<button type="button" class="btn ghost" id="imgListModels" style="width:100%;margin-top:6px;font-size:12px">📋 拉取我账号里的可用模型</button></div>' +
       '<div class="form-group"><div class="form-label">接口地址 <small>用服务商默认时留空</small></div>' +
       '<input class="form-input" id="imgEndpoint" placeholder="https://.../v1/images/generations" value="' + esc(cfg.endpoint || "") + '"></div>' +
       '<div style="display:flex;gap:8px;margin-top:6px">' +
@@ -2757,6 +2759,29 @@
     });
     $("#imgCfgCancel").onclick = done;
     mask.onclick = done;
+    // 拉取账号里的可用模型（方舟/兼容服务都支持），点一下直接填进模型名
+    $("#imgListModels").onclick = async () => {
+      const btn = $("#imgListModels"), box = $("#imgModelPick");
+      btn.disabled = true; btn.textContent = "拉取中…";
+      box.innerHTML = "";
+      try {
+        const ids = await Spirits.listModels("image", { provider: chosen, key: $("#imgKey").value.trim(), endpoint: $("#imgEndpoint").value.trim() });
+        if (!ids.length) { box.innerHTML = '<span style="font-size:12px;color:var(--text-2)">没拉到模型（可能是这个服务商没有 /models 接口）</span>'; }
+        else {
+          box.innerHTML = '<div style="font-size:11px;color:var(--text-2);margin-bottom:4px">点一下填入（' + ids.length + ' 个）：</div>' +
+            '<div class="prov-row">' + ids.map((id) =>
+              '<button type="button" class="prov-chip" data-pick="' + esc(id) + '">' + esc(id) + "</button>").join("") + "</div>";
+          box.querySelectorAll("[data-pick]").forEach((b) => b.onclick = () => {
+            $("#imgModel").value = b.dataset.pick;
+            box.querySelectorAll("[data-pick]").forEach((x) => x.classList.toggle("active", x === b));
+          });
+        }
+      } catch (e) {
+        box.innerHTML = '<span style="font-size:12px;color:var(--red)">拉取失败：' + esc((e && e.message) || "") + "</span>";
+      } finally {
+        btn.disabled = false; btn.textContent = "📋 拉取我账号里的可用模型";
+      }
+    };
     // 测试连接：直接按当前填的内容试一次出图，把服务端原因原样显示（方舟未开通会明确报 ModelNotOpen）
     $("#imgCfgTest").onclick = async () => {
       const btn = $("#imgCfgTest");
@@ -2814,7 +2839,9 @@
       '<div class="form-group" style="margin-top:12px"><div class="form-label">API Key <small>只存本机</small></div>' +
       '<input class="form-input" id="tKey" placeholder="sk-… 或 ark-…" value="' + esc(cfg.key || "") + '"></div>' +
       '<div class="form-group"><div class="form-label">模型名 <small>方舟填控制台里的模型 ID，或你的接入点 ep-…</small></div>' +
-      '<input class="form-input" id="tModel" placeholder="如 deepseek-v4-1-flash-260910" value="' + esc(cfg.model || "") + '"></div>' +
+      '<input class="form-input" id="tModel" placeholder="如 deepseek-v4-1-flash-260910" value="' + esc(cfg.model || "") + '">' +
+      '<div id="tModelPick" style="margin-top:6px"></div>' +
+      '<button type="button" class="btn ghost" id="tListModels" style="width:100%;margin-top:6px;font-size:12px">📋 拉取我账号里的可用模型</button></div>' +
       '<div class="form-group"><div class="form-label">接口地址 <small>用默认时留空</small></div>' +
       '<input class="form-input" id="tEndpoint" placeholder="https://…/chat/completions" value="' + esc(cfg.endpoint || "") + '"></div>' +
       '<div style="display:flex;gap:8px;margin-top:6px">' +
@@ -2836,6 +2863,31 @@
     });
     $("#tCfgCancel").onclick = done;
     mask.onclick = done;
+    // 拉取账号里的可用文本模型
+    $("#tListModels").onclick = async () => {
+      const btn = $("#tListModels"), box = $("#tModelPick");
+      btn.disabled = true; btn.textContent = "拉取中…";
+      box.innerHTML = "";
+      // 文字通道与绘图通道可能不是同一家，这里按文字通道推导
+      const probe = { provider: chosen, key: $("#tKey").value.trim(), endpoint: $("#tEndpoint").value.trim() || (Spirits.TEXT_PROVIDERS[chosen] || {}).endpoint || "" };
+      try {
+        const ids = await Spirits.listModels("text", { provider: chosen, key: probe.key, endpoint: probe.endpoint });
+        if (!ids.length) { box.innerHTML = '<span style="font-size:12px;color:var(--text-2)">没拉到模型</span>'; }
+        else {
+          box.innerHTML = '<div style="font-size:11px;color:var(--text-2);margin-bottom:4px">点一下填入（' + ids.length + ' 个）：</div>' +
+            '<div class="prov-row">' + ids.map((id) =>
+              '<button type="button" class="prov-chip" data-tpick="' + esc(id) + '">' + esc(id) + "</button>").join("") + "</div>";
+          box.querySelectorAll("[data-tpick]").forEach((b) => b.onclick = () => {
+            $("#tModel").value = b.dataset.tpick;
+            box.querySelectorAll("[data-tpick]").forEach((x) => x.classList.toggle("active", x === b));
+          });
+        }
+      } catch (e) {
+        box.innerHTML = '<span style="font-size:12px;color:var(--red)">拉取失败：' + esc((e && e.message) || "") + "</span>";
+      } finally {
+        btn.disabled = false; btn.textContent = "📋 拉取我账号里的可用模型";
+      }
+    };
     $("#tCfgTest").onclick = async () => {
       const btn = $("#tCfgTest"), msgEl = $("#tCfgMsg");
       const keep = Spirits.getTextCfg();

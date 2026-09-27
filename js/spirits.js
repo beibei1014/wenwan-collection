@@ -395,6 +395,36 @@
   }
 
   /* ---------- 对外接口 ---------- */
+  /* ---------- 拉取账号可用模型（方舟/兼容服务都能用；用户开通后一键选，不用手打 ID） ---------- */
+  function modelsUrlFrom(endpoint) {
+    if (!endpoint) return "";
+    let u = String(endpoint).replace(/\/+$/, "");
+    u = u.replace(/\/(generations|completions)$/, "");   // 去掉 /generations 或 /completions
+    u = u.replace(/\/(images|chat)$/, "");               // 再去掉 /images 或 /chat
+    return u + "/models";                                // 例：…/api/v3/images/generations → …/api/v3/models
+  }
+  async function listModels(kind, cfgOverride) {
+    const info = cfgOverride
+      ? { endpoint: cfgOverride.endpoint || (PROVIDERS[cfgOverride.provider] || {}).endpoint || "", key: cfgOverride.key || "" }
+      : providerInfo(getImageCfg());
+    const url = modelsUrlFrom(info.endpoint);
+    if (!url) throw new Error("还没填接口地址");
+    if (!info.key) throw new Error("还没填 API Key");
+    const resp = await fetch(url, { headers: { "Authorization": "Bearer " + info.key } });
+    if (!resp.ok) {
+      let m = "HTTP " + resp.status;
+      try { const j = await resp.json(); m = (j.error && (j.error.message || j.error.code)) || m; } catch (e) { /* 忽略 */ }
+      throw new Error(m);
+    }
+    const j = await resp.json();
+    const ids = ((j && j.data) || []).map((m) => m && m.id).filter(Boolean);
+    const isImg = kind !== "text";
+    const filtered = ids.filter((id) => isImg
+      ? /seedream|kolors|flux|qwen-image|t2i|stable|sd[-_.]?xl|image/i.test(id) && !/i2v|t2v|3d|edit|seedance/i.test(id)
+      : /deepseek|glm|doubao-seed|qwen|gpt|moonshot|kimi|step|hunyuan/i.test(id) && !/seedream|seedance|3d|vision|embedding|image|tts|asr/i.test(id));
+    return filtered.length ? filtered : ids.slice(0, 40);
+  }
+
   /* ---------- 连通性自检（设置页「测试连接」用；出错时把服务端原因带出来） ---------- */
   async function testImage() {
     const cfg = getImageCfg();
@@ -413,7 +443,7 @@
 
   window.Spirits = {
     PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, getImageCfg, setImageCfg, providerInfo,
-    TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText,
+    TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText, listModels,
     promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf,
     localPersona, persona, chat, letter, localChat, localLetter,
     todayKey, load, save, ensureIn,

@@ -85,7 +85,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v98）
+## 五、功能清单（截至 v99）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -300,6 +300,12 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
     - **两个「🔍 测试连接」按钮**（绘图弹层 + 文字弹层）：用弹层里**正在填**的配置真发一次请求，成功/失败原样显示服务端原因，并附排查提示（`ModelNotOpen` = 没在控制台点开通；`NotFound` = 模型名写错）；测完**自动还原已保存的配置**，不会误改。
     - **实测用户 key（火山方舟）**：`GET /api/v3/models` 可列目录（key 有效）✓；但**所有 Seedream 文生图模型与文本模型都返回 `ModelNotOpen`**（账号 2132466064 尚未开通任何模型）→ 用户只需去方舟控制台点「开通」。同时查到**当前真实可用的模型 ID**：`doubao-seedream-5-0-flash-260915`、`doubao-seedream-5-0-pro-260628`、`doubao-seedream-5-0-260128`、`doubao-seedream-4-0-20260415`（旧的 `3-0-t2i-250415` 已不存在 → 代码默认已更新为 `5-0-flash`）。
     - **验证**：`spirits.js` 单元 **9/9**（默认 anime、两种日漫预设、prompt 含 Japanese anime/cel shading/大眼睛、颜色落在头发衣服、排除 3D/真人/照片、软糯与微糯表述不同、4 种风格文案互不相同）；端到端 **25/25**（默认日漫风、prompt 正确、设置页两个入口、绘图弹层 4 风格且默认日漫、切方舟自动填新 Seedream ID、测试连接失败显示 ModelNotOpen 并给排查提示、成功显示"出图成功"、保存后精灵页真的 POST 到方舟并显示 AI 图、文字弹层切方舟自动填文本模型、文字测试成功/失败、`textChat` 真的打到方舟、小剧场页脚显示"火山方舟"）。缓存 v98
+81. **📋 「拉取我账号里的可用模型」按钮（v99）**：用户发现方舟里 **Doubao-Seedream-5.0-lite** 有「剩 50 / 共 50 张」的安心体验额度，准备去开通；但**控制台显示的名字（5.0-lite）在 API 目录里没有同名 ID** —— 用他的 key 拉 `/api/v3/models`（135 个条目）后确认 Seedream 实际只有 7 个 ID：`doubao-seedream-3-0-t2i-250415`、`4-0-250828`、`4-5-251128`、`5-0-260128`、`4-0-20260415`、`5-0-pro-260628`、`5-0-flash-260915`。
+    - 为了让用户开通后**不用猜模型名**，新增 `Spirits.listModels(kind, cfg)`：按配置的 endpoint 推导 `…/models` 并用 Bearer key 拉取，图片类筛 `seedream|kolors|flux|qwen-image|t2i|stable|image`（排除 i2v/t2v/3d/edit/seedance），文本类筛 `deepseek|glm|doubao-seed|qwen|gpt|…`（排除 seedream/seedance/3d/vision/embedding/image/tts/asr）。
+    - **两个弹层各加一个「📋 拉取我账号里的可用模型」按钮**：拉到的 ID 渲染成 chips，点一下直接填进模型名输入框。
+    - **踩坑修复**：URL 推导第一版写成 `endpoint.replace(/\/[^/]*$/, "/models")` → 把 `…/api/v3/images/generations` 推成了 `…/api/v3/**images**/models`（错的）。改成**先去掉结尾的 `/generations|/completions`，再去掉 `/images|/chat`，最后拼 `/models`**，并单测覆盖 4 种真实地址（方舟 images/chat、硅基流动、智谱）全部正确。
+    - **验证**：单元 **6/6**（4 种 endpoint 的 models 地址推导 + 图片/文本清单过滤正确）。
+    - **给用户的结论**：先开通 **Doubao-Seedream-5.0-lite**（50 张免费），然后在 App 里点「📋 拉取我账号里的可用模型」挑一个 ID 填上（推荐先试 `doubao-seedream-5-0-flash-260915`）；如果报 ModelNotOpen 说明还没开通、报 NotFound 说明 ID 不对。缓存 v99
 
 > 🧪 **可复用的端到端测试套路（推荐）**：把 `index.html` 的 body 注入一个临时页面 → 在脚本前定义 `window.SUPABASE_CONFIG` 与假 `window.supabase.createClient`（`auth.getSession/getUser` 返回假 session，`from(t)` 返回链式对象，`then` 直接 resolve 固定数据）→ 按原顺序动态 `appendChild` 加载 `js/*.js` → `location.hash` 切路由 + 断言。这样能用真实 `app.js` 验证交互，不用登录、不碰线上库。
 
