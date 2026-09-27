@@ -2438,6 +2438,69 @@
     });
   }
 
+  /* ---------- v97：走 API 通道真正出图（POST 拿图） ---------- */
+  // 把出图结果压成小图存本地（火山方舟返回的 URL 只有 24 小时有效，所以 b64 一律压成 data URI 长期保存）
+  function shrinkToDataUri(src, max, quality) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, max / Math.max(img.width, img.height));
+          const w = Math.max(1, Math.round(img.width * scale));
+          const h = Math.max(1, Math.round(img.height * scale));
+          const cv = document.createElement("canvas");
+          cv.width = w; cv.height = h;
+          cv.getContext("2d").drawImage(img, 0, 0, w, h);
+          resolve(cv.toDataURL("image/jpeg", quality || 0.85));
+        } catch (e) { resolve(""); }
+      };
+      img.onerror = () => resolve("");
+      img.src = src;
+    });
+  }
+  // 逐个补形象：API 通道需要 POST 出图 → 缓存到本地精灵记录里
+  let _imgBusy = false;
+  async function ensureSpiritImages(list) {
+    if (_imgBusy) return;
+    const cfg = Spirits.getImageCfg();
+    if (cfg.provider === "pollinations") return;   // 免密钥通道直接把 URL 交给 <img>，不用预生成
+    _imgBusy = true;
+    try {
+      let changed = false;
+      for (const it of list) {
+        const st = Spirits.load();
+        const rec = Spirits.ensureIn(st, it.id);
+        const fresh = rec.imgUrl && (Date.now() - (rec.imgAt || 0) < 20 * 3600 * 1000);
+        if (fresh) continue;
+        if (location.hash === "#/spirit" && rec.imgUrl) {
+          // 已有（可能过期的）图先显示着，避免闪
+        }
+        try {
+          const r = await Spirits.generateImage(it, rec.variant || 0);
+          if (r.b64) {
+            const small = await shrinkToDataUri("data:image/png;base64," + r.b64, 384, 0.85);
+            rec.imgUrl = small || ("data:image/png;base64," + r.b64);
+          } else {
+            rec.imgUrl = r.url || "";
+          }
+          rec.imgAt = Date.now();
+          changed = true;
+        } catch (e) {
+          const msg = (e && e.message) || "出图失败";
+          if (!rec._imgErr || rec._imgErr !== msg) { rec._imgErr = msg; changed = true; rec.imgUrl = ""; }
+        }
+        Spirits.save(st);
+      }
+      if (changed && location.hash === "#/spirit") renderSpiritPage();
+      // 把最近一次错误提示出来，方便排查（只在精灵页提示）
+      const st2 = Spirits.load();
+      const errs = Object.keys(st2).map((k) => st2[k]._imgErr).filter(Boolean);
+      if (errs.length && location.hash === "#/spirit" && !errs._shown) { toast("出图失败：" + errs[0]); }
+    } catch (e) { /* 静默 */ }
+    _imgBusy = false;
+  }
+
   function renderSpiritPage() {
     topbarTitle.textContent = "挂瓷精灵";
     btnBack.style.visibility = "visible";
@@ -2494,8 +2557,9 @@
       const it = allItems.find((x) => x.id === c.dataset.spirit);
       if (it) showSpiritModal(it);
     }));
-    // 异步补性格 + 今天的信
+    // 异步补性格 + 今天的信 + （API 通道）AI 出图
     ensureSpiritData(list, !todayLetter);
+    ensureSpiritImages(list);
   }
 
   // 补齐性格（一次把缺的都补上，再统一刷新）与当天来信
@@ -2576,19 +2640,40 @@
     mask.onclick = close;
 
     // 换形象
-    $("#spNewLook").onclick = () => {
+    $("#spNewLook").onclick = async () => {
+      const cfg2 = Spirits.getImageCfg();
       const s = Spirits.load();
       const r = Spirits.ensureIn(s, item.id);
       r.variant = (r.variant || 0) + 1;
       r.imgUrl = "";
+      r.imgAt = 0;
+      r._imgErr = "";
       Spirits.save(s);
       const img = modal.querySelector("img[data-item]");
-      if (img) {
-        img.dataset.fellback = "";
-        img.removeAttribute("data-fellback");
-        img.src = Spirits.pollinationsUrl(item, r.variant);
+      if (cfg2.provider === "pollinations") {
+        // 免密钥通道：换 seed 重新出图（顺带先退回本地形象，避免看到旧图）
+        if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; img.src = Spirits.pollinationsUrl(item, r.variant); }
+        toast("换个形象中…（几秒钟出图）");
+        return;
       }
-      toast("换个形象中…（几秒钟出图）");
+      // API 通道：重新 POST 出图
+      if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; }
+      toast("正在用 AI 重画…（消耗 1 次出图）");
+      try {
+        const res = await Spirits.generateImage(item, r.variant);
+        let url = res.url || "";
+        if (res.b64) url = (await shrinkToDataUri("data:image/png;base64," + res.b64, 384, 0.85)) || ("data:image/png;base64," + res.b64);
+        const s2 = Spirits.load();
+        const r2 = Spirits.ensureIn(s2, item.id);
+        r2.imgUrl = url;
+        r2.imgAt = Date.now();
+        r2._imgErr = "";
+        Spirits.save(s2);
+        if (img && url) { img.dataset.fellback = ""; img.src = url; }
+        toast("形象换好了 🍡");
+      } catch (e) {
+        toast("出图失败：" + ((e && e.message) || "未知错误"));
+      }
     };
     // 它们聊天
     $("#spChat").onclick = async () => {

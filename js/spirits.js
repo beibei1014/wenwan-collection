@@ -38,7 +38,7 @@
     ark: { label: "火山方舟（豆包 Seedream）", endpoint: "https://ark.cn-beijing.volces.com/api/v3/images/generations", model: "doubao-seedream-3-0-t2i-250415" },
     zhipu: { label: "智谱 CogView（约 ¥0.06/张，最便宜之一）", endpoint: "https://open.bigmodel.cn/api/paas/v4/images/generations", model: "cogview-4" },
     modelscope: { label: "魔搭 ModelScope（送免费额度）", endpoint: "https://api-inference.modelscope.cn/v1/images/generations", model: "Qwen/Qwen-Image" },
-    bailian: { label: "阿里百炼 通义万相（50 张免费，约 ¥0.2/张）", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations", model: "wan2.6-t2i" },
+    bailian: { label: "阿里百炼 通义万相（浏览器直连受限，不推荐）", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations", model: "wan2.6-t2i" },
     custom: { label: "自定义（OpenAI 兼容）", endpoint: "", model: "" },
   };
   function getImageCfg() {
@@ -120,6 +120,38 @@
     const style = styleKey || getImageCfg().style || DEFAULT_STYLE;
     return "https://image.pollinations.ai/prompt/" + encodeURIComponent(promptFor(item, style)) +
       "?width=512&height=512&nologo=true&seed=" + seedOf(item.id, variant);
+  }
+
+  /* ---------- 走 API 通道真正出图（v97） ----------
+     OpenAI 兼容：POST {endpoint} {model, prompt, n, size} → {data:[{url|b64_json}]}
+     火山方舟 / 智谱 / 硅基流动 / 魔搭 都实测允许浏览器直连（CORS 预检通过） */
+  async function generateImage(item, variant, styleKey) {
+    const cfg = getImageCfg();
+    const info = providerInfo(cfg);
+    if (info.keyless) return { url: pollinationsUrl(item, variant, styleKey), kind: "url" };
+    if (!info.key) throw new Error("还没填 API Key");
+    if (!info.endpoint) throw new Error("还没填接口地址");
+    const prompt = promptFor(item, styleKey || cfg.style || DEFAULT_STYLE);
+    const payload = { model: info.model, prompt: prompt, n: 1, size: "1024x1024" };
+    const resp = await fetch(info.endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + info.key },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      let msg = "HTTP " + resp.status;
+      try {
+        const j = await resp.json();
+        msg = (j.error && (j.error.message || j.error.code)) || j.message || j.msg || msg;
+      } catch (e) { /* 忽略 */ }
+      throw new Error(msg);
+    }
+    const data = await resp.json();
+    const d = (data && data.data && data.data[0]) || null;
+    if (!d) throw new Error("返回里没有图片数据");
+    if (d.b64_json) return { b64: d.b64_json, kind: "b64" };
+    if (d.url) return { url: d.url, kind: "url" };
+    throw new Error("不认识的返回格式");
   }
 
   /* ---------- 本地兜底形象：程序化画一个 2D 小精灵（断网也有形象） ---------- */
@@ -324,7 +356,7 @@
   /* ---------- 对外接口 ---------- */
   window.Spirits = {
     PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, getImageCfg, setImageCfg, providerInfo,
-    promptFor, pollinationsUrl, localAvatarSvg, seedOf,
+    promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf,
     localPersona, persona, chat, letter, localChat, localLetter,
     todayKey, load, save, ensureIn,
   };
