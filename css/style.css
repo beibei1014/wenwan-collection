@@ -1174,6 +1174,54 @@ img { display:block; }
 }
 .spirit-row .spirit-bubble { flex:1; min-width:0; }
 .spirit-row.alt .spirit-bubble { background:#fdf6e9; }
+
+/* ============ 精灵进阶（v103） ============ */
+.spirit-stage {
+  font-size:10px; font-weight:700; padding:1px 7px; border-radius:9px; margin-left:6px;
+  background:#eef4ea; color:#3f6b46; border:1px solid #d6e4d6; white-space:nowrap;
+}
+.spirit-stage.big { font-size:11px; padding:2px 9px; vertical-align:2px; }
+.spirit-break-tag {
+  font-size:10px; font-weight:800; padding:1px 7px; border-radius:9px; margin-left:5px;
+  background:linear-gradient(135deg,#ffe082,#ffb300); color:#7a4b00; border:1px solid #ffca28;
+  animation:breakPulse 1.4s ease-in-out infinite;
+}
+@keyframes breakPulse { 0%,100%{ transform:scale(1) } 50%{ transform:scale(1.08) } }
+.spirit-card.can-break { border-color:#ffca28; box-shadow:0 0 0 2px rgba(255,202,40,.25), var(--shadow); }
+
+.spirit-prog { display:flex; align-items:center; gap:6px; margin-top:5px; }
+.spirit-prog.big { margin-top:10px; flex-direction:column; align-items:stretch; gap:4px; }
+.spirit-prog-track {
+  flex:1; height:6px; border-radius:6px; background:#eee5d6; overflow:hidden; display:block;
+}
+.spirit-prog.big .spirit-prog-track { height:8px; }
+.spirit-prog-fill {
+  display:block; height:100%; border-radius:6px;
+  background:linear-gradient(90deg,#8bc34a,#43a047); transition:width .3s;
+}
+.spirit-prog-txt { font-size:10px; color:var(--text-2); white-space:nowrap; }
+.spirit-prog.big .spirit-prog-txt { white-space:normal; text-align:center; font-size:11px; }
+.spirit-prog.max { font-size:11px; font-weight:700; color:var(--gold); margin-top:6px; }
+.spirit-break-btn {
+  background:linear-gradient(135deg,#ffb300,#ff8f00) !important; border-color:#ff8f00 !important;
+  color:#fff !important; font-weight:800; box-shadow:0 3px 10px rgba(255,143,0,.35);
+}
+.spirit-hist { display:flex; gap:8px; margin-top:12px; overflow-x:auto; padding-bottom:4px; }
+.spirit-hist-item { flex:0 0 auto; text-align:center; opacity:.6; }
+.spirit-hist-item.now { opacity:1; }
+.spirit-hist-item img {
+  width:52px; height:70px; object-fit:cover; border-radius:9px; border:1px solid var(--line); background:#fff;
+}
+.spirit-hist-item.now img { border-color:var(--gold); box-shadow:0 0 0 2px rgba(184,134,11,.2); }
+.spirit-hist-item span { display:block; font-size:9px; color:var(--text-2); margin-top:3px; }
+
+/* 突破演出 */
+.spirit-evolve { text-align:center; }
+.spirit-evolve-burst { font-size:32px; animation:breakPulse 1.2s ease-in-out infinite; }
+.spirit-evolve img { width:auto; max-width:100%; max-height:42vh; object-fit:contain; border-radius:16px; margin:6px 0; }
+.spirit-evolve-title { font-size:20px; font-weight:800; letter-spacing:4px; color:var(--gold); margin-top:6px; }
+.spirit-evolve-sub { font-size:13px; font-weight:700; color:var(--wood); margin-top:6px; }
+.spirit-evolve-desc { font-size:12px; color:var(--text-2); margin-top:6px; line-height:1.7; }
 .spirit-bubble {
   background:#f7f2e8; border:1px solid var(--line); border-radius:12px; padding:8px 10px;
   font-size:13px; line-height:1.65; color:var(--text);

@@ -85,7 +85,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v102）
+## 五、功能清单（截至 v103）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -335,6 +335,20 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
     - **聊天带头像**：小剧场每条都渲染成 `.spirit-row`（头像一个、气泡一个，**按说话人左右交替**）；头像是**该精灵自己的 AI 立绘**（没有则本地 SVG），并用「名字包含匹配」把 AI 台词里的 `who` 对应到具体精灵（AI 可能用简称）。CSS 新增 `.spirit-avatar`（38px 圆形带白边阴影）。
     - **验证**：单元 **9/9**（立绘 prompt 含全身/站姿/从头到脚/竖版/留边、小生物也全身、默认尺寸 2K、预设含 3:4、尺寸被拒→自动改 2K→成功、请求序列 `1024x1024→2K`、写回配置、后续直接用 2K）；端到端 **15/15**（自动改尺寸并出图、prompt 是全身立绘、每串只烧一次额度、弹层有 4 档尺寸且默认 2K、竖版尺寸 3,981,312 像素合规、保存成功、弹层立绘 `contain` 且高度 346px 不裁切、聊天 4 行各带头像、头像用上 AI 立绘、不同精灵头像不同、气泡仍有说话人名字）。
     - ⚠️ 教训：测试桩返回的 8×8 小图导致"头像都一样/立绘只有 9px"两条假失败 —— **验证图片相关功能时，桩必须返回尺寸/内容各异的真实图**（本次改成用 canvas 现画 512×768 渐变图，按 prompt 哈希取色）。缓存 v102
+85. **🌟 精灵进阶系统：四形态 · 三次突破（v103）**：用户要求「刚挂瓷的精灵都是小小的，盘到一定程度可以突破/进阶，通过 2-3 次突破变成完成体（很帅/很酷/很美的日漫角色）」，并强调**生成形象时的文字描述要注意**（不同阶段要有不同描述）。
+    - **四形态**（`STAGES`，写在 `spirits.js`）：**🥚 幼生期 → 🌱 成长期 → ⚡ 觉醒期 → 👑 完成体**，门槛 `need = [0, 30, 90, 180]`。
+    - **成长值**：`growthOf(item, days) = 盘玩次数 × 3 + 陪伴天数 × 1`（陪伴天数由 app.js 用 `DB.daysWith` 传入）。所以「今日盘过」+1 次盘玩 = +3 成长值，**盘串能肉眼看到进度条涨**。
+    - **★ 每个形态有各自的外形描述**（用户重点要求，写在 `STAGES[].look`，由 `promptFor(item, style, stage)` 拼进 prompt；颜色与性格描述一路贯穿，保证是"同一个角色在长大"）：
+      · 幼生期 `a tiny newborn baby version, very small chubby body, big head and tiny limbs, minimal details, sleepy innocent eyes, just awakened, extremely cute and soft`
+      · 成长期 `a small child version, slightly taller and more defined, lively bright eyes, simple but neat outfit, energetic pose`
+      · 觉醒期 `a cool teenage version, confident dynamic pose, stylish detailed outfit, glowing aura and light particles, sharp determined eyes, cinematic lighting`
+      · 完成体 `a stunning fully-realized adult anime character, magnificent ornate outfit, powerful graceful aura, beautiful and cool, masterpiece quality, epic composition`
+    - **固定种子保连贯**：方舟出图带 `seed = seedOf(item.id, 0)`（`callImageApi` 里仅对 ark 端点加 `seed` 字段）→ **各形态看起来是同一个"人"在长大**，而不是换了个角色。
+    - **突破流程**：卡片显示形态徽章 + 成长值进度条（`3 / 30 → 成长期`）；够条件时卡片加 `.can-break` 金边 + 「✨ 可突破」呼吸标签；弹层里出现「✨ 突破 →成长期」按钮（成长值不够则不显示，只显示还差多少）。点突破 → **按新形态 prompt 重新出图** → 记入进化史 → 弹出**突破演出**（新立绘 + 「突 破 成 功」+ 新旧形态名 + 鼓励文案）→ 卡片形态更新。
+    - **进化史**（`rec.imgHistory`，最多 8 条）：弹层里横向展示各形态缩略图（当前形态高亮），能直观看到「幼生期 → 完成体」的成长过程。**首次出图也计入**，且突破时对"旧形态"做**去重**（避免同图记两次）。
+    - **其他联动**：`spiritDesc()` 带上形态名（如"（觉醒期）"），AI 写的小剧场/来信会自然体现它的成长状态；`ensureSpiritImages` 出图时带上当前 `stage`。
+    - **验证**：单元 **14/14**（四形态与门槛、四种形态 prompt 各含对应关键词（newborn/child/teenage/完成体"masterpiece"）、四段 prompt 互不相同、颜色贯穿、都保持全身立绘、成长值公式、刚挂瓷不能突破、30 分可突破、完成后不再提示、进度百分比与差值）；端到端 **20/20**（卡片形态徽章与进度、可突破标记、幼生期出图用 newborn 描述、带固定 seed、弹层突破按钮与成长值、首次出图记入进化史、突破只重新出图一次、**突破后 prompt 变成 child 描述**、突破演出弹窗、stage 写回 2、进化史为 `1,2`、卡片形态更新、成长值不够时无突破按钮但显示差值）。
+    - **给用户的说明**：门槛是「成长值 = 盘玩×3 + 陪伴天数」，所以**多盘就长得快**（盘 10 次 + 陪 30 天 = 60 成长值，可直接从幼生期冲到成长期）。缓存 v103
 
 > 🧪 **可复用的端到端测试套路（推荐）**：把 `index.html` 的 body 注入一个临时页面 → 在脚本前定义 `window.SUPABASE_CONFIG` 与假 `window.supabase.createClient`（`auth.getSession/getUser` 返回假 session，`from(t)` 返回链式对象，`then` 直接 resolve 固定数据）→ 按原顺序动态 `appendChild` 加载 `js/*.js` → `location.hash` 切路由 + 断言。这样能用真实 `app.js` 验证交互，不用登录、不碰线上库。
 

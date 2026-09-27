@@ -36,8 +36,59 @@
   }
   function save(o) { try { localStorage.setItem(STORE_KEY, JSON.stringify(o)); } catch (e) { /* 空间不足忽略 */ } }
   function ensureIn(store, id) {
-    if (!store[id]) store[id] = { persona: null, variant: 0, imgUrl: "", letters: [], chats: [], lastLetterDay: "" };
+    if (!store[id]) store[id] = { persona: null, variant: 0, imgUrl: "", letters: [], chats: [], lastLetterDay: "", stage: 1, imgHistory: [] };
+    if (store[id].stage == null) store[id].stage = 1;              // 老数据兼容：默认幼生期
+    if (!Array.isArray(store[id].imgHistory)) store[id].imgHistory = [];
     return store[id];
+  }
+
+  /* ---------- 进阶系统：四形态、三次突破（v103） ----------
+     幼生期 → 成长期 → 觉醒期 → 完成体；成长值 = 盘玩次数×3 + 陪伴天数×1
+     每个阶段有**各自的外形描述**，越往后越"帅/酷/美"，但颜色与性格一路贯穿 */
+  const STAGES = [
+    {
+      n: 1, name: "幼生期", icon: "🥚", need: 0,
+      look: "a tiny newborn baby version of the character, very small chubby body, big head and tiny limbs, " +
+        "simple minimal details, sleepy innocent eyes, just awakened, extremely cute and soft",
+    },
+    {
+      n: 2, name: "成长期", icon: "🌱", need: 30,
+      look: "a small child version of the character, slightly taller and more defined, lively bright eyes, " +
+        "simple but neat outfit, energetic pose, still cute and round",
+    },
+    {
+      n: 3, name: "觉醒期", icon: "⚡", need: 90,
+      look: "a cool teenage version of the character, confident dynamic pose, stylish detailed outfit, " +
+        "glowing aura and light particles, sharp determined eyes, cinematic lighting",
+    },
+    {
+      n: 4, name: "完成体", icon: "👑", need: 180,
+      look: "a stunning fully-realized adult anime character, magnificent ornate outfit with elegant details, " +
+        "powerful graceful aura, beautiful and cool, masterpiece quality, epic composition, breathtaking",
+    },
+  ];
+  function stageDef(n) { return STAGES[Math.min(STAGES.length, Math.max(1, Number(n) || 1)) - 1]; }
+  // 成长值：盘一次 +3，陪伴一天 +1（days 由调用方用 DB.daysWith 传进来）
+  function growthOf(item, days) {
+    const plays = Number(item && item.playCount) || 0;
+    const d = Number(days) || 0;
+    return plays * 3 + d;
+  }
+  function stageInfo(item, stage, days) {
+    const cur = Math.min(STAGES.length, Math.max(1, Number(stage) || 1));
+    const growth = growthOf(item, days);
+    const def = stageDef(cur);
+    const next = STAGES[cur] || null;               // 下一形态（cur=4 时为 null）
+    const canBreak = !!next && growth >= next.need;
+    return {
+      stage: cur, name: def.name, icon: def.icon, growth: growth,
+      need: next ? next.need : def.need, next: next ? next.name : "",
+      nextIcon: next ? next.icon : "",
+      canBreak: canBreak,
+      isMax: !next,
+      pct: next ? Math.min(100, Math.round((growth / next.need) * 100)) : 100,
+      toNext: next ? Math.max(0, next.need - growth) : 0,
+    };
   }
 
   /* ---------- 绘图通道（默认免密钥；可切国内 API） ---------- */
@@ -116,22 +167,23 @@
     slight: "slightly soft smooth polished surface, calm gentle expression",
     "": "smooth polished surface, friendly gentle expression",
   };
-  function promptFor(item, styleKey) {
+  function promptFor(item, styleKey, stage) {
     const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
     const st = styleOf(item, key).text;
     const color = COLOR_EN[item.color] || "jade green";
     const soft = SOFT_EN[item.softness || ""] || SOFT_EN[""];
     const isChar = (key === "anime");          // 日漫 Q 版角色：颜色落在头发/衣服上
+    const lk = stageDef(stage == null ? 1 : stage).look;   // 该形态的外形描述（进阶的核心）
     let cmp;
     if (isChar) {
-      // 立绘：要全身、站姿、竖版构图，别只出个头
-      cmp = "a cute chibi anime character with " + color + " hair and " + color + " outfit, themed in " + color + ", " +
+      cmp = "a cute anime character with " + color + " hair and " + color + " outfit, themed in " + color + ", " +
+        lk + ", " +
         "full body character illustration, standing pose, whole body visible from head to toe, " +
         "detailed outfit and shoes, character design sheet style, vertical composition, " +
         "centered with comfortable margin around the character";
     } else {
-      cmp = "a cute little creature mascot whose body color is " + color + ", full body creature illustration, " +
-        "whole body visible, centered with comfortable margin, character design sheet style";
+      cmp = "a cute creature mascot whose body color is " + color + ", " + lk + ", " +
+        "full body creature illustration, whole body visible, centered with comfortable margin, character design sheet style";
     }
     const bits = [cmp, soft];
     if (item.softness === "soft") bits.push(isChar ? "round soft cheeks, relaxed happy sleepy eyes" : "round blob-like silhouette, soft chewy texture");
@@ -140,32 +192,33 @@
   }
   function seedOf(id, variant) { return (hashStr(id) % 900000) + 1000 + (variant || 0) * 7919; }
   // 免密钥通道：直接把 URL 交给 <img>（浏览器自己下载，天然带缓存）；其余通道要 POST 生成
-  function pollinationsUrl(item, variant, styleKey) {
+  function pollinationsUrl(item, variant, styleKey, stage) {
     const style = styleKey || getImageCfg().style || DEFAULT_STYLE;
-    return "https://image.pollinations.ai/prompt/" + encodeURIComponent(promptFor(item, style)) +
+    return "https://image.pollinations.ai/prompt/" + encodeURIComponent(promptFor(item, style, stage)) +
       "?width=512&height=512&nologo=true&seed=" + seedOf(item.id, variant);
   }
 
   /* ---------- 走 API 通道真正出图（v97） ----------
      OpenAI 兼容：POST {endpoint} {model, prompt, n, size} → {data:[{url|b64_json}]}
      火山方舟 / 智谱 / 硅基流动 / 魔搭 都实测允许浏览器直连（CORS 预检通过） */
-  async function generateImage(item, variant, styleKey) {
+  async function generateImage(item, variant, styleKey, stage) {
     const cfg = getImageCfg();
     const info = providerInfo(cfg);
-    if (info.keyless) return { url: pollinationsUrl(item, variant, styleKey), kind: "url" };
+    if (info.keyless) return { url: pollinationsUrl(item, variant, styleKey, stage), kind: "url" };
     if (!info.key) throw new Error("还没填 API Key");
     if (!info.endpoint) throw new Error("还没填接口地址");
-    const prompt = promptFor(item, styleKey || cfg.style || DEFAULT_STYLE);
+    const prompt = promptFor(item, styleKey || cfg.style || DEFAULT_STYLE, stage);
     const size = cfg.size || DEFAULT_SIZE;
+    const seed = seedOf(item.id, 0);   // 同一只精灵用固定种子 → 各形态看起来是同一个"人"在长大
     try {
-      return await callImageApi(info, prompt, size);
+      return await callImageApi(info, prompt, size, seed);
     } catch (e) {
       const msg = (e && e.message) || "";
       // ① 尺寸不合法（Seedream 5 要求 ≥3,686,400 像素）：自动换成 2K 再试一次
       if (isSizeErr(msg) && size !== DEFAULT_SIZE) {
         const next = Object.assign({}, cfg, { size: DEFAULT_SIZE });
         setImageCfg(next);
-        const r = await callImageApi(providerInfo(next), prompt, DEFAULT_SIZE);
+        const r = await callImageApi(providerInfo(next), prompt, DEFAULT_SIZE, seed);
         r.autoFixed = "尺寸已改为 " + DEFAULT_SIZE;
         return r;
       }
@@ -180,7 +233,7 @@
       _autoFixed = true;
       const next = Object.assign({}, cfg, { model: fixed });
       setImageCfg(next);
-      const r = await callImageApi(providerInfo(next), prompt, size);
+      const r = await callImageApi(providerInfo(next), prompt, size, seed);
       r.autoFixed = fixed;   // 交给界面提示"已自动改用 xxx"
       return r;
     }
@@ -189,8 +242,10 @@
     return /size.*not valid|at least\s*\d+\s*pixels|InvalidParameter.*size|尺寸/i.test(String(msg || ""));
   }
   let _autoFixed = false;
-  async function callImageApi(info, prompt, size) {
+  async function callImageApi(info, prompt, size, seed) {
     const payload = { model: info.model, prompt: prompt, n: 1, size: size || DEFAULT_SIZE };
+    // 火山方舟（Seedream）支持 seed：固定种子能让"长大"的各形态保持同一个角色的辨识度
+    if (/ark\.cn-beijing\.volces\.com/.test(info.endpoint) && seed != null) payload.seed = seed;
     const resp = await fetch(info.endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + info.key },
@@ -341,10 +396,11 @@
   /* ---------- DeepSeek 调用（复用 app 的 key；已统一走文字通道） ---------- */
   function getAiKey() { return textInfo().key; }
   async function aiChat(messages, maxTokens) { return textChat(messages, maxTokens); }
-  function spiritDesc(item, persona) {
+  function spiritDesc(item, persona, stage) {
     const colorName = { white: "奶白", green: "绿", yellowbrown: "黄棕", blackgray: "黑灰", duo: "多彩", lightflower: "浅花", deepflower: "深花" }[item.color] || "素色";
     const softName = item.softness === "soft" ? "软糯" : (item.softness === "slight" ? "微糯" : "普通");
-    return "【" + (persona && persona.name ? persona.name : item.name) + "】颜色：" + colorName +
+    const s = stageDef(stage);
+    return "【" + (persona && persona.name ? persona.name : item.name) + "】（" + s.name + "）颜色：" + colorName +
       "；软糯程度：" + softName + "；性格：" + ((persona && persona.title) || "未定") +
       (((persona && persona.traits) || []).length ? "（" + persona.traits.join("、") + "）" : "") +
       "；口头禅：" + ((persona && persona.line) || "无") + "；（原型是主人收藏的一串挂瓷手串：「" + (item.name || "未命名") + "」）";
@@ -553,6 +609,7 @@
 
   window.Spirits = {
     PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo,
+    STAGES, stageDef, stageInfo, growthOf,
     TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText, listModels,
     promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
     localPersona, persona, chat, letter, localChat, localLetter,

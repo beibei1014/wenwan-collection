@@ -2477,7 +2477,7 @@
           // 已有（可能过期的）图先显示着，避免闪
         }
         try {
-          const r = await Spirits.generateImage(it, rec.variant || 0);
+          const r = await Spirits.generateImage(it, rec.variant || 0, null, rec.stage || 1);
           if (r.b64) {
             const small = await shrinkToDataUri("data:image/png;base64," + r.b64, 384, 0.85);
             rec.imgUrl = small || ("data:image/png;base64," + r.b64);
@@ -2485,6 +2485,15 @@
             rec.imgUrl = r.url || "";
           }
           rec.imgAt = Date.now();
+          // 进化史：把每次出图按形态记下来（首次也记，这样能看到「幼生期 → 完成体」全过程）
+          const hist = Array.isArray(rec.imgHistory) ? rec.imgHistory : [];
+          const curStage = rec.stage || 1;
+          const last = hist[hist.length - 1];
+          const sameImg = last && last.url === rec.imgUrl;
+          if (rec.imgUrl && !sameImg) {
+            hist.push({ stage: curStage, url: rec.imgUrl, at: Date.now() });
+            rec.imgHistory = hist.slice(-8);
+          }
           changed = true;
           if (r.autoFixed) toast("模型名不对，已自动改用：" + r.autoFixed);
         } catch (e) {
@@ -2541,12 +2550,18 @@
       const rec = store[it.id] || {};
       const p = rec.persona || null;
       const idle = it.lastPlayedAt ? Math.floor((Date.now() - it.lastPlayedAt) / 86400000) : null;
-      html += '<div class="spirit-card" data-spirit="' + esc(it.id) + '">' +
+      const si = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
+      html += '<div class="spirit-card' + (si.canBreak ? " can-break" : "") + '" data-spirit="' + esc(it.id) + '">' +
         spiritImgHtml(it, rec, 96, "spirit-img") +
         '<div class="spirit-meta">' +
-        '<div class="spirit-name">' + esc((p && p.name) || it.name || "精灵") + "</div>" +
+        '<div class="spirit-name">' + esc((p && p.name) || it.name || "精灵") +
+        '<span class="spirit-stage">' + si.icon + " " + esc(si.name) + "</span>" +
+        (si.canBreak ? '<span class="spirit-break-tag">✨ 可突破</span>' : "") + "</div>" +
         '<div class="spirit-title">' + esc((p && p.title) || "正在酝酿性格…") + "</div>" +
         '<div class="spirit-line">' + esc((p && p.line) || "") + "</div>" +
+        (si.isMax ? '<div class="spirit-prog max">已是完成体 · 巅峰形态 👑</div>'
+          : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
+            '<span class="spirit-prog-txt">' + si.growth + " / " + si.need + " → " + esc(si.next) + "</span></div>") +
         '<div class="spirit-tags">' + ((p && p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
         (idle != null ? '<span class="spirit-trait idle">' + idle + " 天没盘</span>" : "") + "</div>" +
         "</div></div>";
@@ -2612,18 +2627,36 @@
     Spirits.save(store);
     const p = rec.persona || Spirits.localPersona(item);
     const idle = item.lastPlayedAt ? Math.floor((Date.now() - item.lastPlayedAt) / 86400000) : null;
+    const si = Spirits.stageInfo(item, rec.stage, DB.daysWith(item));
     const colorName = { white: "奶白", green: "绿", yellowbrown: "黄棕", blackgray: "黑灰", duo: "多宝", lightflower: "浅花", deepflower: "深花" }[item.color] || "素色";
     const softName = item.softness === "soft" ? "软糯" : (item.softness === "slight" ? "微糯" : "未标注");
+    // 形态进度条 + 已走过的形态（进化史）
+    const hist = (rec.imgHistory || []).filter((h) => h && h.url);
+    const histHtml = hist.length > 1
+      ? '<div class="spirit-hist">' + hist.map((h) => {
+        const d = Spirits.stageDef(h.stage);
+        return '<div class="spirit-hist-item' + (h.stage === si.stage ? " now" : "") + '" title="' + esc(d.name) + '">' +
+          '<img src="' + esc(h.url) + '" alt="">' +
+          '<span>' + d.icon + esc(d.name) + "</span></div>";
+      }).join("") + "</div>"
+      : "";
 
     modal.innerHTML =
       '<div class="spirit-modal">' +
       '<div class="spirit-modal-top">' + spiritImgHtml(item, rec, 132, "spirit-img big") + "</div>" +
-      '<div class="spirit-modal-name">' + esc(p.name || item.name || "精灵") + "</div>" +
+      '<div class="spirit-modal-name">' + esc(p.name || item.name || "精灵") +
+      '<span class="spirit-stage big">' + si.icon + " " + esc(si.name) + "</span></div>" +
       '<div class="spirit-modal-title">' + esc(p.title || "") + "</div>" +
       '<div class="spirit-modal-line">“' + esc(p.line || "") + '”</div>' +
       '<div class="spirit-modal-tags">' + (p.traits || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
       '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div>" +
+      (si.isMax
+        ? '<div class="spirit-prog max">👑 已是完成体，不再进阶</div>'
+        : '<div class="spirit-prog big"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
+          '<span class="spirit-prog-txt">成长值 ' + si.growth + " / " + si.need + " · 再 " + si.toNext + " 点可突破为「" + esc(si.next) + "」</span></div>") +
+      histHtml +
       '<div class="spirit-btns">' +
+      (si.canBreak ? '<button class="btn primary spirit-break-btn" id="spBreak">✨ 突破 →' + esc(si.next) + "</button>" : "") +
       '<button class="btn ghost" id="spNewLook">🔁 换形象</button>' +
       '<button class="btn ghost" id="spChat">💬 它们聊天</button>' +
       '<button class="btn ghost" id="spLetter">💌 给我写信</button>' +
@@ -2639,6 +2672,52 @@
     const close = () => { mask.hidden = true; modal.hidden = true; };
     $("#spClose").onclick = close;
     mask.onclick = close;
+
+    // ✨ 突破：进入下一个形态，并按新形态重新出图（保留进化史）
+    const brk = $("#spBreak");
+    if (brk) brk.onclick = async () => {
+      const s0 = Spirits.load();
+      const r0 = Spirits.ensureIn(s0, item.id);
+      const si0 = Spirits.stageInfo(item, r0.stage, DB.daysWith(item));
+      if (!si0.canBreak) { toast("成长值还不够，多盘盘它吧～"); return; }
+      const nextStage = si0.stage + 1;
+      const nextDef = Spirits.stageDef(nextStage);
+      brk.disabled = true; brk.textContent = "突破中…";
+      try {
+        const res = await Spirits.generateImage(item, 0, null, nextStage);
+        let url = res.url || "";
+        if (res.b64) url = (await shrinkToDataUri("data:image/png;base64," + res.b64, 640, 0.85)) || ("data:image/png;base64," + res.b64);
+        const s1 = Spirits.load();
+        const r1 = Spirits.ensureIn(s1, item.id);
+        const hist = Array.isArray(r1.imgHistory) ? r1.imgHistory : [];
+        const lastH = hist[hist.length - 1];
+        // 记下"突破前"的旧形态（若还没记过才补）
+        if (r1.imgUrl && !(lastH && lastH.url === r1.imgUrl)) hist.push({ stage: r1.stage || 1, url: r1.imgUrl, at: Date.now() });
+        r1.stage = nextStage;
+        if (url) hist.push({ stage: nextStage, url, at: Date.now() });
+        r1.imgHistory = hist.slice(-8);
+        if (url) r1.imgUrl = url;
+        r1.imgAt = Date.now();
+        r1._imgErr = "";
+        Spirits.save(s1);
+        close();
+        // 突破演出：全屏特效 + 提示
+        const mask2 = $("#modalMask"), modal2 = $("#modal");
+        modal2.innerHTML = '<div class="spirit-evolve">' +
+          '<div class="spirit-evolve-burst">✨</div>' +
+          (url ? '<img src="' + esc(url) + '" alt="">' : "") +
+          '<div class="spirit-evolve-title">突 破 成 功</div>' +
+          '<div class="spirit-evolve-sub">' + esc(p.name || item.name) + " → " + nextDef.icon + " " + esc(nextDef.name) + "</div>" +
+          '<div class="spirit-evolve-desc">' + (nextStage >= Spirits.STAGES.length ? "它已经长成了完成体，帅/美到发光 👑" : "它长大了一点，继续盘它会更强 💪") + "</div>" +
+          '<button class="btn primary" id="spEvoOk" style="width:100%;margin-top:14px">好耶！</button></div>';
+        mask2.hidden = false; modal2.hidden = false; modal2.style.display = "";
+        $("#spEvoOk").onclick = () => { mask2.hidden = true; modal2.hidden = true; renderSpiritPage(); };
+        mask2.onclick = () => { mask2.hidden = true; modal2.hidden = true; renderSpiritPage(); };
+      } catch (e) {
+        brk.disabled = false; brk.textContent = "✨ 突破 →" + si0.next;
+        toast("突破失败：" + ((e && e.message) || "出图失败"));
+      }
+    };
 
     // 换形象
     $("#spNewLook").onclick = async () => {
@@ -2661,7 +2740,7 @@
       if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; }
       toast("正在用 AI 重画…（消耗 1 次出图）");
       try {
-        const res = await Spirits.generateImage(item, r.variant);
+        const res = await Spirits.generateImage(item, r.variant, null, r.stage || 1);
         let url = res.url || "";
         if (res.b64) url = (await shrinkToDataUri("data:image/png;base64," + res.b64, 384, 0.85)) || ("data:image/png;base64," + res.b64);
         const s2 = Spirits.load();
