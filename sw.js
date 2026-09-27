@@ -1,5 +1,5 @@
-/* Service Worker — 网络优先 + 缓存兜底（PWA 离线可用，更新即时生效） */
-const CACHE = "wenwan-v95";
+﻿/* Service Worker 鈥?缃戠粶浼樺厛 + 缂撳瓨鍏滃簳锛圥WA 绂荤嚎鍙敤锛屾洿鏂板嵆鏃剁敓鏁堬級 */
+const CACHE = "wenwan-v96";
 
 self.addEventListener("install", (e) => {
   self.skipWaiting();
@@ -18,13 +18,13 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   const url = e.request.url;
-  // 云端 API 与 Supabase 请求直接走网络，不缓存
+  // 浜戠 API 涓?Supabase 璇锋眰鐩存帴璧扮綉缁滐紝涓嶇紦瀛?
   if (url.includes("supabase.co") || url.includes("tesseract")) return;
 
   e.respondWith(
     fetch(e.request)
       .then((res) => {
-        // 只缓存同源静态资源
+        // 鍙紦瀛樺悓婧愰潤鎬佽祫婧?
         if (url.includes("github.io")) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});

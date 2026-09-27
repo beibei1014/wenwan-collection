@@ -36,8 +36,9 @@
     pollinations: { label: "免密钥 · Pollinations（只有 sana 小模型，风格不稳）", keyless: true },
     siliconflow: { label: "硅基流动 SiliconFlow（注册送额度，推荐）", endpoint: "https://api.siliconflow.cn/v1/images/generations", model: "Kwai-Kolors/Kolors" },
     ark: { label: "火山方舟（豆包 Seedream）", endpoint: "https://ark.cn-beijing.volces.com/api/v3/images/generations", model: "doubao-seedream-3-0-t2i-250415" },
-    zhipu: { label: "智谱 CogView（有免费模型）", endpoint: "https://open.bigmodel.cn/api/paas/v4/images/generations", model: "cogview-3-flash" },
-    modelscope: { label: "魔搭 ModelScope（国内免费额度）", endpoint: "https://api-inference.modelscope.cn/v1/images/generations", model: "Qwen/Qwen-Image" },
+    zhipu: { label: "智谱 CogView（约 ¥0.06/张，最便宜之一）", endpoint: "https://open.bigmodel.cn/api/paas/v4/images/generations", model: "cogview-4" },
+    modelscope: { label: "魔搭 ModelScope（送免费额度）", endpoint: "https://api-inference.modelscope.cn/v1/images/generations", model: "Qwen/Qwen-Image" },
+    bailian: { label: "阿里百炼 通义万相（50 张免费，约 ¥0.2/张）", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations", model: "wan2.6-t2i" },
     custom: { label: "自定义（OpenAI 兼容）", endpoint: "", model: "" },
   };
   function getImageCfg() {
