@@ -2423,7 +2423,7 @@
     sync();
   }
 
-  /* ---------- 🍡 挂瓷精灵（v94） ---------- */
+  /* ---------- 🍡 精灵（v94，v114 起标题就叫「精灵」） ---------- */
   // 只有「已挂瓷 + 在库 + 文玩类」的串会成精
   function spiritItems() {
     return focusVisible(allItems).filter((i) => !i.gifted && i.playStatus === "done");
@@ -2568,15 +2568,7 @@
         Spirits.save(st);
         changed = true;
       }
-      if (changed) {
-        const h = location.hash;
-        if (h === "#/spirit" || h === "#/spirits") renderSpiritPage();
-        else if (h.indexOf("#/spirit/") === 0) {
-          const y = window.scrollY;
-          renderSpiritDetailPage(decodeURIComponent(h.slice(9)));
-          window.scrollTo(0, y);
-        }
-      }
+      if (changed) rerenderSpiritView();
     } catch (e) { /* 静默 */ }
     _faceBusy = false;
   }
@@ -2698,7 +2690,7 @@
   }
 
   function renderSpiritPage() {
-    topbarTitle.textContent = "挂瓷精灵";
+    topbarTitle.textContent = "精灵";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
     const list = spiritItems();
@@ -2804,6 +2796,7 @@
     ensureSpiritLook(list).then(() => ensureSpiritImages(list));
     ensureSpiritFaces(list);
     ensureSpiritExtras(list);
+    tickRooms();          // 进这一页也推进契合度/补写剧情（v114：之前只有精灵页会推）
   }
 
   // 🖌 全部重画（精灵页与全部精灵页共用）
@@ -2926,7 +2919,7 @@
             : '<span class="room-none">还没有精灵入住</span>') +
           (mem.length > 5 ? '<span class="room-more">+' + (mem.length - 5) + "</span>" : "") + "</div>" +
           '<div class="room-foot">' + (mem.length < 2 ? "住满 2 只才会攒契合度"
-            : (aff.best ? "最合拍：" + esc(nameOf(aff.best.a, store)) + " × " + esc(nameOf(aff.best.b, store)) + " · " + aff.best.aff : "")) + "</div>" +
+            : (aff.best ? "💞 最合拍：" + esc(nameOf(aff.best.a, store)) + " × " + esc(nameOf(aff.best.b, store)) + " · " + aff.best.aff : "")) + "</div>" +
           "</div>";
       });
       h += "</div>";
@@ -2957,10 +2950,7 @@
         Rooms.writeStory(q.a, q.b, q.level, "", txt);
       }
       updateStoryDot();
-      const h = location.hash;
-      if ((res.changed || pend.length) && (h === "#/spirit" || h.indexOf("#/room/") === 0)) {
-        if (h === "#/spirit") renderSpiritPage(); else renderRoomPage(decodeURIComponent(h.slice(7)));
-      }
+      if (res.changed || pend.length) rerenderSpiritView();
     } catch (e) { /* 静默 */ }
     _roomBusy = false;
   }
@@ -2997,11 +2987,7 @@
           }
         }
       }
-      const h = location.hash;
-      if (changed) {
-        if (h === "#/spirit") renderSpiritPage();
-        else if (h.indexOf("#/spirit/") === 0) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));
-      }
+      if (changed) rerenderSpiritView();
     } catch (e) { /* 静默 */ }
     _lookBusy = false;
   }
@@ -3021,12 +3007,28 @@
         const added = await Spirits.ensureDiary(it, r2, ap, diaryCtx(it, r2));
         if (added) changed = true;
       }
-      const h = location.hash;
-      if (changed && (h === "#/spirit" || h.indexOf("#/spirit/") === 0)) {
-        if (h === "#/spirit") renderSpiritPage(); else renderSpiritDetailPage(decodeURIComponent(h.slice(9)));
-      }
+      if (changed) rerenderSpiritView();
     } catch (e) { /* 静默 */ }
     _extraBusy = false;
+  }
+
+  /* ---------- 精灵相关页面的"原地刷新"统一入口（v114） ----------
+     原来四处各写各的分支：`#/spirits`（全部精灵）会被当成房间页刷掉，
+     甚至被 tickRooms 里 "房间找不到 → location.hash = #/spirit" 弹回房间页。
+     现在统一走这里，四个页面各刷各的。 */
+  function rerenderSpiritView() {
+    try {
+      const h = location.hash;
+      if (h === "#/spirits") { renderAllSpiritsPage(); return; }
+      if (h === "#/spirit") { renderSpiritPage(); return; }
+      if (h.indexOf("#/spirit/") === 0) {
+        const y = window.scrollY;
+        renderSpiritDetailPage(decodeURIComponent(h.slice(9)));
+        window.scrollTo(0, y);
+        return;
+      }
+      if (h.indexOf("#/room/") === 0) renderRoomPage(decodeURIComponent(h.slice(7)));
+    } catch (e) { /* 静默 */ }
   }
 
   /* ---------- 精灵形象 / 进阶动作（v111：详情页直接调，不再依赖弹层） ----------
@@ -3343,6 +3345,7 @@
     topbarTitle.textContent = room.name;
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
+    tickRooms();          // 进房间页也推进一次契合度/补写剧情（v114）
     const store = Spirits.load();
     const items = roomItems();
     const mem = Rooms.membersOf(roomId, items);
@@ -3713,7 +3716,9 @@
     modal.innerHTML = "<h3>🎨 精灵形象 · 绘图通道</h3>" +
       '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:12px">' +
       "默认用<b>免密钥</b>通道（Pollinations，国内可直连，出图偶尔不稳）。<br>" +
-      "想更稳更漂亮，可填国内 API key（硅基流动 / 火山方舟 / 智谱），<b>key 只存本机、不入开源仓库</b>。</p>" +
+      "想更稳更漂亮，可填国内 API key（智谱 / 硅基流动 / 火山方舟），<b>key 只存本机、不入开源仓库</b>。</p>" +
+      '<div class="cfg-tip">💰 <b>怎么选最省</b>：按量付费即可 —— 智谱 CogView 约 <b>¥0.06/张</b>；魔搭、硅基流动有免费额度；方舟 Seedream 约 ¥0.22/张。<br>' +
+      "⚠️ 别买「私有实例 / 专属部署」那种<b>按天计价</b>的（图像模型约 100 元/算力单元/天，一个月就是几千块），个人用按量就够。</div>" +
       '<div class="prov-row" id="provRow">' + opts + "</div>" +
       '<div class="form-group" style="margin-top:14px"><div class="form-label">形象风格 <small>换完记得点保存，再看精灵页</small></div>' +
       '<div class="prov-row" id="styleRow">' +
@@ -3734,7 +3739,7 @@
       Spirits.SIZE_PRESETS.map((sz) =>
         '<button type="button" class="prov-chip' + ((cfg.size || Spirits.DEFAULT_SIZE) === sz.v ? " active" : "") + '" data-size="' + sz.v + '">' +
         esc(sz.label) + "</button>").join("") +
-      "</div></div>" +
+      '</div><div class="cfg-hint" id="sizeHint">这家常用的尺寸：' + esc(Spirits.sizeLadderFor(cfg.provider || "pollinations").slice(0, 3).join(" / ")) + "（不对会自动换档并记住）</div></div>" +
       '<div style="display:flex;gap:8px;margin-top:6px">' +
       '<button class="btn ghost" id="imgCfgTest" style="flex:1">🔍 测试连接</button>' +
       '<button class="btn ghost" id="imgCfgCancel" style="flex:1">取消</button>' +
@@ -3764,6 +3769,12 @@
       const pv = Spirits.PROVIDERS[chosen] || {};
       if (pv.model) $("#imgModel").value = pv.model;
       $("#imgEndpoint").value = "";
+      // 顺带提示这家的合法尺寸（各家的尺寸档不一样，避免白跑一次失败请求）
+      const hint = $("#sizeHint");
+      if (hint) {
+        const lad = Spirits.sizeLadderFor(chosen);
+        hint.textContent = "这家常用的尺寸：" + lad.slice(0, 3).join(" / ") + "（不对会自动换档并记住）";
+      }
     });
     $("#imgCfgCancel").onclick = done;
     mask.onclick = done;
@@ -5786,13 +5797,13 @@
         : "") +
       "</div>";
 
-    // ===== 2.5 挂瓷精灵 · 绘图通道 / 文字通道 =====
+    // ===== 2.5 精灵 · 绘图通道 / 文字通道 =====
     {
       const cfg = Spirits.getImageCfg();
       const info = Spirits.providerInfo(cfg);
       const tin = Spirits.textInfo();
       const spiritCount = spiritItems().length;
-      html += '<div class="section-title">🍡 挂瓷精灵</div>';
+      html += '<div class="section-title">🍡 精灵</div>';
       html += '<button class="setting-item" id="btnImgCfg"><div>' +
         '<div class="t">🎨 精灵形象 · 绘图通道</div>' +
         '<div class="d">当前：' + esc(info.label) + ' · ' + esc((Spirits.STYLE_PRESETS[cfg.style] || Spirits.STYLE_PRESETS[Spirits.DEFAULT_STYLE]).label) +
@@ -5906,7 +5917,7 @@
     renderMyBadges();
     renderBadgeLibrary();
 
-    // 挂瓷精灵 · 绘图通道配置
+    // 精灵 · 绘图通道配置
     const imgBtn = $("#btnImgCfg");
     if (imgBtn) imgBtn.onclick = () => showImageCfgModal();
     const txtBtn = $("#btnTextCfg");
@@ -6073,7 +6084,7 @@
     }
     else if (h === "#/stats") renderStatsPage();
     else if (h === "#/quest") renderQuestPage();
-    else if (h === "#/spirit") renderSpiritPage();   // 🍡 挂瓷精灵（占原「分类」的导航位）
+    else if (h === "#/spirit") renderSpiritPage();   // 🍡 精灵（占原「分类」的导航位）
     else if (h === "#/spirits") renderAllSpiritsPage();                                            // 全部精灵
     else if (h.startsWith("#/spirit/")) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));   // 每只精灵的独立页面
     else if (h.startsWith("#/room/")) renderRoomPage(decodeURIComponent(h.slice(7)));             // 小房间

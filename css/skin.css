@@ -321,3 +321,156 @@
     transition-duration: .001s !important;
   }
 }
+
+/* ============================================================
+ * 第 2 期（v114）：精灵与房间的专属动效
+ * ------------------------------------------------------------
+ * 原则同上：只动 transform / opacity / background-position，
+ * 且每个"从透明开始"的动效都有落定兜底（见 .anim-settled）。
+ * ============================================================ */
+
+/* ---------- 1. 小精灵在呼吸（缩略图轻微上下浮动，错开相位） ---------- */
+@keyframes idleBob { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-3px) } }
+.spirit-thumb { animation: idleBob 6.5s ease-in-out infinite; }
+.spirit-grid > *:nth-child(2n) .spirit-thumb { animation-delay: -1.8s; }
+.spirit-grid > *:nth-child(3n) .spirit-thumb { animation-delay: -3.4s; }
+.spirit-grid > *:nth-child(5n) .spirit-thumb { animation-delay: -5s; }
+.room-members .spirit-thumb:nth-child(2n) { animation-delay: -2.2s; }
+.room-members .spirit-thumb:nth-child(3n) { animation-delay: -4.1s; }
+/* 按下时弹一下（果冻感） */
+.spirit-card:active .spirit-thumb { animation-play-state: paused; transform: scale(.95); transition: transform .12s var(--ease-spring); }
+
+/* ---------- 2. 详情页立绘轻轻浮着（像放在案上） ---------- */
+@keyframes idleFloat { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-5px) } }
+.sd-art { animation: idleFloat 7.5s ease-in-out infinite; }
+
+/* ---------- 3. 进度条/契合度条：从左边"长出来" + 流光 ---------- */
+@keyframes growX { from { transform: scaleX(0) } to { transform: scaleX(1) } }
+.spirit-prog-fill, .room-track i {
+  transform-origin: left center;
+  animation: growX .9s var(--ease-out) both;
+}
+.spirit-prog.max { animation: popIn .5s var(--ease-spring) both; }
+
+/* 契合度数字/关系档：弹一下，像刚盖上印章 */
+@keyframes popIn { from { opacity: 0; transform: translateY(4px) scale(.95) } to { opacity: 1; transform: none } }
+.sd-mate-aff, .aff-num, .spirit-prog-txt, .room-foot { animation: popIn .5s var(--ease-spring) both; }
+
+/* ---------- 4. 剧情解锁：一次性金色光环 + NEW 贴纸 ---------- */
+@keyframes unlockGlow {
+  0% { box-shadow: 0 0 0 0 rgba(192, 138, 46, .5) }
+  55% { box-shadow: 0 0 0 12px rgba(192, 138, 46, 0) }
+  100% { box-shadow: var(--shadow-1) }
+}
+.story-row.unread { position: relative; animation: unlockGlow 1.5s var(--ease-out) both; }
+.story-row.unread::after {
+  content: "NEW";
+  position: absolute; right: 9px; top: -8px;
+  font-size: 10px; font-weight: 800; letter-spacing: .6px;
+  color: #fff; background: linear-gradient(180deg, #e0a83c, #c8861f);
+  padding: 2px 7px; border-radius: 4px;
+  transform: rotate(6deg);
+  box-shadow: 0 2px 6px rgba(180, 130, 30, .35);
+  animation: popIn .45s var(--ease-spring) both;
+}
+/* 房间有未读剧情 → 金色呼吸边（:has 支持的浏览器才加）
+   注意：**发光必须做在伪元素上**（inset:-1px 的描边层）。
+   早期版本直接给 .room-card 加 animation，结果被 `.view.anim-settled .room-grid > *`
+   的落定兜底 `animation:none` 顺手关掉了；而且 breath 会动 opacity，整张卡会一闪一闪。
+   挂在 ::after 上两个问题都没有。 */
+@supports selector(:has(*)) {
+  .room-card:has(.room-dot) {
+    border-color: color-mix(in srgb, var(--gold) 50%, var(--line) 50%);
+  }
+  .room-card:has(.room-dot)::after {
+    content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
+    border: 1px solid color-mix(in srgb, var(--gold) 60%, transparent);
+    animation: breath 3s ease-in-out infinite;
+  }
+}
+/* 可突破小标轻轻跳 */
+@keyframes tagPulse { 0%, 100% { transform: rotate(-2deg) scale(1) } 50% { transform: rotate(-2deg) scale(1.07) } }
+.spirit-card.can-break .spirit-break-tag { animation: tagPulse 2.6s ease-in-out infinite; }
+
+/* ---------- 5. 契合度"合拍"提示（心跳感由 JS 文案里的 💞 承担） ---------- */
+.room-card .room-foot { animation: popIn .5s var(--ease-spring) both; }
+
+/* ---------- 6. 日记本：左侧装订虚线 ---------- */
+.sd-diary { position: relative; padding-left: 11px; }
+.sd-diary::before {
+  content: ""; position: absolute; left: 2px; top: 4px; bottom: 4px; width: 2px;
+  background-image: repeating-linear-gradient(180deg, color-mix(in srgb, var(--gold) 46%, transparent) 0 5px, transparent 5px 11px);
+  border-radius: 2px;
+}
+@keyframes pageTurn { from { opacity: 0; transform: perspective(600px) rotateY(-8deg) translateX(-8px) } to { opacity: 1; transform: none } }
+.sd-diary-item { animation: pageTurn .5s var(--ease-out) both; }
+.sd-diary-item:nth-child(2) { animation-delay: .06s; }
+.sd-diary-item:nth-child(3) { animation-delay: .12s; }
+.sd-diary-item:nth-child(4) { animation-delay: .18s; }
+.sd-diary-item:nth-child(n+5) { animation-delay: .22s; }
+
+/* ---------- 7. 图片还没加载出来时：三次微光扫过（不常驻，省电） ---------- */
+@keyframes shimmer { from { background-position: 130% 0 } to { background-position: -130% 0 } }
+.spirit-thumb, .card-thumb, .sd-bead img, .sd-bead .placeholder {
+  background-image: linear-gradient(100deg, transparent 32%, rgba(255, 255, 255, .5) 50%, transparent 68%);
+  background-size: 240% 100%;
+  background-repeat: no-repeat;
+  animation: shimmer 1.5s linear 3;
+}
+
+/* ---------- 8. 房间页：成员聚拢 + 剧情书页感 ---------- */
+@keyframes gatherIn { from { opacity: 0; transform: translateY(10px) scale(.9) } to { opacity: 1; transform: none } }
+.room-mem { animation: gatherIn .5s var(--ease-spring) both; }
+.room-mem:nth-child(2) { animation-delay: .06s; }
+.room-mem:nth-child(3) { animation-delay: .12s; }
+.room-mem:nth-child(4) { animation-delay: .18s; }
+.room-mem:nth-child(n+5) { animation-delay: .24s; }
+.room-mem:active { transform: scale(.93); }
+.room-page-head { animation: pageIn .4s var(--ease-out) both; }
+.room-page-head .room-emoji.big { animation: idleBob 5s ease-in-out infinite; display: inline-block; }
+.story-row { transition: transform .18s var(--ease-spring), box-shadow .22s var(--ease-out); }
+.story-row:active { transform: scale(.98) rotate(-.4deg); }
+
+/* ---------- 9. 底部 tab / 图标按钮：按下有反馈 ---------- */
+.tab-item:active .tab-icon { transform: scale(.9); }
+.tab-icon { transition: transform .2s var(--ease-spring), color .2s; }
+.icon-btn:active svg { transform: scale(.9); }
+.icon-btn svg { transition: transform .2s var(--ease-spring); }
+
+/* ---------- 10. 空状态：像一页空手账 ---------- */
+.empty {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--card) 100%, #fff), var(--card));
+  border: 1px dashed color-mix(in srgb, var(--line) 85%, var(--wood) 15%);
+  border-radius: var(--r-lg);
+  padding: 26px 18px;
+  box-shadow: var(--shadow-1);
+}
+.empty-icon { filter: drop-shadow(0 4px 10px rgba(61, 43, 31, .12)); }
+
+/* ---------- 11. 配置弹层里的小提示（尺寸/省钱提示） ---------- */
+.cfg-hint {
+  font-size: 11px; color: var(--text-2); margin-top: 6px; line-height: 1.7;
+}
+.cfg-tip {
+  font-size: 11.5px; line-height: 1.85; color: #6b5320;
+  background: linear-gradient(180deg, #fff8e8, #fff4dd);
+  border: 1px dashed color-mix(in srgb, var(--gold) 45%, var(--line) 55%);
+  border-radius: var(--r-md);
+  padding: 9px 11px;
+  margin-bottom: 12px;
+}
+.cfg-tip b { color: #a5701a; }
+
+/* ---------- 12. 落定兜底：新增的入场动画也一起撤掉 ---------- */
+.view.anim-settled .sd-diary-item,
+.view.anim-settled .room-mem,
+.view.anim-settled .room-page-head,
+.view.anim-settled .sd-mate-aff,
+.view.anim-settled .aff-num,
+.view.anim-settled .spirit-prog-txt,
+.view.anim-settled .room-foot,
+.view.anim-settled .story-row.unread,
+.view.anim-settled .story-row.unread::after,
+.view.anim-settled .spirit-prog.max { animation: none; }
+.view.anim-settled .spirit-prog-fill,
+.view.anim-settled .room-track i { animation: none; transform: none; }

@@ -1,5 +1,5 @@
 /* =========================================================
- * spirits.js — 🍡 挂瓷精灵
+ * spirits.js — 🍡 精灵（挂瓷成精的手串伙伴）
  * 已挂瓷的串 "成精"：卡通形象（AI 绘图 / 本地程序化兜底）+ 性格 + 互相聊天 + 给你送信
  * · 绘图默认走免密钥通道（Pollinations，浏览器直连出图）；也可切到国内 API（OpenAI 兼容）
  * · 文字（性格/聊天/信件）用 DeepSeek（复用「设置 → AI 助手密钥」的 key）；没 key 用本地模板
@@ -270,13 +270,24 @@
   /* ---------- 绘图通道（默认免密钥；可切国内 API） ---------- */
   const PROVIDERS = {
     pollinations: { label: "免密钥 · Pollinations（只有 sana 小模型，风格不稳）", keyless: true },
-    siliconflow: { label: "硅基流动 SiliconFlow（注册送额度，推荐）", endpoint: "https://api.siliconflow.cn/v1/images/generations", model: "Kwai-Kolors/Kolors" },
-    ark: { label: "火山方舟（豆包 Seedream，有免费额度）", endpoint: "https://ark.cn-beijing.volces.com/api/v3/images/generations", model: "doubao-seedream-5-0-flash-260915" },
-    zhipu: { label: "智谱 CogView（约 ¥0.06/张，最便宜之一）", endpoint: "https://open.bigmodel.cn/api/paas/v4/images/generations", model: "cogview-4" },
-    modelscope: { label: "魔搭 ModelScope（送免费额度）", endpoint: "https://api-inference.modelscope.cn/v1/images/generations", model: "Qwen/Qwen-Image" },
+    zhipu: { label: "智谱 CogView（约 ¥0.06/张 · 最便宜）", endpoint: "https://open.bigmodel.cn/api/paas/v4/images/generations", model: "cogview-4" },
+    siliconflow: { label: "硅基流动 SiliconFlow（注册送额度，出图快）", endpoint: "https://api.siliconflow.cn/v1/images/generations", model: "Kwai-Kolors/Kolors" },
+    ark: { label: "火山方舟 豆包 Seedream（约 ¥0.22/张，有免费额度）", endpoint: "https://ark.cn-beijing.volces.com/api/v3/images/generations", model: "doubao-seedream-5-0-flash-260915" },
+    modelscope: { label: "魔搭 ModelScope（每日免费额度）", endpoint: "https://api-inference.modelscope.cn/v1/images/generations", model: "Qwen/Qwen-Image" },
     bailian: { label: "阿里百炼 通义万相（浏览器直连受限，不推荐）", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations", model: "wan2.6-t2i" },
     custom: { label: "自定义（OpenAI 兼容）", endpoint: "", model: "" },
   };
+  // 各家能接受的尺寸不一样：被服务端拒了就按这份清单依次退让（不是限制用户，只是自动救场）
+  const SIZE_BY_PROVIDER = {
+    ark: ["1728x2304", "2048x2048", "3072x3072"],
+    zhipu: ["768x1344", "864x1152", "1024x1024"],          // CogView-4 支持任意分辨率；CogView-3 只有固定几档（优先竖版立绘）
+    siliconflow: ["1024x1024", "768x1024", "1024x768"],
+    modelscope: ["1024x1024", "768x1024", "1024x768"],
+    bailian: ["1024x1024", "768x1152", "1152x768"],
+  };
+  const SIZE_DEFAULT_LADDER = ["1728x2304", "2048x2048", "1024x1024"];
+  function sizeLadderFor(provider) { return SIZE_BY_PROVIDER[provider] || SIZE_DEFAULT_LADDER; }
+
   function getImageCfg() {
     try {
       const raw = localStorage.getItem(CFG_KEY);
@@ -438,11 +449,11 @@
       return r;
     }
   }
-  // 尺寸兜底阶梯：按「明确的宽×高」依次试（都 ≥368 万像素），第一个能出图的就写回配置。
+  // 尺寸兜底阶梯：先按这家服务商自己的合法档位试，再退回通用档。
   // 之所以不写死成 "2K"：有的模型把 "2K" 当成 1024x1024 → 会一直报像素不够。
-  const SIZE_LADDER = ["1728x2304", "2048x2048", "3072x3072"];
   async function callWithSizeFallback(info, prompt, size, seed, ref, cfg) {
-    const cands = [size].concat(SIZE_LADDER.filter((s) => s !== size));
+    const ladder = sizeLadderFor(cfg && cfg.provider);
+    const cands = [size].concat(ladder.filter((s) => s !== size));
     let lastErr = null;
     for (let i = 0; i < cands.length; i++) {
       try {
@@ -460,8 +471,17 @@
     throw lastErr;
   }
   let _noRef = false;
+  // 判断"是不是尺寸被服务端拒了"。各家报错文案差别很大，所以中英都要认：
+  //   方舟：The parameter `size` specified in the request is not valid: image size must be at least 3686400 pixels
+  //   智谱：size 参数不合法 / 不支持的尺寸
+  //   硅基流动等：resolution not supported
   function isSizeErr(msg) {
-    return /size.*(not valid|invalid)|at least\s*\d+\s*pixels|尺寸/i.test(String(msg || ""));
+    const s = String(msg || "");
+    if (/at least\s*\d+\s*pixels|image size must be/i.test(s)) return true;
+    if (/尺寸|分辨率/.test(s)) return true;
+    if (/resolution/i.test(s) && /not|invalid|unsupported|illegal|不合法|不支持/i.test(s)) return true;
+    if (/size/i.test(s) && /not valid|invalid|unsupported|illegal|must be|不合法|不支持|超出|越界|exceed/i.test(s)) return true;
+    return false;
   }
   let _autoFixed = false;
   async function callImageApi(info, prompt, size, seed, ref) {
@@ -1154,7 +1174,7 @@
   }
 
   window.Spirits = {
-    PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo,
+    PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo, sizeLadderFor,
     STAGES, stageDef, stageInfo, growthOf,
     appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
     COLOR_ZH, HAIR_ZH, EYES_ZH, ACC_ZH, VIBE_ZH,
