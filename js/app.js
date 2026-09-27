@@ -25,6 +25,9 @@
   let viewMode = localStorage.getItem("ww_viewmode") || "card"; // card | list
   let sortMode = localStorage.getItem("ww_sortmode") || "arrived"; // arrived(入库) | created(放置时间) | price(价格) | playcount(盘玩次数) | star(星级) | color(颜色)
   let sortDir = localStorage.getItem("ww_sortdir") || "desc"; // asc | desc（箭头指向）
+  // v93 文玩专注模式（默认开）：只保留 菩提/水晶/玉石，隐藏拼图/周边/盲盒等分类与「分类」页
+  // 只影响界面显示，数据一条都不删；设置里可一键关掉
+  let focusMode = localStorage.getItem("ww_focus") !== "0";
   let user = null;           // 当前登录用户
   let _onBack = null;        // 当前页面的自定义返回钩子（如批量编辑页设回首页，离开时清空）
   let _lastHash = null;      // 上一次的路由（用于判断「从哪个页面进的详情」）
@@ -587,9 +590,11 @@
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
 
-    const stats = Stats.computeStats(allItems);
-    const facts = Stats.funFacts(allItems, stats);
-    const achievements = Stats.getAchievements(allItems, playDays);
+    // 文玩专注模式下：统计只看文玩类（隐藏的分类数据仍在云端；等级/经验仍按全量算，避免掉级）
+    const statItems = focusVisible(allItems);
+    const stats = Stats.computeStats(statItems);
+    const facts = Stats.funFacts(statItems, stats);
+    const achievements = Stats.getAchievements(statItems, playDays);
 
     let html = "";
 
@@ -604,7 +609,7 @@
       "</div></div>";
 
     // 收藏分布（颜色 / 分类 / 状态 / 价格区间）
-    const dist = Stats.distributions(allItems);
+    const dist = Stats.distributions(statItems);
     const distBar = (d, fallbackColor) => {
       if (!d.count) return "";
       const pct = Math.max(8, d.pct); // 最小宽度让标签可读
@@ -708,7 +713,7 @@
     let calM = new Date().getMonth();
     function renderCal(y, m) {
       calY = y; calM = m;
-      Stats.renderCalendar(allItems, $("#calBox"), {
+      Stats.renderCalendar(statItems, $("#calBox"), {
         year: y, month: m,
         onChange: (ny, nm) => renderCal(ny, nm),
       });
@@ -750,7 +755,7 @@
       ashare.disabled = true;
       try {
         const canvas = await Poster.achievementPoster({
-          items: allItems,
+          items: statItems,   // 文玩专注模式下只算文玩类
           username: user && user.displayName ? user.displayName : "",
           badgeIds: getBadgeIds(),
         });
@@ -778,6 +783,18 @@
   /* ---------- 收藏盒子二级页（专注展示该分类，保留筛选+排序+搜索） ---------- */
   function renderBoxPage(cat) {
     const isUncat = cat === "__uncat";
+    // 文玩专注模式：非文玩分类的盒子页隐藏（数据还在，关掉开关就能进）
+    if (focusMode && !isUncat && !isWenwanCat(cat)) {
+      topbarTitle.textContent = "暂时隐藏";
+      btnBack.style.visibility = "visible";
+      btnSettings.style.visibility = "hidden";
+      view.innerHTML = '<div class="empty"><div class="empty-icon">🎯</div>' +
+        "<p>「" + esc(cat) + "」在当前是隐藏的<br>你开启了「文玩专注模式」（只显示菩提/水晶/玉石）<br>数据一条都没删，去设置里关掉就回来了</p>" +
+        '<button class="btn ghost" id="goFocusSet" style="margin-top:14px">去设置里关闭</button></div>';
+      const gb = $("#goFocusSet");
+      if (gb) gb.onclick = () => location.hash = "#/settings";
+      return;
+    }
     const displayName = isUncat ? "未分类" : cat;
     topbarTitle.textContent = displayName + "盒子";
     btnBack.style.visibility = "visible";
@@ -2580,7 +2597,7 @@
       case "color": cmp = (a, b) => (colorIdx(a) - colorIdx(b)) * dir; break; // 按颜色浅→深排；desc=浅→深（白在前）
       default: cmp = (a, b) => (key(a) - key(b)) * dir; // arrived
     }
-    // 先按「分组压底」排（普通 0 → 未盘玩 1 → 佩戴中 2），组内再用所选排序比较
+    // 先按「状态分组」排（盘中 0 → 待盘 1 → 挂瓷 2 → 未盘 3 → 佩戴 4），组内再用所选排序比较
     arr.sort((a, b) => {
       const r = pinRank(a) - pinRank(b);
       if (r !== 0) return r;
@@ -2589,7 +2606,8 @@
   }
 
   function filtered(base) {
-    const src = base || allItems;
+    // 文玩专注模式下：只保留 菩提/水晶/玉石（隐藏的分类数据仍在云端，只是不显示）
+    const src = focusVisible(base || allItems);
     let list = src;
     // 隐藏已送人开关：默认隐藏，除非用户手动筛了"已送人/gifted"
     if (hideGifted && !selectFilters.has("gifted")) {
@@ -2813,10 +2831,10 @@
       (selectShapes.size ? '<button type="button" class="chip clear-chip" id="clearShape">✕ 清除珠型</button>' : "") +
       '</div>';
 
-    // 分类筛选行
+    // 分类筛选行（文玩专注模式下只出现 菩提/水晶/玉石）
     filterHtml += '<div class="filters">' +
       '<button class="chip' + (!categoryFilter ? " active" : "") + '" data-cat="">全部分类</button>' +
-      cats.map((c) => '<button class="chip' + (categoryFilter === c ? " active" : "") + '" data-cat="' + esc(c) + '">' + esc(c) + "</button>").join("") +
+      (focusMode ? wenwanCategories() : cats).map((c) => '<button class="chip' + (categoryFilter === c ? " active" : "") + '" data-cat="' + esc(c) + '">' + esc(c) + "</button>").join("") +
       "</div>";
 
     // 排序（5 个按钮，点一下切换升/降序，箭头指示当前方向）
@@ -2868,6 +2886,13 @@
         return '<div class="empty">' +
           '<div class="empty-icon">📴</div>' +
           "<p>连不上云端，本地也还没有缓存<br>请换个网络（或等信号好点）后点上方「重试」<br>你的数据都在云端，不会丢</p>" +
+          "</div>";
+      }
+      // 文玩专注模式下全被隐藏了：说清楚（数据没丢）
+      if (focusMode && hiddenByFocusCount() && !focusVisible(allItems).length) {
+        return '<div class="empty">' +
+          '<div class="empty-icon">🎯</div>' +
+          "<p>文玩专注模式下这里没有宝贝<br>已隐藏 " + hiddenByFocusCount() + " 件非文玩收藏（数据保留）<br>去设置里关掉就能看到全部</p>" +
           "</div>";
       }
       return '<div class="empty">' +
@@ -3250,6 +3275,24 @@
     } catch (e) {}
     return DEFAULT_CATEGORIES.slice();
   }
+  // v93 文玩专注模式：只保留「文玩/珠串」类分类，其余分类（拼图/动漫周边/盲盒等）只在界面隐藏
+  // —— 数据一律不删（云端照旧），关掉开关全部回来
+  const WENWAN_CATS = ["菩提", "水晶", "玉石"];
+  const isWenwanCat = (cat) => WENWAN_CATS.includes(cat || "");
+  function wenwanCategories() {
+    const have = getCategories().filter(isWenwanCat);
+    // 至少保证有菩提（默认分类里一定有）；用户自定义过分类也不影响
+    return have.length ? have : ["菩提"];
+  }
+  // 当前该显示哪些宝贝（专注模式开启时过滤掉非文玩分类）
+  function focusVisible(list) {
+    const arr = list || allItems;
+    return focusMode ? arr.filter((i) => isWenwanCat(i.category || "")) : arr.slice();
+  }
+  function hiddenByFocusCount() {
+    if (!focusMode) return 0;
+    return allItems.filter((i) => !isWenwanCat(i.category || "")).length;
+  }
   function saveCategories(arr) {
     const cleaned = arr.map((c) => c.trim()).filter(Boolean);
     const uniq = [...new Set(cleaned)];
@@ -3257,7 +3300,7 @@
     return uniq;
   }
   function categoryOptions(selected) {
-    const cats = getCategories();
+    const cats = focusMode ? wenwanCategories() : getCategories();
     let h = '<option value="">未分类</option>';
     cats.forEach((c) => {
       h += '<option value="' + esc(c) + '"' + (selected === c ? " selected" : "") + ">" + esc(c) + "</option>";
@@ -4183,13 +4226,14 @@
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
 
-    const inStock = allItems.filter((i) => !i.gifted).length;
-    const gifted = allItems.filter((i) => i.gifted).length;
-    const played = allItems.filter((i) => isBeadCat(i.category || "") && i.playStatus !== "" && i.playStatus !== "unplayed").length;
+    const statItemsSet = focusVisible(allItems);
+    const inStock = statItemsSet.filter((i) => !i.gifted).length;
+    const gifted = statItemsSet.filter((i) => i.gifted).length;
+    const played = statItemsSet.filter((i) => isBeadCat(i.category || "") && i.playStatus !== "" && i.playStatus !== "unplayed").length;
 
-    // 称号/徽章数据
+    // 称号/徽章数据（等级/经验仍按全量算，避免专注模式下掉级）
     const lvGame = Game.getLevel(Game.computeXp(allItems, playDays).xp);
-    const allAch = Stats.getAchievements(allItems, playDays);
+    const allAch = Stats.getAchievements(statItemsSet, playDays);
     const badgeIds = getBadgeIds();
     const badgeAch = [];
     const unlockedList = [];
@@ -4210,6 +4254,19 @@
       "</div></div>";
 
     // ===== 2. 自选称号（展示 + 删除） =====
+    html += '<div class="section-title">🎯 文玩专注模式</div>';
+    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">' +
+      '<div style="min-width:0"><div style="font-size:13px;font-weight:600">只显示文玩类（菩提 / 水晶 / 玉石）</div>' +
+      '<div style="font-size:11px;color:var(--text-2);margin-top:3px">开启后隐藏「分类」页和其它收藏类型（拼图/周边/盲盒等）。' +
+      '<b>数据一条都不会删</b>，关掉开关立刻全部回来。</div></div>' +
+      '<label class="switch"><input type="checkbox" id="focusSwitch"' + (focusMode ? " checked" : "") + '><span class="switch-slider"></span></label>' +
+      "</div>" +
+      (focusMode && hiddenByFocusCount()
+        ? '<div style="font-size:11px;color:var(--gold);margin-top:8px">当前已隐藏 ' + hiddenByFocusCount() + " 件非文玩宝贝</div>"
+        : "") +
+      "</div>";
+
     html += '<div class="section-title">🎖️ 我的称号</div>';
     html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">';
     html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:8px">展示中的称号（点击 ✕ 移除）</div>';
@@ -4335,6 +4392,15 @@
     }
 
     $("#btnChangePwd").onclick = () => showChangePasswordModal();
+    // 文玩专注模式开关
+    const fs1 = $("#focusSwitch");
+    if (fs1) fs1.onchange = () => {
+      focusMode = fs1.checked;
+      localStorage.setItem("ww_focus", focusMode ? "1" : "0");
+      applyFocusChrome();
+      toast(focusMode ? "已开启文玩专注模式（隐藏非文玩分类）" : "已关闭，全部收藏类型回来了");
+      renderSettings();
+    };
     $("#btnExport").onclick = async () => {
       const json = await DB.exportBackup();
       const blob = new Blob([json], { type: "application/json" });
@@ -4475,7 +4541,11 @@
     }
 
     if (h === "#/profile") renderProfile();
-    else if (h === "#/cat") renderCatPage();
+    else if (h === "#/cat") {
+      // 文玩专注模式：分类页暂时隐藏 —— 地址也归位到首页（避免停在 #/cat 显示首页内容）
+      if (focusMode) { location.hash = "#/"; return; }
+      renderCatPage();
+    }
     else if (h === "#/stats") renderStatsPage();
     else if (h === "#/quest") renderQuestPage();
     else if (h === "#/fav") renderFavPage();
@@ -4565,6 +4635,12 @@
 
   /* 底部导航 */
   const tabbar = $("#tabbar");
+  // 文玩专注模式：把「分类」这个 tab 隐藏（只是隐藏，DOM 还在，关掉开关就回来）
+  function applyFocusChrome() {
+    const catTab = tabbar ? tabbar.querySelector('.tab-item[data-tab="cat"]') : null;
+    if (catTab) catTab.style.display = focusMode ? "none" : "";
+    if (focusMode && location.hash === "#/cat") location.hash = "#/";
+  }
   function updateTabbar() {
     if (!tabbar) return;
     const h = location.hash;
@@ -4600,6 +4676,7 @@
       try { if ("scrollRestoration" in history) history.scrollRestoration = "manual"; } catch (e) { /* 忽略 */ }
       // 提前绑定 AI 小助手（不依赖登录态），确保猫猫图标任何时候都能点击
       bindAI();
+      applyFocusChrome();   // 文玩专注模式：隐藏「分类」tab
       initToTop();        // 回到顶部按钮（滚动后出现）
       bindSoftToggles();  // 卡片/列表里直接改软糯程度
       // 网络状态监听：不稳/断开时顶部显示提示条，恢复后自动重新同步
