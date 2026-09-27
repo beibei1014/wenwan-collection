@@ -155,8 +155,8 @@
     return '<span class="color-tag shape-tag" title="珠型：' + esc(label) + '">📿 ' + esc(label) + "</span>";
   }
 
-  /* ---------- 软糯程度（v91） ---------- */
-  // 手感的"糯"感：软糯 / 微糯；未标注则不显示标签
+  /* ---------- 软糯程度（v91；v92 起可在列表里直接点着改） ---------- */
+  // 手感的"糯"感：软糯 / 微糯 / 未标
   const SOFTNESS_LIST = [
     { v: "soft", label: "软糯" },
     { v: "slight", label: "微糯" },
@@ -166,11 +166,46 @@
     const s = SOFTNESS_LIST.find((x) => x.v === v);
     return s ? s.label : v;   // 未知值原样返回（兼容手工写入）
   }
-  // 软糯程度标签（列表/详情复用）；未标注不显示
+  // 软糯程度开关（卡片/列表里直接点，不用进详情）；未标注时显示淡淡的「🍡 未标」
   function softnessTagHtml(it) {
-    if (!it.softness) return "";
-    const label = softnessLabel(it.softness);
-    return '<span class="color-tag soft-tag soft-' + esc(it.softness) + '" title="软糯程度：' + esc(label) + '">🍡 ' + esc(label) + "</span>";
+    const v = it.softness || "";
+    const label = v ? softnessLabel(v) : "未标";
+    return '<button type="button" class="soft-toggle ' + (v ? "soft-" + v : "soft-none") + '"' +
+      ' data-soft-id="' + esc(it.id) + '" title="点一下改软糯程度：未标 → 软糯 → 微糯">🍡 ' + esc(label) + "</button>";
+  }
+  // 点一下循环切换并存到云端
+  const SOFT_CYCLE = ["", "soft", "slight"];
+  async function cycleSoftness(id, btn) {
+    const it = allItems.find((x) => x.id === id);
+    if (!it) return;
+    const prev = it.softness || "";
+    const next = SOFT_CYCLE[(SOFT_CYCLE.indexOf(prev) + 1) % SOFT_CYCLE.length];
+    const paint = (val) => {
+      if (!btn) return;
+      btn.classList.remove("soft-none", "soft-soft", "soft-slight");
+      btn.classList.add(val ? "soft-" + val : "soft-none");
+      btn.textContent = "🍡 " + (val ? softnessLabel(val) : "未标");
+    };
+    it.softness = next;
+    paint(next);   // 先就地更新按钮（不整页重渲染，滚动位置不动）
+    try {
+      await DB.put(it);
+      toast(next ? "软糯程度：" + softnessLabel(next) : "已清除软糯程度");
+    } catch (e) {
+      it.softness = prev;   // 保存失败回滚
+      paint(prev);
+      toast("保存失败：" + (e && e.message ? e.message : "网络问题"));
+    }
+  }
+  // 用「捕获阶段」代理点击：抢在卡片自己的"点进详情"之前处理，改完不跳转
+  function bindSoftToggles() {
+    view.addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest(".soft-toggle") : null;
+      if (!btn) return;
+      e.stopPropagation();
+      e.preventDefault();
+      cycleSoftness(btn.dataset.softId, btn);
+    }, true);
   }
 
   // 珠子状态徽章颜色（CSS 类）
@@ -2336,6 +2371,27 @@
         .catch(() => { offlineMode = true; refreshNetBar(); });
     }
   }
+  /* ---------- 回到顶部按钮（滚一段后出现） ---------- */
+  let toTopEl = null;
+  function initToTop() {
+    if (toTopEl && document.body.contains(toTopEl)) return;
+    toTopEl = document.createElement("button");
+    toTopEl.type = "button";
+    toTopEl.className = "to-top";
+    toTopEl.title = "回到顶部";
+    toTopEl.setAttribute("aria-label", "回到顶部");
+    toTopEl.textContent = "↑";
+    toTopEl.onclick = () => {
+      try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (e) { window.scrollTo(0, 0); }
+      // 兜底：个别浏览器/WebView 不支持平滑滚动，或动画被打断时会停在半路
+      setTimeout(() => { if ((window.scrollY || 0) > 40) window.scrollTo(0, 0); }, 600);
+    };
+    document.body.appendChild(toTopEl);
+    const sync = () => { toTopEl.classList.toggle("show", (window.scrollY || 0) > 420); };
+    window.addEventListener("scroll", sync, { passive: true });
+    sync();
+  }
+
   /* ---------- 进入应用（登录后） ---------- */
   async function enterApp(passedSession) {
     const session = passedSession || await DB.getSession();
@@ -2464,16 +2520,20 @@
   // 排序：arrived=入库时间(desc) | created=放置时间(desc=放置最长在前) | price=价格 | playcount=盘玩次数 | star=星级 | color=颜色
   // 传入 items 可对指定集合（如某收藏盒子）排序，缺省对全量 allItems
   //
-  // v90 新增「分组压底」：列表顺序 = ① 正常串（按所选排序） → ② 未盘玩 → ③ 佩戴中（最下）
-  //   · 佩戴中的串天天戴着、不用盘，压在列表最底下，不打扰
-  //   · 未盘玩（还没开始盘）排在佩戴中上面；两组各自内部仍按所选排序方式
-  //   · 切换升/降序不会改变这两组的位置（和"未记价在价格排序时永远排最后"是同一套规则）
+  // v90 新增「分组压底」；v92 改成按状态整段分组（用户要求别把盘玩中和已挂瓷混在一起）
+  //   · 顺序：① 盘玩中 → ② 待盘玩 → ③ 已挂瓷 → ④ 未盘玩 → ⑤ 佩戴中（最下）
+  //   · 每一段内部仍按所选排序方式排；切换升/降序不改变这几段的位置
+  //   · 拼图类按同理映射：待拼→待盘玩档、已拼→已挂瓷档
+  //   · 水晶/玉石/周边等「没有盘玩状态」的分类与「盘玩中」同档（正常在库，不参与这套状态分组）
   function pinRank(it) {
     const st = it.playStatus || "";
-    if (st === "wearing") return 2;
-    if (st === "unplayed") return 1;
+    if (st === "playing") return 0;
+    if (st === "ready" || st === "puzzle_pending") return 1;
+    if (st === "done" || st === "puzzle_done") return 2;
+    if (st === "unplayed") return 3;
+    if (st === "wearing") return 4;
     // 菩提类但状态为空：等同未盘玩（loadItems 会归一化，这里兜底）
-    if (!st && isBeadCat(it.category || "")) return 1;
+    if (!st && isBeadCat(it.category || "")) return 3;
     return 0;
   }
   function sortItems(items) {
@@ -4540,6 +4600,8 @@
       try { if ("scrollRestoration" in history) history.scrollRestoration = "manual"; } catch (e) { /* 忽略 */ }
       // 提前绑定 AI 小助手（不依赖登录态），确保猫猫图标任何时候都能点击
       bindAI();
+      initToTop();        // 回到顶部按钮（滚动后出现）
+      bindSoftToggles();  // 卡片/列表里直接改软糯程度
       // 网络状态监听：不稳/断开时顶部显示提示条，恢复后自动重新同步
       if (DB.onNetChange) { try { DB.onNetChange(onNetRecovered); } catch (e) { /* 忽略 */ } }
       bindOnlineRecovery();

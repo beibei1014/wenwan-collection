@@ -241,8 +241,9 @@ img { display:block; }
 .filter-toggle .filter-arrow { color:var(--gold); transition:transform .2s; font-size:12px; }
 #filterPanel { margin-bottom:4px; }
 
-.grid { display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; }
-@media (min-width:560px){ .grid { grid-template-columns:repeat(3, 1fr); } }
+/* 卡片网格：手机一行 3 个（缩略图更小 → 一屏能看更多，标签也能多显示几个）；宽屏一行 4 个 */
+.grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
+@media (min-width:560px){ .grid { grid-template-columns:repeat(4, 1fr); } }
 .card {
   background:var(--card); border-radius:var(--radius); overflow:hidden;
   box-shadow:var(--shadow); border:1px solid var(--line); transition:transform .12s;
@@ -313,10 +314,34 @@ img { display:block; }
 /* 列表喜欢按钮（跟随行内，不用绝对定位） */
 .fav-heart.list-fav { position:static; background:none; width:30px; height:30px; margin-left:4px; flex-shrink:0; }
 .fav-heart.list-fav.faved { background:none; }
-.card-body { padding:8px 10px 10px; }
-.card-name { font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.card-sub { font-size:11px; color:var(--text-2); margin-top:2px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px; }
+.card-body { padding:7px 8px 8px; }
+.card-name { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.card-sub { font-size:11px; color:var(--text-2); margin-top:3px; display:flex; justify-content:flex-start; align-items:center; flex-wrap:wrap; gap:3px; }
 .days { color:var(--gold); font-weight:600; }
+
+/* 软糯程度：列表/卡片里直接点就能改（不用进详情）——点一下循环 未标 → 软糯 → 微糯 */
+.soft-toggle {
+  border:1px solid transparent; border-radius:9px; padding:1px 6px; font-size:10px; font-weight:700;
+  line-height:1.5; cursor:pointer; flex-shrink:0; white-space:nowrap;
+}
+.soft-toggle:active { transform:scale(.94); }
+.soft-toggle.soft-none { background:transparent; color:#bdb2a4; border-color:#e3dbcf; border-style:dashed; }
+.soft-toggle.soft-soft { background:#fce4ec; color:#c2185b; border-color:#f8bbd0; }
+.soft-toggle.soft-slight { background:#f3e5f5; color:#7b1fa2; border-color:#e1bee7; }
+
+/* 回到顶部：滚动一段后出现，浮在 AI 猫猫上方 */
+.to-top {
+  position:fixed; right:14px; bottom:152px; z-index:65;
+  width:42px; height:42px; border-radius:50%;
+  background:rgba(255,255,255,.96); color:var(--wood);
+  border:1px solid var(--line); box-shadow:0 4px 14px rgba(61,43,31,.22);
+  font-size:19px; font-weight:700; line-height:1;
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none; transform:translateY(8px) scale(.9);
+  transition:opacity .18s, transform .18s;
+}
+.to-top.show { opacity:1; pointer-events:auto; transform:none; }
+.to-top:active { transform:scale(.92); }
 
 .empty {
   text-align:center; padding:70px 20px; color:var(--text-2);
