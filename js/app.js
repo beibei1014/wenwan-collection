@@ -2758,6 +2758,28 @@
   // 逐个补形象：API 通道需要 POST 出图 → 缓存到本地精灵记录里
   let _imgBusy = false;
   let _lastImgErrShown = "";
+  // v127：这只精灵在等用户先确认设定（发色/特征/性格）→ 先别出图，免得画完又得重画
+  function spiritNeedsSetup(rec) {
+    const r = rec || {};
+    if (r.look) return false;
+    if (r.lookAsked === 1) return false;
+    return r.setupPending === true || (!r.imgUrl && !r.imgAt);
+  }
+  // 进精灵页/图鉴页时，若第一只还没定设定就自动弹一次向导（每只每次开会话只弹一次）
+  const _setupShown = {};
+  function maybeOpenSpiritSetup(list) {
+    try {
+      if (!$("#modal").hidden) return;
+      const s = Spirits.load();
+      const pend = (list || []).filter((it) => spiritNeedsSetup(s[it.id] || {}));
+      if (!pend.length) return;
+      const it = pend[0];
+      if (_setupShown[it.id]) return;
+      _setupShown[it.id] = 1;
+      setTimeout(() => { try { showSpiritSetupModal(it); } catch (e) { /* 忽略 */ } }, 350);
+    } catch (e) { /* 静默 */ }
+  }
+
   async function ensureSpiritImages(list) {
     if (_imgBusy) return;
     const cfg = Spirits.getImageCfg();
@@ -2768,6 +2790,7 @@
       for (const it of list) {
         const st = Spirits.load();
         const rec = Spirits.ensureIn(st, it.id);
+        if (spiritNeedsSetup(rec)) continue;         // v127：等用户先确认设定（发色/特征/性格）
         if (!spiritImgStale(rec)) continue;          // 已经是本地存好的图 → 不再烧额度
         // 刚失败过就别反复重试（配置错的时候会在每次进页面时白烧额度）
         if (rec._imgErr && Date.now() - (rec._imgErrAt || 0) < 10 * 60 * 1000) continue;
@@ -2804,6 +2827,20 @@
     _imgBusy = false;
   }
 
+  // v127：还没定设定（发色/特征/性格）的精灵提示条（精灵页 + 图鉴页共用）
+  function setupHintHtml(list, store) {
+    const pend = (list || []).filter((it) => spiritNeedsSetup((store || {})[it.id] || {}));
+    if (!pend.length) return { html: "", first: null };
+    return {
+      html: '<div class="diary-hint" id="spSetupHint">✨ 有 <b>' + pend.length + '</b> 只还没定设定（发色 / 特征 / 性格）· <b>点这里开始定</b></div>',
+      first: pend[0],
+    };
+  }
+  function bindSetupHint(first) {
+    const el = $("#spSetupHint");
+    if (el && first) el.onclick = () => showSpiritSetupModal(first);
+  }
+
   function renderSpiritPage() {
     topbarTitle.textContent = "精灵";
     btnBack.style.visibility = "visible";
@@ -2837,7 +2874,10 @@
     }
 
     html += '<button class="btn primary" id="spAllBtn" style="width:100%;margin-top:14px">👀 查看全部精灵（' + list.length + '）</button>';
+    const sh = setupHintHtml(list, store);
+    if (sh.html) html += sh.html;
     view.innerHTML = html;
+    bindSetupHint(sh.first);
     bindSpiritImgFallback(view);
     view.querySelectorAll("[data-room]").forEach((c) => c.addEventListener("click", () => {
       location.hash = "#/room/" + encodeURIComponent(c.dataset.room);
@@ -2854,6 +2894,7 @@
     ensureSpiritExtras(list);
     tickRooms(list);
     updateStoryDot();
+    maybeOpenSpiritSetup(list);      // v127：还没定设定的，先弹一次向导（生成前让用户确认）
   }
 
   /* ---------- 全部精灵（#/spirits，v113 从精灵页拆出来） ---------- */
@@ -2924,7 +2965,10 @@
     });
     html += "</div>";
     html += '<button class="btn ghost" id="spBackRooms" style="width:100%;margin-top:14px">← 回到小房间</button>';
+    const sh2 = setupHintHtml(list, store);
+    if (sh2.html) html += sh2.html;
     view.innerHTML = html;
+    bindSetupHint(sh2.first);
     bindSpiritImgFallback(view);
     view.querySelectorAll(".spirit-card").forEach((c) => c.addEventListener("click", () => {
       const id = c.dataset.spirit;
@@ -2938,6 +2982,7 @@
     ensureSpiritFaces(list);
     ensureSpiritExtras(list);
     tickRooms();          // 进这一页也推进契合度/补写剧情（v114：之前只有精灵页会推）
+    maybeOpenSpiritSetup(list);      // v127
   }
 
   // 🖌 全部重画（精灵页与全部精灵页共用）
@@ -3220,6 +3265,7 @@
         const st0 = Spirits.load();
         const rec = Spirits.ensureIn(st0, it.id);
         const stage = Number(rec.stage) || 1;
+        if (spiritNeedsSetup(rec)) continue;         // v127：设定还没定，先不画 CG
         if (!Spirits.needCg(stage)) {
           // 早期阶段：清掉 CG（只保留立绘）
           if (rec.cgUrl || rec.cgKey) { rec.cgUrl = ""; rec.cgKey = ""; rec.cgStage = 0; Spirits.save(st0); changed = true; }
@@ -3547,6 +3593,27 @@
     h += '<button class="btn ghost" id="sdRoomPick" style="width:100%;margin-top:10px;font-size:13px">' +
       (room ? "🏠 换房间 / 搬出去" : "🏠 安排入住") + "</button></div>";
 
+    // ===== v127：它的设定（用户确认过的发色/特征/性格 + 一段详细设定）=====
+    const lkNow = Spirits.lookOf(it, rec);
+    h += '<div class="sd-card"><div class="sd-card-title">🎨 它的设定' +
+      '<button type="button" class="link-btn" id="sdSetup" style="float:right;font-size:11px">' +
+      (lkNow.chosen ? "改设定" : "✨ 4 步定设定") + "</button></div>";
+    h += '<div class="look-sum">' +
+      '<span class="look-sw big" style="background:' + esc(lkNow.hairHex || "#ddd") + '"></span>' +
+      "<span>" + esc(lkNow.hairZh || "跟珠子主色") + "</span>" +
+      (lkNow.pers ? '<span class="look-tag">' + esc(lkNow.pers.zh) + "</span>" : "") +
+      lkNow.feats.map((f) => '<span class="look-tag">' + esc(f.zh) + "</span>").join("") +
+      (lkNow.noFeat ? '<span class="look-tag">普通人形</span>' : "") +
+      "</div>";
+    if (lkNow.profile) {
+      h += '<div class="sd-persona" style="margin-top:8px">' + esc(lkNow.profile) + "</div>" +
+        '<div class="sd-gen-hint">' + (rec.look && rec.look.profileAi ? "AI 按你的那句话写的" : "按你的选择拼的") + " · 点右上角可以改</div>";
+    } else {
+      h += '<div class="room-none">还没定过设定。进「✨ 4 步定设定」选一下发色 / 特征 / 性格，' +
+        "再写一句它是什么样的（例：像一只爱睡觉的白猫），我就按这个画它 —— 不满意随时能改。</div>";
+    }
+    h += "</div>";
+
     h += '<div class="sd-card"><div class="sd-card-title">📔 日记本（' + diary.length + "）</div>";
     if (!diary.length) {
       h += '<div class="room-none">还没写过日记。它们一天最多写 1 篇（不定时），明天再来看看～</div>';
@@ -3601,6 +3668,7 @@
     const bk = $("#sdBreak"); if (bk) bk.onclick = () => spiritBreak(it, host);
     const nl = $("#sdNewLook"); if (nl) nl.onclick = () => spiritNewLook(it, host);
     const rr = $("#sdReRoll"); if (rr) rr.onclick = () => spiritReRoll(it, host);
+    const su = $("#sdSetup"); if (su) su.onclick = () => showSpiritSetupModal(it);   // v127：设定向导
     typewriteSpiritDiary(id);      // v126：最新一篇日记逐字亮相（带兜底，不会空白）
     const art = $("#sdArt");
     if (art) art.onclick = () => openSpiritViewer(rec.imgUrl || Spirits.localAvatarSvg(it));
@@ -3661,6 +3729,208 @@
       if (h.indexOf("#/spirit/") === 0) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));
       else renderAllSpiritsPage();
     };
+  }
+
+  /* ============================================================
+   * v127：精灵「设定向导」——生成前先让用户 4 步确认（用户要求）
+   *   ① 发色/色调：显示识别到的珠子主色，可一键改（预设 12 色 / 自己填色名或 #hex）
+   *   ② 特殊特征：猫耳+猫尾 / 兔耳 / 小龙角…（最多 3，可明确"普通人形"）
+   *   ③ 性格：6 选 1
+   *   ④ 一句话基础设定（可选）→ AI 扩写成一段详细设定，显示在详情页
+   * 保存后写进 rec.look，立绘 / CG / 剧情 prompt 全部按它走。
+   * ============================================================ */
+  function lookChipHtml(group, id, label, active, data) {
+    return '<button type="button" class="look-chip' + (active ? " on" : "") + '" data-g="' + group + '" data-v="' + esc(id) + '"' +
+      (data ? ' data-extra="' + esc(data) + '"' : "") + ">" + label + "</button>";
+  }
+  function showSpiritSetupModal(item, opts) {
+    const o = opts || {};
+    const mask = $("#modalMask"), modal = $("#modal");
+    const s = Spirits.load();
+    const rec = Spirits.ensureIn(s, item.id);
+    const cur = rec.look || {};
+    const lk = Spirits.lookOf(item, rec);
+    const bead = Spirits.beadColor(item);
+    const beadHex = (bead && bead.hex) || "";
+    const beadZh = (bead && (bead.zh || bead.word)) || (Spirits.COLOR_ZH[item.color] || "未识别");
+    const state = {
+      hairc: cur.hairc || "auto",
+      customColor: cur.customColor || "",
+      feats: (cur.feats || []).slice(0),
+      pers: cur.pers || "",
+      base: cur.base || "",
+      ai: cur.ai !== false,
+      alsoBead: false,
+    };
+    const hairChips = Spirits.HAIR_COLORS.map((h) =>
+      lookChipHtml("hairc", h.id, (h.sw ? '<span class="look-sw" style="background:' + h.sw + '"></span>' : "") + esc(h.zh),
+        state.hairc === h.id)).join("") + lookChipHtml("hairc", "custom", "🎨 自己填", state.hairc === "custom");
+    const featChips = Spirits.FEATURES.map((f) =>
+      lookChipHtml("feat", f.id, esc(f.zh), state.feats.indexOf(f.id) >= 0)).join("");
+    const persChips = Spirits.PERSONAS_PICK.map((p) =>
+      lookChipHtml("pers", p.id, esc(p.zh), state.pers === p.id)).join("");
+
+    modal.innerHTML = '<div class="setup-wrap">' +
+      '<div class="setup-head">✨ 给它定设定<small>4 步 · 不确定就用默认的，随时能改</small></div>' +
+      // ① 发色
+      '<div class="setup-sec"><div class="setup-t"><b>1</b> 发色 / 色调</div>' +
+      '<div class="setup-desc">我识别到的珠子主色是 ' +
+      '<span class="look-sw big" style="background:' + (beadHex || "#ddd") + '"></span> <b>' + esc(beadZh) + '</b>' +
+      (beadHex ? ' <code>' + esc(beadHex) + '</code>' : "") + ' —— 读得不对就直接在这儿改。' +
+      '<button type="button" class="link-btn" id="lkRedetect" style="margin-left:6px">🧪 重新识别</button></div>' +
+      '<div class="setup-chips" id="lkHair">' + hairChips + "</div>" +
+      '<div id="lkCustomWrap" style="display:' + (state.hairc === "custom" ? "" : "none") + '">' +
+      '<input class="form-input" id="lkCustom" maxlength="24" placeholder="填色名或色号，例：薄荷绿 / mint green / #7ac0a0" value="' + esc(state.customColor) + '"></div>' +
+      (beadHex ? '<label class="setup-check"><input type="checkbox" id="lkAlsoBead"> 顺便把珠子主色也改成我选的色（会同步到收藏列表）</label>' : "") +
+      "</div>" +
+      // ② 特征
+      '<div class="setup-sec"><div class="setup-t"><b>2</b> 有没有特殊特征？<small>最多 3 个</small></div>' +
+      '<div class="setup-desc">比如想要「猫猫头」，就选「猫耳 + 猫尾」—— 我会明确写进提示词，不会漏画。</div>' +
+      '<div class="setup-chips" id="lkFeat">' + featChips + "</div></div>" +
+      // ③ 性格
+      '<div class="setup-sec"><div class="setup-t"><b>3</b> 性格</div>' +
+      '<div class="setup-desc">会影响它的表情、姿态和日记口吻。</div>' +
+      '<div class="setup-chips" id="lkPers">' + persChips + "</div></div>" +
+      // ④ 一句话
+      '<div class="setup-sec"><div class="setup-t"><b>4</b> 一句话基础设定（可选）</div>' +
+      '<div class="setup-desc">随便写一句就行，例：「它像一只爱睡觉的白猫，总趴在窗台」。我会把它扩写成一段小设定，显示在它的详情页。</div>' +
+      '<input class="form-input" id="lkBase" maxlength="60" placeholder="（可留空）随便说一句它是什么样的" value="' + esc(state.base) + '">' +
+      '<label class="setup-check"><input type="checkbox" id="lkAi"' + (state.ai ? " checked" : "") + '> 用 AI 把这句话扩写成详细设定（没填 AI Key 就用本地模板）</label>' +
+      "</div>" +
+      '<div class="setup-actions">' +
+      '<button class="btn ghost" id="lkSkip">先跳过（按自动的来）</button>' +
+      '<button class="btn primary" id="lkSave">保存并重画</button>' +
+      "</div>" +
+      '<div class="setup-note">保存后按新设定重画它的立绘（消耗 1 次出图额度）；觉醒期/完成体的 CG 也会跟着重画。</div>' +
+      "</div>";
+    mask.hidden = false;
+    modal.hidden = false;
+    modal.style.display = "";
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      mask.hidden = true; modal.hidden = true; modal.style.display = "";
+    };
+
+    const syncCustom = () => {
+      const w = document.getElementById("lkCustomWrap");
+      if (w) w.style.display = state.hairc === "custom" ? "" : "none";
+    };
+    modal.querySelectorAll(".look-chip").forEach((b) => {
+      b.onclick = () => {
+        const g = b.dataset.g, v = b.dataset.v;
+        if (g === "hairc") {
+          state.hairc = v;
+          modal.querySelectorAll('.look-chip[data-g="hairc"]').forEach((x) => x.classList.toggle("on", x.dataset.v === v));
+          syncCustom();
+          if (v === "custom") { const inp = $("#lkCustom"); if (inp) inp.focus(); }
+        } else if (g === "feat") {
+          if (v === "none") {
+            state.feats = state.feats.indexOf("none") >= 0 ? [] : ["none"];
+          } else {
+            const i = state.feats.indexOf(v);
+            if (i >= 0) state.feats.splice(i, 1);
+            else {
+              state.feats = state.feats.filter((x) => x !== "none");
+              if (state.feats.length >= 3) { toast("最多选 3 个特征"); return; }
+              state.feats.push(v);
+            }
+          }
+          modal.querySelectorAll('.look-chip[data-g="feat"]').forEach((x) => x.classList.toggle("on", state.feats.indexOf(x.dataset.v) >= 0));
+        } else if (g === "pers") {
+          state.pers = (state.pers === v) ? "" : v;
+          modal.querySelectorAll('.look-chip[data-g="pers"]').forEach((x) => x.classList.toggle("on", x.dataset.v === state.pers));
+        }
+      };
+    });
+    const rd = $("#lkRedetect");
+    if (rd) rd.onclick = async () => {
+      rd.textContent = "识别中…";
+      const got = await Spirits.detectBeadColor(item);
+      rd.textContent = "🧪 重新识别";
+      if (got && got.hex) {
+        toast("重新识别到 " + (got.zh || got.word) + "（" + got.hex + "）");
+        showSpiritSetupModal(item, o);       // 重开一次，显示新色
+      } else {
+        toast("这张照片识别不出来，直接选一个色吧");
+      }
+    };
+
+    const save = async (skip) => {
+      try {
+        const s2 = Spirits.load();
+        const r2 = Spirits.ensureIn(s2, item.id);
+        if (!skip) {
+          const inp = $("#lkCustom");
+          if (state.hairc === "custom") state.customColor = (inp && inp.value || "").trim();
+          const baseEl = $("#lkBase"), aiEl = $("#lkAi");
+          state.base = (baseEl && baseEl.value || "").trim();
+          state.ai = !aiEl || aiEl.checked;
+          const alsoEl = $("#lkAlsoBead");
+          state.alsoBead = !!(alsoEl && alsoEl.checked);
+          r2.look = {
+            ver: 1,
+            hairc: state.hairc,
+            customColor: state.customColor,
+            feats: state.feats,
+            pers: state.pers,
+            base: state.base,
+            ai: state.ai,
+            profile: r2.look && r2.look.profile ? r2.look.profile : "",
+            at: Date.now(),
+          };
+        } else if (!r2.look) {
+          r2.look = { ver: 1, hairc: "auto", feats: [], pers: "", base: "", ai: true, profile: "", at: Date.now() };
+        }
+        r2.lookAsked = 1;
+        delete r2.setupPending;
+        // 保存后重画：清掉旧立绘/旧 CG（CG 的 key 里有外观种子与服务商，这里显式清掉最稳）
+        r2.imgUrl = ""; r2.imgAt = 0; r2.face = null; r2._imgErr = ""; r2._imgErrAt = 0;
+        r2.cgUrl = ""; r2.cgKey = ""; r2.cgStage = 0;
+        Spirits.save(s2);
+        // 用户勾了「顺便把珠子主色也改」→ 同步到采样表（收藏列表的颜色也跟着对）
+        if (!skip && state.alsoBead) {
+          const hex = state.hairc === "custom"
+            ? (/^#?[0-9a-f]{6}$/i.test(state.customColor) ? state.customColor : "")
+            : ((Spirits.HAIR_COLORS.filter((h) => h.id === state.hairc)[0] || {}).sw || "");
+          if (hex) Spirits.setBeadColor(item, hex);
+        }
+        close();
+        toast(skip ? "先按自动的来，之后随时能改 ✨" : "设定保存好了，正在按新设定画 🎨");
+        // 4④ 一句话 → 扩写成详细设定（AI 优先，失败用本地模板）
+        const lkNew = Spirits.lookOf(item, r2);
+        if (!skip && (state.base || state.ai)) {
+          SparkleNote(item, lkNew);
+        }
+        rerenderSpiritView();
+        ensureSpiritLook([item]).then(() => ensureSpiritImages([item])).then(() => refreshCgAfter(item));
+        if (o.onDone) o.onDone();
+      } catch (e) {
+        toast("保存失败：" + ((e && e.message) || ""));
+        close();
+      }
+    };
+    const sv = $("#lkSave");
+    if (sv) sv.onclick = () => save(false);
+    const sk = $("#lkSkip");
+    if (sk) sk.onclick = () => save(true);
+    // 点遮罩 = 先跳过（避免"永远不出图"）
+    mask.onclick = () => save(true);
+  }
+  // 把「一句话基础设定」扩写并存进 rec.look.profile（详情页显示那段小文字）
+  async function SparkleNote(item, lk) {
+    try {
+      const rec = Spirits.ensureIn(Spirits.load(), item.id);
+      const persona = rec.persona || Spirits.localPersona(item);
+      const nm = spiritName(item, Spirits.load());
+      const res = await Spirits.expandProfile(item, lk, Object.assign({}, persona, { name: nm }));
+      const s2 = Spirits.load();
+      const r2 = Spirits.ensureIn(s2, item.id);
+      r2.look = Object.assign({}, r2.look || {}, { profile: res.text, profileAi: !!res.ai, profileAt: Date.now() });
+      Spirits.save(s2);
+      rerenderSpiritView();
+    } catch (e) { /* 静默 */ }
   }
 
   /* ---------- 房间页 ---------- */
@@ -4033,6 +4303,13 @@
         if (!s[it.id] || !s[it.id].persona) {
           await Spirits.persona(it);
           changed = true;
+        }
+        // v127：刚成精（还没有立绘、也还没定过设定）→ 先等用户在「设定向导」里确认再出图
+        const st1 = Spirits.load();
+        const r0 = Spirits.ensureIn(st1, it.id);
+        if (!r0.imgUrl && !r0.look && r0.lookAsked !== 1 && !r0.setupPending) {
+          r0.setupPending = true;
+          Spirits.save(st1);
         }
       }
       // 注意：这里的重渲染期间 _spiritBusy 仍为 true，避免自己递归进来

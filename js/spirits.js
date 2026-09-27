@@ -476,36 +476,240 @@
     slight: "slightly soft smooth polished surface, calm gentle expression",
     "": "smooth polished surface, friendly gentle expression",
   };
-  function promptFor(item, styleKey, stage, appearance) {
+
+  /* ============================================================
+   * v127：精灵「设定向导」——让用户 3-4 步确认，而不是全靠自动猜
+   * 用户反馈：「读取颜色不对，每个人都太像了；生成之前让我辅助确认更好，
+   *           比如发色/色调、特征（猫猫头要有猫耳）、性格；最好 3-4 个选项就能成，
+   *           或者颜色我自己填；也可以我给一句基础设定，你来拓展成详细设定」。
+   * 数据存在 rec.look 里（每只精灵一份），优先级：**用户确认过 > 自动推断**。
+   * ============================================================ */
+  // 发色/色调（第一个 = 跟随珠子主色；"auto" = 按外观种子自动分散，避免"每只都同色"）
+  const HAIR_COLORS = [
+    { id: "bead", zh: "跟珠子主色", en: "", sw: "" },
+    { id: "auto", zh: "自动换个色（更有个性）", en: "", sw: "" },
+    { id: "black", zh: "乌黑", en: "jet black", sw: "#1c1a19" },
+    { id: "brown", zh: "深棕", en: "dark chocolate brown", sw: "#4a3324" },
+    { id: "chestnut", zh: "栗棕", en: "chestnut brown", sw: "#7b4b2a" },
+    { id: "silver", zh: "银白", en: "silver white", sw: "#ddd8d0" },
+    { id: "gold", zh: "亚麻金", en: "light golden blond", sw: "#e0c489" },
+    { id: "red", zh: "酒红", en: "deep wine red", sw: "#7d2b33" },
+    { id: "navy", zh: "墨蓝", en: "dark navy blue", sw: "#243b63" },
+    { id: "purple", zh: "雾紫", en: "soft violet purple", sw: "#8f7bc0" },
+    { id: "green", zh: "墨绿", en: "deep forest green", sw: "#2f5440" },
+    { id: "pink", zh: "樱粉", en: "soft sakura pink", sw: "#f0b3c6" },
+    { id: "grey", zh: "烟灰", en: "ash grey", sw: "#9a978f" },
+    { id: "white", zh: "雪白", en: "snow white", sw: "#f6f3ee" },
+  ];
+  const HAIR_BY_ID = {};
+  HAIR_COLORS.forEach((h) => { HAIR_BY_ID[h.id] = h; });
+  // 中文色名 → 英文（用户自己填色时用；查不到就原样交给模型，再兜底 #hex 换算）
+  const COLOR_WORD_ZH = {
+    "黑": "jet black", "乌黑": "jet black", "深棕": "dark brown", "棕": "brown", "栗": "chestnut brown",
+    "银": "silver", "银白": "silver white", "白": "snow white", "奶白": "creamy white", "米白": "creamy white",
+    "金": "golden blond", "亚麻": "light golden blond", "黄": "warm yellow", "橙": "warm orange",
+    "红": "deep red", "酒红": "deep wine red", "粉": "soft pink", "樱粉": "soft sakura pink",
+    "紫": "violet purple", "雾紫": "soft violet purple", "蓝": "soft blue", "天蓝": "sky blue",
+    "藏青": "navy blue", "墨蓝": "dark navy blue", "青": "teal", "绿": "green", "墨绿": "deep forest green",
+    "薄荷": "mint green", "灰": "ash grey", "烟灰": "ash grey", "奶茶": "milk tea beige", "咖": "coffee brown",
+  };
+  // 特殊特征（可多选，最多 3 个；"none" = 明确不要任何额外特征，会写进 prompt 的排除项）
+  const FEATURES = [
+    { id: "cat", zh: "猫耳 + 猫尾", en: "a pair of fluffy cat ears on top of the head and a long slim cat tail with a soft tip", tail: true },
+    { id: "fox", zh: "狐耳 + 大尾巴", en: "pointed fox ears on the head and a big fluffy fox tail", tail: true },
+    { id: "rabbit", zh: "兔耳", en: "long fluffy rabbit ears standing up on the head", tail: false },
+    { id: "horns", zh: "小龙角", en: "small elegant dragon horns on the head", tail: false },
+    { id: "elf", zh: "精灵耳", en: "long pointed elf ears", tail: false },
+    { id: "wings", zh: "小天使翼", en: "small white feathered angel wings on the back", tail: false },
+    { id: "devil", zh: "小恶魔角 + 尾", en: "small dark curved devil horns and a slim demon tail with a heart-shaped tip", tail: true },
+    { id: "glasses", zh: "圆框眼镜", en: "round thin-frame glasses", tail: false },
+    { id: "freckles", zh: "小雀斑", en: "a few light freckles across the cheeks", tail: false },
+    { id: "blush", zh: "害羞腮红", en: "soft rosy blush on the cheeks", tail: false },
+    { id: "none", zh: "普通人形（不要额外特征）", en: "", tail: false },
+  ];
+  const FEATURE_BY_ID = {};
+  FEATURES.forEach((f) => { FEATURE_BY_ID[f.id] = f; });
+  // 性格（影响表情/姿态/氛围）
+  const PERSONAS_PICK = [
+    { id: "gentle", zh: "温柔安静", en: "gentle and quiet", face: "soft calm smile, gentle half-closed eyes" },
+    { id: "lively", zh: "活泼元气", en: "cheerful and energetic", face: "big bright smile, sparkling happy eyes" },
+    { id: "cool", zh: "高冷傲娇", en: "cool and a little proud", face: "calm confident look with a tiny proud pout" },
+    { id: "calm", zh: "沉稳可靠", en: "calm and dependable", face: "steady reassuring expression" },
+    { id: "mystery", zh: "神秘慵懒", en: "mysterious and laid-back", face: "sleepy lidded eyes, lazy elegant mood" },
+    { id: "cheeky", zh: "古灵精怪", en: "playful and mischievous", face: "cheeky grin with a raised eyebrow" },
+  ];
+  const PERSONA_BY_ID = {};
+  PERSONAS_PICK.forEach((p) => { PERSONA_BY_ID[p.id] = p; });
+
+  // 把用户填的颜色（中文色名 / 英文 / #hex）翻成 prompt 能用的英文色词
+  function hairWordFromInput(input) {
+    const s = String(input || "").trim();
+    if (!s) return "";
+    if (/^#?[0-9a-f]{6}$/i.test(s)) return hexToWord(s) || "";
+    if (/^#[0-9a-f]{3}$/i.test(s)) {
+      const h3 = s.slice(1);
+      return hexToWord("#" + h3[0] + h3[0] + h3[1] + h3[1] + h3[2] + h3[2]) || "";
+    }
+    if (/[\u4e00-\u9fa5]/.test(s)) {
+      // 中文：先整词查，再按 2 字 / 1 字片段查
+      if (COLOR_WORD_ZH[s]) return COLOR_WORD_ZH[s];
+      for (let len = 2; len >= 1; len--) {
+        for (let i = 0; i + len <= s.length; i++) {
+          const seg = s.slice(i, i + len);
+          if (COLOR_WORD_ZH[seg]) return COLOR_WORD_ZH[seg];
+        }
+      }
+      return s;   // 实在认不出就把原文交给模型（中文色名模型也能懂）
+    }
+    return s;     // 英文直接用
+  }
+  // 用户设定 + 自动推断 = 这一只**真正要用**的外形参数
+  // rec 可以不传：不传就自己去 localStorage 读这只精灵的记录（保证任何调用点都拿得到用户设定）
+  function lookOf(item, rec) {
+    const r = rec || ((item && item.id) ? (load()[item.id] || {}) : {});
+    const lk = r.look || {};
+    const ap = appearanceOf(item, r.appearanceSeed || 0, r.gender || "");
+    const bead = beadColor(item);
+    const beadWord = (bead && bead.word) ? bead.word : (COLOR_EN[(item && item.color) || ""] || "jade green");
+    const beadHex = (bead && bead.hex) ? bead.hex : "";
+    // 发色：用户选了就用用户的；"bead" = 跟珠子；不填 / "auto" = 按外观种子从 12 色里分散挑一个
+    // （★ 这一条直接解决"每只精灵都一个颜色、看起来太像"）
+    let hairEn = beadWord, hairHex = beadHex, hairSrc = "bead", hairZh = (bead && bead.zh) || "跟珠子主色";
+    const pick = lk.hairc || "auto";
+    if (pick === "bead") {
+      hairEn = beadWord; hairHex = beadHex; hairSrc = "bead"; hairZh = "跟珠子主色";
+    } else if (pick === "custom") {
+      const w = hairWordFromInput(lk.customColor);
+      hairEn = w || beadWord;
+      hairHex = /^#/.test(String(lk.customColor || "").trim()) ? String(lk.customColor).trim() : "";
+      hairSrc = "custom"; hairZh = lk.customColor || "自定色";
+    } else if (pick === "auto") {
+      const pool = HAIR_COLORS.filter((x) => x.id !== "bead" && x.id !== "auto");
+      const h = hashStr(String((item && item.id) || "") + "#hair" + (r.appearanceSeed || 0));
+      const f = pool[h % pool.length];
+      hairEn = f.en; hairHex = f.sw; hairSrc = "auto"; hairZh = "自动 · " + f.zh;
+    } else {
+      const f = HAIR_BY_ID[pick];
+      if (f) { hairEn = f.en; hairHex = f.sw; hairSrc = "pick"; hairZh = f.zh; }
+    }
+    // 特征
+    const ids = Array.isArray(lk.feats) ? lk.feats : [];
+    const noFeat = ids.indexOf("none") >= 0;
+    const feats = ids.map((x) => FEATURE_BY_ID[x]).filter((f) => f && f.id !== "none").slice(0, 3);
+    // 性格
+    const pers = PERSONA_BY_ID[lk.pers] || null;
+    // 服装色：默认跟珠子主色（用户没要求改），可被设定里的 customOutfit 覆盖
+    const outfitEn = lk.outfitColor ? hairWordFromInput(lk.outfitColor) : beadWord;
+    return {
+      ap, bead, beadWord, beadHex, hairEn, hairHex, hairSrc, hairZh, outfitEn,
+      feats, noFeat, pers,
+      base: lk.base || "", profile: lk.profile || "",
+      asked: !!r.lookAsked, chosen: !!(lk.hairc || ids.length || lk.pers || lk.base),
+    };
+  }
+  // 把设定拼成一段 prompt 片段（特征 / 性格 / 明确"不要兽耳"）
+  function lookExtra(lk) {
+    if (!lk) return "";
+    let s = "";
+    if (lk.feats && lk.feats.length) s += ", " + lk.feats.map((f) => f.en).join(", ");
+    if (lk.noFeat) s += ", strictly a normal human look: no animal ears, no tail, no wings, no horns";
+    if (lk.pers) s += ", " + lk.pers.en + " personality, " + lk.pers.face;
+    return s;
+  }
+  // 用户确认过的设定 → 放到 prompt 末尾做"硬约束"（模型对靠后的关键词更敏感，
+  // 而且能压住 AI 形象关键词里可能冲突的配色/发型描述）
+  function lookHard(lk) {
+    if (!lk || !lk.chosen) return "";
+    const hard = [];
+    if (lk.hairEn) hard.push(lk.hairEn + " hair color (keep exactly this hair color)");
+    if (lk.feats && lk.feats.length) hard.push(lk.feats.map((f) => f.en).join(", "));
+    if (lk.noFeat) hard.push("strictly human look: no animal ears, no tail, no wings, no horns");
+    if (lk.pers) hard.push(lk.pers.en + " personality, " + lk.pers.face);
+    return "IMPORTANT character features that must be clearly visible: " + hard.join("; ");
+  }
+  // 给人看的一行「设定摘要」（详情页 chips 用）
+  function lookText(lk) {
+    const arr = [];
+    if (lk) {
+      arr.push("发色：" + (lk.hairZh || "跟珠子"));
+      arr.push("特征：" + (lk.feats && lk.feats.length ? lk.feats.map((f) => f.zh).join("、") : (lk.noFeat ? "普通人形" : "未指定")));
+      arr.push("性格：" + (lk.pers ? lk.pers.zh : "未指定"));
+    }
+    return arr.join(" · ");
+  }
+  // 没有 AI key 时的本地"设定小作文"（照样显示在详情页）
+  function profileLocal(item, lk, persona) {
+    const nm = (persona && persona.name) || (item && item.name) || "它";
+    const beadZh = (lk && lk.bead && lk.bead.zh) || COLOR_ZH[(item && item.color) || ""] || "温润";
+    const hairTxt = { bead: "跟本体珠子是一个色", auto: "是它自己长出来的颜色", pick: "是主人替它挑的", custom: "是主人给它定的" }[(lk && lk.hairSrc) || "bead"] || "";
+    const featTxt = (lk && lk.feats && lk.feats.length) ? ("头上还带着" + lk.feats.map((f) => f.zh).join("、")) : (lk && lk.noFeat ? "看着就是普普通通的人形" : "");
+    const persTxt = (lk && lk.pers) ? lk.pers.zh : "温和";
+    const baseTxt = (lk && lk.base) ? ("主人说过：「" + lk.base + "」——它一直记着这句话。") : "";
+    return nm + "是从主人那串「" + ((item && item.name) || "手串") + "」里醒过来的小精灵。" +
+      "它的头发是" + ((lk && lk.hairZh) ? String(lk.hairZh).replace(/^自动 · /, "") : beadZh) + "，" + hairTxt + "；" +
+      (featTxt ? featTxt + "；" : "") +
+      "衣服的色调跟着珠子的" + beadZh + "走，看久了很安稳。" +
+      "性子偏「" + persTxt + "」，平时话不多，但主人一伸手它就会靠过来。" + baseTxt;
+  }
+  // 用文字模型把"一句基础设定 + 选项"扩写成一小段（失败就退回本地模板）
+  async function expandProfile(item, lk, persona) {
+    const local = profileLocal(item, lk, persona);
+    const base = (lk && lk.base) ? String(lk.base).trim() : "";
+    const sys = "你是一个角色设定师。请根据用户给的选项，为主人的手串精灵写一小段中文人物设定，要求：" +
+      "① 只写 90-150 字，一段话，不要标题、不要分点、不要引号；② 必须体现：外貌（发色 / 特殊特征）、性格、和主人以及这串珠子的关系；" +
+      "③ 口吻温柔、有画面感，像手账里的备注；④ 不要出现「AI」「提示词」「角色设定」这类词。";
+    const NL = String.fromCharCode(10);
+    const user = "精灵名：" + ((persona && persona.name) || item.name || "小精灵") +
+      NL + "来自手串：" + ((item && item.name) || "") + (item && item.craft ? "（" + item.craft + "）" : "") +
+      NL + "发色：" + ((lk && lk.hairZh) || "跟珠子主色") +
+      NL + "特殊特征：" + ((lk && lk.feats && lk.feats.length) ? lk.feats.map((f) => f.zh).join("、") : ((lk && lk.noFeat) ? "普通人形" : "未指定")) +
+      NL + "性格：" + ((lk && lk.pers) ? lk.pers.zh : "未指定") +
+      (base ? (NL + "主人给的一句话设定：" + base) : "") +
+      NL + ownerLine() + NL + "请写这一小段设定。";
+    try {
+      const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 400) || "").trim();
+      const clean = txt.replace(/^["「]|["」]$/g, "").replace(/\s*\n+\s*/g, "").trim();
+      if (clean && clean.length >= 40) return { text: clean, ai: true };
+    } catch (e) { /* 没 key / 失败 → 本地模板 */ }
+    return { text: local, ai: false };
+  }
+  function promptFor(item, styleKey, stage, appearance, look) {
     const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
     const st = styleOf(item, key).text;
-    // 颜色：优先用"从手串照片里采到的真实主色"（用户要求立绘要贴近原串），拿不到才退回颜色分类
-    const bead = beadColor(item);
-    const color = (bead && bead.word) ? bead.word : (COLOR_EN[item.color] || "jade green");
-    const colorHint = (bead && bead.hex) ? (", the exact color sampled from the real bracelet is " + bead.hex + ", keep the character close to this color") : "";
+    // 颜色：优先用 **用户在「设定向导」里确认过的发色**；没设过才用"从手串照片里采到的真实主色"，
+    // 再拿不到才退回颜色分类（v127：用户反馈"颜色读不准、每只都太像"→ 现在可确认、可改、可按种子分散）
+    const lk = look || lookOf(item, null);
+    const color = lk.hairEn;
+    const outfitColor = lk.outfitEn;
+    const colorHint = (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") +
+      (lk.beadHex ? (", sampled from the real bracelet: " + lk.beadHex + ", keep the outfit close to this color") : "");
     const soft = SOFT_EN[item.softness || ""] || SOFT_EN[""];
     const isChar = (key === "anime");          // 日漫 Q 版角色：颜色落在头发/衣服上
-    const lk = stageDef(stage == null ? 1 : stage).look;   // 该形态的外形描述（进阶的核心）
+    const stageLook = stageDef(stage == null ? 1 : stage).look;   // 该形态的外形描述（进阶的核心）
     const ap = appearance || appearanceOf(item, 0);         // 固定人设（性别/发型/瞳色/配饰）
     let cmp;
     if (isChar) {
       // 先写死"这个人是谁"（外观锚点），再写"他现在多大"（形态描述）→ 突破只会长大，不会换人
       // 注意：这里始终是**立绘**（全身角色图、干净背景），四个阶段都有立绘；
       //      觉醒期/完成体**额外**再出一张 CG（场景插画），见 promptForCg（v125）。
-      cmp = appearancePrompt(ap) + ", with " + color + " hair and " + color + " themed outfit" + colorHint + ", " +
-        lk + ", " +
+      cmp = appearancePrompt(ap) + ", with " + color + " hair and " + outfitColor + " themed outfit" + colorHint +
+        lookExtra(lk) + ", " + stageLook + ", " +
         "full body character illustration, standing pose, whole body visible from head to toe, " +
         "detailed outfit and shoes, vertical composition, " +
         "centered with comfortable margin around the character";
     } else {
       cmp = "a " + (ap.gender === "boy" ? "boy" : "girl") + " creature mascot whose body color is " + color + colorHint +
-        ", wearing " + ap.acc + ", " + ap.vibe + " personality, " + lk + ", " +
+        ", wearing " + ap.acc + ", " + ap.vibe + " personality, " + stageLook + ", " +
         "full body creature illustration, whole body visible, centered with comfortable margin";
     }
     const bits = [cmp, soft, SINGLE, CONSISTENCY, GROWTH_LINE];
     // v112：把「人物设定 → 形象细节关键词」也拼进去，立绘不再"只有颜色"
     const tags = getLookTags(item);
-    if (tags) bits.push("extra character design details: " + tags);
+    if (tags) bits.push(lk.chosen
+      ? ("extra outfit and texture details (colors and features are already fixed above, do not change them): " + tags)
+      : ("extra character design details: " + tags));
+    const hard = lookHard(lk);
+    if (hard) bits.push(hard);
     if (item.softness === "soft") bits.push(isChar ? "round soft cheeks, relaxed happy sleepy eyes" : "round blob-like silhouette, soft chewy texture");
     if (item.softness === "slight") bits.push(isChar ? "calm gentle eyes, neat tidy look" : "slightly squishy but mostly smooth silhouette");
     return bits.join(", ") + ", " + st;
@@ -935,6 +1139,11 @@
     return hueName(h, s, l);
   }
   // 从手串照片中心采样，取一个"实物主色"（失败返回 null，调用方退回颜色分类）
+  // v127 改进：原来是把中心 56% 区域的像素**求平均** —— 背景、手指、桌面、反光都会被平均进去，
+  //   所以用户反馈"颜色读得不对"（例：绿松石串读出灰绿）。现在改成：
+  //   ① 背景色 = 图片四周边缘像素的众数（4bit 量化）② 丢掉"接近背景色"和过曝/过暗的像素
+  //   ③ 剩下的前景像素做 4bit 量化直方图，取**最大的一簇**再求平均
+  //   ④ 还留了"用户在设定向导里改色"的出口（rec.look.hairc / customColor），以用户为准
   async function detectBeadColor(item) {
     const p = item && item.photos && item.photos[0];
     const src = p && (p.url || (p.data ? "" : ""));
@@ -945,19 +1154,58 @@
       img.onload = () => {
         try {
           const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
-          const scale = Math.min(1, 80 / Math.max(w, h));
-          const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+          const scale = Math.min(1, 96 / Math.max(w, h));
+          const cw = Math.max(2, Math.round(w * scale)), ch = Math.max(2, Math.round(h * scale));
           const cv = document.createElement("canvas");
           cv.width = cw; cv.height = ch;
           const c = cv.getContext("2d");
           c.drawImage(img, 0, 0, cw, ch);
-          const d = c.getImageData(Math.floor(cw * 0.22), Math.floor(ch * 0.22), Math.max(1, Math.floor(cw * 0.56)), Math.max(1, Math.floor(ch * 0.56))).data;
-          let r = 0, g = 0, b = 0, n = 0;
-          for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
-          if (!n) { resolve(null); return; }
-          r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n);
+          const d = c.getImageData(0, 0, cw, ch).data;
+          const px = (x, y) => { const i = (y * cw + x) * 4; return [d[i], d[i + 1], d[i + 2]]; };
+          // ① 背景色 = 四条边缘像素的众数（量化到 4bit/通道）
+          const bh = {};
+          const addB = (x, y) => {
+            const q = px(x, y), k = (q[0] >> 4) + "," + (q[1] >> 4) + "," + (q[2] >> 4);
+            if (!bh[k]) bh[k] = { n: 0, r: 0, g: 0, b: 0 };
+            bh[k].n++; bh[k].r += q[0]; bh[k].g += q[1]; bh[k].b += q[2];
+          };
+          for (let x = 0; x < cw; x++) { addB(x, 0); addB(x, ch - 1); }
+          for (let y = 0; y < ch; y++) { addB(0, y); addB(cw - 1, y); }
+          let bestB = null;
+          Object.keys(bh).forEach((k) => { if (!bestB || bh[k].n > bestB.n) bestB = bh[k]; });
+          const bg = bestB ? [bestB.r / bestB.n, bestB.g / bestB.n, bestB.b / bestB.n] : [255, 255, 255];
+          const isBg = (q) => Math.max(Math.abs(q[0] - bg[0]), Math.abs(q[1] - bg[1]), Math.abs(q[2] - bg[2])) < 38;
+          // ②③ 前景像素（中心 76% 区域、排除背景、排除过曝/过暗）量化聚类
+          const x0 = Math.floor(cw * 0.12), x1 = Math.ceil(cw * 0.88);
+          const y0 = Math.floor(ch * 0.12), y1 = Math.ceil(ch * 0.88);
+          const hist = {};
+          for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+              const q = px(x, y);
+              const lum = (q[0] * 299 + q[1] * 587 + q[2] * 114) / 1000;
+              if (lum > 246 || lum < 12) continue;          // 过曝 / 死黑
+              if (isBg(q)) continue;                        // 背景
+              const k = (q[0] >> 4) + "," + (q[1] >> 4) + "," + (q[2] >> 4);
+              if (!hist[k]) hist[k] = { n: 0, r: 0, g: 0, b: 0 };
+              hist[k].n++; hist[k].r += q[0]; hist[k].g += q[1]; hist[k].b += q[2];
+            }
+          }
+          let best = null;
+          Object.keys(hist).forEach((k) => { if (!best || hist[k].n > best.n) best = hist[k]; });
+          if (!best || best.n < 4) {           // 前景太少 → 退回"整图去掉背景后的均值"
+            let r = 0, g = 0, b = 0, n = 0;
+            for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+              const q = px(x, y);
+              const lum = (q[0] * 299 + q[1] * 587 + q[2] * 114) / 1000;
+              if (lum > 246 || lum < 12 || isBg(q)) continue;
+              r += q[0]; g += q[1]; b += q[2]; n++;
+            }
+            if (!n) { resolve(null); return; }
+            best = { n: n, r: r, g: g, b: b };
+          }
+          const r = Math.round(best.r / best.n), g = Math.round(best.g / best.n), b = Math.round(best.b / best.n);
           const hex = "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-          const out = { hex: hex, word: hexToWord(hex), at: Date.now() };
+          const out = { hex: hex, word: hexToWord(hex), zh: hexZh(hex), src: "photo", at: Date.now() };
           const all = loadBead();
           all[item.id] = out;
           try { localStorage.setItem(BEAD_KEY, JSON.stringify(all)); } catch (e) { /* 忽略 */ }
@@ -967,6 +1215,36 @@
       img.onerror = () => resolve(null);
       img.src = src;
     });
+  }
+  // 中文色名（详情页/向导里给人看，不用记英文）
+  function hexZh(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
+    if (!m) return "";
+    const n = parseInt(m[1], 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 510;
+    const s = max === min ? 0 : (l > 0.5 ? (max - min) / (510 - max - min) : (max - min) / (max + min));
+    let hh = 0;
+    if (max !== min) {
+      if (max === r) hh = ((g - b) / (max - min)) % 6;
+      else if (max === g) hh = (b - r) / (max - min) + 2;
+      else hh = (r - g) / (max - min) + 4;
+      hh = (hh * 60 + 360) % 360;
+    }
+    if (s < 0.12) return l > 0.72 ? "米白" : (l < 0.28 ? "乌黑" : "烟灰");
+    const names = [[15, "红"], [45, l < 0.4 ? "深棕" : "黄棕"], [70, "金"], [105, "黄绿"], [165, "绿"],
+      [200, "青"], [260, l < 0.4 ? "藏青" : "蓝"], [300, "紫"], [345, "玫红"], [361, "红"]];
+    for (let i = 0; i < names.length; i++) if (hh < names[i][0]) return l < 0.35 ? "深" + names[i][1] : names[i][1];
+    return "杂色";
+  }
+  // 用户在向导里手动指定珠子/精灵颜色时，直接写进这份采样表（带 src:"user" 标记）
+  function setBeadColor(item, hex, word, zh) {
+    if (!item || !item.id) return null;
+    const out = { hex: hex || "", word: word || hexToWord(hex) || "", zh: zh || hexZh(hex), src: "user", at: Date.now() };
+    const all = loadBead();
+    all[item.id] = out;
+    try { localStorage.setItem(BEAD_KEY, JSON.stringify(all)); } catch (e) { /* 忽略 */ }
+    return out;
   }
 
   /* ---------- 形象细节标签（v112）：把"人物设定"反过来喂给绘图 prompt ---------- */
@@ -1220,35 +1498,41 @@
     "a deep bond, they understand each other without words, breathtaking magical light, petals or light particles in the air",
   ];
   // 单只精灵的 CG（觉醒期 / 完成体用）
-  function promptForCg(item, styleKey, stage, appearance) {
+  function promptForCg(item, styleKey, stage, appearance, look) {
     const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
     const st = styleOf(item, key).text;
-    const bead = beadColor(item);
-    const color = (bead && bead.word) ? bead.word : (COLOR_EN[item.color] || "jade green");
-    const ap = appearance || appearanceOf(item, 0);
-    const lk = stageDef(stage).look;
-    return CG_STYLE + ", " + appearancePrompt(ap) + ", with " + color + " hair and " + color + " themed outfit, " +
-      lk + ", solo single character only, exactly one figure in the whole image, " +
+    const lk = look || lookOf(item, null);
+    const color = lk.hairEn;
+    const ap = appearance || lk.ap || appearanceOf(item, 0);
+    const stageLook = stageDef(stage).look;
+    return CG_STYLE + ", " + appearancePrompt(ap) + ", with " + color + " hair and " + lk.outfitEn + " themed outfit" +
+      (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") + lookExtra(lk) + ", " +
+      stageLook + ", solo single character only, exactly one figure in the whole image, " +
       "a breathtaking key visual for a big moment: the character alone in a beautiful scene that matches its " +
       "personality, dramatic pose and camera angle, full body visible from head to toe, " +
       "the horizontal frame filled with the wide scenery of the scene (sky / room / distant view) on both sides of the character, " +
-      "light particles and elegant atmosphere, no other characters, " + st;
+      "light particles and elegant atmosphere, no other characters" + (lookHard(lk) ? (", " + lookHard(lk)) : "") + ", " + st;
   }
   // 两只精灵的事件 CG（房间剧情用）
   function storyCgPrompt(a, b, level, roomName) {
-    const apA = a.appearance || appearanceOf(a.item, a.variant || 0, a.gender || "");
-    const apB = b.appearance || appearanceOf(b.item, b.variant || 0, b.gender || "");
+    // v127：两人的发色/特征也走「设定向导」的结果（用户确认过的优先）
+    const lkA = a.look || lookOf(a.item, a.rec || null);
+    const lkB = b.look || lookOf(b.item, b.rec || null);
+    const apA = a.appearance || lkA.ap || appearanceOf(a.item, a.variant || 0, a.gender || "");
+    const apB = b.appearance || lkB.ap || appearanceOf(b.item, b.variant || 0, b.gender || "");
     const nmA = (a.persona && a.persona.name) || a.item.name || "first character";
     const nmB = (b.persona && b.persona.name) || b.item.name || "second character";
     const mood = CG_MOOD[Math.min(CG_MOOD.length - 1, Math.max(0, Number(level) || 0))];
     return CG_STYLE + ", " + mood + ", " +
       "scene: a cozy little room called \"" + (roomName || "little room") + "\" at home, " +
       "two anime characters together in the same scene: " +
-      "① " + appearancePrompt(apA) + " (name: " + nmA + "), " +
-      "② " + appearancePrompt(apB) + " (name: " + nmB + "), " +
+      "① " + appearancePrompt(apA) + ", with " + lkA.hairEn + " hair and " + lkA.outfitEn + " outfit" + lookExtra(lkA) + " (name: " + nmA + "), " +
+      "② " + appearancePrompt(apB) + ", with " + lkB.hairEn + " hair and " + lkB.outfitEn + " outfit" + lookExtra(lkB) + " (name: " + nmB + "), " +
       "they are the same two characters as before, keep their hair color, eye color, outfits and accessories consistent, " +
       "landscape wide shot of the whole room, the two of them standing or sitting side by side with the room around them, " +
-      "keep exactly two characters in the image, no extra people, no duplicates";
+      "keep exactly two characters in the image, no extra people, no duplicates" +
+      (lookHard(lkA) ? (", " + nmA + ": " + lookHard(lkA)) : "") +
+      (lookHard(lkB) ? (", " + nmB + ": " + lookHard(lkB)) : "");
   }
   // 用**任意 prompt**出图（剧情 CG 用；精灵主图仍走 generateImage）
   async function generateCustom(prompt, opts) {
@@ -1407,6 +1691,8 @@
     PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, SIZE_PRESETS_BY_PROVIDER, sizePresetsFor, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo, sizeLadderFor, MODEL_PICKS, refSupportOf, refSupportText, keyUiHint,
     STAGES, stageDef, stageInfo, growthOf,
     appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
+    // v127：设定向导（发色/特征/性格可确认可修改；一句基础设定 → 扩写成详细设定）
+    HAIR_COLORS, FEATURES, PERSONAS_PICK, lookOf, lookText, lookExtra, hairWordFromInput, expandProfile, profileLocal,
     COLOR_ZH, HAIR_ZH, EYES_ZH, ACC_ZH, VIBE_ZH,
     TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText, listModels,
     promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
@@ -1419,7 +1705,7 @@
     // v112：形象细节（服装/纹样/布料/道具/姿态）+ 人物设定 → 形象关键词
     appearanceDetail, OUTFITS, PATTERNS, PROPS, POSES, buildLookTags, getLookTags, localLookTags, lookTagsStale,
     // v109：真实主色 / 中文人物设定 / 日记 / 房间剧情
-    beadColor, detectBeadColor, hexToWord,
+    beadColor, detectBeadColor, setBeadColor, hexToWord, hexZh,
     personaZh, personaZhLocal, ensureDiary, diarySlots, diaryLocal, roomStory, storyLocal,
     // v125：剧情 CG
     storyCgPrompt, promptForCg, generateCustom, CG_STYLE, CG_SIZE_BY_PROVIDER, cgSizeFor, cgLadderFor,
