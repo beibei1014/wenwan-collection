@@ -474,3 +474,203 @@
 .view.anim-settled .spirit-prog.max { animation: none; }
 .view.anim-settled .spirit-prog-fill,
 .view.anim-settled .room-track i { animation: none; transform: none; }
+/* v126 新增的入场动画同样纳入落定兜底 */
+.view.anim-settled .paper-card,
+.view.anim-settled .paper-row,
+.view.anim-settled .bkc-row,
+.view.anim-settled .ach-card,
+.view.anim-settled .ach-group-head,
+.view.anim-settled .coll-card { animation: none; }
+
+/* ============================================================
+ * v126 · 第 3-4 期：动效打磨 + 版面统一
+ *   第 3 期：突破演出重做（光晕/粒子/逐字）、日记打字机、骨架屏、空状态插画
+ *   第 4 期：统一「纸感组件」——卡片 / 列表 / 进度条 / 分区标题 / 页头统计
+ * 全部是"外观层"，不影响任何逻辑；动画一律**由 JS 触发**（.evolve-play / .typing），
+ * 且都带落定兜底（.evolve-settled / else 分支直接写全文），不会出现"卡在透明看不见"。
+ * ============================================================ */
+
+/* ---------- 13. 统一纸感组件（第 4 期） ---------- */
+.paper-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1);
+  padding: 13px 14px;
+}
+.paper-card.tight { padding: 8px 14px; }
+/* 折叠面板式卡片（标题整行可点，内容区自带内边距） */
+.paper-card.flush { padding: 0; overflow: hidden; margin-bottom: 10px; }
+/* 开关行卡片（隐藏已送人 / 文玩专注模式等） */
+.paper-card.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.paper-card.flush .acc-head {
+  width: 100%; padding: 12px 14px; display: flex; align-items: center; gap: 8px;
+  font-size: 15px; font-weight: 600; color: var(--wood); background: none; border: none; text-align: left;
+}
+.paper-card.flush .acc-body { padding: 0 14px 14px; }
+.paper-card.flush .acc-body .paper-row:first-child { border-top: 1px dashed var(--line); }
+/* 卡内列表：行与行之间虚线分隔，和日记/剧情/人设同一套纸感（左右留白交给外层 .paper-card） */
+.paper-list { padding: 2px 0; }
+.paper-row {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 10px 0; border-bottom: 1px dashed var(--line); font-size: 14px;
+}
+.paper-row:last-child { border-bottom: 0; }
+.paper-row .pr-icon { font-size: 17px; line-height: 1.4; flex-shrink: 0; }
+.paper-row .pr-body { flex: 1; min-width: 0; line-height: 1.65; }
+/* 分区小标题：与 .section-title 同一套胶带语言，用于卡内分组 */
+.paper-sub {
+  font-size: 12px; font-weight: 800; color: var(--wood-2); letter-spacing: .5px;
+  margin: 14px 0 6px; display: flex; align-items: center; gap: 6px;
+}
+.paper-sub::after {
+  content: ""; flex: 1; height: 0; border-top: 1px dashed var(--line);
+}
+/* 页头统计条（图鉴 / 成就 / 任务 三页共用） */
+.page-stats {
+  display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px;
+}
+.page-stat {
+  flex: 1 1 0; min-width: 74px; text-align: center;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md);
+  padding: 9px 6px; box-shadow: var(--shadow-1);
+}
+.page-stat .ps-n { font-size: 17px; font-weight: 800; color: var(--wood); font-variant-numeric: tabular-nums; }
+.page-stat .ps-l { font-size: 10.5px; color: var(--text-2); margin-top: 2px; }
+/* 统一纸感组件的入场：与精灵/房间网格同一套"逐条浮现"节奏 */
+.paper-card, .ach-card, .coll-card, .bkc-row { animation: riseIn .5s var(--ease-out) backwards; }
+.paper-row { animation: riseIn .42s var(--ease-out) backwards; }
+.paper-list .paper-row:nth-child(2) { animation-delay: .05s; }
+.paper-list .paper-row:nth-child(3) { animation-delay: .1s; }
+.paper-list .paper-row:nth-child(4) { animation-delay: .15s; }
+.paper-list .paper-row:nth-child(5) { animation-delay: .19s; }
+.paper-list .paper-row:nth-child(n+6) { animation: none; }
+.ach-grid > *:nth-child(2) { animation-delay: .05s; }
+.ach-grid > *:nth-child(3) { animation-delay: .09s; }
+.ach-grid > *:nth-child(4) { animation-delay: .13s; }
+.ach-grid > *:nth-child(n+5) { animation: none; }
+/* 进度条统一：所有 track/fill 一套几何与配色（含此前没有样式的 .xp-bar） */
+.xp-bar, .xp-track, .dist-track, .spirit-prog-track, .room-track, .prog-track {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line) 55%, #fff);
+  box-shadow: inset 0 1px 2px rgba(61, 43, 31, .08);
+  overflow: hidden;
+}
+.xp-bar { display: block; height: 8px; }
+.xp-bar .xp-fill, .prog-track .prog-fill { display: block; height: 100%; }
+.xp-fill, .dist-fill, .spirit-prog-fill, .room-track i, .prog-fill {
+  background: linear-gradient(90deg, var(--gold), color-mix(in srgb, var(--gold) 55%, #fff));
+  border-radius: 999px;
+}
+/* 统计总览卡里的进度条要保持"深底浅条"（卡片本身是深色） */
+.stats-card .xp-bar, .stats-card .xp-track { background: rgba(255, 255, 255, .25); box-shadow: none; }
+.stats-card .xp-bar .xp-fill, .stats-card .xp-fill { background: linear-gradient(90deg, #e0c25e, #fff); }
+
+/* ---------- 14. 骨架屏（第 3 期） ---------- */
+.sk {
+  position: relative; overflow: hidden;
+  background: color-mix(in srgb, var(--line) 40%, #fff);
+  border-radius: var(--r-sm);
+}
+.sk::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 18%, rgba(255, 255, 255, .8) 50%, transparent 82%);
+  transform: translateX(-100%);
+  animation: skSweep 1.25s var(--ease-out) infinite;
+}
+@keyframes skSweep { to { transform: translateX(100%); } }
+.sk-line { height: 12px; border-radius: 6px; margin: 9px 0; }
+.sk-line.w70 { width: 70%; }
+.sk-line.w45 { width: 45%; }
+.sk-line.w90 { width: 90%; }
+.sk-thumb { width: 96px; height: 96px; border-radius: var(--r-md); flex-shrink: 0; }
+.sk-home-card { display: flex; gap: 12px; }
+.sk-home-card .sk-body { flex: 1; min-width: 0; }
+.sk-title { height: 15px; border-radius: 7px; width: 55%; margin: 4px 0 12px; }
+/* 立绘在出图中时的骨架（详情页） */
+.sk-art { width: 100%; aspect-ratio: 3/4; max-height: 46vh; border-radius: var(--r-lg); }
+@media (prefers-reduced-motion: reduce) { .sk::after { animation: none; } }
+
+/* ---------- 15. 空状态插画（第 3 期） ---------- */
+.empty-ill { width: 132px; height: 96px; display: block; margin: 0 auto 10px; }
+.empty-card .empty-icon { font-size: 40px; }
+.empty-hint {
+  font-size: 12px; color: var(--text-2); margin-top: 10px;
+  display: inline-block; padding: 5px 12px;
+  background: color-mix(in srgb, var(--tape) 45%, #fff);
+  border-radius: 999px;
+}
+
+/* ---------- 16. 突破演出重做（第 3 期） ---------- */
+.spirit-evolve { position: relative; overflow: hidden; padding: 6px 0 2px; }
+.evolve-stage { position: relative; display: flex; align-items: center; justify-content: center; min-height: 210px; }
+.evolve-art {
+  position: relative; z-index: 2; max-height: 40vh; border-radius: var(--r-md);
+  box-shadow: 0 10px 30px rgba(61, 43, 31, .22);
+}
+.evolve-halo {
+  position: absolute; z-index: 1; width: 78%; aspect-ratio: 1/1; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 226, 150, .55), rgba(255, 226, 150, 0) 68%);
+}
+.evolve-ring {
+  position: absolute; z-index: 1; width: 40%; aspect-ratio: 1/1; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--gold) 65%, #fff);
+  opacity: 0;
+}
+.evolve-spark {
+  position: absolute; z-index: 3; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--gold); opacity: 0;
+}
+.evolve-stage .evolve-spark:nth-child(odd) { background: #e89a3c; }
+.evolve-title {
+  margin-top: 10px; text-align: center; font-family: var(--font-hand);
+  font-size: 22px; font-weight: 800; letter-spacing: 4px; color: var(--wood);
+}
+.evolve-title .ch { display: inline-block; }
+.evolve-sub { text-align: center; font-size: 13px; color: var(--wood-2); margin-top: 6px; font-weight: 700; }
+.evolve-desc { text-align: center; font-size: 12px; color: var(--text-2); margin-top: 6px; line-height: 1.7; }
+.evolve-tap { text-align: center; font-size: 11px; color: var(--text-2); margin-top: 8px; opacity: .85; }
+/* 播放（JS 加 .evolve-play）：粒子/光晕/环/立绘/逐字 */
+.evolve-play .evolve-halo { animation: haloIn .9s var(--ease-out) 1 backwards; }
+.evolve-play .evolve-art { animation: evolveArt .95s var(--ease-spring) backwards; }
+.evolve-play .evolve-ring { animation: ringOut 1.5s var(--ease-out) forwards; }
+.evolve-play .evolve-ring.r2 { animation-delay: .18s; }
+.evolve-play .evolve-ring.r3 { animation-delay: .36s; }
+.evolve-play .evolve-spark { animation: sparkFly 1.25s var(--ease-out) forwards; animation-delay: calc(var(--i, 0) * 55ms); }
+.evolve-play .evolve-title .ch { animation: chIn .42s var(--ease-spring) backwards; animation-delay: calc(var(--i, 0) * 85ms + 320ms); }
+@keyframes haloIn { from { opacity: 0; transform: scale(.55); } to { opacity: 1; transform: scale(1); } }
+@keyframes evolveArt { from { opacity: 0; transform: scale(.72) translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes ringOut {
+  0% { opacity: .85; transform: scale(.35); }
+  100% { opacity: 0; transform: scale(2.1); }
+}
+@keyframes sparkFly {
+  0% { opacity: 0; transform: translate(0, 0) scale(.6); }
+  25% { opacity: 1; }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--dx, 0px)), calc(var(--dy, -70px))) scale(1.15);
+  }
+}
+@keyframes chIn { from { opacity: 0; transform: translateY(12px) rotate(-6deg); } to { opacity: 1; transform: none; } }
+/* 落定（JS 在 1.6s 后加 .evolve-settled）：**显式写死最终状态**，动画没跑也不会缺东西 */
+.evolve-settled .evolve-ring,
+.evolve-settled .evolve-spark { animation: none; opacity: 0; }
+.evolve-settled .evolve-halo { animation: none; opacity: 1; transform: none; }
+.evolve-settled .evolve-art { animation: none; opacity: 1; transform: none; }
+.evolve-settled .evolve-title .ch { animation: none; opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .evolve-play .evolve-halo, .evolve-play .evolve-art, .evolve-play .evolve-ring,
+  .evolve-play .evolve-spark, .evolve-play .evolve-title .ch { animation: none; }
+  .evolve-ring, .evolve-spark { opacity: 0; }
+}
+
+/* ---------- 17. 日记打字机（第 3 期） ---------- */
+.sd-diary-text.typing::after {
+  content: "▍"; color: var(--gold); margin-left: 1px;
+  animation: caretBlink .7s steps(1) infinite;
+}
+@keyframes caretBlink { 50% { opacity: 0; } }
+.sd-diary-text { white-space: pre-wrap; transition: none; }
+@media (prefers-reduced-motion: reduce) { .sd-diary-text.typing::after { animation: none; } }
+

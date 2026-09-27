@@ -59,6 +59,75 @@
   const isNoPlayCat = (cat) => !Categories.isPuzzleCategory(cat) && !isBeadCat(cat);
 
   function beadStatusLabel(v) { return BEAD_STATUS_LABEL[v] || "未盘玩"; }
+
+  /* ---------- v126 UI 组件（第 3-4 期）：骨架屏 / 空状态插画 / 页头统计 ---------- */
+  // 手账涂鸦插画（内联 SVG，无外部图片，跨设备一致）
+  const EMPTY_ILLS = {
+    bead: '<circle cx="60" cy="52" r="21" fill="none" stroke="currentColor" stroke-width="2.4"/>' +
+      '<circle cx="60" cy="52" r="13" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/>' +
+      '<circle cx="60" cy="52" r="5" fill="currentColor" opacity=".85"/>' +
+      '<path d="M60 73v13" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
+      '<path d="M54 86q6 8 12 0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>' +
+      '<path d="M24 34q10-8 20 0M76 34q10-8 20 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".5"/>',
+    spirit: '<path d="M46 62a14 14 0 1 1 28 0z" fill="none" stroke="currentColor" stroke-width="2.4"/>' +
+      '<circle cx="60" cy="38" r="15" fill="none" stroke="currentColor" stroke-width="2.4"/>' +
+      '<circle cx="54" cy="37" r="2.1" fill="currentColor"/><circle cx="66" cy="37" r="2.1" fill="currentColor"/>' +
+      '<path d="M55 45q5 4 10 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' +
+      '<path d="M40 30q5-9 12-11M80 30q-5-9-12-11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".55"/>',
+    star: '<path d="M60 26l7.6 16.4 18 2.2-13.2 12.6 3.3 17.8L60 66.6 46.3 75l3.3-17.8L36.4 44.6l18-2.2z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>' +
+      '<path d="M22 30q9-6 16 1M98 30q-9-6-16 1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".5"/>',
+    box: '<rect x="30" y="42" width="60" height="38" rx="6" fill="none" stroke="currentColor" stroke-width="2.4"/>' +
+      '<path d="M30 56h60M60 42v38" stroke="currentColor" stroke-width="1.6" opacity=".5"/>' +
+      '<path d="M46 42q14-12 28 0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>' +
+      '<circle cx="60" cy="56" r="3.2" fill="currentColor"/>',
+    room: '<path d="M28 56l32-24 32 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M36 54v26h48V54" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>' +
+      '<rect x="52" y="62" width="16" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>' +
+      '<path d="M22 84h76" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".45"/>',
+  };
+  function emptyIllHtml(kind) {
+    return '<svg class="empty-ill" viewBox="0 0 120 96" aria-hidden="true" style="color:var(--wood-2);opacity:.75">' +
+      (EMPTY_ILLS[kind] || EMPTY_ILLS.bead) + "</svg>";
+  }
+  // 统一空状态：插画 + 标题 + 说明 +（可选）一句小提示 / 按钮
+  function emptyCardHtml(opts) {
+    const o = opts || {};
+    const icon = o.icon ? '<div class="empty-icon">' + o.icon + "</div>" : "";
+    return '<div class="empty empty-card">' + emptyIllHtml(o.ill || "bead") + icon +
+      (o.title ? "<p style=\"font-weight:700;color:var(--wood)\">" + o.title + "</p>" : "") +
+      (o.sub ? "<p>" + o.sub + "</p>" : "") +
+      (o.hint ? '<div class="empty-hint">' + o.hint + "</div>" : "") +
+      "</div>";
+  }
+  // 首屏骨架屏（等 Supabase 数据回来之前别给用户看空白）
+  function bootSkeletonHtml() {
+    let h = '<div class="section-title">📿 我的收藏馆</div><div class="grid">';
+    for (let i = 0; i < 3; i++) {
+      h += '<div class="card sk-home-card"><div class="sk sk-thumb"></div><div class="sk-body">' +
+        '<div class="sk sk-title"></div><div class="sk sk-line w90"></div><div class="sk sk-line w45"></div>' +
+        "</div></div>";
+    }
+    h += "</div>";
+    return h;
+  }
+  // 页头统计条（图鉴/成就/任务共用，排版统一）
+  function pageStatsHtml(list) {
+    const arr = (list || []).filter(Boolean);
+    if (!arr.length) return "";
+    return '<div class="page-stats">' + arr.map((s) =>
+      '<div class="page-stat"><div class="ps-n">' + s.n + '</div><div class="ps-l">' + s.l + "</div></div>").join("") + "</div>";
+  }
+  // 统一纸感卡片 / 列表（第 4 期：替换各页里手写的 inline 样式）
+  function paperCardHtml(inner, cls) {
+    return '<div class="paper-card' + (cls ? " " + cls : "") + '">' + inner + "</div>";
+  }
+  function paperListHtml(rows, cls) {
+    return '<div class="paper-list' + (cls ? " " + cls : "") + '">' + (rows || []).join("") + "</div>";
+  }
+  function paperRowHtml(icon, body) {
+    return '<div class="paper-row"><span class="pr-icon">' + icon + '</span><span class="pr-body">' + body + "</span></div>";
+  }
+
   // 珠子状态默认值：新宝贝默认"未盘玩"，抽卡时才转"待盘玩"。
   // 兼容旧数据（playStatus 为 "" / "idle" / "resting"）
   function normBeadStatus(v, cat) {
@@ -339,28 +408,25 @@
       html += "<p style='text-align:center;font-size:13px;color:var(--gold);margin-bottom:12px'>「" + esc(cat) + "」收藏指南</p>";
 
       if (brandName) {
-        html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px">' +
-          '<div style="font-size:13px;color:var(--text-2);margin-bottom:4px">当前' + fieldLabel + '</div>' +
-          '<div style="font-size:17px;font-weight:700;color:var(--wood)">' + esc(brandName) + "</div></div>";
+        html += paperCardHtml('<div style="font-size:13px;color:var(--text-2);margin-bottom:4px">当前' + fieldLabel + '</div>' +
+          '<div style="font-size:17px;font-weight:700;color:var(--wood)">' + esc(brandName) + "</div>") + '<div style="height:12px"></div>';
       }
 
       // 品牌库介绍
       if (options.length) {
-        html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">' +
-          '<div style="font-size:13px;font-weight:600;color:var(--wood);margin-bottom:8px">常见' + fieldLabel + '一览</div>' +
+        html += paperCardHtml('<div style="font-size:13px;font-weight:600;color:var(--wood);margin-bottom:8px">常见' + fieldLabel + '一览</div>' +
           '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
-          options.map((o) => '<span style="background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:3px 10px;font-size:12px;color:var(--text-2)">' + esc(o) + "</span>").join("") +
-          "</div></div>";
+          options.map((o) => '<span class="chip" style="font-size:12px">' + esc(o) + "</span>").join("") +
+          "</div>");
       }
 
       // 拼图额外提示
       if (isPuzzle) {
-        html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:12px">' +
-          '<div style="font-size:13px;font-weight:600;color:var(--wood);margin-bottom:6px">💡 拼图小贴士</div>' +
+        html += paperCardHtml('<div style="font-size:13px;font-weight:600;color:var(--wood);margin-bottom:6px">💡 拼图小贴士</div>' +
           '<div style="font-size:13px;color:var(--text);line-height:1.7">' +
           "拼图作品完成后建议装裱（相框+防UV玻璃）防止氧化褪色。<br>" +
           "未完成的拼图用拼图垫或卷筒收纳，防止散片丢失。<br>" +
-          "品牌盒子上都有片数标注，收藏时可以记录拼完时间。";
+          "品牌盒子上都有片数标注，收藏时可以记录拼完时间。");
         if (brandName) {
           const known = options.find((o) => o === brandName);
           if (known) {
@@ -411,22 +477,22 @@
       } else {
         list = tips[s.key] || [];
       }
-      html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden">' +
-        '<button type="button" data-sec="' + s.key + '" style="width:100%;padding:12px 14px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;color:var(--wood);background:none;border:none;text-align:left">' +
+      html += '<div class="paper-card flush">' +
+        '<button type="button" class="acc-head" data-sec="' + s.key + '">' +
         '<span>' + s.icon + "</span><span>" + s.title + "</span><span style='margin-left:auto;color:var(--text-2);font-size:12px'>" + list.length + " 条</span>" +
         '<span style="margin-left:4px;color:var(--gold);transition:transform .2s" data-arrow="' + s.key + '">▾</span></button>' +
-        '<div data-body="' + s.key + '" style="display:none;padding:0 14px 14px">' +
+        '<div class="acc-body" data-body="' + s.key + '" style="display:none">' +
         list.map((t) => '<div style="font-size:14px;color:var(--text);line-height:1.7;padding:6px 0;border-top:1px dashed var(--line)">' + esc(t) + "</div>").join("") +
         "</div></div>";
     });
 
     // 名词解释（每次随机 4 条，不同）
     if (tips.terms && tips.terms.length) {
-      html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden">' +
-        '<button type="button" data-sec="terms" style="width:100%;padding:12px 14px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;color:var(--wood);background:none;border:none;text-align:left">' +
+      html += '<div class="paper-card flush">' +
+        '<button type="button" class="acc-head" data-sec="terms">' +
         '<span>📚</span><span>名词解释</span><span style="margin-left:auto;color:var(--text-2);font-size:12px">' + tips.terms.length + " 条 · 随机</span>" +
         '<span style="margin-left:4px;color:var(--gold);transition:transform .2s" data-arrow="terms">▾</span></button>' +
-        '<div data-body="terms" style="display:none;padding:0 14px 14px">' +
+        '<div class="acc-body" data-body="terms" style="display:none">' +
         tips.terms.map((t) => '<div style="font-size:14px;color:var(--text);line-height:1.7;padding:6px 0;border-top:1px dashed var(--line)"><b style="color:var(--wood)">' + esc(t.name) + "</b>：" + esc(t.desc) + "</div>").join("") +
         "</div></div>";
     }
@@ -535,6 +601,14 @@
 
     let html = "";
 
+    // v126 第 4 期：页头统计条（和「图鉴」「成就殿堂」同一套排版）
+    html += pageStatsHtml([
+      { n: level.icon + " Lv." + level.level, l: level.name },
+      { n: game.xp, l: "当前 XP" },
+      { n: doneCount + "/" + tasks.length, l: "今日任务" },
+      { n: noBuy.days + " 天", l: "不买挑战" },
+    ]);
+
     // 等级卡
     html += '<div class="stats-card"><h3>' + level.icon + " " + level.name + " · Lv." + level.level + "</h3>" +
       '<div class="xp-bar"><div class="xp-fill" style="width:' + level.progress + '%"></div></div>' +
@@ -543,16 +617,13 @@
 
     // 每日任务
     html += '<div class="section-title">📋 今日任务 <small style="color:var(--text-2);font-weight:400">' + doneCount + "/" + tasks.length + " 完成</small></div>";
-    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 14px">';
-    tasks.forEach((t) => {
-      html += '<div class="quest-item' + (t.done ? " done" : "") + '">' +
-        '<span class="quest-icon">' + t.icon + "</span>" +
-        '<div class="quest-body"><div class="quest-title">' + esc(t.title) + "</div>" +
-        '<div class="quest-desc">' + esc(t.desc) + "</div></div>" +
-        (t.done ? '<span class="quest-flag">✓ +' + t.xp + "XP</span>" : '<span class="quest-xp">+' + t.xp + "XP</span>") +
-        "</div>";
-    });
-    html += "</div>";
+    html += paperCardHtml(paperListHtml(tasks.map((t) =>
+      '<div class="quest-item' + (t.done ? " done" : "") + '">' +
+      '<span class="quest-icon">' + t.icon + "</span>" +
+      '<div class="quest-body"><div class="quest-title">' + esc(t.title) + "</div>" +
+      '<div class="quest-desc">' + esc(t.desc) + "</div></div>" +
+      (t.done ? '<span class="quest-flag">✓ +' + t.xp + "XP</span>" : '<span class="quest-xp">+' + t.xp + "XP</span>") +
+      "</div>")), "tight");
 
     // 隐藏任务：不买挑战
     html += '<div class="section-title">🤫 隐藏任务</div>';
@@ -569,17 +640,14 @@
 
     // 里程碑经验明细
     html += '<div class="section-title">🗺️ 经验里程碑</div>';
-    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 14px">';
     if (game.milestones.length) {
-      game.milestones.forEach((m) => {
-        html += '<div class="quest-item done"><span class="quest-icon">' + m.icon + '</span>' +
-          '<div class="quest-body"><div class="quest-title">' + esc(m.name) + "</div></div>" +
-          '<span class="quest-flag">+' + m.xp + "XP</span></div>";
-      });
+      html += paperCardHtml(paperListHtml(game.milestones.map((m) =>
+        '<div class="quest-item done"><span class="quest-icon">' + m.icon + '</span>' +
+        '<div class="quest-body"><div class="quest-title">' + esc(m.name) + "</div></div>" +
+        '<span class="quest-flag">+' + m.xp + "XP</span></div>")), "tight");
     } else {
-      html += '<div style="padding:12px 0;font-size:13px;color:var(--text-2);text-align:center">还没有里程碑，去收藏第一件宝贝吧！</div>';
+      html += paperCardHtml('<div class="room-none" style="padding:8px 0">还没有里程碑，去收藏第一件宝贝吧！</div>', "tight");
     }
-    html += "</div>";
 
     view.innerHTML = html;
   }
@@ -597,6 +665,17 @@
     const achievements = Stats.getAchievements(statItems, playDays);
 
     let html = "";
+
+    // v126 第 4 期：页头统计条（与「今日任务」「图鉴」同一套排版）
+    const achTotalTop = achievements.reduce((s, g) => s + g.items.length, 0);
+    const achUnlockedTop = achievements.reduce((s, g) => s + g.unlockedCount, 0);
+    const lvTop = Game.getLevel(Game.computeXp(allItems, playDays).xp);
+    html += pageStatsHtml([
+      { n: lvTop.icon + " Lv." + lvTop.level, l: lvTop.name },
+      { n: achUnlockedTop + "/" + achTotalTop, l: "成就解锁" },
+      { n: (Game.currentStreak ? Game.currentStreak(playDays) : 0) + " 天", l: "连续盘串" },
+      { n: stats.gifted, l: "已送人" },
+    ]);
 
     // 顶部总览卡（累计花费带隐私小眼睛）
     const hideSpend = getHideSpend();
@@ -641,13 +720,9 @@
     html += '<div class="section-title">✨ 有趣发现 <small style="color:var(--text-2);font-weight:400">随机 5 条 · 每次不同</small></div>';
     // 洗牌取 5 条（每次进入随机）
     const factShuffled = facts.slice().sort(() => Math.random() - 0.5).slice(0, 5);
-    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 14px">';
-    factShuffled.forEach((f) => {
-      html += '<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px dashed var(--line);font-size:14px">' +
-        '<span>' + f.icon + "</span><span style='line-height:1.6'>" + esc(f.text) + "</span></div>";
-    });
-    if (!factShuffled.length) html += '<div style="padding:12px 0;font-size:13px;color:var(--text-2);text-align:center">还没有数据，先去收藏几件宝贝吧</div>';
-    html += "</div>";
+    html += factShuffled.length
+      ? paperCardHtml(paperListHtml(factShuffled.map((f) => paperRowHtml(f.icon, esc(f.text)))), "tight")
+      : paperCardHtml('<div class="room-none" style="padding:8px 0">还没有数据，先去收藏几件宝贝吧</div>', "tight");
 
     // 成就（分组递进展示 + tier 进阶）
     const totalAch = achievements.reduce((s, g) => s + g.items.length, 0);
@@ -788,9 +863,11 @@
       topbarTitle.textContent = "暂时隐藏";
       btnBack.style.visibility = "visible";
       btnSettings.style.visibility = "hidden";
-      view.innerHTML = '<div class="empty"><div class="empty-icon">🎯</div>' +
-        "<p>「" + esc(cat) + "」在当前是隐藏的<br>你开启了「文玩专注模式」（只显示菩提/水晶/玉石）<br>数据一条都没删，去设置里关掉就回来了</p>" +
-        '<button class="btn ghost" id="goFocusSet" style="margin-top:14px">去设置里关闭</button></div>';
+      view.innerHTML = emptyCardHtml({
+        ill: "star", icon: "🎯",
+        title: "「" + esc(cat) + "」在当前是隐藏的",
+        sub: "你开启了「文玩专注模式」（只显示菩提 / 水晶 / 玉石）<br>数据一条都没删，去设置里关掉就回来了",
+      }) + '<button class="btn ghost" id="goFocusSet" style="width:100%;margin-top:12px">去设置里关闭</button>';
       const gb = $("#goFocusSet");
       if (gb) gb.onclick = () => location.hash = "#/settings";
       return;
@@ -827,7 +904,7 @@
       "</button>";
     html += '<div id="filterPanel" style="display:' + (filterOpen ? "" : "none") + '">';
     // 隐藏已送人开关
-    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px">' +
+    html += '<div class="paper-card switch-row">' +
       '<div><div style="font-size:13px;font-weight:600;color:var(--text)">🙈 隐藏已送人</div>' +
       '<div style="font-size:11px;color:var(--text-2);margin-top:2px">关闭后显示所有宝贝，含已出库</div></div>' +
       '<label class="switch"><input type="checkbox" id="hideGifted"' + (hideGifted ? " checked" : "") + '><span class="switch-slider"></span></label></div>';
@@ -894,7 +971,7 @@
     list = list.slice(); // 避免影响原数组
 
     if (!list.length) {
-      html += '<div class="empty"><div class="empty-icon">📦</div><p>这个盒子里还没有匹配的宝贝</p></div>';
+      html += emptyCardHtml({ ill: "box", icon: "📦", title: "这个盒子里还没有匹配的宝贝", sub: "换个筛选条件或清掉搜索词试试" });
       view.innerHTML = html;
       bindBoxEvents(cat, base);
       return;
@@ -981,8 +1058,10 @@
     let html = "";
     if (!favs.length) {
       html += '<div class="section-title">⭐ 我特别喜欢的宝贝</div>';
-      html += '<div class="empty"><div class="empty-icon">⭐</div>' +
-        "<p>还没有 5 星的宝贝\n在卡片或详情页给宝贝打 ⭐⭐⭐⭐⭐ 收藏到这里</p></div>";
+      html += emptyCardHtml({
+        ill: "star", icon: "⭐", title: "还没有 5 星的宝贝",
+        sub: "在卡片或详情页给宝贝打 ⭐⭐⭐⭐⭐ 收藏到这里",
+      });
       view.innerHTML = html;
       return;
     }
@@ -2733,9 +2812,11 @@
     const store = Spirits.load();
 
     if (!list.length) {
-      view.innerHTML = '<div class="empty"><div class="empty-icon">🍡</div>' +
-        "<p>还没有精灵诞生<br>把一串盘到「已挂瓷」，它就会成精<br>（顺便去给它们标一下软糯程度，形象会跟着变）</p>" +
-        '<button class="btn primary" id="spiritGoHome" style="margin-top:16px">去盘串</button></div>';
+      view.innerHTML = emptyCardHtml({
+        ill: "spirit", icon: "🍡", title: "还没有精灵诞生",
+        sub: "把一串盘到「已挂瓷」，它就会成精<br>（顺便去给它们标一下软糯程度，形象会跟着变）",
+        hint: "盘玩 → 已挂瓷 → 自动成精",
+      }) + '<button class="btn primary" id="spiritGoHome" style="width:100%;margin-top:12px">去盘串</button>';
       const g = $("#spiritGoHome");
       if (g) g.onclick = () => location.hash = "#/";
       return;
@@ -2783,13 +2864,39 @@
     const list = spiritItems();
     const store = Spirits.load();
     if (!list.length) {
-      view.innerHTML = '<div class="empty"><div class="empty-icon">🍡</div><p>还没有精灵诞生<br>把一串盘到「已挂瓷」，它就会成精</p></div>';
+      view.innerHTML = emptyCardHtml({
+        ill: "spirit", icon: "🍡", title: "还没有精灵诞生",
+        sub: "把一串盘到「已挂瓷」，它就会成精", hint: "盘玩 → 已挂瓷 → 自动成精",
+      });
       return;
     }
     const tk = Spirits.todayKey();
-    let html = '<div class="section-title">🍡 我的精灵（' + list.length + '）' +
+    // v126 第 4 期：图鉴页头统计（与「今日任务」「成就殿堂」同一套排版）——按形态统计收集进度
+    const stageCount = [0, 0, 0, 0];
+    let cgCount = 0, diaryCount = 0;
+    list.forEach((it) => {
+      const r = store[it.id] || {};
+      const st = Math.min(4, Math.max(1, Number(r.stage) || 1));
+      stageCount[st - 1] += 1;
+      if (r.cgUrl) cgCount += 1;
+      diaryCount += (r.diary || []).length;
+    });
+    let html = pageStatsHtml([
+      { n: list.length, l: "精灵总数" },
+      { n: stageCount[3] + stageCount[2], l: "觉醒 / 完成体" },
+      { n: cgCount, l: "已有 CG" },
+      { n: diaryCount, l: "日记总篇数" },
+    ]);
+    html += '<div class="section-title">🍡 我的精灵（' + list.length + '）' +
       '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点它进详情页</small>' +
       '<button type="button" class="link-btn" id="spRedrawAll" style="float:right;font-size:11px">🖌 全部重画</button></div>';
+    // 形态收集进度（图鉴感）：四个形态各多少只
+    html += paperCardHtml('<div class="bkc-row" style="display:flex;gap:6px;text-align:center">' +
+      Spirits.STAGES.map((sd, i) =>
+        '<div style="flex:1"><div style="font-size:17px">' + sd.icon + '</div>' +
+        '<div style="font-size:14px;font-weight:800;color:var(--wood)">' + stageCount[i] + "</div>" +
+        '<div style="font-size:10px;color:var(--text-2)">' + esc(sd.name) + "</div></div>").join("") +
+      "</div>", "tight");
     html += '<div class="spirit-grid">';
     list.forEach((it) => {
       const rec = store[it.id] || {};
@@ -3253,26 +3360,88 @@
       if (h.refresh) h.refresh();
       // v125：突破到觉醒期/完成体之后，顺手把 CG 也画了（后台进行，不挡突破演出）
       refreshCgAfter(item);
-      // 突破演出：全屏特效 + 新立绘（点「好耶」回到页面顶部看新形象）
+      // 突破演出（v126 重做：光晕 + 扩散光环 + 粒子飞散 + 立绘弹入 + 标题逐字）
+      // 关键：**默认状态就是最终状态**（都可见），动画由 JS 加 .evolve-play 触发、
+      // 1.6 秒后加 .evolve-settled 显式写死最终状态 —— 动画没跑起来也不会缺东西。
       const mask2 = $("#modalMask"), modal2 = $("#modal");
+      const stageFrom = Spirits.stageDef(r0.stage || 1);
+      let sparks = "";
+      for (let i = 0; i < 12; i++) {
+        const ang = (Math.PI * 2 * i) / 12 - Math.PI / 2;
+        const dx = Math.round(Math.cos(ang) * (56 + (i % 3) * 16));
+        const dy = Math.round(Math.sin(ang) * (46 + (i % 4) * 12));
+        sparks += '<span class="evolve-spark" style="--i:' + i + ";--dx:" + dx + "px;--dy:" + dy + 'px"></span>';
+      }
+      const titleTxt = "突 破 成 功";
+      const titleHtml = titleTxt.split("").map((c, i) =>
+        '<span class="ch" style="--i:' + i + '">' + (c === " " ? "&nbsp;" : esc(c)) + "</span>").join("");
       modal2.innerHTML = '<div class="spirit-evolve">' +
-        '<div class="spirit-evolve-burst">✨</div>' +
-        (url ? '<img src="' + esc(url) + '" alt="">' : "") +
-        '<div class="spirit-evolve-title">突 破 成 功</div>' +
-        '<div class="spirit-evolve-sub">' + esc(p.name || item.name) + " → " + nextDef.icon + " " + esc(nextDef.name) + "</div>" +
-        '<div class="spirit-evolve-desc">' + (nextStage >= Spirits.STAGES.length ? "它已经长成了完成体，帅/美到发光 👑" : "它长大了一点，继续盘它会更强 💪") + "</div>" +
-        '<button class="btn primary" id="spEvoOk" style="width:100%;margin-top:14px">好耶！看看新形象</button></div>';
+        '<div class="evolve-stage">' +
+        '<span class="evolve-halo"></span>' +
+        '<span class="evolve-ring r1"></span><span class="evolve-ring r2"></span><span class="evolve-ring r3"></span>' +
+        sparks +
+        (url ? '<img class="evolve-art" src="' + esc(url) + '" alt="">' : "") +
+        "</div>" +
+        '<div class="evolve-title">' + titleHtml + "</div>" +
+        '<div class="evolve-sub">' + esc(p.name || item.name) + " · " + stageFrom.icon + " " + esc(stageFrom.name) +
+        " → <b>" + nextDef.icon + " " + esc(nextDef.name) + "</b></div>" +
+        '<div class="evolve-desc">' + (nextStage >= Spirits.STAGES.length ? "它已经长成了完成体，帅/美到发光 👑" : "它长大了一点（约 " + (nextDef.sizeZh || "") + "），继续盘它会更强 💪") + "</div>" +
+        '<div class="evolve-tap">点任意处继续</div>' +
+        '<button class="btn primary" id="spEvoOk" style="width:100%;margin-top:10px">好耶！看看新形象</button></div>';
       mask2.hidden = false; modal2.hidden = false; modal2.style.display = "";
+      const evStage = modal2.querySelector(".spirit-evolve");
+      if (evStage) {
+        requestAnimationFrame(() => { try { evStage.classList.add("evolve-play"); } catch (e2) { /* 忽略 */ } });
+        setTimeout(() => { try { evStage.classList.add("evolve-settled"); } catch (e2) { /* 忽略 */ } }, 1600);
+      }
       const fin = () => {
         mask2.hidden = true; modal2.hidden = true; modal2.style.display = "";
         if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
       };
-      $("#spEvoOk").onclick = fin;
+      $("#spEvoOk").onclick = (e) => { e.stopPropagation(); fin(); };
       mask2.onclick = fin;
     } catch (e) {
       if (h.busy) h.busy(false);
       toast("突破失败：" + ((e && e.message) || "出图失败"));
     }
+  }
+
+  /* ---------- v126：日记打字机（只对最新一篇、每只精灵每次开会话只打一次） ---------- */
+  const _typedDiary = {};
+  function typewriteSpiritDiary(id) {
+    try {
+      const el = document.getElementById("sdDiaryNew");
+      if (!el) return;
+      const full = el.dataset.full || el.textContent || "";
+      if (!full) return;
+      const key = String(id) + "|" + (el.dataset.at || "");
+      if (_typedDiary[key]) return;                 // 同一篇只打一次（重渲染不再重打）
+      _typedDiary[key] = 1;
+      // 尊重"减少动态效果"偏好：直接显示全文
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      let i = 0, timer = null, guard = null, stopped = false;
+      const finish = () => {
+        if (stopped) return;
+        stopped = true;
+        clearTimeout(timer); clearTimeout(guard);
+        el.textContent = full;
+        el.classList.remove("typing");
+      };
+      const tick = () => {
+        if (stopped) return;
+        i += 1;
+        el.textContent = full.slice(0, i);
+        if (i >= full.length) { finish(); return; }
+        // 标点处稍作停顿，读起来更像"在写"
+        timer = setTimeout(tick, /[。！？，、；：,.!?]/.test(full.charAt(i - 1)) ? 120 : 26);
+      };
+      el.classList.add("typing");
+      el.textContent = "";
+      timer = setTimeout(tick, 160);
+      // ★ 兜底：不管动画时钟有没有推进（省电模式/无头浏览器），2.6 秒后一定显示全文
+      guard = setTimeout(finish, Math.max(2600, full.length * 26 + 500));
+      el.onclick = finish;
+    } catch (e) { /* 静默：任何异常都不该让日记消失 */ }
   }
 
   /* ---------- 精灵独立详情页 ---------- */
@@ -3298,7 +3467,11 @@
     const diary = (rec.diary || []).slice().reverse();
     const hist = (rec.imgHistory || []).filter((x) => x && x.url);
 
-    let h = '<div class="sd-top"><div class="sd-art" id="sdArt">' + spiritImgHtml(it, rec, 240, "spirit-img big") + "</div>" +
+    // v126：还没出图时给一个立绘骨架屏（比空白/兜底小精灵更像"正在画"）
+    const artInner = rec.imgUrl
+      ? spiritImgHtml(it, rec, 240, "spirit-img big")
+      : '<div class="sk sk-art"></div><div class="sd-gen-hint" style="margin-top:8px">正在画它的立绘…（约 15-20 秒）</div>';
+    let h = '<div class="sd-top"><div class="sd-art" id="sdArt">' + artInner + "</div>" +
       '<div class="sd-name">' + esc(spiritName(it, store)) + '<span class="spirit-stage big">' + si.icon + " " + esc(si.name) + "</span></div>" +
       '<div class="sd-title">' + esc(p.title || "") + "</div>" +
       '<div class="sd-title" style="margin-top:4px">' +
@@ -3378,9 +3551,15 @@
     if (!diary.length) {
       h += '<div class="room-none">还没写过日记。它们一天最多写 1 篇（不定时），明天再来看看～</div>';
     } else {
-      h += '<div class="sd-diary">' + diary.slice(0, 8).map((d) =>
-        '<div class="sd-diary-item"><div class="sd-diary-date">' + esc(d.date || "") + "<span>" + fmtTime(d.at) + "</span></div>" +
-        '<div class="sd-diary-text">' + esc(String(d.text || "").replace(/^第[^\n]*\n/, "")).replace(/\n/g, "<br>") + "</div></div>").join("") +
+      // v126：最新一篇用"打字机"逐字亮相（下面前端会调 typewriteSpiritDiary；点击可立刻显示全文）
+      h += '<div class="sd-diary">' + diary.slice(0, 8).map((d, di) => {
+        const raw = String(d.text || "").replace(/^第[^\n]*\n/, "");
+        const isNew = di === 0;
+        return '<div class="sd-diary-item"><div class="sd-diary-date">' + esc(d.date || "") + "<span>" + fmtTime(d.at) + "</span></div>" +
+          (isNew
+            ? '<div class="sd-diary-text" id="sdDiaryNew" data-full="' + esc(raw) + '" data-at="' + (d.at || 0) + '" title="点一下立刻显示全文">' + esc(raw) + "</div>"
+            : '<div class="sd-diary-text">' + esc(raw).replace(/\n/g, "<br>") + "</div>") + "</div>";
+      }).join("") +
         (diary.length > 8 ? '<div class="room-none">（只显示最近 8 篇，共 ' + diary.length + " 篇）</div>" : "") + "</div>";
     }
     h += "</div>";
@@ -3422,6 +3601,7 @@
     const bk = $("#sdBreak"); if (bk) bk.onclick = () => spiritBreak(it, host);
     const nl = $("#sdNewLook"); if (nl) nl.onclick = () => spiritNewLook(it, host);
     const rr = $("#sdReRoll"); if (rr) rr.onclick = () => spiritReRoll(it, host);
+    typewriteSpiritDiary(id);      // v126：最新一篇日记逐字亮相（带兜底，不会空白）
     const art = $("#sdArt");
     if (art) art.onclick = () => openSpiritViewer(rec.imgUrl || Spirits.localAvatarSvg(it));
     const cgEl = $("#sdCg");
@@ -4569,7 +4749,7 @@
 
     filterHtml += '<div id="filterPanel" style="display:' + (filterOpen ? "" : "none") + '">';
     // 隐藏已送人开关
-    filterHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px">' +
+    filterHtml += '<div class="paper-card switch-row">' +
       '<div><div style="font-size:13px;font-weight:600;color:var(--text)">🙈 隐藏已送人</div>' +
       '<div style="font-size:11px;color:var(--text-2);margin-top:2px">关闭后显示所有宝贝，含已出库</div></div>' +
       '<label class="switch"><input type="checkbox" id="hideGifted"' + (hideGifted ? " checked" : "") + '><span class="switch-slider"></span></label></div>';
@@ -4677,22 +4857,25 @@
     if (!list.length) {
       // 离线且本地也没缓存：别显示「还没有收藏任何宝贝」（会吓人一跳，以为数据没了）
       if (offlineMode && !allItems.length) {
-        return '<div class="empty">' +
-          '<div class="empty-icon">📴</div>' +
-          "<p>连不上云端，本地也还没有缓存<br>请换个网络（或等信号好点）后点上方「重试」<br>你的数据都在云端，不会丢</p>" +
-          "</div>";
+        return emptyCardHtml({
+          ill: "box", icon: "📴", title: "连不上云端，本地也还没有缓存",
+          sub: "请换个网络（或等信号好点）后点上方「重试」<br>你的数据都在云端，不会丢",
+        });
       }
       // 文玩专注模式下全被隐藏了：说清楚（数据没丢）
       if (focusMode && hiddenByFocusCount() && !focusVisible(allItems).length) {
-        return '<div class="empty">' +
-          '<div class="empty-icon">🎯</div>' +
-          "<p>文玩专注模式下这里没有宝贝<br>已隐藏 " + hiddenByFocusCount() + " 件非文玩收藏（数据保留）<br>去设置里关掉就能看到全部</p>" +
-          "</div>";
+        return emptyCardHtml({
+          ill: "star", icon: "🎯", title: "文玩专注模式下这里没有宝贝",
+          sub: "已隐藏 " + hiddenByFocusCount() + " 件非文玩收藏（数据保留）<br>去设置里关掉就能看到全部",
+        });
       }
-      return '<div class="empty">' +
-        '<div class="empty-icon">' + (allItems.length ? "🔍" : "📿") + "</div>" +
-        "<p>" + (allItems.length ? "没有找到匹配的宝贝" : "还没有收藏任何宝贝\n点击下方 ＋ 添加第一条吧") + "</p>" +
-        "</div>";
+      return emptyCardHtml({
+        ill: allItems.length ? "box" : "bead",
+        icon: allItems.length ? "🔍" : "📿",
+        title: allItems.length ? "没有找到匹配的宝贝" : "还没有收藏任何宝贝",
+        sub: allItems.length ? "换个筛选条件，或清掉搜索词试试" : "点击下方 ＋ 添加第一条吧",
+        hint: allItems.length ? "" : "第一条可以先拍张照，价格和店铺都能后补",
+      });
     }
     if (viewMode === "list") {
       // ===== 列表视图：缩略图 + 更多信息 =====
@@ -6029,8 +6212,7 @@
 
     // ===== 2. 自选称号（展示 + 删除） =====
     html += '<div class="section-title">🎯 文玩专注模式</div>';
-    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">' +
+    html += paperCardHtml('<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">' +
       '<div style="min-width:0"><div style="font-size:13px;font-weight:600">只显示文玩类（菩提 / 水晶 / 玉石）</div>' +
       '<div style="font-size:11px;color:var(--text-2);margin-top:3px">开启后隐藏「分类」页和其它收藏类型（拼图/周边/盲盒等）。' +
       '<b>数据一条都不会删</b>，关掉开关立刻全部回来。</div></div>' +
@@ -6038,8 +6220,7 @@
       "</div>" +
       (focusMode && hiddenByFocusCount()
         ? '<div style="font-size:11px;color:var(--gold);margin-top:8px">当前已隐藏 ' + hiddenByFocusCount() + " 件非文玩宝贝</div>"
-        : "") +
-      "</div>";
+        : ""));
 
     // ===== 2.5 精灵 · 绘图通道 / 文字通道 =====
     {
@@ -6065,7 +6246,8 @@
     }
 
     html += '<div class="section-title">🎖️ 我的称号</div>';
-    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">';    html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:8px">展示中的称号（点击 ✕ 移除）</div>';
+    html += '<div class="paper-card">';
+    html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:8px">展示中的称号（点击 ✕ 移除）</div>';
     html += '<div id="myBadges" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>';
     html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:6px">🏆 称号库（已解锁的，点击选择/取消）</div>';
     html += '<div id="badgeLibrary" style="display:flex;flex-wrap:wrap;gap:8px;max-height:220px;overflow-y:auto"></div>';
@@ -6075,12 +6257,11 @@
 
     // ===== 4. 收藏盒子管理 =====
     html += '<div class="section-title">收藏盒子管理</div>';
-    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">';
-    html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:8px">自定义收藏盒子（菩提 / 水晶 / 玉石 / 拼图 / 动漫周边…）</div>';
-    html += '<div id="catList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>';
-    html += '<div style="display:flex;gap:8px">' +
+    html += paperCardHtml('<div style="font-size:12px;color:var(--text-2);margin-bottom:8px">自定义收藏盒子（菩提 / 水晶 / 玉石 / 拼图 / 动漫周边…）</div>' +
+      '<div id="catList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>' +
+      '<div style="display:flex;gap:8px">' +
       '<input class="form-input" id="catInput" placeholder="新增盒子，如：盲盒" style="flex:1;padding:9px 10px;font-size:14px">' +
-      '<button class="btn primary" id="catAdd" style="flex:none;padding:9px 16px;font-size:14px">添加</button></div>';
+      '<button class="btn primary" id="catAdd" style="flex:none;padding:9px 16px;font-size:14px">添加</button></div>');
 
     // 内置分类库（可一键恢复已删的内置分类）
     html += '<div style="font-size:12px;color:var(--text-2);margin:10px 0 6px">🧰 内置收藏盒子（删除了可以点回来）</div>';
@@ -6523,6 +6704,8 @@
         topbarTitle.textContent = "我的收藏馆";
         return;
       }
+      // v126：等云端数据回来之前先给一屏骨架屏（别让用户看空白页）
+      try { view.innerHTML = bootSkeletonHtml(); } catch (e) { /* 忽略 */ }
       const ok = await enterApp();
       if (ok) {
         // 一次性迁移：清掉所有旧立绘（含进化史）与旧日记，并**立刻**按当前模型/形象设定重新出图
