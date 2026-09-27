@@ -3229,6 +3229,9 @@
       (si.isMax ? '<div class="spirit-prog max">已是完成体 · 巅峰形态 👑</div>'
         : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
           '<span class="spirit-prog-txt">' + si.growth + " / " + si.need + " → " + esc(si.next) + "（再 " + si.toNext + " 点可突破）</span></div>") +
+      // v120：把"会长大"写在界面上（用户问过"不会一直都是 Q 版吧"）
+      '<div class="sd-growth-line">📏 现在：' + esc(Spirits.stageDef(si.stage).sizeZh || "") +
+      (si.isMax ? " · 已经是最成熟的形态了" : " → 突破后：" + esc(Spirits.stageDef(si.stage + 1).sizeZh || "")) + "</div>" +
       // v111：突破/换形象/换外观设定直接放在详情页 —— 生成完就在上面看到新立绘（不用再钻弹层）
       // v112：形象细节升级后（照人物设定画的），这里会提示"按新设定重画"
       '<div class="sd-actions2">' +
@@ -3752,6 +3755,7 @@
       "⚠️ <b>水印</b>：方舟 flash 默认带「AI generated」，已自动传 <code>watermark:false</code> 关掉；智谱默认也带水印，已自动传 <code>watermark_enabled:false</code>（去 个人中心→安全管理→去水印管理 签个免责声明才生效）。<br>" +
       "⚠️ 别买「私有实例 / 专属部署」那种<b>按天计价</b>的（图像模型约 100 元/算力单元/天，一个月就是几千块）。</div>" +
       '<div class="prov-row" id="provRow">' + opts + "</div>" +
+      '<div class="cfg-hint" id="refHint" style="margin-top:6px"></div>' +
       '<div class="form-group" style="margin-top:14px"><div class="form-label">形象风格 <small>换完记得点保存，再看精灵页</small></div>' +
       '<div class="prov-row" id="styleRow">' +
       Object.keys(Spirits.STYLE_PRESETS).map((k) =>
@@ -3826,6 +3830,12 @@
       }
     }
     bindSizeRow(chosen);
+    // 图生图支持情况（跟着服务商显示，省得用户以为"没接上"）
+    function bindRefHint(provider) {
+      const el = $("#refHint");
+      if (el) el.innerHTML = "🖼 <b>图生图（突破/换形象时带参考图）</b>：" + esc(Spirits.refSupportText(provider));
+    }
+    bindRefHint(chosen);
     modal.querySelectorAll("#provRow .prov-chip, #styleRow .prov-chip").forEach((b) => b.onclick = () => {
       if (b.dataset.style) {
         chosenStyle = b.dataset.style;
@@ -3840,6 +3850,7 @@
       $("#imgEndpoint").value = "";
       // 尺寸 chip 也跟着这家能用的档重建（避免选了个一定被拒的档）
       bindSizeRow(chosen);
+      bindRefHint(chosen);
       // 常用的模型名一键填入（跟着服务商换）
       bindModelQuick(chosen);
     });

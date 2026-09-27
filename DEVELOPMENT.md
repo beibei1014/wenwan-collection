@@ -88,7 +88,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v118）
+## 五、功能清单（截至 v120）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -475,6 +475,20 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
     - **⑤ 顺便记下**：智谱返回的图片链接**有效期 30 天**（v116 已做"自动下载转本地"，所以到期也不会重出）；`quality` 参数 glm-image 只支持 `hd`。
     - **配置弹层提示**也更新了：写明「图生图：**方舟支持**；**智谱不支持**（官方 API 没有参考图字段）→ 自动退回文字锚点」+ 智谱水印的两家字段差异。
     - **验证**：端到端 **9/9**：智谱请求带 `watermark_enabled:false` 且**没有**方舟专用的 `watermark/seed`；**智谱拒绝 image → 自动去掉参考图重试 → 出图成功**（请求 2 次，第 2 次无 image）；**之后第一发就不再带参考图**（按这家记住，只花 1 次额度）；**切到方舟后仍然带 image（真图生图）**且同时带 `watermark:false` + `seed`（证明按服务商记忆修好了串味）。缓存 v118
+119. **🏷 图生图能力直接标在界面上（v119）**：用户追问「智谱 GLM 的模型也不能支持图生图？」——去翻了智谱的**文档索引（llms.txt）+ 图像生成 OpenAPI**，确认它家**只有"文生图"和"文生图(异步)"两个图像接口**（请求体 `model/prompt/quality/size/watermark_enabled/user_id`），能"吃图"的只有视觉理解模型（GLM-4V / GLM-5.3-V / GLM-OCR，能看图不会画图）和图生视频（CogVideoX-3）。
+    - 于是新增 `REF_SUPPORT` + `refSupportText(provider)`：**ark = 支持**（参考图不加钱）、**zhipu = 不支持**（并解释会自动退回文字锚点）、**其它家 = 自动试一次**；配置弹层的服务商那一行下面加 `#refHint`，**跟着服务商实时切换**，用户不用再猜"是不是没接上"。
+    - **验证**：端到端 **8/8**（三档能力文案、跟着服务商切换、切回方舟恢复"支持"）。
+120. **📏 突破后"身形真的会长大"（v120）**：用户问「突破过后的形象会基于当前阶段进行成长吗？不会一直都是那个 Q 版吧？我想要尽量确保一致性，所以我最后还是用火山的模型吧」。
+    - **① 根因（用户问得非常准）**：风格预设 `anime` 里写死了 `cute chibi character` 和 `chibi proportion with slightly big head`，而风格预设对**四个阶段都生效** → 所以就算突破到觉醒期/完成体，模型还是画回 Q 版大头。
+    - **② 修法：画风与身形分离**。风格预设只留**画风**（2D 日漫/赛璐璐/线稿/柔和配色/服装细节/表情姿态），把**身高与头身比全部挪到阶段描述**：
+      - 幼生期 = `chibi proportions about 2 heads tall`（Q 版小宝宝）
+      - 成长期 = `child proportions about 4 heads tall, noticeably taller than the newborn form`
+      - 觉醒期 = `slim teenage proportions about 6 heads tall, longer limbs, more defined jawline`
+      - 完成体 = `mature adult proportions about 7.5 heads tall, refined adult facial features`
+      并新增 `GROWTH_LINE` 硬约束，**每次出图都带上**：「this is the same character at an older age than the previous stage, keep the exact same face, hair color, eye color and accessories, only grow taller and more mature, body proportions and height must change with the age described above, do not keep the baby proportions」。
+    - **③ 界面上也写出来**：`STAGES` 增加中文 `sizeZh`（约 2/4/6/7.5 头身），详情页成长区显示「📏 现在：约 4 头身（小孩子） → 突破后：约 6 头身（少年，变高变帅）」，让用户一眼看到"会长大"。
+    - **④ 一致性**：用户决定主用**火山方舟**（支持图生图）—— 突破/换形象会把**上一形态那张立绘当参考图**传给 Seedream（参考图不额外收费），配合文本锚点（性别/发型/瞳色/配饰/服装/纹样全写死）+ 固定 seed，做到"同一个人只是长大"。
+    - **验证**：端到端 **14/14**：风格预设里**已无 chibi/big head**（根因）；四阶段 prompt 分别含 2/4/6/7.5 heads tall（觉醒期与完成体**不含 chibi**）、都含"比上一形态更高、不许保持婴儿比例"硬约束、四段互不相同、单人/不写字/不许长发约束仍在；四个阶段的中文头身说明齐；详情页显示「现在 约 4 头身 → 突破后 约 6 头身」；**点突破后真正发出的 prompt 是"觉醒期 6 头身"那版且带上了参考图**。缓存 v120
 
 > 🧪 **可复用的端到端测试套路（推荐）**：把 `index.html` 的 body 注入一个临时页面 → 在脚本前定义 `window.SUPABASE_CONFIG` 与假 `window.supabase.createClient`（`auth.getSession/getUser` 返回假 session，`from(t)` 返回链式对象，`then` 直接 resolve 固定数据）→ 按原顺序动态 `appendChild` 加载 `js/*.js` → `location.hash` 切路由 + 断言。这样能用真实 `app.js` 验证交互，不用登录、不碰线上库。
 

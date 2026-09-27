@@ -249,31 +249,43 @@
     "no other characters, no clones, no panels, no collage, no multiple views, no background characters, " +
     "no text, no letters, no words, no numbers, no title, no labels, no captions, no watermark, no signature, no logo";
 
-  /* ---------- 进阶系统：四形态、三次突破（v103） ----------
+  /* ---------- 进阶系统：四形态、三次突破（v103；v120 起"身形比例真的会长大"） ----------
      幼生期 → 成长期 → 觉醒期 → 完成体；成长值 = 盘玩次数×3 + 陪伴天数×1
-     每个阶段有**各自的外形描述**，越往后越"帅/酷/美"，但颜色与性格一路贯穿 */
+     ⚠️ 用户反馈「突破过后不会一直都是那个 Q 版吧？」—— 查出来根因是**风格预设里写死了
+        `cute chibi character / chibi proportion with slightly big head`，它对四个阶段都生效**，
+        所以模型每次都画回 Q 版大头。现在把"肤色/线稿/上色"这类**画风**留在风格预设里，
+        把"身高与头身比"全部挪到阶段描述里，并且明确写「比上一形态更高」→ 突破会真的长大。 */
   const STAGES = [
     {
-      n: 1, name: "幼生期", icon: "🥚", need: 0,
-      look: "a tiny newborn baby version of the character, very small chubby body, big head and tiny limbs, " +
-        "simple minimal details, sleepy innocent eyes, just awakened, extremely cute and soft",
+      n: 1, name: "幼生期", icon: "🥚", need: 0, sizeZh: "约 2 头身（Q 版小宝宝）",
+      look: "a tiny newborn baby version of the character, chibi proportions about 2 heads tall, " +
+        "very small chubby body, big round head and tiny limbs, simple minimal details, " +
+        "sleepy innocent eyes, just awakened, extremely cute and soft",
     },
     {
-      n: 2, name: "成长期", icon: "🌱", need: 30,
-      look: "a small child version of the character, slightly taller and more defined, lively bright eyes, " +
-        "simple but neat outfit, energetic pose, still cute and round",
+      n: 2, name: "成长期", icon: "🌱", need: 30, sizeZh: "约 4 头身（小孩子）",
+      look: "a small child version of the character, noticeably taller than the newborn form, " +
+        "child proportions about 4 heads tall, rounder face with bigger eyes, shorter limbs than an adult, " +
+        "lively bright eyes, simple but neat outfit, energetic pose, still cute and round",
     },
     {
-      n: 3, name: "觉醒期", icon: "⚡", need: 90,
-      look: "a cool teenage version of the character, confident dynamic pose, stylish detailed outfit, " +
-        "glowing aura and light particles, sharp determined eyes, cinematic lighting",
+      n: 3, name: "觉醒期", icon: "⚡", need: 90, sizeZh: "约 6 头身（少年，变高变帅）",
+      look: "a cool teenage version of the character, grown up and clearly taller with slim teenage proportions " +
+        "about 6 heads tall, longer limbs, a more defined jawline, confident dynamic pose, " +
+        "stylish detailed outfit, glowing aura and light particles, sharp determined eyes, cinematic lighting",
     },
     {
-      n: 4, name: "完成体", icon: "👑", need: 180,
-      look: "a stunning fully-realized adult anime character, magnificent ornate outfit with elegant details, " +
-        "powerful graceful aura, beautiful and cool, masterpiece quality, epic composition, breathtaking",
+      n: 4, name: "完成体", icon: "👑", need: 180, sizeZh: "约 7.5 头身（成年，气场全开）",
+      look: "a stunning fully-realized young adult anime character, mature adult proportions " +
+        "about 7.5 heads tall, elegant long limbs, refined adult facial features, " +
+        "magnificent ornate outfit with elegant details, powerful graceful aura, beautiful and cool, " +
+        "masterpiece quality, epic composition, breathtaking",
     },
   ];
+  // 每次出图都带上：明确"这是同一个人的下一个年龄段，比上一形态更高更成熟"
+  const GROWTH_LINE = "this is the same character at an older age than the previous stage, " +
+    "keep the exact same face, hair color, eye color and accessories, only grow taller and more mature, " +
+    "body proportions and height must change with the age described above, do not keep the baby proportions";
   function stageDef(n) { return STAGES[Math.min(STAGES.length, Math.max(1, Number(n) || 1)) - 1]; }
   // 成长值：盘一次 +3，陪伴一天 +1（days 由调用方用 DB.daysWith 传进来）
   function growthOf(item, days) {
@@ -318,6 +330,22 @@
   };
   const SIZE_DEFAULT_LADDER = ["1728x2304", "2048x2048", "1024x1024"];
   function sizeLadderFor(provider) { return SIZE_BY_PROVIDER[provider] || SIZE_DEFAULT_LADDER; }
+  /* ---------- 图生图（带参考图）支持情况 ----------
+     实测/查文档结论：
+       · ark（Seedream 5.0 flash/lite/pro）：**支持** `image` 字段，参考图不额外收费
+       · zhipu（GLM-Image / CogView-4 / CogView-3-Flash）：**不支持** ——
+         官方 OpenAPI 的图像生成请求体只有 model/prompt/quality/size/watermark_enabled/user_id，
+         它家能"吃图"的只有视觉理解模型（GLM-4V 等，能看图不能画图）和图生视频（CogVideoX-3）
+       · 其它家（硅基流动/魔搭/百炼/自定义）：官方没明说 → **自动试一次**，不支持就自动去掉并记住
+     注意：不支持不等于"换人"，性别/发型/瞳色/配饰/服装/阶段都写死在 prompt 里（文本锚点）。 */
+  const REF_SUPPORT = { ark: "yes", zhipu: "no", pollinations: "no", siliconflow: "try", modelscope: "try", bailian: "try", custom: "try" };
+  const REF_TEXT = {
+    yes: "✅ 支持（突破/换形象会带上一张立绘做参考，参考图不加钱）",
+    no: "❌ 不支持（官方 API 没有参考图字段，会自动退回「文字锚点」，不会变性换人）",
+    try: "🤔 官方没写明 → 会自动带上试一次，不支持就自动去掉（并按这家记住）",
+  };
+  function refSupportOf(provider) { return REF_SUPPORT[provider] || "try"; }
+  function refSupportText(provider) { return REF_TEXT[refSupportOf(provider)] || REF_TEXT.try; }
   // 各家「常用模型」一键填入（省得去控制台抄 ID）。价格按官方/公开报价标注，会变，仅供参考。
   const MODEL_PICKS = {
     ark: [
@@ -375,12 +403,14 @@
   // flat    = 扁平贴纸风   ink = 国风水墨
   const STYLE_PRESETS = {
     anime: {
-      label: "日漫风 · Q版角色",
-      text: "Japanese anime illustration, 2D anime style, cute chibi character, big sparkling anime eyes with white highlights, " +
-        "cel shading, flat anime coloring, clean bold line art, soft pastel color palette, soft blush, " +
+      label: "日漫风 · 角色",
+      // ⚠️ 这里**不能**写 chibi / big head：那是"身形比例"，必须交给阶段描述（STAGES.look），
+      //    否则突破到觉醒期/完成体也还是 Q 版大头（用户实测吐槽过）。
+      text: "Japanese anime illustration, 2D anime character art, big expressive anime eyes with white highlights, " +
+        "cel shading, flat anime coloring, clean line art, soft pastel color palette, soft blush, " +
         "richly detailed outfit design with visible fabric folds and seams, small ornamental accessories, " +
-        "expressive pose with personality, chibi proportion with slightly big head, full body, centered composition, plain solid pastel background, " +
-        "hand-drawn 2D anime art, kawaii, no 3D render, no realistic face, no photo, no gradient mesh",
+        "expressive pose with personality, full body, centered composition, plain solid pastel background, " +
+        "hand-drawn 2D anime art, no 3D render, no realistic photo, no gradient mesh",
     },
     animepet: {
       label: "日漫风 · 小生物",
@@ -444,7 +474,7 @@
         ", wearing " + ap.acc + ", " + ap.vibe + " personality, " + lk + ", " +
         "full body creature illustration, whole body visible, centered with comfortable margin";
     }
-    const bits = [cmp, soft, SINGLE, CONSISTENCY];
+    const bits = [cmp, soft, SINGLE, CONSISTENCY, GROWTH_LINE];
     // v112：把「人物设定 → 形象细节关键词」也拼进去，立绘不再"只有颜色"
     const tags = getLookTags(item);
     if (tags) bits.push("extra character design details: " + tags);
@@ -1251,7 +1281,7 @@
   }
 
   window.Spirits = {
-    PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, SIZE_PRESETS_BY_PROVIDER, sizePresetsFor, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo, sizeLadderFor, MODEL_PICKS,
+    PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, SIZE_PRESETS_BY_PROVIDER, sizePresetsFor, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo, sizeLadderFor, MODEL_PICKS, refSupportOf, refSupportText,
     STAGES, stageDef, stageInfo, growthOf,
     appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
     COLOR_ZH, HAIR_ZH, EYES_ZH, ACC_ZH, VIBE_ZH,
