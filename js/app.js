@@ -35,6 +35,27 @@
   let _navList = [];         // 进详情时记下的「当前页面宝贝顺序」：详情页可切换上一个/下一个
   let _detailSwipedAt = 0;   // 详情页刚左右滑动的时间戳（避免滑动后顺手打开大图）
 
+  // v129：弹层"落定"兜底 —— 弹层的入场动画（slideUp）如果因为省电/后台标签/无头浏览器没推进，
+  // 就会卡在 opacity:0，用户看到的只是变暗的背景（以为"点了没反应"）。
+  // 这里监听弹层的显示/隐藏：显示后 400ms 打上 .modal-settled，CSS 里 animation:none 强制落回最终状态。
+  function bindModalSettle() {
+    try {
+      ["#modal", "#modalMask"].forEach((sel) => {
+        const el = $(sel);
+        if (!el || typeof MutationObserver !== "function") return;
+        const obs = new MutationObserver(() => {
+          try {
+            clearTimeout(el.__settleT);
+            if (el.hidden) { el.classList.remove("modal-settled"); return; }
+            el.classList.remove("modal-settled");
+            el.__settleT = setTimeout(() => { try { el.classList.add("modal-settled"); } catch (e2) { /* 忽略 */ } }, 400);
+          } catch (e2) { /* 忽略 */ }
+        });
+        obs.observe(el, { attributes: true, attributeFilter: ["hidden", "style"] });
+      });
+    } catch (e) { /* 忽略 */ }
+  }
+
   /* ---------- 状态定义 ---------- */
   // 珠子类 5 态：未盘玩(unplayed) / 待盘玩(ready) / 盘玩中(playing) / 已挂瓷(done) / 佩戴中(wearing)
   // 放置时长（盘玩→现在）由 lastPlayedAt 推算，不再单独占用"放置中"状态
@@ -3779,6 +3800,19 @@
       lookChipHtml("pers", p.id, esc(p.zh), state.pers === p.id)).join("");
 
     modal.innerHTML = '<div class="setup-wrap">' +
+      // v129：先把"这是给谁做设定"写在最上面（用户反馈：不知道在给哪一只做设定）
+      (function () {
+        const nm = spiritName(item, Spirits.load());
+        const si = Spirits.stageInfo(item, rec.stage, DB.daysWith(item));
+        const hasLook = !!(rec.look && (rec.look.hairc || (rec.look.feats || []).length || rec.look.pers || rec.look.base));
+        return '<div class="setup-who">' +
+          '<span class="sw-who-thumb">' + spiritThumbHtml(item, rec, 46) + "</span>" +
+          '<span class="sw-who-meta">' +
+          '<span class="sw-who-name">' + esc(nm) + "</span>" +
+          '<span class="sw-who-sub">来自「' + esc(item.name || "手串") + "」 · " + si.icon + " " + esc(si.name) + "</span>" +
+          '<span class="sw-who-tip">' + (hasLook ? "已有设定，改完保存会按新设定重画" : "还没定过设定 —— 出图前先定一下") + "</span>" +
+          "</span></div>";
+      })() +
       '<div class="setup-head">✨ 给它定设定<small>4 步 · 不确定就用默认的，随时能改</small></div>' +
       // ① 发色
       '<div class="setup-sec"><div class="setup-t"><b>1</b> 发色 / 色调</div>' +
@@ -3905,7 +3939,8 @@
           if (hex) Spirits.setBeadColor(item, hex);
         }
         close();
-        toast(skip ? "先按自动的来，之后随时能改 ✨" : "设定保存好了，正在按新设定画 🎨");
+        const nmNow = spiritName(item, Spirits.load());
+        toast(skip ? (nmNow + "：先按自动的来，之后随时能改 ✨") : (nmNow + " 的设定保存好了，正在按新设定画 🎨"));
         // 4④ 一句话 → 扩写成详细设定（AI 优先，失败用本地模板）
         const lkNew = Spirits.lookOf(item, r2);
         if (!skip && (state.base || state.ai)) {
@@ -6987,6 +7022,7 @@
       try { if ("scrollRestoration" in history) history.scrollRestoration = "manual"; } catch (e) { /* 忽略 */ }
       // 提前绑定 AI 小助手（不依赖登录态），确保猫猫图标任何时候都能点击
       bindAI();
+      bindModalSettle();   // v129：弹层动画落定兜底（避免"弹层卡在透明"）
       applyFocusChrome();   // 文玩专注模式：隐藏「分类」tab
       initToTop();        // 回到顶部按钮（滚动后出现）
       bindSoftToggles();  // 卡片/列表里直接改软糯程度

@@ -312,6 +312,9 @@
 .modal { border-radius: var(--r-xl) var(--r-xl) 0 0; box-shadow: 0 -8px 40px rgba(61, 43, 31, .22); }
 .modal h3 { font-family: var(--font-hand); letter-spacing: 1.5px; }
 .modal-mask { backdrop-filter: blur(3px); }
+/* v129：弹层"落定"兜底 —— 万一 slideUp 入场动画没推进（省电模式 / 后台标签 / 无头浏览器），
+   弹层会卡在 opacity:0，看起来像"点了没反应"。JS 在打开 400ms 后加这个类强制落回最终状态。 */
+.modal.modal-settled, .modal-mask.modal-settled { animation: none; }
 
 /* ---------- 16. 无障碍：用户要求减少动效时全部关掉 ---------- */
 @media (prefers-reduced-motion: reduce) {
@@ -677,6 +680,18 @@
 /* ---------- 18. 精灵设定向导（v127） ----------
    用户要求：生成之前让他确认发色/特征/性格，3-4 个选项就能成，不想写大段提示词。 */
 .setup-wrap { max-height: 74vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* v129：向导最上面「这是给谁做设定」（头像 + 名字 + 来自哪串 + 形态） */
+.setup-who {
+  display: flex; align-items: center; gap: 10px;
+  background: linear-gradient(180deg, #fffaf0, color-mix(in srgb, var(--tape) 28%, #fff));
+  border: 1px solid color-mix(in srgb, var(--tape) 62%, var(--line) 38%);
+  border-radius: var(--r-md); padding: 9px 11px; margin-bottom: 12px;
+}
+.sw-who-thumb { flex: none; line-height: 0; }
+.sw-who-meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.sw-who-name { font-size: 15px; font-weight: 800; color: var(--wood); }
+.sw-who-sub { font-size: 11.5px; color: var(--wood-2); }
+.sw-who-tip { font-size: 11px; color: var(--text-2); }
 .setup-head {
   font-size: 17px; font-weight: 800; color: var(--wood); text-align: center; margin-bottom: 4px;
   font-family: var(--font-hand);
