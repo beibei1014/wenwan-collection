@@ -3913,7 +3913,7 @@
         const em = (e && e.message) || "测试失败";
         msgEl.innerHTML = "❌ " + esc(em).replace(/\*\*/g, "") +
           (Spirits.isFetchFail(em)
-            ? '<br><span style="color:var(--text-2)">这个错几乎都是 <b>API Key 不对</b>：方舟在 key 无效时不返回跨域头，浏览器只能报 Failed to fetch。请点控制台密钥那行的「👁 / 📋 复制」，复制 <b>ark- 开头</b>的完整密钥（不是 api-key-… 这个名字）。</span>'
+            ? '<br><span style="color:var(--text-2)">这个错几乎都是 <b>API Key 不对</b>：方舟在 key 无效时不返回跨域头，浏览器只能报 Failed to fetch。请点控制台密钥那行的「👁 / 📋 复制」，复制 <b>ark- 开头</b>的完整密钥（不是 api-key-… 这个名字）。<br><b>特别注意别漏掉末尾几位</b>：控制台里显示成 <code>ark-26b0fc78-…-72b99c…</code> 是<b>截断显示</b>，手选文字会少一截；完整的是 <b>ark- + 8-4-4-4-12 位（共 40 个字符）</b>。</span>'
             : (/NotFound|does not exist/i.test(em)
               ? '<br><span style="color:var(--text-2)">模型名不对：控制台显示的名字（如 <b>Doubao-Seedream-5.0-lite 260128</b>）不能直接用，要填 API 的模型 ID（如 <b>doubao-seedream-5-0-260128</b>），或点「📋 拉取我账号里的可用模型」选一个，或填接入点 <b>ep-…</b>。</span>'
               : '<br><span style="color:var(--text-2)">ModelNotOpen = 该模型还没在控制台点「开通」；NotFound = 模型名写错（用「📋 拉取」按钮挑）。</span>'));
