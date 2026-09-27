@@ -272,7 +272,7 @@
     pollinations: { label: "免密钥 · Pollinations（只有 sana 小模型，风格不稳）", keyless: true },
     zhipu: { label: "智谱 CogView（约 ¥0.06/张 · 最便宜）", endpoint: "https://open.bigmodel.cn/api/paas/v4/images/generations", model: "cogview-4" },
     siliconflow: { label: "硅基流动 SiliconFlow（注册送额度，出图快）", endpoint: "https://api.siliconflow.cn/v1/images/generations", model: "Kwai-Kolors/Kolors" },
-    ark: { label: "火山方舟 豆包 Seedream（约 ¥0.22/张，有免费额度）", endpoint: "https://ark.cn-beijing.volces.com/api/v3/images/generations", model: "doubao-seedream-5-0-flash-260915" },
+    ark: { label: "火山方舟 豆包 Seedream（flash 约 ¥0.13/张，最划算）", endpoint: "https://ark.cn-beijing.volces.com/api/v3/images/generations", model: "doubao-seedream-5-0-flash-260915" },
     modelscope: { label: "魔搭 ModelScope（每日免费额度）", endpoint: "https://api-inference.modelscope.cn/v1/images/generations", model: "Qwen/Qwen-Image" },
     bailian: { label: "阿里百炼 通义万相（浏览器直连受限，不推荐）", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations", model: "wan2.6-t2i" },
     custom: { label: "自定义（OpenAI 兼容）", endpoint: "", model: "" },
@@ -287,6 +287,21 @@
   };
   const SIZE_DEFAULT_LADDER = ["1728x2304", "2048x2048", "1024x1024"];
   function sizeLadderFor(provider) { return SIZE_BY_PROVIDER[provider] || SIZE_DEFAULT_LADDER; }
+  // 各家「常用模型」一键填入（省得去控制台抄 ID）。价格按官方/公开报价标注，会变，仅供参考。
+  const MODEL_PICKS = {
+    ark: [
+      { id: "doubao-seedream-5-0-flash-260915", note: "flash · 约 ¥0.13/张 · 最快最省（推荐）" },
+      { id: "doubao-seedream-5-0-lite-260128", note: "lite · 约 ¥0.22/张 · 可出 4K" },
+      { id: "doubao-seedream-5-0-pro-260628", note: "pro · 更贵 · 分层/精细编辑" },
+    ],
+    zhipu: [
+      { id: "cogview-4", note: "约 ¥0.06/张 · 支持任意分辨率" },
+      { id: "cogview-3-flash", note: "flash · 通常有免费额度" },
+    ],
+    siliconflow: [{ id: "Kwai-Kolors/Kolors", note: "注册送额度 · 出图快" }],
+    modelscope: [{ id: "Qwen/Qwen-Image", note: "每日免费额度" }],
+    bailian: [{ id: "wan2.6-t2i", note: "通义万相" }],
+  };
 
   function getImageCfg() {
     try {
@@ -484,12 +499,17 @@
     return false;
   }
   let _autoFixed = false;
+  let _noWatermarkParam = false;      // 万一这个模型不认 watermark 字段，别再传
   async function callImageApi(info, prompt, size, seed, ref) {
+    const isArk = /ark\.cn-beijing\.volces\.com/.test(info.endpoint);
     const payload = { model: info.model, prompt: prompt, n: 1, size: size || DEFAULT_SIZE };
     // 火山方舟（Seedream）支持 seed：固定种子能让"长大"的各形态保持同一个角色的辨识度
-    if (/ark\.cn-beijing\.volces\.com/.test(info.endpoint) && seed != null) payload.seed = seed;
+    if (isArk && seed != null) payload.seed = seed;
     // 图生图参考（保持同一个角色）；只在方舟端点加，避免其它服务商报未知字段
-    if (ref && /ark\.cn-beijing\.volces\.com/.test(info.endpoint)) payload.image = ref;
+    if (ref && isArk) payload.image = ref;
+    // v115：Seedream 5.0 flash 等模型**默认会打「AI generated」水印**，必须显式关掉，
+    // 否则立绘右下角一直挂着一行水印（方舟专用参数，其它服务商不传）
+    if (isArk && !_noWatermarkParam) payload.watermark = false;
     const resp = await fetch(info.endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + info.key },
@@ -501,6 +521,11 @@
         const j = await resp.json();
         msg = (j.error && (j.error.message || j.error.code)) || j.message || j.msg || msg;
       } catch (e) { /* 忽略 */ }
+      // 这个模型不认 watermark 字段 → 记下来，**并立刻去掉重试一次**（不能因为关水印而出不了图）
+      if (payload.watermark === false && /watermark|unknown|unexpected|InvalidParameter/i.test(msg)) {
+        _noWatermarkParam = true;
+        return await callImageApi(info, prompt, size, seed, ref);
+      }
       throw new Error(msg);
     }
     const data = await resp.json();
@@ -1174,7 +1199,7 @@
   }
 
   window.Spirits = {
-    PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo, sizeLadderFor,
+    PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo, sizeLadderFor, MODEL_PICKS,
     STAGES, stageDef, stageInfo, growthOf,
     appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
     COLOR_ZH, HAIR_ZH, EYES_ZH, ACC_ZH, VIBE_ZH,

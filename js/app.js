@@ -3717,7 +3717,8 @@
       '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:12px">' +
       "默认用<b>免密钥</b>通道（Pollinations，国内可直连，出图偶尔不稳）。<br>" +
       "想更稳更漂亮，可填国内 API key（智谱 / 硅基流动 / 火山方舟），<b>key 只存本机、不入开源仓库</b>。</p>" +
-      '<div class="cfg-tip">💰 <b>怎么选最省</b>：按量付费即可 —— 智谱 CogView 约 <b>¥0.06/张</b>；魔搭、硅基流动有免费额度；方舟 Seedream 约 ¥0.22/张。<br>' +
+      '<div class="cfg-tip">💰 <b>怎么选最省</b>：按量付费即可。<b>方舟 Seedream 5.0 flash ≈ ¥0.13/张</b>（支持图生图、参考图不加钱，就选它）；智谱 CogView 约 ¥0.06/张；魔搭、硅基流动有免费额度。<br>' +
+      "⚠️ 方舟 flash 默认会打「AI generated」水印，本 App 已自动帮你传 <code>watermark:false</code> 关掉。<br>" +
       "⚠️ 别买「私有实例 / 专属部署」那种<b>按天计价</b>的（图像模型约 100 元/算力单元/天，一个月就是几千块），个人用按量就够。</div>" +
       '<div class="prov-row" id="provRow">' + opts + "</div>" +
       '<div class="form-group" style="margin-top:14px"><div class="form-label">形象风格 <small>换完记得点保存，再看精灵页</small></div>' +
@@ -3728,8 +3729,13 @@
       "</div></div>" +
       '<div class="form-group" style="margin-top:12px"><div class="form-label">API Key <small>走免密钥通道时留空</small></div>' +
       '<input class="form-input" id="imgKey" placeholder="sk-..." value="' + esc(cfg.key || "") + '"></div>' +
-      '<div class="form-group"><div class="form-label">模型名 <small>留空用该服务商默认；点下面按钮可直接拉你账号里的模型</small></div>' +
+      '<div class="form-group"><div class="form-label">模型名 <small>留空用该服务商默认；下面有一键填入，也能拉你账号里的模型</small></div>' +
       '<input class="form-input" id="imgModel" placeholder="如 doubao-seedream-5-0-flash-260915" value="' + esc(cfg.model || "") + '">' +
+      '<div class="prov-row" id="imgModelQuick" style="margin-top:6px">' +
+      (Spirits.MODEL_PICKS[cfg.provider || "pollinations"] || []).map((m) =>
+        '<button type="button" class="prov-chip" data-model="' + esc(m.id) + '" title="' + esc(m.note) + '">' + esc(m.id) + "</button>").join("") +
+      "</div>" +
+      '<div class="cfg-hint" id="modelNote">' + esc(((Spirits.MODEL_PICKS[cfg.provider || "pollinations"] || [])[0] || {}).note || "") + "</div>" +
       '<div id="imgModelPick" style="margin-top:6px"></div>' +
       '<button type="button" class="btn ghost" id="imgListModels" style="width:100%;margin-top:6px;font-size:12px">📋 拉取我账号里的可用模型</button></div>' +
       '<div class="form-group"><div class="form-label">接口地址 <small>用服务商默认时留空</small></div>' +
@@ -3752,7 +3758,29 @@
     let chosen = cfg.provider || "pollinations";
     let chosenStyle = cfg.style || Spirits.DEFAULT_STYLE;
     let chosenSize = cfg.size || Spirits.DEFAULT_SIZE;
-    modal.querySelectorAll(".prov-chip").forEach((b) => b.onclick = () => {
+    // 「常用模型」一键填入（首次打开也要绑上事件，不能只在换服务商时才绑）
+    function bindModelQuick(provider) {
+      const quick = $("#imgModelQuick"), note = $("#modelNote");
+      const picks = Spirits.MODEL_PICKS[provider] || [];
+      if (quick) {
+        quick.innerHTML = picks.map((m) =>
+          '<button type="button" class="prov-chip" data-model="' + esc(m.id) + '" title="' + esc(m.note) + '">' + esc(m.id) + "</button>").join("");
+        quick.querySelectorAll("[data-model]").forEach((b) => b.onclick = () => {
+          $("#imgModel").value = b.dataset.model;
+          quick.querySelectorAll("[data-model]").forEach((x) => x.classList.toggle("active", x === b));
+          if (note) {
+            const hit = picks.filter((m) => m.id === b.dataset.model)[0];
+            note.textContent = hit ? hit.note : "";
+          }
+        });
+      }
+      if (note) note.textContent = picks.length ? picks[0].note : "";
+    }
+    bindModelQuick(chosen);
+    // ⚠️ 只给这三行的 chip 绑"服务商/风格/尺寸"处理：
+    //    之前用 modal.querySelectorAll(".prov-chip") 会把「常用模型」快捷按钮也算进来，
+    //    点一下模型名就把 chosen 置成 undefined、说明也被清空（再点保存就把配置写坏了）
+    modal.querySelectorAll("#provRow .prov-chip, #styleRow .prov-chip, #sizeRow .prov-chip").forEach((b) => b.onclick = () => {
       if (b.dataset.style) {
         chosenStyle = b.dataset.style;
         modal.querySelectorAll("#styleRow .prov-chip").forEach((x) => x.classList.toggle("active", x === b));
@@ -3775,6 +3803,8 @@
         const lad = Spirits.sizeLadderFor(chosen);
         hint.textContent = "这家常用的尺寸：" + lad.slice(0, 3).join(" / ") + "（不对会自动换档并记住）";
       }
+      // 常用的模型名一键填入（跟着服务商换）
+      bindModelQuick(chosen);
     });
     $("#imgCfgCancel").onclick = done;
     mask.onclick = done;
