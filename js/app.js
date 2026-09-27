@@ -2797,10 +2797,12 @@
         msgEl.innerHTML = (r.ok ? "✅ " : "❌ ") + esc(r.msg);
       } catch (e) {
         const em = (e && e.message) || "测试失败";
-        msgEl.innerHTML = "❌ " + esc(em) +
-          (/NotFound|does not exist/i.test(em)
-            ? '<br><span style="color:var(--text-2)">模型名不对：控制台显示的名字（如 <b>Doubao-Seedream-5.0-lite</b>）不能直接用，要点上面「📋 拉取我账号里的可用模型」挑一个真实 ID（如 doubao-seedream-5-0-flash-260915），或填你创建的接入点 <b>ep-…</b>。</span>'
-            : '<br><span style="color:var(--text-2)">ModelNotOpen = 该模型还没在控制台点「开通」；NotFound = 模型名写错（用「📋 拉取」按钮挑）。</span>');
+        msgEl.innerHTML = "❌ " + esc(em).replace(/\*\*/g, "") +
+          (Spirits.isFetchFail(em)
+            ? '<br><span style="color:var(--text-2)">这个错几乎都是 <b>API Key 不对</b>：方舟在 key 无效时不返回跨域头，浏览器只能报 Failed to fetch。请点控制台密钥那行的「👁 / 📋 复制」，复制 <b>ark- 开头</b>的完整密钥（不是 api-key-… 这个名字）。</span>'
+            : (/NotFound|does not exist/i.test(em)
+              ? '<br><span style="color:var(--text-2)">模型名不对：控制台显示的名字（如 <b>Doubao-Seedream-5.0-lite 260128</b>）不能直接用，要填 API 的模型 ID（如 <b>doubao-seedream-5-0-260128</b>），或点「📋 拉取我账号里的可用模型」选一个，或填接入点 <b>ep-…</b>。</span>'
+              : '<br><span style="color:var(--text-2)">ModelNotOpen = 该模型还没在控制台点「开通」；NotFound = 模型名写错（用「📋 拉取」按钮挑）。</span>'));
       } finally {
         btn.disabled = false; btn.textContent = "🔍 测试连接";
         Spirits.setImageCfg(keep);   // 还原成已保存的配置
@@ -2814,13 +2816,17 @@
         endpoint: $("#imgEndpoint").value.trim(),
         style: chosenStyle,
       };
-      if (chosen !== "pollinations" && !next.key) { toast("这条路需要填 API Key；只想免费用就选「免密钥」"); return; }
+      if (chosen !== "pollinations") {
+        if (!next.key) { toast("这条路需要填 API Key；只想免费用就选「免密钥」"); return; }
+        const kh = Spirits.keyHint(next.key, chosen);
+        if (kh) { $("#imgCfgMsg").innerHTML = "⚠️ " + esc(kh); toast("API Key 看起来不对，先看弹层里的提示"); return; }
+      }
       Spirits.setImageCfg(next);
       done();
       toast("已切换：" + Spirits.PROVIDERS[chosen].label + " · " + Spirits.STYLE_PRESETS[chosenStyle].label);
       // 换了通道/风格：清掉缓存形象，下次进精灵页重新出图
       const st = Spirits.load();
-      Object.keys(st).forEach((k) => { st[k].imgUrl = ""; st[k].variant = 0; });
+      Object.keys(st).forEach((k) => { st[k].imgUrl = ""; st[k].variant = 0; st[k]._imgErr = ""; });
       Spirits.save(st);
       renderSettings();
     };

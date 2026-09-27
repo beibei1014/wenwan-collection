@@ -431,11 +431,19 @@
       : providerInfo(getImageCfg());
     const url = modelsUrlFrom(info.endpoint);
     if (!url) throw new Error("还没填接口地址");
-    if (!info.key) throw new Error("还没填 API Key");
-    const resp = await fetch(url, { headers: { "Authorization": "Bearer " + info.key } });
+    const kh = keyHint(info.key);
+    if (!info.key || /看起来是密钥的\*\*名称\*\*/.test(kh)) throw new Error(kh || "还没填 API Key");
+    let resp;
+    try {
+      resp = await fetch(url, { headers: { "Authorization": "Bearer " + info.key } });
+    } catch (e) {
+      // 方舟在 401 时不返回 CORS 头 → 浏览器只能报 Failed to fetch，这里翻译成"key 不对"
+      throw new Error("请求被拦下（Failed to fetch）。最常见原因：**API Key 不对**（方舟在 key 错误时不返回跨域头，前端只能看到这个错）。请确认填的是 ark- 开头的密钥本体，而不是 api-key-… 这个名称。");
+    }
     if (!resp.ok) {
       let m = "HTTP " + resp.status;
       try { const j = await resp.json(); m = (j.error && (j.error.message || j.error.code)) || m; } catch (e) { /* 忽略 */ }
+      if (resp.status === 401) m += "（API Key 无效或已被删除）";
       throw new Error(m);
     }
     const j = await resp.json();
@@ -448,34 +456,55 @@
   }
 
   /* ---------- 模型名自动纠正（用户常把控制台显示名填进来，如 Doubao-Seedream-5.0-lite） ---------- */
-  // 把显示名规整成可比形式：小写、点/空格→连字符、去掉末尾日期与多余后缀
+  // 把显示名规整成可比形式：小写、点/空格→连字符、压缩连字符（**保留末尾版本号**，它是匹配的最强线索）
   function normModelName(s) {
-    return String(s || "").toLowerCase().replace(/[.\s_]+/g, "-").replace(/-\d{6}$/, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
+    return String(s || "").toLowerCase().replace(/[.\s_]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
   }
+  function stripVer(s) { return String(s || "").replace(/-\d{6}$/, ""); }
   function pickBestModel(typed, candidates) {
-    const t = normModelName(typed);
-    if (!t || !candidates || !candidates.length) return "";
-    // 1) 规整后完全相同
-    let hit = candidates.find((c) => normModelName(c) === t);
+    if (!typed || !candidates || !candidates.length) return "";
+    const rawTyped = normModelName(typed);                     // 例：doubao-seedream-5-0-lite-260128
+    const typedVer = (rawTyped.match(/(\d{6})$/) || [])[1] || ""; // 用户填的版本号（如 260128）
+    const t = stripVer(rawTyped);                              // 用于比词
+    if (!t) return "";
+    // 1) 规整后完全相等（含版本号或去掉版本号后）
+    let hit = candidates.find((c) => normModelName(c) === rawTyped);
+    if (!hit) hit = candidates.find((c) => stripVer(normModelName(c)) === t);
     if (hit) return hit;
-    // 2) 去掉日期后相同
-    hit = candidates.find((c) => normModelName(c).replace(/-\d{6}$/, "") === t.replace(/-\d{6}$/, ""));
-    if (hit) return hit;
-    // 3) 同族匹配：按词命中的数量打分（seedream / 5 / 0 / lite|flash / pro …）
-    const words = t.split("-").filter((w) => w.length > 1);
+    // 2) 同族打分
+    const words = t.split("-").filter(Boolean);
     let best = "", bestScore = 0;
     candidates.forEach((c) => {
       const cc = normModelName(c);
       let score = 0;
       words.forEach((w) => {
-        // lite 与 flash 视为同一档（控制台叫 lite、API 常叫 flash）
-        const w2 = (w === "lite") ? "flash" : w;
+        const w2 = (w === "lite") ? "flash" : (w === "flash" ? "lite" : w);   // 控制台叫 lite、API 常叫 flash
         if (cc.includes(w) || cc.includes(w2)) score += 1;
       });
       if (/seedream/.test(cc) && /seedream/.test(t)) score += 1;
+      // 版本号完全一致 = 最强信号（如控制台 "5.0-lite 260128" → doubao-seedream-5-0-260128）
+      if (typedVer && cc.indexOf(typedVer) >= 0) score += 4;
       if (score > bestScore) { bestScore = score; best = c; }
     });
-    return bestScore >= Math.max(2, words.length) ? best : "";
+    return bestScore >= Math.max(3, words.length) ? best : "";
+  }
+
+  /* ---------- Key 体检：方舟把 401 的 CORS 头也省了，前端只会看到 "Failed to fetch"，所以先拦明显填错 ---------- */
+  function keyHint(key, provider) {
+    const k = String(key || "").trim();
+    if (!k) return "还没填 API Key";
+    if (/^api-key-/i.test(k) || /^api[-_]?key[-_]/i.test(k)) {
+      return "这看起来是密钥的**名称**（api-key-…），不是密钥本身。请点控制台密钥那行的「👁 显示 / 📋 复制」，复制以 ark- 开头的那一整串。";
+    }
+    if (provider === "ark" && !/^ark-/.test(k) && !/^[0-9a-f-]{30,}$/i.test(k)) {
+      return "方舟的 API Key 一般以 ark- 开头，请确认复制完整（别只复制了名字或前半段）。";
+    }
+    if (provider === "siliconflow" && !/^sk-/.test(k)) return "硅基流动的 key 一般以 sk- 开头。";
+    if (provider === "zhipu" && k.length < 20) return "智谱的 key 看起来不完整。";
+    return "";
+  }
+  function isFetchFail(msg) {
+    return /Failed to fetch|NetworkError|Load failed|网络/i.test(String(msg || ""));
   }
 
   /* ---------- 连通性自检（设置页「测试连接」用；出错时把服务端原因带出来） ---------- */
@@ -497,7 +526,7 @@
   window.Spirits = {
     PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, getImageCfg, setImageCfg, providerInfo,
     TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText, listModels,
-    promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel,
+    promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
     localPersona, persona, chat, letter, localChat, localLetter,
     todayKey, load, save, ensureIn,
   };
