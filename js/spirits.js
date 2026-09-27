@@ -346,6 +346,19 @@
   };
   function refSupportOf(provider) { return REF_SUPPORT[provider] || "try"; }
   function refSupportText(provider) { return REF_TEXT[refSupportOf(provider)] || REF_TEXT.try; }
+  /* ---------- 各家 API Key 长什么样（填错是最高频的坑） ----------
+     用户最容易踩的：火山方舟控制台里那串 `api-key-20260927150936` 是密钥**名称**，
+     真正的密钥要点「复制 / 👁 显示」才看得到，形如 `ark-xxxxxxxx-…`。 */
+  const KEY_UI_HINT = {
+    ark: "方舟：要填 <b>ark- 开头</b>的那一串。控制台里显示的 <code>api-key-2026…</code> 是密钥的<b>名称</b>，不是密钥 → 点它旁边的「复制 / 👁」拿到 ark- 开头的那串。",
+    zhipu: "智谱：形如 <code>xxxxxxxx.yyyyyyyy</code>（<b>中间有一个点</b>），在「API Keys」页面点复制即可。",
+    siliconflow: "硅基流动：<b>sk- 开头</b>的一长串。",
+    modelscope: "魔搭：在「访问令牌 / SDK 令牌」页面复制，一般以 <code>ms-</code> 开头。",
+    bailian: "阿里百炼：<b>sk- 开头</b>（不推荐用浏览器直连，容易跨域失败）。",
+    custom: "按你用的服务商文档复制（OpenAI 兼容接口一般是 sk- 开头）。",
+    pollinations: "免密钥通道不用填 key。",
+  };
+  function keyUiHint(provider) { return KEY_UI_HINT[provider] || KEY_UI_HINT.custom; }
   // 各家「常用模型」一键填入（省得去控制台抄 ID）。价格按官方/公开报价标注，会变，仅供参考。
   const MODEL_PICKS = {
     ark: [
@@ -1281,7 +1294,7 @@
   }
 
   window.Spirits = {
-    PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, SIZE_PRESETS_BY_PROVIDER, sizePresetsFor, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo, sizeLadderFor, MODEL_PICKS, refSupportOf, refSupportText,
+    PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, SIZE_PRESETS_BY_PROVIDER, sizePresetsFor, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo, sizeLadderFor, MODEL_PICKS, refSupportOf, refSupportText, keyUiHint,
     STAGES, stageDef, stageInfo, growthOf,
     appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
     COLOR_ZH, HAIR_ZH, EYES_ZH, ACC_ZH, VIBE_ZH,

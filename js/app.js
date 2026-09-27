@@ -3763,7 +3763,8 @@
         esc(Spirits.STYLE_PRESETS[k].label) + "</button>").join("") +
       "</div></div>" +
       '<div class="form-group" style="margin-top:12px"><div class="form-label">API Key <small>走免密钥通道时留空</small></div>' +
-      '<input class="form-input" id="imgKey" placeholder="sk-..." value="' + esc(cfg.key || "") + '"></div>' +
+      '<input class="form-input" id="imgKey" placeholder="ark-... / sk-... / xxxx.yyyy" value="' + esc(cfg.key || "") + '">' +
+      '<div class="cfg-hint" id="keyUiHint"></div></div>' +
       '<div class="form-group"><div class="form-label">模型名 <small>留空用该服务商默认；下面有一键填入，也能拉你账号里的模型</small></div>' +
       '<input class="form-input" id="imgModel" placeholder="如 doubao-seedream-5-0-flash-260915" value="' + esc(cfg.model || "") + '">' +
       '<div class="prov-row" id="imgModelQuick" style="margin-top:6px">' +
@@ -3834,6 +3835,8 @@
     function bindRefHint(provider) {
       const el = $("#refHint");
       if (el) el.innerHTML = "🖼 <b>图生图（突破/换形象时带参考图）</b>：" + esc(Spirits.refSupportText(provider));
+      const kh = $("#keyUiHint");
+      if (kh) kh.innerHTML = "🔑 " + Spirits.keyUiHint(provider);
     }
     bindRefHint(chosen);
     modal.querySelectorAll("#provRow .prov-chip, #styleRow .prov-chip").forEach((b) => b.onclick = () => {
