@@ -2439,6 +2439,8 @@
   }
 
   /* ---------- v97：走 API 通道真正出图（POST 拿图） ---------- */
+  // 统一的存档尺寸：**所有路径都用同一档**（首出/换形象/换设定/突破），避免"缩略图与立绘清晰度不一致"
+  const SPIRIT_IMG_SIZE = 512;
   // 把出图结果压成小图存本地（火山方舟返回的 URL 只有 24 小时有效，所以 b64 一律压成 data URI 长期保存）
   function shrinkToDataUri(src, max, quality) {
     return new Promise((resolve) => {
@@ -2459,6 +2461,40 @@
       img.src = src;
     });
   }
+  // 出图计数（帮用户盯住免费额度）：单只精灵 rec.genCount + 本机累计
+  function bumpGenCount(rec) {
+    try {
+      rec.genCount = (Number(rec.genCount) || 0) + 1;
+      const t = Number(localStorage.getItem("ww_gen_total") || "0") + 1;
+      localStorage.setItem("ww_gen_total", String(t));
+    } catch (e) { /* 忽略 */ }
+  }
+  function genTotal() { try { return Number(localStorage.getItem("ww_gen_total") || "0"); } catch (e) { return 0; } }
+  // 把一次出图结果落地到精灵记录（含进化史 + 计数），所有路径共用，保证"卡片/弹层/突破"看到的是同一张
+  async function saveSpiritImage(item, rec, res, stage) {
+    let url = res.url || "";
+    if (res.b64) {
+      const small = await shrinkToDataUri("data:image/png;base64," + res.b64, SPIRIT_IMG_SIZE, 0.86);
+      url = small || ("data:image/png;base64," + res.b64);
+    }
+    if (!url) return "";
+    const hist = Array.isArray(rec.imgHistory) ? rec.imgHistory : [];
+    const last = hist[hist.length - 1];
+    if (!(last && last.url === url)) hist.push({ stage: stage || rec.stage || 1, url, at: Date.now() });
+    rec.imgHistory = hist.slice(-8);
+    rec.imgUrl = url;
+    rec.imgAt = Date.now();
+    rec.imgErr = "";
+    bumpGenCount(rec);
+    return url;
+  }
+  // 判断是否需要重新出图：**data URI 是永久的，永不重出**；只有 http(s) 链接（方舟 24h 过期）才要续期
+  function spiritImgStale(rec) {
+    const u = rec && rec.imgUrl;
+    if (!u) return true;
+    if (/^data:/.test(u)) return false;                    // 本地存好的图 → 永久有效
+    return (Date.now() - (rec.imgAt || 0)) > 20 * 3600 * 1000;   // 外链 → 20 小时后续期
+  }
   // 逐个补形象：API 通道需要 POST 出图 → 缓存到本地精灵记录里
   let _imgBusy = false;
   async function ensureSpiritImages(list) {
@@ -2471,42 +2507,23 @@
       for (const it of list) {
         const st = Spirits.load();
         const rec = Spirits.ensureIn(st, it.id);
-        const fresh = rec.imgUrl && (Date.now() - (rec.imgAt || 0) < 20 * 3600 * 1000);
-        if (fresh) continue;
-        if (location.hash === "#/spirit" && rec.imgUrl) {
-          // 已有（可能过期的）图先显示着，避免闪
-        }
+        if (!spiritImgStale(rec)) continue;          // 已经是本地存好的图 → 不再烧额度
         try {
           const r = await Spirits.generateImage(it, rec.variant || 0, null, rec.stage || 1, { appearanceSeed: rec.appearanceSeed || 0 });
-          if (r.b64) {
-            const small = await shrinkToDataUri("data:image/png;base64," + r.b64, 384, 0.85);
-            rec.imgUrl = small || ("data:image/png;base64," + r.b64);
-          } else {
-            rec.imgUrl = r.url || "";
-          }
-          rec.imgAt = Date.now();
-          // 进化史：把每次出图按形态记下来（首次也记，这样能看到「幼生期 → 完成体」全过程）
-          const hist = Array.isArray(rec.imgHistory) ? rec.imgHistory : [];
-          const curStage = rec.stage || 1;
-          const last = hist[hist.length - 1];
-          const sameImg = last && last.url === rec.imgUrl;
-          if (rec.imgUrl && !sameImg) {
-            hist.push({ stage: curStage, url: rec.imgUrl, at: Date.now() });
-            rec.imgHistory = hist.slice(-8);
-          }
+          await saveSpiritImage(it, rec, r, rec.stage || 1);
+          Spirits.save(st);
           changed = true;
           if (r.autoFixed) toast("模型名不对，已自动改用：" + r.autoFixed);
         } catch (e) {
           const msg = (e && e.message) || "出图失败";
-          if (!rec._imgErr || rec._imgErr !== msg) { rec._imgErr = msg; changed = true; rec.imgUrl = ""; }
+          if (rec._imgErr !== msg) { rec._imgErr = msg; rec.imgUrl = ""; changed = true; }
+          Spirits.save(st);
         }
-        Spirits.save(st);
       }
       if (changed && location.hash === "#/spirit") renderSpiritPage();
-      // 把最近一次错误提示出来，方便排查（只在精灵页提示）
       const st2 = Spirits.load();
       const errs = Object.keys(st2).map((k) => st2[k]._imgErr).filter(Boolean);
-      if (errs.length && location.hash === "#/spirit" && !errs._shown) { toast("出图失败：" + errs[0]); }
+      if (errs.length && location.hash === "#/spirit") toast("出图失败：" + errs[0]);
     } catch (e) { /* 静默 */ }
     _imgBusy = false;
   }
@@ -2653,7 +2670,8 @@
       '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div>" +
       // 固定人设：突破/换形象都保留这些特征（不会变性、不会换人）
       '<div class="spirit-look">🔒 ' + esc(Spirits.appearanceText(ap)) +
-      '<button type="button" class="link-btn" id="spReRoll">🎲 换外观设定</button></div>' +
+      '<button type="button" class="link-btn" id="spReRoll">🎲 换外观设定</button>' +
+      '<span class="spirit-gen-note">已为它出图 ' + (Number(rec.genCount) || 1) + " 张 · 本机累计 " + genTotal() + " 张</span></div>" +
       (si.isMax
         ? '<div class="spirit-prog max">👑 已是完成体，不再进阶</div>'
         : '<div class="spirit-prog big"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
@@ -2693,11 +2711,9 @@
       if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; }
       try {
         const res = await Spirits.generateImage(item, r.variant || 0, null, r.stage || 1, { appearanceSeed: r.appearanceSeed });
-        let url = res.url || "";
-        if (res.b64) url = (await shrinkToDataUri("data:image/png;base64," + res.b64, 640, 0.85)) || ("data:image/png;base64," + res.b64);
         const s2 = Spirits.load();
         const r2 = Spirits.ensureIn(s2, item.id);
-        if (url) { r2.imgUrl = url; r2.imgAt = Date.now(); }
+        await saveSpiritImage(item, r2, res, r2.stage || 1);
         Spirits.save(s2);
         close();
         showSpiritModal(item);   // 重新打开，刷新人设标签与立绘
@@ -2719,8 +2735,6 @@
       try {
         // 突破：把"突破前那张图"当参考图传过去 → 保证是同一个人长大，不会变性/换人
         const res = await Spirits.generateImage(item, 0, null, nextStage, { appearanceSeed: r0.appearanceSeed || 0, ref: r0.imgUrl || "" });
-        let url = res.url || "";
-        if (res.b64) url = (await shrinkToDataUri("data:image/png;base64," + res.b64, 640, 0.85)) || ("data:image/png;base64," + res.b64);
         const s1 = Spirits.load();
         const r1 = Spirits.ensureIn(s1, item.id);
         const hist = Array.isArray(r1.imgHistory) ? r1.imgHistory : [];
@@ -2728,11 +2742,9 @@
         // 记下"突破前"的旧形态（若还没记过才补）
         if (r1.imgUrl && !(lastH && lastH.url === r1.imgUrl)) hist.push({ stage: r1.stage || 1, url: r1.imgUrl, at: Date.now() });
         r1.stage = nextStage;
-        if (url) hist.push({ stage: nextStage, url, at: Date.now() });
         r1.imgHistory = hist.slice(-8);
-        if (url) r1.imgUrl = url;
-        r1.imgAt = Date.now();
-        r1._imgErr = "";
+        // 用统一的存档逻辑（512px + 进化史 + 计数），保证卡片/弹层/突破看到的是同一张
+        const url = await saveSpiritImage(item, r1, res, nextStage);
         Spirits.save(s1);
         close();
         // 突破演出：全屏特效 + 提示
@@ -2753,35 +2765,28 @@
       }
     };
 
-    // 换形象
+    // 换形象（换一张更好看的"同一个角色"：不清空旧图、并带上上一张作参考）
     $("#spNewLook").onclick = async () => {
       const cfg2 = Spirits.getImageCfg();
       const s = Spirits.load();
       const r = Spirits.ensureIn(s, item.id);
+      const prevImg = r.imgUrl || "";
       r.variant = (r.variant || 0) + 1;
-      r.imgUrl = "";
-      r.imgAt = 0;
       r._imgErr = "";
       Spirits.save(s);
       const img = modal.querySelector("img[data-item]");
       if (cfg2.provider === "pollinations") {
-        // 免密钥通道：换 seed 重新出图（顺带先退回本地形象，避免看到旧图）
-        if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; img.src = Spirits.pollinationsUrl(item, r.variant); }
+        // 免密钥通道：换 seed 重新出图
+        if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; img.src = Spirits.pollinationsUrl(item, r.variant, null, r.stage || 1, Spirits.appearanceOf(item, r.appearanceSeed || 0)); }
         toast("换个形象中…（几秒钟出图）");
         return;
       }
-      // API 通道：重新 POST 出图
-      if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; }
-      toast("正在用 AI 重画…（消耗 1 次出图）");
+      toast("正在重画同一个角色…（消耗 1 次出图）");
       try {
-        const res = await Spirits.generateImage(item, r.variant, null, r.stage || 1, { appearanceSeed: r.appearanceSeed || 0, ref: r.imgUrl || "" });
-        let url = res.url || "";
-        if (res.b64) url = (await shrinkToDataUri("data:image/png;base64," + res.b64, 384, 0.85)) || ("data:image/png;base64," + res.b64);
+        const res = await Spirits.generateImage(item, r.variant, null, r.stage || 1, { appearanceSeed: r.appearanceSeed || 0, ref: prevImg });
         const s2 = Spirits.load();
         const r2 = Spirits.ensureIn(s2, item.id);
-        r2.imgUrl = url;
-        r2.imgAt = Date.now();
-        r2._imgErr = "";
+        const url = await saveSpiritImage(item, r2, res, r2.stage || 1);
         Spirits.save(s2);
         if (img && url) { img.dataset.fellback = ""; img.src = url; }
         toast("形象换好了 🍡");
@@ -2951,7 +2956,7 @@
         Spirits.setImageCfg(keep);   // 还原成已保存的配置
       }
     };
-    $("#imgCfgSave").onclick = () => {
+    $("#imgCfgSave").onclick = async () => {
       const next = {
         provider: chosen,
         key: $("#imgKey").value.trim(),
@@ -2965,13 +2970,28 @@
         const kh = Spirits.keyHint(next.key, chosen);
         if (kh) { $("#imgCfgMsg").innerHTML = "⚠️ " + esc(kh); toast("API Key 看起来不对，先看弹层里的提示"); return; }
       }
+      // 换通道 / 换风格 / 换尺寸 → 已出的图要重画，先问一句（别静默烧额度）
+      const keep = Spirits.getImageCfg();
+      const willRedraw = (keep.provider !== next.provider || keep.style !== next.style || keep.size !== next.size);
+      const n = willRedraw ? spiritItems().filter((it) => {
+        const r = Spirits.load()[it.id];
+        return r && r.imgUrl;
+      }).length : 0;
+      if (n > 0) {
+        const yes = await confirmModal("要重画 " + n + " 只精灵吗？", "改了通道 / 画风 / 尺寸后，已有立绘需要重新生成，会消耗 " + n + " 次出图额度（每只 1 张）。", "重画 " + n + " 张", true);
+        if (!yes) { showImageCfgModal(); return; }   // 取消：把配置弹层还回来，别让用户白点一次
+        done();
+        Spirits.setImageCfg(next);
+        const st = Spirits.load();
+        Object.keys(st).forEach((k) => { st[k].imgUrl = ""; st[k].imgAt = 0; st[k]._imgErr = ""; });
+        Spirits.save(st);
+        toast("已切换：" + Spirits.PROVIDERS[chosen].label + " · " + Spirits.STYLE_PRESETS[chosenStyle].label + "（正在重画 " + n + " 张）");
+        renderSettings();
+        return;
+      }
       Spirits.setImageCfg(next);
       done();
       toast("已切换：" + Spirits.PROVIDERS[chosen].label + " · " + Spirits.STYLE_PRESETS[chosenStyle].label);
-      // 换了通道/风格：清掉缓存形象，下次进精灵页重新出图
-      const st = Spirits.load();
-      Object.keys(st).forEach((k) => { st[k].imgUrl = ""; st[k].variant = 0; st[k]._imgErr = ""; });
-      Spirits.save(st);
       renderSettings();
     };
   }
@@ -4937,7 +4957,7 @@
       html += '<button class="setting-item" id="btnImgCfg"><div>' +
         '<div class="t">🎨 精灵形象 · 绘图通道</div>' +
         '<div class="d">当前：' + esc(info.label) + ' · ' + esc((Spirits.STYLE_PRESETS[cfg.style] || Spirits.STYLE_PRESETS[Spirits.DEFAULT_STYLE]).label) +
-        ' · 已诞生 ' + spiritCount + " 只精灵</div>" +
+        " · " + spiritCount + " 只精灵 · 本机累计出图 " + genTotal() + " 张</div>" +
         '</div><span style="color:var(--text-2)">›</span></button>';
       html += '<button class="setting-item" id="btnTextCfg"><div>' +
         '<div class="t">🤖 AI 文字模型（助手 + 精灵性格/来信）</div>' +

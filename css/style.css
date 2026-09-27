@@ -1140,7 +1140,8 @@ img { display:block; }
   box-shadow:var(--shadow); transition:transform .12s;
 }
 .spirit-card:active { transform:scale(.985); }
-.spirit-img { border-radius:14px; object-fit:cover; background:#fff; flex-shrink:0; border:1px solid var(--line); }
+/* 缩略图与立绘是同一张图：缩略图从上方裁切（露出脸/上半身），看起来就是这只精灵 */
+.spirit-img { border-radius:14px; object-fit:cover; object-position:center top; background:#fff; flex-shrink:0; border:1px solid var(--line); }
 /* 弹层里要看清全身立绘：用 contain + 竖长画框，别把立绘裁成一个头 */
 .spirit-img.big { border-radius:18px; object-fit:contain; width:auto !important; height:auto !important; max-width:100%; max-height:46vh; }
 .spirit-meta { min-width:0; flex:1; }
@@ -1220,6 +1221,7 @@ img { display:block; }
   border-radius:10px; padding:6px 8px; margin-top:10px; line-height:1.6; word-break:break-all;
 }
 .spirit-look .link-btn { font-size:11px; margin-left:6px; }
+.spirit-gen-note { display:block; font-size:10px; color:var(--text-2); margin-top:3px; }
 
 /* 突破演出 */
 .spirit-evolve { text-align:center; }
