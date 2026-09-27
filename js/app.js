@@ -2486,6 +2486,7 @@
           }
           rec.imgAt = Date.now();
           changed = true;
+          if (r.autoFixed) toast("模型名不对，已自动改用：" + r.autoFixed);
         } catch (e) {
           const msg = (e && e.message) || "出图失败";
           if (!rec._imgErr || rec._imgErr !== msg) { rec._imgErr = msg; changed = true; rec.imgUrl = ""; }
@@ -2795,8 +2796,11 @@
         const r = await Spirits.testImage();
         msgEl.innerHTML = (r.ok ? "✅ " : "❌ ") + esc(r.msg);
       } catch (e) {
-        msgEl.innerHTML = "❌ " + esc((e && e.message) || "测试失败") +
-          '<br><span style="color:var(--text-2)">提示：方舟报 ModelNotOpen = 该模型还没在控制台点「开通」；报 NotFound = 模型名写错了。</span>';
+        const em = (e && e.message) || "测试失败";
+        msgEl.innerHTML = "❌ " + esc(em) +
+          (/NotFound|does not exist/i.test(em)
+            ? '<br><span style="color:var(--text-2)">模型名不对：控制台显示的名字（如 <b>Doubao-Seedream-5.0-lite</b>）不能直接用，要点上面「📋 拉取我账号里的可用模型」挑一个真实 ID（如 doubao-seedream-5-0-flash-260915），或填你创建的接入点 <b>ep-…</b>。</span>'
+            : '<br><span style="color:var(--text-2)">ModelNotOpen = 该模型还没在控制台点「开通」；NotFound = 模型名写错（用「📋 拉取」按钮挑）。</span>');
       } finally {
         btn.disabled = false; btn.textContent = "🔍 测试连接";
         Spirits.setImageCfg(keep);   // 还原成已保存的配置

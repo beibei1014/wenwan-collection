@@ -140,6 +140,28 @@
     if (!info.key) throw new Error("还没填 API Key");
     if (!info.endpoint) throw new Error("还没填接口地址");
     const prompt = promptFor(item, styleKey || cfg.style || DEFAULT_STYLE);
+    try {
+      return await callImageApi(info, prompt);
+    } catch (e) {
+      // 模型名不对（常见：把控制台显示名 Doubao-Seedream-5.0-lite 填进来了）→ 拉账号模型列表自动纠正一次
+      const msg = (e && e.message) || "";
+      if (!/NotFound|does not exist|not exist|InvalidEndpointOrModel/i.test(msg) || _autoFixed) throw e;
+      let fixed = "";
+      try {
+        const ids = await listModels("image", { provider: cfg.provider, key: info.key, endpoint: info.endpoint });
+        fixed = pickBestModel(info.model, ids);
+      } catch (e2) { /* 拉不到就算了 */ }
+      if (!fixed || normModelName(fixed) === normModelName(info.model)) throw e;
+      _autoFixed = true;
+      const next = Object.assign({}, cfg, { model: fixed });
+      setImageCfg(next);
+      const r = await callImageApi(providerInfo(next), prompt);
+      r.autoFixed = fixed;   // 交给界面提示"已自动改用 xxx"
+      return r;
+    }
+  }
+  let _autoFixed = false;
+  async function callImageApi(info, prompt) {
     const payload = { model: info.model, prompt: prompt, n: 1, size: "1024x1024" };
     const resp = await fetch(info.endpoint, {
       method: "POST",
@@ -425,6 +447,37 @@
     return filtered.length ? filtered : ids.slice(0, 40);
   }
 
+  /* ---------- 模型名自动纠正（用户常把控制台显示名填进来，如 Doubao-Seedream-5.0-lite） ---------- */
+  // 把显示名规整成可比形式：小写、点/空格→连字符、去掉末尾日期与多余后缀
+  function normModelName(s) {
+    return String(s || "").toLowerCase().replace(/[.\s_]+/g, "-").replace(/-\d{6}$/, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  }
+  function pickBestModel(typed, candidates) {
+    const t = normModelName(typed);
+    if (!t || !candidates || !candidates.length) return "";
+    // 1) 规整后完全相同
+    let hit = candidates.find((c) => normModelName(c) === t);
+    if (hit) return hit;
+    // 2) 去掉日期后相同
+    hit = candidates.find((c) => normModelName(c).replace(/-\d{6}$/, "") === t.replace(/-\d{6}$/, ""));
+    if (hit) return hit;
+    // 3) 同族匹配：按词命中的数量打分（seedream / 5 / 0 / lite|flash / pro …）
+    const words = t.split("-").filter((w) => w.length > 1);
+    let best = "", bestScore = 0;
+    candidates.forEach((c) => {
+      const cc = normModelName(c);
+      let score = 0;
+      words.forEach((w) => {
+        // lite 与 flash 视为同一档（控制台叫 lite、API 常叫 flash）
+        const w2 = (w === "lite") ? "flash" : w;
+        if (cc.includes(w) || cc.includes(w2)) score += 1;
+      });
+      if (/seedream/.test(cc) && /seedream/.test(t)) score += 1;
+      if (score > bestScore) { bestScore = score; best = c; }
+    });
+    return bestScore >= Math.max(2, words.length) ? best : "";
+  }
+
   /* ---------- 连通性自检（设置页「测试连接」用；出错时把服务端原因带出来） ---------- */
   async function testImage() {
     const cfg = getImageCfg();
@@ -444,7 +497,7 @@
   window.Spirits = {
     PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, getImageCfg, setImageCfg, providerInfo,
     TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText, listModels,
-    promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf,
+    promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel,
     localPersona, persona, chat, letter, localChat, localLetter,
     todayKey, load, save, ensureIn,
   };

@@ -85,7 +85,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v99）
+## 五、功能清单（截至 v100）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -306,6 +306,16 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
     - **踩坑修复**：URL 推导第一版写成 `endpoint.replace(/\/[^/]*$/, "/models")` → 把 `…/api/v3/images/generations` 推成了 `…/api/v3/**images**/models`（错的）。改成**先去掉结尾的 `/generations|/completions`，再去掉 `/images|/chat`，最后拼 `/models`**，并单测覆盖 4 种真实地址（方舟 images/chat、硅基流动、智谱）全部正确。
     - **验证**：单元 **6/6**（4 种 endpoint 的 models 地址推导 + 图片/文本清单过滤正确）。
     - **给用户的结论**：先开通 **Doubao-Seedream-5.0-lite**（50 张免费），然后在 App 里点「📋 拉取我账号里的可用模型」挑一个 ID 填上（推荐先试 `doubao-seedream-5-0-flash-260915`）；如果报 ModelNotOpen 说明还没开通、报 NotFound 说明 ID 不对。缓存 v99
+82. **🔧 模型名自动纠正（v100）**：用户手机上实测报错：
+```
+出图失败：The model or endpoint doubao-seedream-5.0-lite does not exist or you do not have access to it.
+```
+    → **他把控制台显示名（`Doubao-Seedream-5.0-lite`）填进了「模型名」**，而 API 只认模型 ID（`doubao-seedream-5-0-flash-260915` 这种）或接入点 `ep-…`。这是接入方舟**最高频的坑**，所以在代码里直接兜住：
+    - `normModelName(s)`：小写、`._空格`→`-`、去末尾日期、压缩连字符；`pickBestModel(typed, candidates)` 三级匹配：① 规整后全等 → ② 去日期后全等 → ③ **同族打分**（按词命中数，且 **`lite` 与 `flash` 视为同一档**，因为控制台叫 lite、API 叫 flash），得分不足则**返回空**（不乱改用户填的东西）。
+    - `generateImage()` 遇到 `NotFound / does not exist / InvalidEndpointOrModel` 时：拉一次账号模型列表 → `pickBestModel` 挑一个 → **写回配置并自动重试一次**（`_autoFixed` 只做一次，避免死循环），成功后返回 `autoFixed` 字段，界面 toast「模型名不对，已自动改用：xxx」。之后所有出图直接用纠正后的 ID，不再浪费失败请求。
+    - 「🔍 测试连接」的报错提示也升级：NotFound 时明确写出「控制台显示名不能直接用，要点『📋 拉取我账号里的可用模型』挑真实 ID，或填接入点 ep-…」。
+    - **验证**：单元 **8/8**（显示名规整、lite→flash 同档匹配、精确 ID 不动、乱填不改、填显示名时自动纠正并出图成功、纠正写回配置、请求序列为「错名 → 正确 ID」、后续不再重复纠正）。
+    - **⚠️ 事故复盘（网络层，与代码无关）**：用户这次错误的根因是**控制台 UI 显示名 ≠ API 模型 ID**，而方舟的 `/api/v3/models` 目录里也确实**没有 lite 这个 ID**（135 条里 Seedream 只有 7 个 ID，见第 81 条），所以只能靠「拉取真实列表 / 用接入点 ep- / 自动纠正」三者之一解决。缓存 v100
 
 > 🧪 **可复用的端到端测试套路（推荐）**：把 `index.html` 的 body 注入一个临时页面 → 在脚本前定义 `window.SUPABASE_CONFIG` 与假 `window.supabase.createClient`（`auth.getSession/getUser` 返回假 session，`from(t)` 返回链式对象，`then` 直接 resolve 固定数据）→ 按原顺序动态 `appendChild` 加载 `js/*.js` → `location.hash` 切路由 + 断言。这样能用真实 `app.js` 验证交互，不用登录、不碰线上库。
 
