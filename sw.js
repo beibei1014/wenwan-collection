@@ -1,5 +1,5 @@
 /* Service Worker — 网络优先 + 缓存兜底（PWA 离线可用，更新即时生效） */
-const CACHE = "wenwan-v111";
+const CACHE = "wenwan-v112";
 
 self.addEventListener("install", (e) => {
   self.skipWaiting();
@@ -36,3 +36,4 @@ self.addEventListener("fetch", (e) => {
       )
   );
 });
+

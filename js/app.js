@@ -2445,55 +2445,93 @@
       ' loading="lazy" style="width:' + size + "px;height:" + size + 'px' + (extraStyle ? ";" + extraStyle : "") + '">';
   }
 
-  /* ---------- 头像取景：从立绘里自动找出"脑袋"那一块 ----------
-     出图构图每张都不一样（角色有时很小、有时贴顶，之前甚至被画成多格图鉴），
-     固定比例裁切必然有的裁到空白、有的把脸切掉 → 所以按**图片内容**自动算：
-     ① 用四角颜色认出背景色；② 找出人物的外接框；③ 取最上面 40%（头 + 一点肩）；
-     ④ 横向以"最上面 20% 那一段的像素重心"为中心（抬手/歪头的也不会偏）。
-     结果存成比例 {l,t,w,ar}，渲染时换算成 img 的放大与偏移（见 spiritThumbHtml）。 */
+  /* ---------- 头像取景 v2（v113）：从立绘里稳稳找出"脸" ----------
+     v112 的老算法取"人物外接框最上面 40%"，实测会裁到头发/空白（新形象有大头发、有道具、背景有渐变）。
+     新算法：
+       ① 背景色 = **四周所有边缘像素**的众数（量化到 4bit/通道）→ 抗渐变、抗四角有杂物
+       ② 逐行统计前景宽度，做 3 行平滑 → 得到"上窄下宽"的轮廓
+       ③ 从上往下找**第一个宽度局部极大**= 头（含头发）的最宽处
+       ④ 再往后找**第一个宽度局部极小**= 脖子（有脖子就切在脖子，没有就用头高兜底）
+       ⑤ 正方形取景 = 头框长边 ×1.12，横向对准头部的像素重心
+     结果 {l,t,w,ar,v:2}；换算法只要把 v 提上去，老数据会自动重算。 */
+  const FACE_VER = 2;
   function analyzeFaceBox(url) {
     return new Promise((resolve) => {
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = () => {
         try {
-          const ar = (img.width || 1) / (img.height || 1);      // 宽/高
-          const W = 140, H = Math.max(1, Math.round(W / ar));
+          const ar = (img.width || 1) / (img.height || 1);
+          const W = 160, H = Math.max(1, Math.round(W / ar));
           const cv = document.createElement("canvas");
           cv.width = W; cv.height = H;
           const ctx = cv.getContext("2d");
           ctx.drawImage(img, 0, 0, W, H);
           const d = ctx.getImageData(0, 0, W, H).data;
-          let br = 0, bg = 0, bb = 0, n = 0;
-          [[0, 0], [W - 4, 0], [0, H - 4], [W - 4, H - 4]].forEach((c) => {
-            for (let y = c[1]; y < Math.min(c[1] + 4, H); y++) for (let x = c[0]; x < Math.min(c[0] + 4, W); x++) {
-              const i = (y * W + x) * 4; br += d[i]; bg += d[i + 1]; bb += d[i + 2]; n++;
-            }
-          });
-          br /= n; bg /= n; bb /= n;
-          let top = -1, bot = -1, cnt = 0;
+          // ① 背景色：四周边缘像素的众数（4bit 量化）
+          const hist = {};
+          const addEdge = (x, y) => {
+            const i = (y * W + x) * 4;
+            const k = (d[i] >> 4) + "," + (d[i + 1] >> 4) + "," + (d[i + 2] >> 4);
+            if (!hist[k]) hist[k] = { n: 0, r: 0, g: 0, b: 0 };
+            hist[k].n++; hist[k].r += d[i]; hist[k].g += d[i + 1]; hist[k].b += d[i + 2];
+          };
+          for (let x = 0; x < W; x++) { addEdge(x, 0); addEdge(x, H - 1); }
+          for (let y = 0; y < H; y++) { addEdge(0, y); addEdge(W - 1, y); }
+          let best = null;
+          Object.keys(hist).forEach((k) => { if (!best || hist[k].n > best.n) best = hist[k]; });
+          if (!best) { resolve(null); return; }
+          const br = best.r / best.n, bg = best.g / best.n, bb = best.b / best.n;
+          const isFg = (i) => Math.max(Math.abs(d[i] - br), Math.abs(d[i + 1] - bg), Math.abs(d[i + 2] - bb)) > 34;
+          // ② 逐行前景宽度 + 左右边界
           const rowCnt = new Array(H).fill(0), rowSum = new Array(H).fill(0);
+          let top = -1, bot = -1, total = 0;
           for (let y = 0; y < H; y++) {
             for (let x = 0; x < W; x++) {
               const i = (y * W + x) * 4;
-              if (Math.max(Math.abs(d[i] - br), Math.abs(d[i + 1] - bg), Math.abs(d[i + 2] - bb)) <= 30) continue;
+              if (!isFg(i)) continue;
               if (top < 0) top = y;
-              bot = y; cnt++;
+              bot = y; total++;
               rowCnt[y]++; rowSum[y] += x;
             }
           }
-          if (top < 0 || bot - top < 6 || cnt < W * H * 0.01) { resolve(null); return; }   // 基本一片纯色 → 交回固定比例兜底
+          if (top < 0 || bot - top < 8 || total < W * H * 0.015) { resolve(null); return; }
+          // 平滑（去掉细道具/发丝的毛刺）
+          const sm = new Array(H).fill(0);
+          for (let y = 0; y < H; y++) {
+            let s = 0, n = 0;
+            for (let k = -2; k <= 2; k++) { const yy = y + k; if (yy >= 0 && yy < H) { s += rowCnt[yy]; n++; } }
+            sm[y] = n ? s / n : 0;
+          }
           const chH = bot - top + 1;
-          const headH = Math.max(8, Math.round(chH * 0.40));
-          let cx = 0, cn = 0;
-          const bandEnd = Math.min(bot, top + Math.max(5, Math.round(chH * 0.20)));
-          for (let y = top; y <= bandEnd; y++) { cx += rowSum[y]; cn += rowCnt[y]; }
-          cx = cn ? cx / cn : W / 2;
-          let side = Math.max(headH * 1.15, W * 0.22);     // 留点余量；也别放太大（放大过头会糊）
+          // ③ 头部：从人物顶部往下找第一个"明显变宽后开始收窄"的局部极大
+          const scanFrom = top, scanTo = Math.min(bot, top + Math.round(chH * 0.75));
+          let headMaxY = top, headMaxW = 0;
+          for (let y = scanFrom; y <= scanTo; y++) {
+            if (sm[y] >= headMaxW) { headMaxW = sm[y]; headMaxY = y; }
+            // 已经宽过一段又明显收窄 → 头结束
+            if (headMaxW > 6 && sm[y] < headMaxW * 0.72 && y > headMaxY + 2) break;
+          }
+          // ④ 脖子：头部最宽处之后第一个明显收窄的行（窄于头宽的 65%）
+          let neckY = -1;
+          for (let y = headMaxY + 1; y <= scanTo; y++) {
+            if (sm[y] < headMaxW * 0.65) { neckY = y; break; }
+          }
+          let headTop = top, headBot = (neckY > top + 4) ? neckY : (top + Math.round(chH * 0.34));
+          // 头高太扁就退回"内容高度的 1/3"
+          if (headBot - headTop < Math.round(chH * 0.12)) headBot = top + Math.round(chH * 0.33);
+          // ⑤ 横向中心：头框内像素重心
+          let cxs = 0, cns = 0;
+          for (let y = headTop; y <= headBot; y++) { cxs += rowSum[y]; cns += rowCnt[y]; }
+          const cx = cns ? cxs / cns : W / 2;
+          let side = Math.max(headBot - headTop, headMaxW) * 1.12;
+          side = Math.max(side, W * 0.2);          // 别放太大（糊）
           side = Math.min(side, W, H);
-          const left = Math.max(0, Math.min(cx - side / 2, W - side));
-          const tp = Math.max(0, Math.min(top - side * 0.05, H - side));
-          resolve({ l: left / W, t: tp / H, w: side / W, ar: ar });
+          let left = cx - side / 2;
+          left = Math.max(0, Math.min(left, W - side));
+          let tp = headTop - side * 0.06;
+          tp = Math.max(0, Math.min(tp, H - side));
+          resolve({ l: left / W, t: tp / H, w: side / W, ar: ar, v: FACE_VER });
         } catch (e) { resolve(null); }
       };
       img.onerror = () => resolve(null);
@@ -2513,7 +2551,7 @@
     return '<span class="spirit-thumb" style="width:' + size + "px;height:" + size + 'px">' +
       spiritImgHtml(item, rec, size, "spirit-img", extra, !ok) + "</span>";
   }
-  // 老图（v106 之前生成的）没有取景数据 → 进精灵页时补算一次并存起来，不用重新出图
+  // 老图（取景算法升级前算的）没有取景数据或版本旧 → 进精灵页时补算一次并存起来，不用重新出图
   let _faceBusy = false;
   async function ensureSpiritFaces(list) {
     if (_faceBusy) return;
@@ -2523,13 +2561,22 @@
       for (const it of list) {
         const st = Spirits.load();
         const rec = Spirits.ensureIn(st, it.id);
-        if (!rec.imgUrl || rec.face) continue;
+        if (!rec.imgUrl) continue;
+        if (rec.face && rec.face.v === FACE_VER) continue;
         const f = await analyzeFaceBox(rec.imgUrl);
-        rec.face = f || { l: 0, t: 0, w: 0, ar: 0 };   // 算不出来也记一笔（w=0 表示继续用固定比例），免得每次重算
+        rec.face = f || { l: 0, t: 0, w: 0, ar: 0, v: FACE_VER };   // 算不出来也记一笔（w=0 用固定比例），免得每次重算
         Spirits.save(st);
         changed = true;
       }
-      if (changed && location.hash === "#/spirit") renderSpiritPage();
+      if (changed) {
+        const h = location.hash;
+        if (h === "#/spirit" || h === "#/spirits") renderSpiritPage();
+        else if (h.indexOf("#/spirit/") === 0) {
+          const y = window.scrollY;
+          renderSpiritDetailPage(decodeURIComponent(h.slice(9)));
+          window.scrollTo(0, y);
+        }
+      }
     } catch (e) { /* 静默 */ }
     _faceBusy = false;
   }
@@ -2667,28 +2714,54 @@
     }
 
     let html = "";
-    // 📔 今日日记（v109：原来的「每日来信」改成了精灵日记，正文在每只精灵的详情页里看）
-    const tk = Spirits.todayKey();
-    const todayDiary = list.map((it) => ({ it, rec: store[it.id] }))
-      .map((x) => {
-        const d = ((x.rec && x.rec.diary) || []).filter((e) => e && e.date === tk).pop();
-        return d ? { it: x.it, entry: d } : null;
-      }).filter(Boolean).sort((a, b) => (b.entry.at || 0) - (a.entry.at || 0))[0] || null;
-    html += '<div class="spirit-letter-box" id="spiritLetterBox">';
-    if (todayDiary) {
-      const nm = (todayDiary.it && ((store[todayDiary.it.id] || {}).persona || {}).name) || todayDiary.it.name;
-      html += '<div class="spirit-letter-head">📔 今天的日记 · 来自「' + esc(nm) + '」</div>' +
-        '<div class="spirit-letter-body">' + esc(String(todayDiary.entry.text || "").replace(/^第[^\n]*\n/, "")).replace(/\n/g, "<br>") + "</div>" +
-        '<div style="font-size:11px;color:var(--text-2);margin-top:8px">点下面任意一只精灵，看它自己的日记本</div>';
-    } else {
-      html += '<div class="spirit-letter-head">📔 日记本</div>' +
-        '<div class="spirit-letter-body" style="color:var(--text-2)">精灵们一天会不定时写 0-2 篇日记，点开某一只看看它今天写了什么～</div>';
-    }
-    html += "</div>";
-
+    // v113：这个页面只留「小房间」；全部精灵挪到单独页面（#/spirits），顶部按钮进入
     html += renderRoomsSection(list, store);
 
-    html += '<div class="section-title" style="margin-top:14px">🍡 我的精灵（' + list.length + '）' +
+    // 日记提示（正文不在这里显示：精灵是"随机写的"，有写就提示一下，进去看才有惊喜）
+    const diaryToday = list.filter((it) => {
+      const rec = store[it.id] || {};
+      const d = (rec.diary || []).filter((e) => e && e.date === Spirits.todayKey());
+      return d.length && (rec.diarySeenAt || 0) < d[d.length - 1].at;
+    }).length;
+    if (diaryToday) {
+      html += '<div class="diary-hint" id="diaryHint">📔 今天有 <b>' + diaryToday + '</b> 只精灵写了日记 · 点它的头像进去看</div>';
+    }
+
+    html += '<button class="btn primary" id="spAllBtn" style="width:100%;margin-top:14px">👀 查看全部精灵（' + list.length + '）</button>';
+    view.innerHTML = html;
+    bindSpiritImgFallback(view);
+    view.querySelectorAll("[data-room]").forEach((c) => c.addEventListener("click", () => {
+      location.hash = "#/room/" + encodeURIComponent(c.dataset.room);
+    }));
+    bindRoomSection();
+    const allBtn = $("#spAllBtn");
+    if (allBtn) allBtn.onclick = () => location.hash = "#/spirits";
+    const dh = $("#diaryHint");
+    if (dh) dh.onclick = () => location.hash = "#/spirits";
+    // 异步补性格 + 人设/形象细节（要在出图之前）→ 出图 + 老图头像取景 + 日记 + 房间契合度/剧情
+    ensureSpiritData(list, false);
+    ensureSpiritLook(list).then(() => {
+      ensureSpiritImages(list);
+    });
+    ensureSpiritFaces(list);
+    ensureSpiritExtras(list);
+    tickRooms(list);
+    updateStoryDot();
+  }
+
+  /* ---------- 全部精灵（#/spirits，v113 从精灵页拆出来） ---------- */
+  function renderAllSpiritsPage() {
+    topbarTitle.textContent = "全部精灵";
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+    const list = spiritItems();
+    const store = Spirits.load();
+    if (!list.length) {
+      view.innerHTML = '<div class="empty"><div class="empty-icon">🍡</div><p>还没有精灵诞生<br>把一串盘到「已挂瓷」，它就会成精</p></div>';
+      return;
+    }
+    const tk = Spirits.todayKey();
+    let html = '<div class="section-title">🍡 我的精灵（' + list.length + '）' +
       '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点它进详情页</small>' +
       '<button type="button" class="link-btn" id="spRedrawAll" style="float:right;font-size:11px">🖌 全部重画</button></div>';
     html += '<div class="spirit-grid">';
@@ -2697,13 +2770,17 @@
       const p = rec.persona || null;
       const idle = it.lastPlayedAt ? Math.floor((Date.now() - it.lastPlayedAt) / 86400000) : null;
       const si = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
+      const room = rec.roomId ? Rooms.getRoom(rec.roomId) : null;
+      const wroteToday = (rec.diary || []).some((e) => e && e.date === tk) && (rec.diarySeenAt || 0) < ((rec.diary || []).slice(-1)[0] || {}).at;
       html += '<div class="spirit-card' + (si.canBreak ? " can-break" : "") + '" data-spirit="' + esc(it.id) + '">' +
         spiritThumbHtml(it, rec, 96) +
         '<div class="spirit-meta">' +
-        '<div class="spirit-name">' + esc((p && p.name) || it.name || "精灵") +
+        '<div class="spirit-name">' + esc(spiritName(it, store)) +
         '<span class="spirit-stage">' + si.icon + " " + esc(si.name) + "</span>" +
-        (si.canBreak ? '<span class="spirit-break-tag">✨ 可突破</span>' : "") + "</div>" +
-        '<div class="spirit-title">' + esc((p && p.title) || "正在酝酿性格…") + "</div>" +
+        (si.canBreak ? '<span class="spirit-break-tag">✨ 可突破</span>' : "") +
+        (wroteToday ? '<span class="spirit-break-tag" style="background:#e8f0ff;color:#3b5b9a">📔 写日记了</span>' : "") + "</div>" +
+        '<div class="spirit-title">' + esc((p && p.title) || "正在酝酿性格…") +
+        (room ? ' · <span style="color:var(--text-2)">' + esc((room.emoji || "🏠") + room.name) + "</span>" : "") + "</div>" +
         '<div class="spirit-line">' + esc((p && p.line) || "") + "</div>" +
         (si.isMax ? '<div class="spirit-prog max">已是完成体 · 巅峰形态 👑</div>'
           : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
@@ -2713,44 +2790,43 @@
         "</div></div>";
     });
     html += "</div>";
+    html += '<button class="btn ghost" id="spBackRooms" style="width:100%;margin-top:14px">← 回到小房间</button>';
     view.innerHTML = html;
     bindSpiritImgFallback(view);
-    // 点卡片 → 进这只精灵自己的详情页（v109：不再是弹层）
     view.querySelectorAll(".spirit-card").forEach((c) => c.addEventListener("click", () => {
       const id = c.dataset.spirit;
       if (id) location.hash = "#/spirit/" + encodeURIComponent(id);
     }));
-    view.querySelectorAll("[data-room]").forEach((c) => c.addEventListener("click", () => {
-      location.hash = "#/room/" + encodeURIComponent(c.dataset.room);
-    }));
-    bindRoomSection();
-    // 🖌 全部重画：画风/prompt 升级后，一次性把已有立绘全部作废重出（先问一句，别静默烧额度）
+    const back = $("#spBackRooms");
+    if (back) back.onclick = () => location.hash = "#/spirit";
+    bindRedrawAll(list, renderAllSpiritsPage);
+    ensureSpiritData(list, false);
+    ensureSpiritLook(list).then(() => ensureSpiritImages(list));
+    ensureSpiritFaces(list);
+    ensureSpiritExtras(list);
+  }
+
+  // 🖌 全部重画（精灵页与全部精灵页共用）
+  function bindRedrawAll(list, rerender) {
     const redrawAll = $("#spRedrawAll");
-    if (redrawAll) redrawAll.onclick = async () => {
+    if (!redrawAll) return;
+    redrawAll.onclick = async () => {
       const st0 = Spirits.load();
       const n = list.filter((it) => st0[it.id] && st0[it.id].imgUrl).length;
       if (!n) { toast("还没有立绘可重画"); return; }
       const yes = await confirmModal("要重画全部 " + n + " 只精灵吗？",
-        "已有的立绘（含进化史里的旧图）都会作废、按最新画风重画，消耗 " + n + " 次出图额度（每只 1 张）。想只重画某一只，进它的详情页点「🔁 换形象」。",
+        "已有的立绘（含进化史里的旧图）都会作废、按最新形象设定重画，消耗 " + n + " 次出图额度（每只 1 张）。想只重画某一只，进它的详情页点「🔁 换形象」。",
         "重画 " + n + " 张", true);
       if (!yes) return;
       const st = Spirits.load();
       list.forEach((it) => {
         const r = Spirits.ensureIn(st, it.id);
-        r.imgUrl = ""; r.imgAt = 0; r.face = null; r._imgErr = ""; r._imgErrAt = 0; r.imgHistory = [];
+        r.imgUrl = ""; r.imgAt = 0; r.face = null; r._imgErr = ""; r._imgErrAt = 0; r.imgHistory = []; r.lookStale = false;
       });
       Spirits.save(st);
       toast("开始重画 " + n + " 只精灵…");
-      renderSpiritPage();
+      rerender();
     };
-    // 异步补性格 + 人设/形象细节（要在出图之前）→ 出图 + 老图头像取景 + 日记 + 房间契合度/剧情
-    ensureSpiritData(list, false);
-    ensureSpiritLook(list).then(() => {
-      ensureSpiritImages(list);
-    });
-    ensureSpiritFaces(list);
-    ensureSpiritExtras(list);
-    tickRooms(list);
   }
 
   /* ============================================================
@@ -2771,13 +2847,15 @@
   }
   function nameOf(it, store) {
     const rec = (store || Spirits.load())[it.id] || {};
-    return (rec.persona && rec.persona.name) || it.name || "精灵";
+    return rec.name || (rec.persona && rec.persona.name) || it.name || "精灵";   // v113：用户改过的名字优先
   }
+  function spiritName(it, store) { return nameOf(it, store); }
   function spiritSp(it) {
     const rec = spiritRecOf(it.id);
     return {
       item: it,
-      persona: rec.persona || Spirits.localPersona(it),
+      // 名字用用户改过的（剧情/日记里也会用新名字）
+      persona: Object.assign({}, rec.persona || Spirits.localPersona(it), { name: spiritName(it, Spirits.load()) }),
       stage: rec.stage || 1,
       variant: rec.variant || 0,
       idleDays: it.lastPlayedAt ? Math.floor((Date.now() - it.lastPlayedAt) / 86400000) : null,
@@ -2801,12 +2879,23 @@
     return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
   }
   function unreadStoryCount() { return Rooms.unreadStories(roomItems()).length; }
-  // 精灵 tab 上的小红点（有新剧情时）
+  // 今天写了日记、并且还没去看过的精灵数
+  function newDiaryCount() {
+    const tk = Spirits.todayKey();
+    const s = Spirits.load();
+    return spiritItems().filter((it) => {
+      const rec = s[it.id] || {};
+      const list = (rec.diary || []).filter((e) => e && e.date === tk);
+      if (!list.length) return false;
+      return (rec.diarySeenAt || 0) < (list[list.length - 1].at || 0);
+    }).length;
+  }
+  // 精灵 tab 上的小红点（有新剧情或新日记时）
   function updateStoryDot() {
     const tab = document.getElementById("tabSpirit");
     if (!tab) return;
     let dot = tab.querySelector(".tab-dot");
-    const n = unreadStoryCount();
+    const n = unreadStoryCount() + newDiaryCount();
     if (n) { if (!dot) { dot = document.createElement("span"); dot.className = "tab-dot"; tab.appendChild(dot); } }
     else if (dot) dot.remove();
   }
@@ -2890,7 +2979,9 @@
           if (await Spirits.detectBeadColor(it)) changed = true;
         }
         const beforeZh = rec0.personaZh;
-        await Spirits.personaZh(it, ap, rec0.persona, rec0.stage || 1, DB.daysWith(it), it.playCount || 0);
+        // 名字优先用用户改过的（人设里提到名字时也跟着变）
+        const pOverride = Object.assign({}, rec0.persona || Spirits.localPersona(it), { name: spiritName(it, Spirits.load()) });
+        await Spirits.personaZh(it, ap, pOverride, rec0.stage || 1, DB.daysWith(it), it.playCount || 0);
         const rec1 = Spirits.load()[it.id] || {};
         if (rec1.personaZh !== beforeZh) changed = true;
         // 人物设定 → 英文形象细节（出图时会把它们拼进 prompt）
@@ -3079,8 +3170,13 @@
     const hist = (rec.imgHistory || []).filter((x) => x && x.url);
 
     let h = '<div class="sd-top"><div class="sd-art" id="sdArt">' + spiritImgHtml(it, rec, 240, "spirit-img big") + "</div>" +
-      '<div class="sd-name">' + esc(p.name || it.name) + '<span class="spirit-stage big">' + si.icon + " " + esc(si.name) + "</span></div>" +
+      '<div class="sd-name">' + esc(spiritName(it, store)) + '<span class="spirit-stage big">' + si.icon + " " + esc(si.name) + "</span></div>" +
       '<div class="sd-title">' + esc(p.title || "") + "</div>" +
+      '<div class="sd-title" style="margin-top:4px">' +
+      (rec.nameEdited
+        ? '<span style="color:var(--text-2)">✏️ 名字改过了</span>'
+        : '<button type="button" class="link-btn" id="sdRename">✏️ 给它改个名字（只能改一次）</button>') +
+      "</div>" +
       '<div class="sd-line">“' + esc(p.line || "") + '”</div>' +
       '<div class="spirit-tags" style="justify-content:center">' + ((p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
       '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div></div>";
@@ -3146,10 +3242,9 @@
     h += '<button class="btn ghost" id="sdRoomPick" style="width:100%;margin-top:10px;font-size:13px">' +
       (room ? "🏠 换房间 / 搬出去" : "🏠 安排入住") + "</button></div>";
 
-    h += '<div class="sd-card"><div class="sd-card-title">📔 日记本（' + diary.length + "）" +
-      '<button class="link-btn" id="sdDiaryNew" style="float:right">✍️ 让它现在写一篇</button></div>';
+    h += '<div class="sd-card"><div class="sd-card-title">📔 日记本（' + diary.length + "）</div>";
     if (!diary.length) {
-      h += '<div class="room-none">还没写过日记。精灵一天会不定时写 0-2 篇，明天再来看看～</div>';
+      h += '<div class="room-none">还没写过日记。它们一天会不定时写 0-2 篇，明天再来看看～</div>';
     } else {
       h += '<div class="sd-diary">' + diary.slice(0, 8).map((d) =>
         '<div class="sd-diary-item"><div class="sd-diary-date">' + esc(d.date || "") + "<span>" + fmtTime(d.at) + "</span></div>" +
@@ -3190,22 +3285,55 @@
     const rg = $("#sdRoomGo"); if (rg) rg.onclick = (e) => { e.stopPropagation(); location.hash = "#/room/" + encodeURIComponent(room.id); };
     const rp = $("#sdRoomPick"); if (rp) rp.onclick = () => showSpiritRoomPicker(it);
     view.querySelectorAll("[data-mate]").forEach((el) => el.onclick = () => { location.hash = "#/spirit/" + encodeURIComponent(el.dataset.mate); });
-    const dn = $("#sdDiaryNew");
-    if (dn) dn.onclick = async () => {
-      dn.disabled = true;
-      dn.textContent = "它正在写…";
-      const st = Spirits.load();
-      const r = Spirits.ensureIn(st, it.id);
-      const nap = Spirits.appearanceOf(it, r.appearanceSeed || 0, r.gender || "");
-      try {
-        await Spirits.diaryNow(it, r, nap, diaryCtx(it, r));
-        toast("日记写好了 📔");
-      } catch (e) {
-        toast("写日记失败：" + ((e && e.message) || ""));
+    // ✏️ 改名（只能改一次）
+    const rn = $("#sdRename");
+    if (rn) rn.onclick = () => showRenameModal(it);
+    // 进详情页 = 这只看过了 → 清掉它的日记"未读"
+    if ((rec.diary || []).length) {
+      const lastAt = (rec.diary.slice(-1)[0] || {}).at || 0;
+      if ((rec.diarySeenAt || 0) < lastAt) {
+        const s3 = Spirits.load();
+        Spirits.ensureIn(s3, it.id).diarySeenAt = lastAt;
+        Spirits.save(s3);
+        updateStoryDot();
       }
-      renderSpiritDetailPage(id);
-    };
+    }
     ensureSpiritExtras([it]);
+  }
+
+  /* ---------- 改名（每个精灵只能改一次） ---------- */
+  function showRenameModal(item) {
+    const mask = $("#modalMask"), modal = $("#modal");
+    const cur = spiritName(item, Spirits.load());
+    modal.innerHTML = "<h3>✏️ 给它改个名字</h3>" +
+      '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:12px;text-align:center">' +
+      "名字只能改一次，想好了再点保存哦～<br>（改完之后它写日记、写剧情、聊天都会用新名字）</p>" +
+      '<div class="form-group"><div class="form-label">新名字 <small>2-6 个字最好看</small></div>' +
+      '<input class="form-input" id="rnName" maxlength="6" placeholder="' + esc(cur) + '" value="' + esc(cur) + '"></div>' +
+      '<div style="display:flex;gap:8px;margin-top:12px">' +
+      '<button class="btn ghost" id="rnCancel" style="flex:1">取消</button>' +
+      '<button class="btn primary" id="rnSave" style="flex:2">就这个（不能改第二次）</button></div>';
+    mask.hidden = false;
+    modal.hidden = false;
+    modal.style.display = "";
+    const close = () => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; };
+    $("#rnCancel").onclick = close;
+    mask.onclick = close;
+    $("#rnSave").onclick = () => {
+      const nm = ($("#rnName").value || "").trim().slice(0, 6);
+      if (!nm) { toast("名字不能为空"); return; }
+      const s = Spirits.load();
+      const r = Spirits.ensureIn(s, item.id);
+      r.name = nm;
+      r.nameEdited = true;
+      r.personaZhKey = "";        // 让人物设定按新名字重写一次（里面会提到名字）
+      Spirits.save(s);
+      close();
+      toast("名字改成「" + nm + "」了 ✏️（不能再改）");
+      const h = location.hash;
+      if (h.indexOf("#/spirit/") === 0) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));
+      else renderAllSpiritsPage();
+    };
   }
 
   /* ---------- 房间页 ---------- */
@@ -3506,7 +3634,9 @@
       const others = all.filter((x) => x.id !== item.id).sort(() => Math.random() - 0.5).slice(0, 2);
       const group = [item].concat(others).map((it) => {
         const rec = Spirits.load()[it.id] || {};
-        return { item: it, persona: rec.persona || Spirits.localPersona(it), avatar: rec.imgUrl || Spirits.localAvatarSvg(it) };
+        // 名字优先用用户改过的（聊天气泡与 AI 提示词都用新名字）
+        const persona = Object.assign({}, rec.persona || Spirits.localPersona(it), { name: spiritName(it, Spirits.load()) });
+        return { item: it, persona: persona, avatar: rec.imgUrl || Spirits.localAvatarSvg(it) };
       });
       const lines = await Spirits.chat(group);
       const avatarOf = (who) => {
@@ -5989,6 +6119,7 @@
     else if (h === "#/stats") renderStatsPage();
     else if (h === "#/quest") renderQuestPage();
     else if (h === "#/spirit") renderSpiritPage();   // 🍡 挂瓷精灵（占原「分类」的导航位）
+    else if (h === "#/spirits") renderAllSpiritsPage();                                            // 全部精灵
     else if (h.startsWith("#/spirit/")) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));   // 每只精灵的独立页面
     else if (h.startsWith("#/room/")) renderRoomPage(decodeURIComponent(h.slice(7)));             // 小房间
     else if (h === "#/fav") renderFavPage();
@@ -6067,6 +6198,7 @@
       location.hash = id ? "#/item/" + id : "#/";                            // 编辑 → 详情/首页
       return;
     }
+    if (h === "#/spirits") { location.hash = "#/spirit"; return; }        // 全部精灵 → 回到小房间
     if (h === "#/settings" || h === "#/profile" || h === "#/new" || h === "#/cat" || h === "#/stats" || h === "#/quest" || h === "#/spirit") { location.hash = "#/"; return; }
     if (h.startsWith("#/box/")) { location.hash = "#/cat"; return; }
     if (h === "#/") { return; }
@@ -6090,7 +6222,7 @@
     let active = "home";
     if (h === "#/settings") active = "settings";
     else if (h === "#/cat") active = "cat";
-    else if (h === "#/spirit" || h.indexOf("#/spirit/") === 0 || h.indexOf("#/room/") === 0) active = "spirit";
+    else if (h === "#/spirit" || h === "#/spirits" || h.indexOf("#/spirit/") === 0 || h.indexOf("#/room/") === 0) active = "spirit";
     else if (h === "#/stats") active = "stats";
     else if (h === "#/quest") active = "quest";
     else if (h === "#/fav") active = "fav";
@@ -6115,6 +6247,39 @@
     });
   });
 
+  /* ---------- v113 一次性迁移：形象与日记全部推倒重来 ----------
+     用户要求：「把现在所有已经生成过的形象都删掉，不要出现在记录里面（进化史），全部按现在的设定重新生图；
+     日记也是，今天写了 3 篇要去掉，只保留每天随机写」。
+     用 ww_imgver 记录版本，只在版本变化时执行一次；清空后进精灵页会自动重新出图。 */
+  const ART_VER = "v113";
+  function migrateSpiritArtOnce() {
+    try {
+      if (localStorage.getItem("ww_imgver") === ART_VER) return false;
+      const s = Spirits.load();
+      let touched = 0;
+      Object.keys(s).forEach((k) => {
+        const r = s[k];
+        if (!r || typeof r !== "object") return;
+        if (r.imgUrl || (r.imgHistory || []).length || (r.diary || []).length || r.face) touched++;
+        r.imgUrl = "";
+        r.imgAt = 0;
+        r.face = null;
+        r.imgHistory = [];        // 进化史里的旧图也一起清掉
+        r.imgErr = "";
+        r._imgErr = "";
+        r._imgErrAt = 0;
+        r.lookStale = false;
+        r.diary = [];             // 日记同样从零开始，之后只按"每天随机 0-2 篇"
+        r.diaryAt = 0;
+        r.diarySeenAt = 0;
+      });
+      Spirits.save(s);
+      try { localStorage.setItem("ww_imgver", ART_VER); } catch (e2) { /* 忽略 */ }
+      updateStoryDot();
+      return touched > 0;
+    } catch (e) { return false; }
+  }
+
   async function init() {
     try {
       initTheme();
@@ -6138,6 +6303,10 @@
       }
       const ok = await enterApp();
       if (ok) {
+        // v113 一次性迁移：清掉所有旧立绘（含进化史）与旧日记，全部按新形象设定重新出图
+        if (migrateSpiritArtOnce()) {
+          toast("形象与日记已按新设定重置，正在重新出图…（" + spiritItems().length + " 只）");
+        }
         if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
           navigator.serviceWorker.register("sw.js").then((reg) => {
             // 检测到新 SW 等待激活时，立即跳过等待并刷新页面

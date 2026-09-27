@@ -1284,6 +1284,12 @@ img { display:block; }
 .room-none { font-size:12px; color:var(--text-2); line-height:1.7; }
 .room-foot { font-size:11px; color:var(--text-2); margin-top:8px; }
 .room-hint { font-size:11px; color:var(--text-2); margin-top:8px; line-height:1.7; }
+/* 日记提示（v113：只提示"有精灵写了日记"，正文进详情页看） */
+.diary-hint {
+  font-size:12px; line-height:1.7; color:#7a5a12; background:#fff7e6; border:1px solid #f0dcae;
+  border-radius:12px; padding:9px 11px; margin-top:12px; cursor:pointer;
+}
+.diary-hint b { color:#b8791a; }
 .room-empty {
   background:#fbf7ef; border:1px dashed var(--line); border-radius:14px; padding:12px;
   font-size:12px; color:var(--text-2); line-height:1.8;

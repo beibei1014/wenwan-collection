@@ -900,7 +900,8 @@
           + "必须包含：① 外形（性别、发型、瞳色、配饰、衣服/头发颜色要说明取自古珠的颜色）"
           + "② 性格（含 2-3 个具体小习惯）③ 与主人的关系与日常。"
           + "语气温和好读，不要 Markdown、不要标题、不要分点、不要解释，直接输出正文。";
-        const user = "原型手串：" + (item.name || "未命名") + "；颜色：" + (COLOR_ZH[item.color] || "素色") +
+        const user = "原型手串：" + (item.name || "未命名") + "；精灵的名字：" + ((persona && persona.name) || item.name || "未命名") +
+          "；颜色：" + (COLOR_ZH[item.color] || "素色") +
           "；软糯：" + (item.softness === "soft" ? "软糯" : item.softness === "slight" ? "微糯" : "未标注") +
           "；形态：" + stageDef(stage).name + "；陪伴 " + (days || 0) + " 天；盘玩 " + (plays || 0) + " 次；" +
           "固定人设：" + appearanceText(ap) + "；性格基调：" + (VIBE_ZH[ap.vibe] || ap.vibe) +
@@ -1006,20 +1007,7 @@
     return added;
   }
 
-  // 立刻写一篇（详情页「✍️ 让它现在写一篇」用）
-  async function diaryNow(item, rec, ap, ctx) {
-    const text = await diaryWrite(item, rec, ap, ctx);
-    const list = Array.isArray(rec.diary) ? rec.diary : [];
-    list.push({ at: Date.now(), date: todayKey(), slot: 9, text: text, ai: !!getAiKey(), manual: true });
-    rec.diary = list.slice(-DIARY_MAX);
-    rec.diaryAt = Date.now();
-    const store = load();
-    const r2 = ensureIn(store, item.id);
-    r2.diary = rec.diary;
-    r2.diaryAt = rec.diaryAt;
-    save(store);
-    return text;
-  }
+  // v113：不再提供"立刻写一篇"（用户要求日记只靠每天随机写才有惊喜）
 
   /* ---------- 房间剧情（两只精灵的故事） ---------- */
   function storyLocal(a, b, level, roomName, aff) {
@@ -1182,6 +1170,6 @@
     appearanceDetail, OUTFITS, PATTERNS, PROPS, POSES, buildLookTags, getLookTags, localLookTags, lookTagsStale,
     // v109：真实主色 / 中文人物设定 / 日记 / 房间剧情
     beadColor, detectBeadColor, hexToWord,
-    personaZh, personaZhLocal, ensureDiary, diarySlots, diaryLocal, diaryNow, roomStory, storyLocal,
+    personaZh, personaZhLocal, ensureDiary, diarySlots, diaryLocal, roomStory, storyLocal,
   };
 })();
