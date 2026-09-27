@@ -1055,11 +1055,13 @@
     return txt;
   }
 
-  /* ---------- 精灵日记（不定时写，一天 0-2 篇） ---------- */
+  /* ---------- 精灵日记（不定时写，**每天最多 1 篇**） ---------- */
   const DIARY_MAX = 40;
+  // v124：**每天最多 1 篇**（用户要求；原来是 0-2 篇，偶尔会一天两篇）
+  // 仍然保留"随机才有惊喜"：约 1/4 的日子那天不写（h % 4 === 0），其余日子写 1 篇，时间点在下面几个里随机
   function diarySlots(item, dateKey) {
     const h = hashStr(String(item.id) + "#" + dateKey);
-    const n = (h % 4 === 0) ? 0 : ((h % 4 === 3) ? 2 : 1);
+    const n = (h % 4 === 0) ? 0 : 1;
     const hours = [8, 11, 14, 17, 20, 22];
     const out = [];
     for (let i = 0; i < n; i++) out.push(hours[(h >> (3 + i * 3)) % hours.length]);
@@ -1108,15 +1110,17 @@
     return diaryLocal(item, rec, ap, ctx);
   }
   // 按"今天的排期"补写日记：返回新写的条数
+  // v124：**每天最多 1 篇** —— 今天已经写过就直接返回（连排期都不再看）
   async function ensureDiary(item, rec, ap, ctx) {
     const tk = todayKey();
+    const list = Array.isArray(rec.diary) ? rec.diary : [];
+    if (list.some((d) => d && d.date === tk)) return 0;
     const slots = diarySlots(item, tk);
     const nowH = new Date().getHours();
-    const list = Array.isArray(rec.diary) ? rec.diary : [];
     let added = 0;
     for (let i = 0; i < slots.length; i++) {
       if (slots[i] > nowH) continue;
-      if (list.some((d) => d && d.date === tk && d.slot === i)) continue;
+      if (list.some((d) => d && d.date === tk)) break;      // 双保险：一天只写一篇
       const text = await diaryWrite(item, rec, ap, ctx);
       list.push({ at: Date.now(), date: tk, slot: i, text: text, ai: !!getAiKey() });
       added++;

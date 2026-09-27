@@ -6352,7 +6352,7 @@
      用户要求：「把现在所有已经生成过的形象都删掉，不要出现在记录里面（进化史），全部按现在的设定重新生图；
      日记也是，今天写了 3 篇要去掉，只保留每天随机写」。
      用 ww_imgver 记录版本，只在版本变化时执行一次；清空后进精灵页会自动重新出图。 */
-  const ART_VER = "v113";
+  const ART_VER = "v124";
   function migrateSpiritArtOnce() {
     try {
       if (localStorage.getItem("ww_imgver") === ART_VER) return false;
@@ -6370,7 +6370,7 @@
         r._imgErr = "";
         r._imgErrAt = 0;
         r.lookStale = false;
-        r.diary = [];             // 日记同样从零开始，之后只按"每天随机 0-2 篇"
+        r.diary = [];             // 日记同样从零开始，之后按「每天最多 1 篇」随机写
         r.diaryAt = 0;
         r.diarySeenAt = 0;
       });
@@ -6404,9 +6404,12 @@
       }
       const ok = await enterApp();
       if (ok) {
-        // v113 一次性迁移：清掉所有旧立绘（含进化史）与旧日记，全部按新形象设定重新出图
+        // 一次性迁移：清掉所有旧立绘（含进化史）与旧日记，并**立刻**按当前模型/形象设定重新出图
+        // （v124：用户换了火山的 flash 并充值，要求把之前生成的全部清理重出一次、日记也重来）
         if (migrateSpiritArtOnce()) {
-          toast("形象与日记已按新设定重置，正在重新出图…（" + spiritItems().length + " 只）");
+          const list = spiritItems();
+          toast(list.length ? ("形象与日记已重置，正在重新出图…（" + list.length + " 只）") : "形象与日记已重置");
+          if (list.length) ensureSpiritLook(list).then(() => ensureSpiritImages(list));
         }
         if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
           navigator.serviceWorker.register("sw.js").then((reg) => {
