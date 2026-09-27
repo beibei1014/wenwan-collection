@@ -85,7 +85,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v103）
+## 五、功能清单（截至 v104）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -349,6 +349,14 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
     - **其他联动**：`spiritDesc()` 带上形态名（如"（觉醒期）"），AI 写的小剧场/来信会自然体现它的成长状态；`ensureSpiritImages` 出图时带上当前 `stage`。
     - **验证**：单元 **14/14**（四形态与门槛、四种形态 prompt 各含对应关键词（newborn/child/teenage/完成体"masterpiece"）、四段 prompt 互不相同、颜色贯穿、都保持全身立绘、成长值公式、刚挂瓷不能突破、30 分可突破、完成后不再提示、进度百分比与差值）；端到端 **20/20**（卡片形态徽章与进度、可突破标记、幼生期出图用 newborn 描述、带固定 seed、弹层突破按钮与成长值、首次出图记入进化史、突破只重新出图一次、**突破后 prompt 变成 child 描述**、突破演出弹窗、stage 写回 2、进化史为 `1,2`、卡片形态更新、成长值不够时无突破按钮但显示差值）。
     - **给用户的说明**：门槛是「成长值 = 盘玩×3 + 陪伴天数」，所以**多盘就长得快**（盘 10 次 + 陪 30 天 = 60 成长值，可直接从幼生期冲到成长期）。缓存 v103
+86. **🆔 修「突破后变性/全员长一样」：外观锚点 + 图生图参考（v104）**：用户实测反馈「突破了之后性别都变了，一会儿男孩一会儿女孩，而且所有人都长得差不多」。
+    - **根因**：v103 的 prompt 只写了颜色，**性别、发型、瞳色、配饰全由模型随机**，每次突破都重掷骰子；不同精灵之间也只有颜色区分 → 颜色相同的就长得一样。
+    - **① 外观锚点（每只精灵的固定人设）**：新增 `HAIR_STYLES`(6) / `EYE_COLORS`(6) / `ACCESSORIES`(8) / `VIBES`(6)，由 `appearanceOf(item, seedN) = hash(串id + 外观种子)` 决定 → 得到 `{ gender, hair, eyes, acc, vibe }`。**四个形态的 prompt 都会先写死"这个人是谁"**（`appearancePrompt()`：`a boy/girl character with short spiky hair, amber eyes, wearing a silk scarf, calm and reliable personality`），再写"他现在多大"（形态描述）。
+    - **② prompt 里加强约束**：新增 `CONSISTENCY` 常量，每次出图都拼上 —— `same character across all ages, keep exactly the same gender, same hair style and hair color, same eye color, same accessory and same overall design, only grow older, character evolution sheet, do not change gender, do not change identity`。
+    - **③ 图生图参考（最可靠的一致性手段）**：突破和「换形象」时，把**上一形态那张图**作为 `image` 字段传给方舟 Seedream（`generateImage(..., { ref })`）；**若该模型/尺寸不支持 image，会自动去掉参考图重试一次**，并置 `_noRef = true` —— 关键是**下次出图第一发就不再带 image**（第一版只在重试里判断 `_noRef`，导致每次都先失败一次，已修）。
+    - **④ 用户可控**：弹层新增「🔒 人设行」显示固定特征（如 `👦 男孩 · short spiky · amber eyes · a silk scarf`），旁边有「🎲 换外观设定」按钮（`rec.appearanceSeed++`）→ 只有用户主动点才会重掷人设，然后按新设定重画。
+    - **验证**：单元 **13/13 + 6/6**：外观锚点字段齐全、同串同种子稳定、换种子会变、**不同串设定不同**、四形态 prompt 都带同一性别/发型/瞳色/配饰、都含"不许改性别"硬约束、形态差异仍在（newborn vs masterpiece）、突破时首次带参考图→被拒→自动去掉重试成功→**之后直接从文本锚点一次出图（不再浪费请求）**。
+    - **说明**：文本锚点保证"不会变性、不会换人"是 100% 生效的（不依赖模型能力）；参考图是锦上添花（模型支持时相似度更高）。缓存 v104
 
 > 🧪 **可复用的端到端测试套路（推荐）**：把 `index.html` 的 body 注入一个临时页面 → 在脚本前定义 `window.SUPABASE_CONFIG` 与假 `window.supabase.createClient`（`auth.getSession/getUser` 返回假 session，`from(t)` 返回链式对象，`then` 直接 resolve 固定数据）→ 按原顺序动态 `appendChild` 加载 `js/*.js` → `location.hash` 切路由 + 断言。这样能用真实 `app.js` 验证交互，不用登录、不碰线上库。
 

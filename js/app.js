@@ -2477,7 +2477,7 @@
           // 已有（可能过期的）图先显示着，避免闪
         }
         try {
-          const r = await Spirits.generateImage(it, rec.variant || 0, null, rec.stage || 1);
+          const r = await Spirits.generateImage(it, rec.variant || 0, null, rec.stage || 1, { appearanceSeed: rec.appearanceSeed || 0 });
           if (r.b64) {
             const small = await shrinkToDataUri("data:image/png;base64," + r.b64, 384, 0.85);
             rec.imgUrl = small || ("data:image/png;base64," + r.b64);
@@ -2628,6 +2628,7 @@
     const p = rec.persona || Spirits.localPersona(item);
     const idle = item.lastPlayedAt ? Math.floor((Date.now() - item.lastPlayedAt) / 86400000) : null;
     const si = Spirits.stageInfo(item, rec.stage, DB.daysWith(item));
+    const ap = Spirits.appearanceOf(item, rec.appearanceSeed || 0);   // 固定人设（性别/发型/瞳色/配饰）
     const colorName = { white: "奶白", green: "绿", yellowbrown: "黄棕", blackgray: "黑灰", duo: "多宝", lightflower: "浅花", deepflower: "深花" }[item.color] || "素色";
     const softName = item.softness === "soft" ? "软糯" : (item.softness === "slight" ? "微糯" : "未标注");
     // 形态进度条 + 已走过的形态（进化史）
@@ -2650,6 +2651,9 @@
       '<div class="spirit-modal-line">“' + esc(p.line || "") + '”</div>' +
       '<div class="spirit-modal-tags">' + (p.traits || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
       '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div>" +
+      // 固定人设：突破/换形象都保留这些特征（不会变性、不会换人）
+      '<div class="spirit-look">🔒 ' + esc(Spirits.appearanceText(ap)) +
+      '<button type="button" class="link-btn" id="spReRoll">🎲 换外观设定</button></div>' +
       (si.isMax
         ? '<div class="spirit-prog max">👑 已是完成体，不再进阶</div>'
         : '<div class="spirit-prog big"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
@@ -2673,6 +2677,35 @@
     $("#spClose").onclick = close;
     mask.onclick = close;
 
+    // 🎲 换外观设定：换性别/发型/瞳色/配饰（只在你不满意当前人设时才用），然后按新设定重画
+    const reroll = $("#spReRoll");
+    if (reroll) reroll.onclick = async () => {
+      const s = Spirits.load();
+      const r = Spirits.ensureIn(s, item.id);
+      r.appearanceSeed = (r.appearanceSeed || 0) + 1;
+      r.imgUrl = "";
+      r.imgAt = 0;
+      r._imgErr = "";
+      Spirits.save(s);
+      const nap = Spirits.appearanceOf(item, r.appearanceSeed);
+      toast("新设定：" + Spirits.appearanceText(nap) + "（正在重画…）");
+      const img = modal.querySelector("img[data-item]");
+      if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; }
+      try {
+        const res = await Spirits.generateImage(item, r.variant || 0, null, r.stage || 1, { appearanceSeed: r.appearanceSeed });
+        let url = res.url || "";
+        if (res.b64) url = (await shrinkToDataUri("data:image/png;base64," + res.b64, 640, 0.85)) || ("data:image/png;base64," + res.b64);
+        const s2 = Spirits.load();
+        const r2 = Spirits.ensureIn(s2, item.id);
+        if (url) { r2.imgUrl = url; r2.imgAt = Date.now(); }
+        Spirits.save(s2);
+        close();
+        showSpiritModal(item);   // 重新打开，刷新人设标签与立绘
+      } catch (e) {
+        toast("重画出错：" + ((e && e.message) || ""));
+      }
+    };
+
     // ✨ 突破：进入下一个形态，并按新形态重新出图（保留进化史）
     const brk = $("#spBreak");
     if (brk) brk.onclick = async () => {
@@ -2684,7 +2717,8 @@
       const nextDef = Spirits.stageDef(nextStage);
       brk.disabled = true; brk.textContent = "突破中…";
       try {
-        const res = await Spirits.generateImage(item, 0, null, nextStage);
+        // 突破：把"突破前那张图"当参考图传过去 → 保证是同一个人长大，不会变性/换人
+        const res = await Spirits.generateImage(item, 0, null, nextStage, { appearanceSeed: r0.appearanceSeed || 0, ref: r0.imgUrl || "" });
         let url = res.url || "";
         if (res.b64) url = (await shrinkToDataUri("data:image/png;base64," + res.b64, 640, 0.85)) || ("data:image/png;base64," + res.b64);
         const s1 = Spirits.load();
@@ -2740,7 +2774,7 @@
       if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; }
       toast("正在用 AI 重画…（消耗 1 次出图）");
       try {
-        const res = await Spirits.generateImage(item, r.variant, null, r.stage || 1);
+        const res = await Spirits.generateImage(item, r.variant, null, r.stage || 1, { appearanceSeed: r.appearanceSeed || 0, ref: r.imgUrl || "" });
         let url = res.url || "";
         if (res.b64) url = (await shrinkToDataUri("data:image/png;base64," + res.b64, 384, 0.85)) || ("data:image/png;base64," + res.b64);
         const s2 = Spirits.load();
