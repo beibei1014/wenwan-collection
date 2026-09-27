@@ -2684,11 +2684,29 @@
       const shuffled = others.sort(() => Math.random() - 0.5).slice(0, 2);
       const group = [item].concat(shuffled).map((it) => {
         const st = Spirits.load();
-        return { item: it, persona: (st[it.id] && st[it.id].persona) || Spirits.localPersona(it) };
+        const rec = st[it.id] || {};
+        return {
+          item: it,
+          persona: rec.persona || Spirits.localPersona(it),
+          avatar: rec.imgUrl || Spirits.localAvatarSvg(it),   // 聊天时带上各自头像
+        };
       });
       const lines = await Spirits.chat(group);
-      out.innerHTML = '<div class="spirit-chat">' + lines.map((l) =>
-        '<div class="spirit-bubble"><span class="spirit-who">' + esc(l.who) + "</span>" + esc(l.text) + "</div>").join("") + "</div>" +
+      // 按名字找头像（AI 可能用简称，做一次包含匹配）
+      const avatarOf = (who) => {
+        const w = String(who || "").trim();
+        let hit = group.find((g) => (g.persona.name || "") === w);
+        if (!hit) hit = group.find((g) => w && ((g.persona.name || "").indexOf(w) >= 0 || w.indexOf(g.persona.name || "x") >= 0));
+        if (!hit) hit = group.find((g) => (g.item.name || "") === w);
+        return hit ? { url: hit.avatar, name: hit.persona.name || hit.item.name } : null;
+      };
+      out.innerHTML = '<div class="spirit-chat">' + lines.map((l, i) => {
+        const a = avatarOf(l.who);
+        return '<div class="spirit-row' + (i % 2 ? " alt" : "") + '">' +
+          '<img class="spirit-avatar" src="' + esc(a ? a.url : Spirits.localAvatarSvg(item)) + '" alt="">' +
+          '<div class="spirit-bubble"><span class="spirit-who">' + esc(l.who) + "</span>" + esc(l.text) + "</div>" +
+          "</div>";
+      }).join("") + "</div>" +
         '<div class="spirit-foot">（剧情由 ' + esc(Spirits.textInfo().key ? (Spirits.textInfo().label || "AI") : "本地模板") + " 现编）</div>";
     };
     // 写信
@@ -2734,6 +2752,12 @@
       '<button type="button" class="btn ghost" id="imgListModels" style="width:100%;margin-top:6px;font-size:12px">📋 拉取我账号里的可用模型</button></div>' +
       '<div class="form-group"><div class="form-label">接口地址 <small>用服务商默认时留空</small></div>' +
       '<input class="form-input" id="imgEndpoint" placeholder="https://.../v1/images/generations" value="' + esc(cfg.endpoint || "") + '"></div>' +
+      '<div class="form-group"><div class="form-label">出图尺寸 <small>Seedream 5 要求 ≥368 万像素（2K 稳过），选竖版就是立绘</small></div>' +
+      '<div class="prov-row" id="sizeRow">' +
+      Spirits.SIZE_PRESETS.map((sz) =>
+        '<button type="button" class="prov-chip' + ((cfg.size || Spirits.DEFAULT_SIZE) === sz.v ? " active" : "") + '" data-size="' + sz.v + '">' +
+        esc(sz.label) + "</button>").join("") +
+      "</div></div>" +
       '<div style="display:flex;gap:8px;margin-top:6px">' +
       '<button class="btn ghost" id="imgCfgTest" style="flex:1">🔍 测试连接</button>' +
       '<button class="btn ghost" id="imgCfgCancel" style="flex:1">取消</button>' +
@@ -2745,10 +2769,16 @@
     const done = () => { mask.hidden = true; modal.hidden = true; };
     let chosen = cfg.provider || "pollinations";
     let chosenStyle = cfg.style || Spirits.DEFAULT_STYLE;
+    let chosenSize = cfg.size || Spirits.DEFAULT_SIZE;
     modal.querySelectorAll(".prov-chip").forEach((b) => b.onclick = () => {
       if (b.dataset.style) {
         chosenStyle = b.dataset.style;
         modal.querySelectorAll("#styleRow .prov-chip").forEach((x) => x.classList.toggle("active", x === b));
+        return;
+      }
+      if (b.dataset.size) {
+        chosenSize = b.dataset.size;
+        modal.querySelectorAll("#sizeRow .prov-chip").forEach((x) => x.classList.toggle("active", x === b));
         return;
       }
       chosen = b.dataset.prov;
@@ -2789,7 +2819,7 @@
       const msgEl = $("#imgCfgMsg");
       const keep = Spirits.getImageCfg();
       // 临时用弹层里正在填的配置去测（不改动已保存的配置）
-      Spirits.setImageCfg({ provider: chosen, key: $("#imgKey").value.trim(), model: $("#imgModel").value.trim(), endpoint: $("#imgEndpoint").value.trim(), style: chosenStyle });
+      Spirits.setImageCfg({ provider: chosen, key: $("#imgKey").value.trim(), model: $("#imgModel").value.trim(), endpoint: $("#imgEndpoint").value.trim(), style: chosenStyle, size: chosenSize });
       btn.disabled = true; btn.textContent = "测试中…";
       msgEl.textContent = "正在请 " + Spirits.PROVIDERS[chosen].label + " 画一张测试图…（几秒到十几秒）";
       try {
@@ -2815,6 +2845,7 @@
         model: $("#imgModel").value.trim(),
         endpoint: $("#imgEndpoint").value.trim(),
         style: chosenStyle,
+        size: chosenSize,
       };
       if (chosen !== "pollinations") {
         if (!next.key) { toast("这条路需要填 API Key；只想免费用就选「免密钥」"); return; }

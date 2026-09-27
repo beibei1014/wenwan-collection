@@ -10,6 +10,15 @@
 
   const STORE_KEY = "ww_spirits";      // { [itemId]: { persona, variant, imgUrl, letters, chats, lastLetterDay } }
   const CFG_KEY = "ww_imgcfg";         // 绘图通道配置
+  // 出图尺寸：Seedream 5.0 要求「至少 3,686,400 像素」（1024x1024 才 1,048,576 → 会被拒），
+  // 所以默认用 2K 档（2048² ≈ 4.19M 像素，稳过）；竖版立绘可选 3:4。
+  const DEFAULT_SIZE = "2K";
+  const SIZE_PRESETS = [
+    { v: "2K", label: "2K（推荐）" },
+    { v: "1728x2304", label: "竖版立绘 3:4" },
+    { v: "2048x2048", label: "方形 2048" },
+    { v: "4K", label: "4K（最清晰也最贵）" },
+  ];
   const AI_BASE = "https://api.deepseek.com";
   const AI_MODEL = "deepseek-v4-flash";
 
@@ -47,7 +56,7 @@
       const o = raw ? JSON.parse(raw) : null;
       if (o && o.provider) return o;
     } catch (e) { /* 忽略 */ }
-    return { provider: "pollinations", key: "", model: "", endpoint: "", style: DEFAULT_STYLE };
+    return { provider: "pollinations", key: "", model: "", endpoint: "", style: DEFAULT_STYLE, size: DEFAULT_SIZE };
   }
   function setImageCfg(cfg) { try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch (e) { /* 忽略 */ } }
   function providerInfo(cfg) {
@@ -113,13 +122,20 @@
     const color = COLOR_EN[item.color] || "jade green";
     const soft = SOFT_EN[item.softness || ""] || SOFT_EN[""];
     const isChar = (key === "anime");          // 日漫 Q 版角色：颜色落在头发/衣服上
-    const subject = isChar
-      ? ("a cute chibi anime character with " + color + " hair and " + color + " outfit, themed in " + color)
-      : ("a cute little mascot creature whose body color is " + color);
-    const bits = [subject, soft];
+    let cmp;
+    if (isChar) {
+      // 立绘：要全身、站姿、竖版构图，别只出个头
+      cmp = "a cute chibi anime character with " + color + " hair and " + color + " outfit, themed in " + color + ", " +
+        "full body character illustration, standing pose, whole body visible from head to toe, " +
+        "detailed outfit and shoes, character design sheet style, vertical composition, " +
+        "centered with comfortable margin around the character";
+    } else {
+      cmp = "a cute little creature mascot whose body color is " + color + ", full body creature illustration, " +
+        "whole body visible, centered with comfortable margin, character design sheet style";
+    }
+    const bits = [cmp, soft];
     if (item.softness === "soft") bits.push(isChar ? "round soft cheeks, relaxed happy sleepy eyes" : "round blob-like silhouette, soft chewy texture");
     if (item.softness === "slight") bits.push(isChar ? "calm gentle eyes, neat tidy look" : "slightly squishy but mostly smooth silhouette");
-    if (item.personaTrait) bits.push(item.personaTrait);
     return bits.join(", ") + ", " + st;
   }
   function seedOf(id, variant) { return (hashStr(id) % 900000) + 1000 + (variant || 0) * 7919; }
@@ -140,11 +156,20 @@
     if (!info.key) throw new Error("还没填 API Key");
     if (!info.endpoint) throw new Error("还没填接口地址");
     const prompt = promptFor(item, styleKey || cfg.style || DEFAULT_STYLE);
+    const size = cfg.size || DEFAULT_SIZE;
     try {
-      return await callImageApi(info, prompt);
+      return await callImageApi(info, prompt, size);
     } catch (e) {
-      // 模型名不对（常见：把控制台显示名 Doubao-Seedream-5.0-lite 填进来了）→ 拉账号模型列表自动纠正一次
       const msg = (e && e.message) || "";
+      // ① 尺寸不合法（Seedream 5 要求 ≥3,686,400 像素）：自动换成 2K 再试一次
+      if (isSizeErr(msg) && size !== DEFAULT_SIZE) {
+        const next = Object.assign({}, cfg, { size: DEFAULT_SIZE });
+        setImageCfg(next);
+        const r = await callImageApi(providerInfo(next), prompt, DEFAULT_SIZE);
+        r.autoFixed = "尺寸已改为 " + DEFAULT_SIZE;
+        return r;
+      }
+      // ② 模型名不对（常见：把控制台显示名 Doubao-Seedream-5.0-lite 填进来了）→ 拉账号模型列表自动纠正一次
       if (!/NotFound|does not exist|not exist|InvalidEndpointOrModel/i.test(msg) || _autoFixed) throw e;
       let fixed = "";
       try {
@@ -155,14 +180,17 @@
       _autoFixed = true;
       const next = Object.assign({}, cfg, { model: fixed });
       setImageCfg(next);
-      const r = await callImageApi(providerInfo(next), prompt);
+      const r = await callImageApi(providerInfo(next), prompt, size);
       r.autoFixed = fixed;   // 交给界面提示"已自动改用 xxx"
       return r;
     }
   }
+  function isSizeErr(msg) {
+    return /size.*not valid|at least\s*\d+\s*pixels|InvalidParameter.*size|尺寸/i.test(String(msg || ""));
+  }
   let _autoFixed = false;
-  async function callImageApi(info, prompt) {
-    const payload = { model: info.model, prompt: prompt, n: 1, size: "1024x1024" };
+  async function callImageApi(info, prompt, size) {
+    const payload = { model: info.model, prompt: prompt, n: 1, size: size || DEFAULT_SIZE };
     const resp = await fetch(info.endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + info.key },
@@ -524,7 +552,7 @@
   }
 
   window.Spirits = {
-    PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, getImageCfg, setImageCfg, providerInfo,
+    PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo,
     TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText, listModels,
     promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
     localPersona, persona, chat, letter, localChat, localLetter,

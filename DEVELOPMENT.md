@@ -85,7 +85,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v101）
+## 五、功能清单（截至 v102）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -328,6 +328,13 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
       · **`pickBestModel` 用上版本号**：`normModelName` 原来会把末尾 6 位版本号剥掉，导致"最强线索"丢失 → 拆成 `normModelName`（**保留**版本号）+ `stripVer()`，并给"候选里含用户填的版本号"**+4 分**。于是用户那句 `doubao-seedream-5.0-lite 260128` 能**精确命中 `doubao-seedream-5-0-260128`**（就是控制台里那个已开通的 lite 模型的 API ID），而不是之前误判成 `…-5-0-flash-260915`。
     - **验证**：单元 **11/11**（保留版本号的规整、★版本号命中 260128、只写显示名时 lite→flash、标准 ID 原样返回、乱填不改、识破密钥名称当 key、正确 key 放行、识别 Failed to fetch、端到端从显示名自动纠正到 `doubao-seedream-5-0-260128` 并出图成功、纠正写回配置）。
     - **给用户的最终填法（已确认）**：API Key = **`ark-` 开头**那串完整密钥；模型名 = **`doubao-seedream-5-0-260128`**（或点「📋 拉取我账号里的可用模型」自动选）；接口地址 = **留空**（默认就是截图 cURL 里那个 `https://ark.cn-beijing.volces.com/api/v3/images/generations`）；风格 = 日漫风·Q版角色。缓存 v101
+84. **🖼 立绘化 + 聊天带头像（v102）**：用户截图显示 key/模型都对上了，只剩 `size` 报错：**`image size must be at least 3686400 pixels`** —— Seedream 5.0 最小要 368 万像素，我原来写死的 `1024x1024`（104 万）太小。同时用户提了两条产品要求：**要立绘（不要只有个头）+ 聊天时带上各自头像**。
+    - **尺寸**：新增 `DEFAULT_SIZE = "2K"`（2048² ≈ 419 万像素，稳过）与 `SIZE_PRESETS`（`2K` / `1728x2304` 竖版立绘 3:4 / `2048x2048` / `4K`），存 `imgcfg.size`；**设置弹层新增「出图尺寸」一行**（默认选中 2K）。`generateImage()` 遇到 `isSizeErr()`（"size not valid / at least N pixels"）会**自动把尺寸改成 2K 并重试一次**（写回配置 + toast 提示），和模型名自动纠正同一套思路。
+    - **立绘 prompt**：`promptFor()` 的日漫角色分支改成**要全身立绘**：`full body character illustration, standing pose, whole body visible from head to toe, detailed outfit and shoes, character design sheet style, vertical composition, centered with comfortable margin around the character`（小生物分支同样加了 full body / 留边）。
+    - **弹层看全身**：`.spirit-img.big` 由 `object-fit:cover`（会裁成头）改成 **`contain` + `max-height:46vh` + 自适应宽高**，立绘完整显示不裁切。
+    - **聊天带头像**：小剧场每条都渲染成 `.spirit-row`（头像一个、气泡一个，**按说话人左右交替**）；头像是**该精灵自己的 AI 立绘**（没有则本地 SVG），并用「名字包含匹配」把 AI 台词里的 `who` 对应到具体精灵（AI 可能用简称）。CSS 新增 `.spirit-avatar`（38px 圆形带白边阴影）。
+    - **验证**：单元 **9/9**（立绘 prompt 含全身/站姿/从头到脚/竖版/留边、小生物也全身、默认尺寸 2K、预设含 3:4、尺寸被拒→自动改 2K→成功、请求序列 `1024x1024→2K`、写回配置、后续直接用 2K）；端到端 **15/15**（自动改尺寸并出图、prompt 是全身立绘、每串只烧一次额度、弹层有 4 档尺寸且默认 2K、竖版尺寸 3,981,312 像素合规、保存成功、弹层立绘 `contain` 且高度 346px 不裁切、聊天 4 行各带头像、头像用上 AI 立绘、不同精灵头像不同、气泡仍有说话人名字）。
+    - ⚠️ 教训：测试桩返回的 8×8 小图导致"头像都一样/立绘只有 9px"两条假失败 —— **验证图片相关功能时，桩必须返回尺寸/内容各异的真实图**（本次改成用 canvas 现画 512×768 渐变图，按 prompt 哈希取色）。缓存 v102
 
 > 🧪 **可复用的端到端测试套路（推荐）**：把 `index.html` 的 body 注入一个临时页面 → 在脚本前定义 `window.SUPABASE_CONFIG` 与假 `window.supabase.createClient`（`auth.getSession/getUser` 返回假 session，`from(t)` 返回链式对象，`then` 直接 resolve 固定数据）→ 按原顺序动态 `appendChild` 加载 `js/*.js` → `location.hash` 切路由 + 断言。这样能用真实 `app.js` 验证交互，不用登录、不碰线上库。
 
