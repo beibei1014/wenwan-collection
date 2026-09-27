@@ -84,8 +84,52 @@
   const EYE_COLORS = ["amber", "sky blue", "violet", "deep brown", "emerald", "golden"];
   const ACCESSORIES = ["a small shell hairpin", "a silk scarf", "a single round earring", "a forehead bead band",
     "a bead bracelet on the wrist", "a hair ribbon", "a tiny bell charm", "a wooden pendant"];
+  const ACCESSORIES2 = ["a waist pouch of woven cord", "a tiny bead tassel at the collar", "a thin leather bracelet",
+    "a small jade toggle on the sash", "a short beaded necklace", "a cloth arm band", "a tiny pouch of dried petals",
+    "a knotted cord belt charm"];
   const VIBES = ["calm and reliable", "cheerful and talkative", "quiet and thoughtful", "playful and mischievous",
     "gentle and caring", "cool and a little proud"];
+  /* ---------- v112：让立绘"不只靠颜色"——服装 / 纹样 / 布料 / 道具 / 姿态 ---------- */
+  const OUTFITS = [
+    { en: "a scholar's crossed-collar robe with a wide sash", zh: "交领长衫 + 宽腰带" },
+    { en: "a chunky knit vest over a collared shirt", zh: "粗针织毛背心 + 衬衫" },
+    { en: "a hooded windbreaker with layered shorts", zh: "连帽风衣 + 层次短裤" },
+    { en: "a short-sleeved kimono-style yukata with a thin obi", zh: "和风浴衣 + 细腰带" },
+    { en: "a loose linen tunic with rolled sleeves and a rope belt", zh: "亚麻罩衫 + 绳结腰带" },
+    { en: "an embroidered front-button jacket with cloud-patterned trim", zh: "绣花对襟褂 + 云纹滚边" },
+    { en: "a camel cape over a high-neck base layer", zh: "驼色小斗篷 + 高领内搭" },
+    { en: "a multi-pocket utility vest with a rolled scarf", zh: "多口袋马甲 + 围巾" },
+    { en: "a plain wrap-front top with a cloth sash", zh: "素色裹襟上衣 + 布腰封" },
+    { en: "a sporty track jacket with side-striped trousers", zh: "运动夹克 + 侧条纹裤" },
+  ];
+  const PATTERNS = [
+    { en: "cloud motif", zh: "云纹" }, { en: "tiny star specks", zh: "星点" },
+    { en: "rippling wave lines", zh: "水波" }, { en: "small plaid check", zh: "细格" },
+    { en: "polka dots", zh: "圆点" }, { en: "trailing vine leaves", zh: "缠枝" },
+  ];
+  const MATERIALS = ["matte linen", "soft brushed cotton", "sheeny silk", "cozy wool knit", "washed denim", "papery hemp"];
+  const MATERIALS_ZH = { "matte linen": "哑光亚麻", "soft brushed cotton": "磨毛棉", "sheeny silk": "丝光", "cozy wool knit": "绒线针织", "washed denim": "水洗牛仔", "papery hemp": "麻质" };
+  const PROPS = [
+    "holding a small tea cup", "carrying a tiny wooden tray", "holding a folding paper fan",
+    "holding a small paper lantern", "carrying a little woven basket", "holding a sprig of blossoms",
+    "holding a slim wooden scroll", "holding a small cloth pouch",
+  ];
+  const PROPS_ZH = {
+    "holding a small tea cup": "捧着茶杯", "carrying a tiny wooden tray": "端着木托盘", "holding a folding paper fan": "拿着折扇",
+    "holding a small paper lantern": "提着小灯", "carrying a little woven basket": "挎着小竹篮", "holding a sprig of blossoms": "拿着一枝花",
+    "holding a slim wooden scroll": "握着卷轴", "holding a small cloth pouch": "拎着布囊",
+  };
+  // 性格 → 表情/姿态（把"性格"画进立绘里，而不是只换颜色）
+  const POSES = [
+    "standing calmly with hands folded in front, gentle closed-lip smile",
+    "mid-gesture with one hand raised as if explaining something, bright open smile",
+    "head slightly tilted with hands behind the back, gaze a little off to the side, soft shy smile",
+    "one hand throwing a small peace sign, mischievous grin, weight shifted onto one leg",
+    "both hands cupped in front, warm soft expression, relaxed shoulders",
+    "arms lightly crossed with the chin slightly raised, confident half-smile",
+  ];
+  const POSES_ZH = ["双手交叠站得端正", "抬手比划着说话", "背手歪头、眼神偏一点", "比个小剪刀手、坏笑",
+    "双手捧在身前、神情温柔", "抱臂微抬下巴、自信"];
   // 中文说法（界面用；prompt 仍用英文原文）
   const HAIR_ZH = {
     "short spiky": "利落短发", "short neat and tidy": "清爽短发", "messy short hair with bangs": "蓬松碎短发",
@@ -99,6 +143,12 @@
     "a forehead bead band": "额头珠链（手串同款珠子）", "a bead bracelet on the wrist": "手腕上的珠子手链",
     "a hair ribbon": "发带", "a tiny bell charm": "小铃铛挂饰", "a wooden pendant": "木质吊坠",
   };
+  const ACC2_ZH = {
+    "a waist pouch of woven cord": "编织腰囊", "a tiny bead tassel at the collar": "领口小珠穗",
+    "a thin leather bracelet": "细皮手环", "a small jade toggle on the sash": "腰带上小玉扣",
+    "a short beaded necklace": "短串珠项链", "a cloth arm band": "布护腕",
+    "a tiny pouch of dried petals": "干花瓣小香囊", "a knotted cord belt charm": "绳结腰挂",
+  };
   const VIBE_ZH = {
     "calm and reliable": "沉静可靠", "cheerful and talkative": "活泼话多", "quiet and thoughtful": "安静爱想事情",
     "playful and mischievous": "调皮爱闹", "gentle and caring": "温柔体贴", "cool and a little proud": "有点酷、有点傲娇",
@@ -111,27 +161,48 @@
       : (item && item.gender === "boy" || item && item.gender === "girl") ? item.gender
       : rollGender((item && item.id) || "");        // 兜底：老记录/未成精时按 id 稳定掷一次
     const hairs = g === "boy" ? BOY_HAIR : GIRL_HAIR;
+    const vi = (h >> 12) % VIBES.length;
     return {
       gender: g,
       hair: hairs[(h >> 3) % hairs.length],
       eyes: EYE_COLORS[(h >> 6) % EYE_COLORS.length],
       acc: ACCESSORIES[(h >> 9) % ACCESSORIES.length],
-      vibe: VIBES[(h >> 12) % VIBES.length],
+      acc2: ACCESSORIES2[(h >> 15) % ACCESSORIES2.length],
+      outfit: OUTFITS[(h >> 18) % OUTFITS.length].en,
+      outfitZh: OUTFITS[(h >> 18) % OUTFITS.length].zh,
+      pattern: PATTERNS[(h >> 21) % PATTERNS.length].en,
+      patternZh: PATTERNS[(h >> 21) % PATTERNS.length].zh,
+      material: MATERIALS[(h >> 24) % MATERIALS.length],
+      prop: PROPS[(h >> 26) % PROPS.length],
+      pose: POSES[vi],
+      vibe: VIBES[vi],
+      vibeIdx: vi,
     };
   }
   function appearanceText(ap) {
+    const g = ap.vibeIdx != null ? ap.vibeIdx : Math.max(0, VIBES.indexOf(ap.vibe));
     return (ap.gender === "boy" ? "👦 男孩" : "👧 女孩") + " · " + (HAIR_ZH[ap.hair] || ap.hair) + " · " +
-      (EYES_ZH[ap.eyes] || ap.eyes) + "眼睛 · " + (ACC_ZH[ap.acc] || ap.acc);
+      (EYES_ZH[ap.eyes] || ap.eyes) + "眼睛 · " + (ACC_ZH[ap.acc] || ap.acc) +
+      " · " + (ap.outfitZh || ap.outfit) + " · " + (ap.patternZh || ap.pattern) + "纹" +
+      " · " + (MATERIALS_ZH[ap.material] || ap.material) + " · " + (POSES_ZH[g] || "");
+  }
+  // 形象细节条（详情页给人看的一行短描述）
+  function appearanceDetail(ap) {
+    return (ACC2_ZH[ap.acc2] || ap.acc2) + " · " + (PROPS_ZH[ap.prop] || ap.prop) + " · " +
+      (MATERIALS_ZH[ap.material] || ap.material) + " · " + (VIBE_ZH[ap.vibe] || ap.vibe);
   }
   function appearancePrompt(ap) {
     const isBoy = ap.gender === "boy";
     // 男性/女性特征要写死，并且**明确排除异性发型**（只写 "boy" 模型偶尔照样给长发）
+    // v112：除了性别/发型/瞳色，还把 服装、纹样、布料、配饰、姿态、道具 全部写进去 —— 形象不再"只有颜色"
     return (isBoy
       ? "a young boy character, clearly male, boyish face, short masculine hair style: "
       : "a young girl character, clearly female, girlish face, feminine hair style: ") +
-      ap.hair + ", " + ap.eyes + " eyes, wearing " + ap.acc + ", " + ap.vibe + " personality, " +
-      (isBoy ? "no long hair, no twin tails, no ponytail, no feminine hair style"
-             : "no boyish buzz cut, no masculine short hair");
+      ap.hair + " hair, " + ap.eyes + " eyes, wearing " + ap.acc + " and " + ap.acc2 + ", " +
+      "outfit: " + ap.outfit + ", trimmed with " + ap.pattern + ", " + ap.material + " fabric texture, " +
+      "pose: " + ap.pose + (ap.prop ? ", " + ap.prop : "") + ", " + ap.vibe + " personality" +
+      (isBoy ? ", no long hair, no twin tails, no ponytail, no feminine hair style"
+             : ", no boyish buzz cut, no masculine short hair");
   }
   // 一致性硬约束：每次出图都带上，防止突破后"换人"
   // ⚠️ 这里曾经写过 "character evolution sheet"（进化图鉴）→ 模型真的画成了**多格图鉴**：
@@ -242,8 +313,9 @@
     anime: {
       label: "日漫风 · Q版角色",
       text: "Japanese anime illustration, 2D anime style, cute chibi character, big sparkling anime eyes with white highlights, " +
-        "cel shading, flat anime coloring, clean bold line art, soft pastel color palette, small gentle smile, soft blush, " +
-        "chibi proportion with slightly big head, full body, centered composition, plain solid pastel background, " +
+        "cel shading, flat anime coloring, clean bold line art, soft pastel color palette, soft blush, " +
+        "richly detailed outfit design with visible fabric folds and seams, small ornamental accessories, " +
+        "expressive pose with personality, chibi proportion with slightly big head, full body, centered composition, plain solid pastel background, " +
         "hand-drawn 2D anime art, kawaii, no 3D render, no realistic face, no photo, no gradient mesh",
     },
     animepet: {
@@ -309,6 +381,9 @@
         "full body creature illustration, whole body visible, centered with comfortable margin";
     }
     const bits = [cmp, soft, SINGLE, CONSISTENCY];
+    // v112：把「人物设定 → 形象细节关键词」也拼进去，立绘不再"只有颜色"
+    const tags = getLookTags(item);
+    if (tags) bits.push("extra character design details: " + tags);
     if (item.softness === "soft") bits.push(isChar ? "round soft cheeks, relaxed happy sleepy eyes" : "round blob-like silhouette, soft chewy texture");
     if (item.softness === "slight") bits.push(isChar ? "calm gentle eyes, neat tidy look" : "slightly squishy but mostly smooth silhouette");
     return bits.join(", ") + ", " + st;
@@ -608,7 +683,7 @@
       const sys = "你在写一个文玩 App 里的「挂瓷精灵小剧场」：主人的几串手串盘到挂瓷后变成了小生物，它们会背着你聊天。"
         + "请写一段 4-6 句的日常小对话，轻松、可爱、有生活感、带点小吐槽，不要煽情，不要解释。"
         + "严格只输出 JSON：{\"lines\":[{\"who\":\"精灵名字\",\"text\":\"说的话\"}]}";
-      const user = "出场精灵：\n" + spirits.map((s) => spiritDesc(s.item, s.persona)).join("\n") + "\n请写它们今天的小剧场。";
+      const user = "出场精灵：\n" + spirits.map((s) => spiritDesc(s.item, s.persona)).join("\n") + "\n" + ownerLine() + "\n请写它们今天的小剧场。";
       const txt = await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 700);
       const m = txt.match(/\{[\s\S]*\}/);
       if (m) {
@@ -642,7 +717,7 @@
         + "落款写精灵名字。不要用 Markdown 标题，不要解释。";
       const user = "精灵设定：" + spiritDesc(spirit.item, spirit.persona) +
         (spirit.idleDays != null ? ("\n它已经 " + spirit.idleDays + " 天没被盘了。") : "") +
-        "\n主人昵称：" + (userName || "主人") + "\n请写这封短信。";
+        "\n" + ownerLine(userName) + "\n请写这封短信。";
       const txt = await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 500);
       if (txt) return txt;
     } catch (e) { /* 兜底 */ }
@@ -652,6 +727,28 @@
   /* ============================================================
    * v109：中文人物设定 / 精灵日记 / 房间剧情
    * ============================================================ */
+  /* ---------- 主人设定（v111：性别/昵称，写日记和剧情时必须遵守） ---------- */
+  const OWNER_KEY = "ww_owner";            // { name: "小北", gender: "girl" | "boy" }
+  function getOwner() {
+    try {
+      const o = JSON.parse(localStorage.getItem(OWNER_KEY) || "{}");
+      return { name: String((o && o.name) || ""), gender: (o && o.gender) === "boy" ? "boy" : "girl" };
+    } catch (e) { return { name: "", gender: "girl" }; }
+  }
+  function setOwner(o) {
+    const cur = getOwner();
+    const next = { name: o && o.name != null ? String(o.name) : cur.name, gender: (o && o.gender) ? o.gender : cur.gender };
+    try { localStorage.setItem(OWNER_KEY, JSON.stringify(next)); } catch (e) { /* 忽略 */ }
+    return next;
+  }
+  // 给所有"文字生成"用的一句话：明确主人是谁、性别怎么称呼（AI 默认会写成「他」）
+  function ownerLine(userName) {
+    const o = getOwner();
+    const nm = (userName || o.name || "主人");
+    return "【主人】" + (nm && nm !== "主人" ? "昵称：" + nm + "；" : "") +
+      "性别：" + (o.gender === "boy" ? "男" : "女") + "，请用「" + (o.gender === "boy" ? "他" : "她") + "」称呼主人，" +
+      "不要写成「" + (o.gender === "boy" ? "她" : "他") + "」，也不要把主人写成男性化的形象。";
+  }
 
   /* ---------- 手串真实主色（让立绘颜色贴近实物） ---------- */
   const BEAD_KEY = "ww_beadcolor";          // { [itemId]: { hex, word, at } }
@@ -720,6 +817,50 @@
     });
   }
 
+  /* ---------- 形象细节标签（v112）：把"人物设定"反过来喂给绘图 prompt ---------- */
+  const LOOK_KEY = "ww_looktags";        // { [itemId]: { key, tags, at } } —— key 变了才重算
+  function loadLooks() { try { return JSON.parse(localStorage.getItem(LOOK_KEY) || "{}") || {}; } catch (e) { return {}; } }
+  function saveLooks(o) { try { localStorage.setItem(LOOK_KEY, JSON.stringify(o)); } catch (e) { /* 忽略 */ } }
+  function lookKeyOf(ap) {
+    return [ap.gender, ap.hair, ap.eyes, ap.acc, ap.acc2, ap.outfit, ap.pattern, ap.material, ap.prop].join("|");
+  }
+  function getLookTags(item) { const all = loadLooks(); const r = item && all[item.id]; return r && r.tags ? r.tags : ""; }
+  // 无 AI 时的英文形象细节（结构化拼出来的，保证"不只靠颜色"）
+  function localLookTags(ap) {
+    return [ap.outfit, ap.material + " fabric", ap.pattern + " trim", ap.acc, ap.acc2,
+      ap.pose, ap.prop, ap.vibe + " expression"].filter(Boolean).join(", ");
+  }
+  // 有 AI 时：让它读完中文人物设定，输出英文绘图关键词（形象就"照着人设画"）
+  async function buildLookTags(item, ap, personaZh, persona) {
+    const key = lookKeyOf(ap) + "|" + (personaZh ? hashStr(personaZh).toString(36) : "");
+    const all = loadLooks();
+    if (all[item.id] && all[item.id].key === key && all[item.id].tags) return all[item.id].tags;
+    let tags = "";
+    if (getAiKey() && personaZh) {
+      try {
+        const sys = "你是动画角色设定师。读给定的中文人物设定，输出一行**英文**绘图关键词（逗号分隔，12-20 个），"
+          + "依次覆盖：服装款式与剪裁、布料质感、配色与纹样点缀、发型细节、配饰细节、表情、姿势、1 个小道具。"
+          + "不要解释、不要编号、不要 Markdown、不要中文。";
+        const user = "角色：" + spiritDesc(item, persona, null) + "；固定外形（必须遵守）：" + appearanceText(ap) +
+          "；人物设定：" + personaZh + "。请输出形象细节关键词。";
+        tags = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 320) || "")
+          .replace(/[\r\n]+/g, " ").replace(/^["'`]|["'`]$/g, "").trim();
+        if (tags.length < 20 || /[\u4e00-\u9fa5]/.test(tags.slice(0, 12))) tags = "";   // 太短或还在写中文 → 用本地
+      } catch (e) { tags = ""; }
+    }
+    if (!tags) tags = localLookTags(ap);
+    all[item.id] = { key: key, tags: tags, at: Date.now() };
+    saveLooks(all);
+    return tags;
+  }
+  // 图片是不是"用旧的简单 prompt 画的"（升级形象系统后提示用户重画）
+  function lookTagsStale(item, ap) {
+    const all = loadLooks();
+    const r = item && all[item.id];
+    if (!r) return true;
+    return !r.tags || r.key.split("|").length !== lookKeyOf(ap).split("|").length;
+  }
+
   /* ---------- 中文人物设定（200-300 字） ---------- */
   const TRAIT_ZH_EXTRA = {
     soft: ["抱着睡最舒服", "一碰就想化", "慢半拍的温柔"],
@@ -764,7 +905,7 @@
           "；形态：" + stageDef(stage).name + "；陪伴 " + (days || 0) + " 天；盘玩 " + (plays || 0) + " 次；" +
           "固定人设：" + appearanceText(ap) + "；性格基调：" + (VIBE_ZH[ap.vibe] || ap.vibe) +
           ((persona && persona.traits && persona.traits.length) ? "（" + persona.traits.join("、") + "）" : "") +
-          "。请写它的中文人物设定。";
+          "。\n" + ownerLine() + "\n请写它的中文人物设定。";
         txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 700) || "").trim();
         txt = txt.replace(/^["「]|["」]$/g, "").trim();
       } catch (e) { txt = ""; }
@@ -816,11 +957,12 @@
     if (getAiKey()) {
       try {
         const sys = "你在写「挂瓷精灵」的日记。精灵是主人收藏的手串盘到挂瓷后变成的小生物，用第一人称写，"
-          + "简体中文，60-140 字，口语化、可爱、有生活细节，不要 Markdown、不要标题、不要解释，直接写正文。";
+          + "简体中文，60-140 字，口语化、可爱、有生活细节，不要 Markdown、不要标题、不要解释，直接写正文。"
+          + "注意：主人的性别必须按下面给的信息来写（称呼别搞错）。";
         const user = "精灵设定：" + spiritDesc(item, p, rec.stage) + "；人设：" + appearanceText(ap) +
           (ctx && ctx.playedToday ? "；今天被盘了 " + ctx.plays + " 次" : "") +
           (ctx && ctx.idleDays != null ? "；已经 " + ctx.idleDays + " 天没被盘" : "") +
-          "；今天是陪主人的第 " + ((ctx && ctx.dayNo) || 1) + " 天。请写今天的日记。";
+          "；今天是陪主人的第 " + ((ctx && ctx.dayNo) || 1) + " 天。\n" + ownerLine() + "\n请写今天的日记。";
         const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 400) || "").trim();
         if (txt && txt.length >= 20) {
           return "第 " + ((ctx && ctx.dayNo) || 1) + " 天 · " + stageDef(rec.stage || 1).name + "\n" + txt.replace(/^["「]|["」]$/g, "").trim();
@@ -908,7 +1050,7 @@
           + "温柔可爱、有生活质感、不要煽情说教；不要 Markdown、不要标题、不要分点、不要解释，直接输出正文。";
         const user = "房间：" + roomName + "；两只精灵已经相处 " + (aff || 0) + " 天（默契等级 " + (level + 1) + "/5）。\n" +
           "甲：" + spiritDesc(a.item, a.persona, a.stage) + "\n乙：" + spiritDesc(b.item, b.persona, b.stage) +
-          "\n请写它们之间刚发生的这段故事。";
+          "\n" + ownerLine() + "\n请写它们之间刚发生的这段故事。";
         const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 900) || "").trim();
         if (txt && txt.length >= 80) return "【" + roomName + " · 第 " + (level + 1) + " 段】\n" + txt.replace(/^["「]|["」]$/g, "").trim();
       } catch (e) { /* 兜底 */ }
@@ -1034,6 +1176,10 @@
     todayKey, load, save, ensureIn,
     // v110：性别在「挂瓷成精」时定下来（男女 3:1），之后不可改
     born, rollGender, legacyGender,
+    // v111：主人设定（性别/昵称）—— 日记、剧情、聊天、人物设定都要按它来写
+    getOwner, setOwner, ownerLine,
+    // v112：形象细节（服装/纹样/布料/道具/姿态）+ 人物设定 → 形象关键词
+    appearanceDetail, OUTFITS, PATTERNS, PROPS, POSES, buildLookTags, getLookTags, localLookTags, lookTagsStale,
     // v109：真实主色 / 中文人物设定 / 日记 / 房间剧情
     beadColor, detectBeadColor, hexToWord,
     personaZh, personaZhLocal, ensureDiary, diarySlots, diaryLocal, diaryNow, roomStory, storyLocal,

@@ -2596,6 +2596,7 @@
     rec.imgErr = "";
     rec._imgErr = "";   // ⚠️ 必须清掉：出图成功却留着旧错误 → 列表页会一直弹那条早就过期的红字（v105 笔误成 imgErr，v108 修）
     rec.face = await analyzeFaceBox(url);   // 顺手算出"头像取景"，缩略图就不用等下一轮
+    rec.lookStale = false;                  // 这张图已经用了最新的形象设定
     bumpGenCount(rec);
     return url;
   }
@@ -2742,9 +2743,11 @@
       toast("开始重画 " + n + " 只精灵…");
       renderSpiritPage();
     };
-    // 异步补性格 + 日记 + （API 通道）AI 出图 + 老图的头像取景 + 房间契合度/剧情
+    // 异步补性格 + 人设/形象细节（要在出图之前）→ 出图 + 老图头像取景 + 日记 + 房间契合度/剧情
     ensureSpiritData(list, false);
-    ensureSpiritImages(list);
+    ensureSpiritLook(list).then(() => {
+      ensureSpiritImages(list);
+    });
     ensureSpiritFaces(list);
     ensureSpiritExtras(list);
     tickRooms(list);
@@ -2873,7 +2876,46 @@
     _roomBusy = false;
   }
 
-  /* ---------- 补齐：真实主色 / 中文人设 / 日记 ---------- */
+  /* ---------- 补齐：真实主色 / 中文人设 / 形象细节关键词（要在出图之前跑） ---------- */
+  let _lookBusy = false;
+  async function ensureSpiritLook(list) {
+    if (_lookBusy) return;
+    _lookBusy = true;
+    try {
+      let changed = false;
+      for (const it of list) {
+        const rec0 = Spirits.ensureIn(Spirits.load(), it.id);
+        const ap = Spirits.appearanceOf(it, rec0.appearanceSeed || 0, rec0.gender || "");
+        if (!Spirits.beadColor(it) && it.photos && it.photos.length) {
+          if (await Spirits.detectBeadColor(it)) changed = true;
+        }
+        const beforeZh = rec0.personaZh;
+        await Spirits.personaZh(it, ap, rec0.persona, rec0.stage || 1, DB.daysWith(it), it.playCount || 0);
+        const rec1 = Spirits.load()[it.id] || {};
+        if (rec1.personaZh !== beforeZh) changed = true;
+        // 人物设定 → 英文形象细节（出图时会把它们拼进 prompt）
+        const tagsBefore = Spirits.getLookTags(it);
+        const tags = await Spirits.buildLookTags(it, ap, rec1.personaZh, rec1.persona);
+        if (tags !== tagsBefore) {
+          changed = true;
+          // 已经有立绘、但形象细节是新的 → 标记一下，详情页会提示"按新设定重画"
+          if (rec1.imgUrl) {
+            const s2 = Spirits.load();
+            Spirits.ensureIn(s2, it.id).lookStale = true;
+            Spirits.save(s2);
+          }
+        }
+      }
+      const h = location.hash;
+      if (changed) {
+        if (h === "#/spirit") renderSpiritPage();
+        else if (h.indexOf("#/spirit/") === 0) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));
+      }
+    } catch (e) { /* 静默 */ }
+    _lookBusy = false;
+  }
+
+  /* ---------- 补齐：精灵日记 ---------- */
   let _extraBusy = false;
   async function ensureSpiritExtras(list) {
     if (_extraBusy) return;
@@ -2883,13 +2925,6 @@
       for (const it of list) {
         const rec0 = Spirits.ensureIn(Spirits.load(), it.id);
         const ap = Spirits.appearanceOf(it, rec0.appearanceSeed || 0, rec0.gender || "");
-        if (!Spirits.beadColor(it) && it.photos && it.photos.length) {
-          const c = await Spirits.detectBeadColor(it);
-          if (c) changed = true;
-        }
-        const before = rec0.personaZh;
-        await Spirits.personaZh(it, ap, rec0.persona, rec0.stage || 1, DB.daysWith(it), it.playCount || 0);
-        if (Spirits.load()[it.id].personaZh !== before) changed = true;
         const st = Spirits.load();
         const r2 = Spirits.ensureIn(st, it.id);
         const added = await Spirits.ensureDiary(it, r2, ap, diaryCtx(it, r2));
@@ -2901,6 +2936,123 @@
       }
     } catch (e) { /* 静默 */ }
     _extraBusy = false;
+  }
+
+  /* ---------- 精灵形象 / 进阶动作（v111：详情页直接调，不再依赖弹层） ----------
+     host = { refresh(), refreshTop(), busy(on, text) } —— 由页面提供，用于原地刷新与按钮状态 */
+  async function spiritReRoll(item, host) {
+    const h = host || {};
+    const s = Spirits.load();
+    const r = Spirits.ensureIn(s, item.id);
+    r.appearanceSeed = (r.appearanceSeed || 0) + 1;
+    r.imgUrl = "";
+    r.imgAt = 0;
+    r.face = null;
+    r._imgErr = ""; r._imgErrAt = 0;
+    Spirits.save(s);
+    const nap = Spirits.appearanceOf(item, r.appearanceSeed, r.gender || "");
+    toast("新设定：" + Spirits.appearanceText(nap) + "（性别不变，正在生成…）");
+    if (h.busy) h.busy(true, "正在重画…");
+    if (h.refresh) h.refresh();
+    try {
+      const res = await Spirits.generateImage(item, r.variant || 0, null, r.stage || 1, { appearanceSeed: r.appearanceSeed, gender: r.gender || "" });
+      const s2 = Spirits.load();
+      const r2 = Spirits.ensureIn(s2, item.id);
+      await saveSpiritImage(item, r2, res, r2.stage || 1);
+      Spirits.save(s2);
+      if (res.autoFixed) toast("已自动修正：" + res.autoFixed);
+      toast("人设换好了 🎲");
+    } catch (e) {
+      toast("重画出错：" + ((e && e.message) || ""));
+    }
+    if (h.busy) h.busy(false);
+    if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
+  }
+
+  async function spiritNewLook(item, host) {
+    const h = host || {};
+    const cfg2 = Spirits.getImageCfg();
+    const s = Spirits.load();
+    const r = Spirits.ensureIn(s, item.id);
+    const prevImg = r.imgUrl || "";
+    r.variant = (r.variant || 0) + 1;
+    r._imgErr = ""; r._imgErrAt = 0;
+    Spirits.save(s);
+    if (cfg2.provider === "pollinations") {
+      // 免密钥通道：换 seed 重出（URL 直接交给 <img>，不占用 POST 通道）
+      if (h.busy) h.busy(true, "换个形象中…");
+      const s2 = Spirits.load();
+      const r2 = Spirits.ensureIn(s2, item.id);
+      await saveSpiritImage(item, r2, { url: Spirits.pollinationsUrl(item, r.variant, null, r.stage || 1, Spirits.appearanceOf(item, r.appearanceSeed || 0, r.gender || "")) }, r2.stage || 1);
+      Spirits.save(s2);
+      toast("换个形象中…（几秒钟出图）");
+      if (h.busy) h.busy(false);
+      if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
+      return;
+    }
+    toast("正在重画同一个角色…（消耗 1 次出图）");
+    if (h.busy) h.busy(true, "正在重画…");
+    try {
+      const res = await Spirits.generateImage(item, r.variant, null, r.stage || 1, { appearanceSeed: r.appearanceSeed || 0, gender: r.gender || "", ref: prevImg });
+      const s2 = Spirits.load();
+      const r2 = Spirits.ensureIn(s2, item.id);
+      await saveSpiritImage(item, r2, res, r2.stage || 1);
+      Spirits.save(s2);
+      if (res.autoFixed) toast("已自动修正：" + res.autoFixed);
+      toast("形象换好了 🍡");
+    } catch (e) {
+      toast("出图失败：" + ((e && e.message) || "未知错误"));
+    }
+    if (h.busy) h.busy(false);
+    if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
+  }
+
+  async function spiritBreak(item, host) {
+    const h = host || {};
+    const s0 = Spirits.load();
+    const r0 = Spirits.ensureIn(s0, item.id);
+    const si0 = Spirits.stageInfo(item, r0.stage, DB.daysWith(item));
+    if (!si0.canBreak) { toast("成长值还不够，多盘盘它吧～"); return; }
+    const nextStage = si0.stage + 1;
+    const nextDef = Spirits.stageDef(nextStage);
+    const p = r0.persona || Spirits.localPersona(item);
+    if (h.busy) h.busy(true, "突破中…");
+    try {
+      // 突破：把"突破前那张图"当参考图传过去 → 保证是同一个人长大，不会变性/换人
+      const res = await Spirits.generateImage(item, 0, null, nextStage, { appearanceSeed: r0.appearanceSeed || 0, gender: r0.gender || "", ref: r0.imgUrl || "" });
+      const s1 = Spirits.load();
+      const r1 = Spirits.ensureIn(s1, item.id);
+      const hist = Array.isArray(r1.imgHistory) ? r1.imgHistory : [];
+      const lastH = hist[hist.length - 1];
+      // 记下"突破前"的旧形态（若还没记过才补）
+      if (r1.imgUrl && !(lastH && lastH.url === r1.imgUrl)) hist.push({ stage: r1.stage || 1, url: r1.imgUrl, at: Date.now() });
+      r1.stage = nextStage;
+      r1.imgHistory = hist.slice(-8);
+      const url = await saveSpiritImage(item, r1, res, nextStage);
+      Spirits.save(s1);
+      if (res.autoFixed) toast("已自动修正：" + res.autoFixed);
+      if (h.busy) h.busy(false);
+      if (h.refresh) h.refresh();
+      // 突破演出：全屏特效 + 新立绘（点「好耶」回到页面顶部看新形象）
+      const mask2 = $("#modalMask"), modal2 = $("#modal");
+      modal2.innerHTML = '<div class="spirit-evolve">' +
+        '<div class="spirit-evolve-burst">✨</div>' +
+        (url ? '<img src="' + esc(url) + '" alt="">' : "") +
+        '<div class="spirit-evolve-title">突 破 成 功</div>' +
+        '<div class="spirit-evolve-sub">' + esc(p.name || item.name) + " → " + nextDef.icon + " " + esc(nextDef.name) + "</div>" +
+        '<div class="spirit-evolve-desc">' + (nextStage >= Spirits.STAGES.length ? "它已经长成了完成体，帅/美到发光 👑" : "它长大了一点，继续盘它会更强 💪") + "</div>" +
+        '<button class="btn primary" id="spEvoOk" style="width:100%;margin-top:14px">好耶！看看新形象</button></div>';
+      mask2.hidden = false; modal2.hidden = false; modal2.style.display = "";
+      const fin = () => {
+        mask2.hidden = true; modal2.hidden = true; modal2.style.display = "";
+        if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
+      };
+      $("#spEvoOk").onclick = fin;
+      mask2.onclick = fin;
+    } catch (e) {
+      if (h.busy) h.busy(false);
+      toast("突破失败：" + ((e && e.message) || "出图失败"));
+    }
   }
 
   /* ---------- 精灵独立详情页 ---------- */
@@ -2936,6 +3088,7 @@
     h += '<div class="sd-card"><div class="sd-card-title">📝 人物设定</div>' +
       '<div class="sd-persona">' + (rec.personaZh ? esc(rec.personaZh) : '<span style="color:var(--text-2)">正在为它写设定…（第一次会调用一次文字模型，稍等几秒）</span>') + "</div>" +
       '<div class="sd-look">🔒 ' + esc(Spirits.appearanceText(ap)) + "</div>" +
+      '<div class="sd-look-sub">🧵 ' + esc(Spirits.appearanceDetail(ap)) + "</div>" +
       '<div class="sd-look-sub">🎂 ' + (rec.bornAt
         ? "出生于 " + Math.max(1, Math.round((Date.now() - rec.bornAt) / 86400000)) + " 天前 —— 性别在挂瓷成精那一刻随机定下（男 3 : 女 1），之后就固定了，不能改～"
         : "性别在挂瓷成精那一刻随机定下（男 3 : 女 1），之后固定不变") + "</div>" +
@@ -2952,12 +3105,24 @@
       (si.isMax ? '<div class="spirit-prog max">已是完成体 · 巅峰形态 👑</div>'
         : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
           '<span class="spirit-prog-txt">' + si.growth + " / " + si.need + " → " + esc(si.next) + "（再 " + si.toNext + " 点可突破）</span></div>") +
+      // v111：突破/换形象/换外观设定直接放在详情页 —— 生成完就在上面看到新立绘（不用再钻弹层）
+      // v112：形象细节升级后（照人物设定画的），这里会提示"按新设定重画"
+      '<div class="sd-actions2">' +
+      (si.canBreak ? '<button class="btn primary" id="sdBreak">✨ 突破 → ' + esc(si.next) + "</button>" : "") +
+      (rec.lookStale
+        ? '<button class="btn primary" id="sdNewLook">✨ 按新设定重画</button>'
+        : '<button class="btn ghost" id="sdNewLook">🔁 换形象</button>') +
+      '<button class="btn ghost" id="sdReRoll">🎲 换外观设定</button>' +
+      "</div>" +
+      (rec.lookStale ? '<div class="sd-stale">🆕 形象系统升级了：现在会照着「人物设定」画服装、纹样、布料、配饰、姿态和道具。点「✨ 按新设定重画」把这只精灵换成细致版（消耗 1 次出图额度）。</div>' : "") +
+      '<div class="sd-gen">已为它出图 ' + (Number(rec.genCount) || 1) + " 张 · 本机累计 " + genTotal() + " 张" +
+      '<span class="sd-gen-hint">（换形象/换设定各消耗 1 次出图额度；性别不会变）</span></div>' +
       (hist.length > 1 ? '<div class="spirit-hist">' + hist.map((x) => {
         const d = Spirits.stageDef(x.stage);
         return '<div class="spirit-hist-item' + (x.stage === si.stage ? " now" : "") + '" title="' + esc(d.name) + '">' +
           '<img src="' + esc(x.url) + '" alt=""><span>' + d.icon + esc(d.name) + "</span></div>";
       }).join("") + "</div>" : "") +
-      '<button class="btn primary" id="sdOpenModal" style="width:100%;margin-top:12px">⚙️ 形象与进阶（突破 / 换形象 / 换性别）</button></div>';
+      "</div>";
 
     h += '<div class="sd-card"><div class="sd-card-title">🏠 住的房间</div>';
     if (room) {
@@ -2999,11 +3164,27 @@
 
     view.innerHTML = h;
     bindSpiritImgFallback(view);
-
+    // 原地刷新（保持滚动位置）/ 回到顶部（让用户第一时间看到新立绘）
+    const refresh = () => { const y = window.scrollY; renderSpiritDetailPage(id); window.scrollTo(0, y); };
+    const refreshTop = () => { renderSpiritDetailPage(id); window.scrollTo(0, 0); };
+    const host = {
+      refresh: refresh,
+      refreshTop: refreshTop,
+      busy: (on, text) => {
+        ["#sdBreak", "#sdNewLook", "#sdReRoll"].forEach((sel) => {
+          const b = $(sel);
+          if (!b) return;
+          if (on) { b.disabled = true; if (sel === "#sdNewLook") { b.dataset.old = b.textContent; b.textContent = text || "处理中…"; } }
+          else { b.disabled = false; if (b.dataset.old) { b.textContent = b.dataset.old; delete b.dataset.old; } }
+        });
+      },
+    };
+    const bk = $("#sdBreak"); if (bk) bk.onclick = () => spiritBreak(it, host);
+    const nl = $("#sdNewLook"); if (nl) nl.onclick = () => spiritNewLook(it, host);
+    const rr = $("#sdReRoll"); if (rr) rr.onclick = () => spiritReRoll(it, host);
     const art = $("#sdArt");
     if (art) art.onclick = () => openSpiritViewer(rec.imgUrl || Spirits.localAvatarSvg(it));
     const gb = $("#sdGoBead"); if (gb) gb.onclick = () => location.hash = "#/item/" + it.id;
-    const om = $("#sdOpenModal"); if (om) om.onclick = () => showSpiritModal(it);
     const ch = $("#sdChat"); if (ch) ch.onclick = () => showSpiritChatModal(it);
     const sl = $("#sdSpiritList"); if (sl) sl.onclick = () => location.hash = "#/spirit";
     const rg = $("#sdRoomGo"); if (rg) rg.onclick = (e) => { e.stopPropagation(); location.hash = "#/room/" + encodeURIComponent(room.id); };
@@ -3272,6 +3453,41 @@
     viewer.onclick = (e) => { if (e.target === viewer) { viewer.classList.remove("show"); viewer.hidden = true; } };
   }
 
+  /* ---------- 主人设定（昵称 / 性别）v111 ---------- */
+  function showOwnerModal() {
+    const mask = $("#modalMask"), modal = $("#modal");
+    const ow = Spirits.getOwner();
+    modal.innerHTML = "<h3>👤 主人设定</h3>" +
+      '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:12px;text-align:center">' +
+      "精灵写日记、写剧情、聊天时都会照这里来称呼你，别让它们把你写成另一个性别 😆</p>" +
+      '<div class="form-group"><div class="form-label">昵称 <small>它们会这么叫你</small></div>' +
+      '<input class="form-input" id="ownName" maxlength="12" placeholder="如：小北" value="' + esc(ow.name || "") + '"></div>' +
+      '<div class="form-group"><div class="form-label">我是</div><div class="prov-row" id="ownGenderRow">' +
+      '<button type="button" class="prov-chip' + (ow.gender !== "boy" ? " active" : "") + '" data-g="girl">👩 女生（用「她」）</button>' +
+      '<button type="button" class="prov-chip' + (ow.gender === "boy" ? " active" : "") + '" data-g="boy">👨 男生（用「他」）</button>' +
+      "</div></div>" +
+      '<div style="display:flex;gap:8px;margin-top:12px">' +
+      '<button class="btn ghost" id="ownCancel" style="flex:1">取消</button>' +
+      '<button class="btn primary" id="ownSave" style="flex:2">保存</button></div>';
+    mask.hidden = false;
+    modal.hidden = false;
+    modal.style.display = "";
+    let gender = ow.gender;
+    const close = () => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; };
+    modal.querySelectorAll("[data-g]").forEach((b) => b.onclick = () => {
+      gender = b.dataset.g;
+      modal.querySelectorAll("[data-g]").forEach((x) => x.classList.toggle("active", x === b));
+    });
+    $("#ownCancel").onclick = close;
+    mask.onclick = close;
+    $("#ownSave").onclick = () => {
+      Spirits.setOwner({ name: ($("#ownName").value || "").trim(), gender: gender });
+      close();
+      toast("已保存：以后它们会用「" + (gender === "boy" ? "他" : "她") + "」称呼你");
+      renderSettings();
+    };
+  }
+
   /* ---------- 精灵聊天（独立弹层，详情页用） ---------- */
   function showSpiritChatModal(item) {
     const mask = $("#modalMask"), modal = $("#modal");
@@ -3355,214 +3571,6 @@
   }
 
   // 精灵详情弹层
-  function showSpiritModal(item) {
-    const mask = $("#modalMask");
-    const modal = $("#modal");
-    const store = Spirits.load();
-    const rec = Spirits.ensureIn(store, item.id);
-    Spirits.save(store);
-    const p = rec.persona || Spirits.localPersona(item);
-    const idle = item.lastPlayedAt ? Math.floor((Date.now() - item.lastPlayedAt) / 86400000) : null;
-    const si = Spirits.stageInfo(item, rec.stage, DB.daysWith(item));
-    const ap = Spirits.appearanceOf(item, rec.appearanceSeed || 0, rec.gender || "");   // 固定人设（性别/发型/瞳色/配饰）
-    const colorName = { white: "奶白", green: "绿", yellowbrown: "黄棕", blackgray: "黑灰", duo: "多宝", lightflower: "浅花", deepflower: "深花" }[item.color] || "素色";
-    const softName = item.softness === "soft" ? "软糯" : (item.softness === "slight" ? "微糯" : "未标注");
-    // 形态进度条 + 已走过的形态（进化史）
-    const hist = (rec.imgHistory || []).filter((h) => h && h.url);
-    const histHtml = hist.length > 1
-      ? '<div class="spirit-hist">' + hist.map((h) => {
-        const d = Spirits.stageDef(h.stage);
-        return '<div class="spirit-hist-item' + (h.stage === si.stage ? " now" : "") + '" title="' + esc(d.name) + '">' +
-          '<img src="' + esc(h.url) + '" alt="">' +
-          '<span>' + d.icon + esc(d.name) + "</span></div>";
-      }).join("") + "</div>"
-      : "";
-
-    modal.innerHTML =
-      '<div class="spirit-modal">' +
-      '<div class="spirit-modal-top">' + spiritImgHtml(item, rec, 132, "spirit-img big") + "</div>" +
-      '<div class="spirit-modal-name">' + esc(p.name || item.name || "精灵") +
-      '<span class="spirit-stage big">' + si.icon + " " + esc(si.name) + "</span></div>" +
-      '<div class="spirit-modal-title">' + esc(p.title || "") + "</div>" +
-      '<div class="spirit-modal-line">“' + esc(p.line || "") + '”</div>' +
-      '<div class="spirit-modal-tags">' + (p.traits || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
-      '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div>" +
-      // 固定人设：突破/换形象都保留这些特征（不会变性、不会换人）
-      '<div class="spirit-look">🔒 ' + esc(Spirits.appearanceText(ap)) +
-      '<button type="button" class="link-btn" id="spReRoll">🎲 换外观设定</button>' +
-      '<span class="spirit-gen-note">已为它出图 ' + (Number(rec.genCount) || 1) + " 张 · 本机累计 " + genTotal() + " 张</span></div>" +
-      (si.isMax
-        ? '<div class="spirit-prog max">👑 已是完成体，不再进阶</div>'
-        : '<div class="spirit-prog big"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
-          '<span class="spirit-prog-txt">成长值 ' + si.growth + " / " + si.need + " · 再 " + si.toNext + " 点可突破为「" + esc(si.next) + "」</span></div>") +
-      histHtml +
-      '<div class="spirit-btns">' +
-      (si.canBreak ? '<button class="btn primary spirit-break-btn" id="spBreak">✨ 突破 →' + esc(si.next) + "</button>" : "") +
-      '<button class="btn ghost" id="spNewLook">🔁 换形象</button>' +
-      '<button class="btn ghost" id="spChat">💬 它们聊天</button>' +
-      '<button class="btn ghost" id="spLetter">📔 写日记</button>' +
-      "</div>" +
-      '<div class="spirit-out" id="spiritOut"></div>' +
-      '<button class="btn primary" id="spClose" style="width:100%;margin-top:12px">关闭</button>' +
-      "</div>";
-    mask.hidden = false;
-    modal.hidden = false;
-    modal.style.display = "";
-    bindSpiritImgFallback(modal);
-    const out = $("#spiritOut");
-    const close = () => { mask.hidden = true; modal.hidden = true; };
-    $("#spClose").onclick = close;
-    mask.onclick = close;
-
-    // 🎲 换外观设定：换性别/发型/瞳色/配饰（只在你不满意当前人设时才用），然后按新设定重画
-    const reroll = $("#spReRoll");
-    if (reroll) reroll.onclick = async () => {
-      const s = Spirits.load();
-      const r = Spirits.ensureIn(s, item.id);
-      r.appearanceSeed = (r.appearanceSeed || 0) + 1;
-      r.imgUrl = "";
-      r.imgAt = 0;
-      r._imgErr = "";
-      r._imgErrAt = 0;
-      Spirits.save(s);
-      const nap = Spirits.appearanceOf(item, r.appearanceSeed, r.gender || "");
-      toast("新设定：" + Spirits.appearanceText(nap) + "（性别不变，正在重画…）");
-      const img = modal.querySelector("img[data-item]");
-      if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; }
-      try {
-        const res = await Spirits.generateImage(item, r.variant || 0, null, r.stage || 1, { appearanceSeed: r.appearanceSeed, gender: r.gender || "" });
-        const s2 = Spirits.load();
-        const r2 = Spirits.ensureIn(s2, item.id);
-        await saveSpiritImage(item, r2, res, r2.stage || 1);
-        Spirits.save(s2);
-        close();
-        showSpiritModal(item);   // 重新打开，刷新人设标签与立绘
-      } catch (e) {
-        toast("重画出错：" + ((e && e.message) || ""));
-      }
-    };
-
-    // ⚠️ v110：性别在「挂瓷成精」那一刻随机定下来（男女 3:1），之后**不提供任何修改入口**
-    //（用户明确要求"不让后期修改"）
-
-    // ✨ 突破：进入下一个形态，并按新形态重新出图（保留进化史）
-    const brk = $("#spBreak");
-    if (brk) brk.onclick = async () => {
-      const s0 = Spirits.load();
-      const r0 = Spirits.ensureIn(s0, item.id);
-      const si0 = Spirits.stageInfo(item, r0.stage, DB.daysWith(item));
-      if (!si0.canBreak) { toast("成长值还不够，多盘盘它吧～"); return; }
-      const nextStage = si0.stage + 1;
-      const nextDef = Spirits.stageDef(nextStage);
-      brk.disabled = true; brk.textContent = "突破中…";
-      try {
-        // 突破：把"突破前那张图"当参考图传过去 → 保证是同一个人长大，不会变性/换人
-        const res = await Spirits.generateImage(item, 0, null, nextStage, { appearanceSeed: r0.appearanceSeed || 0, gender: r0.gender || "", ref: r0.imgUrl || "" });
-        const s1 = Spirits.load();
-        const r1 = Spirits.ensureIn(s1, item.id);
-        const hist = Array.isArray(r1.imgHistory) ? r1.imgHistory : [];
-        const lastH = hist[hist.length - 1];
-        // 记下"突破前"的旧形态（若还没记过才补）
-        if (r1.imgUrl && !(lastH && lastH.url === r1.imgUrl)) hist.push({ stage: r1.stage || 1, url: r1.imgUrl, at: Date.now() });
-        r1.stage = nextStage;
-        r1.imgHistory = hist.slice(-8);
-        // 用统一的存档逻辑（512px + 进化史 + 计数），保证卡片/弹层/突破看到的是同一张
-        const url = await saveSpiritImage(item, r1, res, nextStage);
-        Spirits.save(s1);
-        close();
-        // 突破演出：全屏特效 + 提示
-        const mask2 = $("#modalMask"), modal2 = $("#modal");
-        modal2.innerHTML = '<div class="spirit-evolve">' +
-          '<div class="spirit-evolve-burst">✨</div>' +
-          (url ? '<img src="' + esc(url) + '" alt="">' : "") +
-          '<div class="spirit-evolve-title">突 破 成 功</div>' +
-          '<div class="spirit-evolve-sub">' + esc(p.name || item.name) + " → " + nextDef.icon + " " + esc(nextDef.name) + "</div>" +
-          '<div class="spirit-evolve-desc">' + (nextStage >= Spirits.STAGES.length ? "它已经长成了完成体，帅/美到发光 👑" : "它长大了一点，继续盘它会更强 💪") + "</div>" +
-          '<button class="btn primary" id="spEvoOk" style="width:100%;margin-top:14px">好耶！</button></div>';
-        mask2.hidden = false; modal2.hidden = false; modal2.style.display = "";
-        $("#spEvoOk").onclick = () => { mask2.hidden = true; modal2.hidden = true; renderSpiritPage(); };
-        mask2.onclick = () => { mask2.hidden = true; modal2.hidden = true; renderSpiritPage(); };
-      } catch (e) {
-        brk.disabled = false; brk.textContent = "✨ 突破 →" + si0.next;
-        toast("突破失败：" + ((e && e.message) || "出图失败"));
-      }
-    };
-
-    // 换形象（换一张更好看的"同一个角色"：不清空旧图、并带上上一张作参考）
-    $("#spNewLook").onclick = async () => {
-      const cfg2 = Spirits.getImageCfg();
-      const s = Spirits.load();
-      const r = Spirits.ensureIn(s, item.id);
-      const prevImg = r.imgUrl || "";
-      r.variant = (r.variant || 0) + 1;
-      r._imgErr = "";
-      r._imgErrAt = 0;
-      Spirits.save(s);
-      const img = modal.querySelector("img[data-item]");
-      if (cfg2.provider === "pollinations") {
-        // 免密钥通道：换 seed 重新出图
-        if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; img.src = Spirits.pollinationsUrl(item, r.variant, null, r.stage || 1, Spirits.appearanceOf(item, r.appearanceSeed || 0)); }
-        toast("换个形象中…（几秒钟出图）");
-        return;
-      }
-      toast("正在重画同一个角色…（消耗 1 次出图）");
-      try {
-        const res = await Spirits.generateImage(item, r.variant, null, r.stage || 1, { appearanceSeed: r.appearanceSeed || 0, gender: r.gender || "", ref: prevImg });
-        const s2 = Spirits.load();
-        const r2 = Spirits.ensureIn(s2, item.id);
-        const url = await saveSpiritImage(item, r2, res, r2.stage || 1);
-        Spirits.save(s2);
-        if (img && url) { img.dataset.fellback = ""; img.src = url; }
-        toast("形象换好了 🍡");
-      } catch (e) {
-        toast("出图失败：" + ((e && e.message) || "未知错误"));
-      }
-    };
-    // 它们聊天
-    $("#spChat").onclick = async () => {
-      out.innerHTML = '<div class="spirit-loading">💬 精灵们正在凑到一起…</div>';
-      const all = spiritItems();
-      const others = all.filter((x) => x.id !== item.id);
-      const shuffled = others.sort(() => Math.random() - 0.5).slice(0, 2);
-      const group = [item].concat(shuffled).map((it) => {
-        const st = Spirits.load();
-        const rec = st[it.id] || {};
-        return {
-          item: it,
-          persona: rec.persona || Spirits.localPersona(it),
-          avatar: rec.imgUrl || Spirits.localAvatarSvg(it),   // 聊天时带上各自头像
-        };
-      });
-      const lines = await Spirits.chat(group);
-      // 按名字找头像（AI 可能用简称，做一次包含匹配）
-      const avatarOf = (who) => {
-        const w = String(who || "").trim();
-        let hit = group.find((g) => (g.persona.name || "") === w);
-        if (!hit) hit = group.find((g) => w && ((g.persona.name || "").indexOf(w) >= 0 || w.indexOf(g.persona.name || "x") >= 0));
-        if (!hit) hit = group.find((g) => (g.item.name || "") === w);
-        return hit ? { url: hit.avatar, name: hit.persona.name || hit.item.name } : null;
-      };
-      out.innerHTML = '<div class="spirit-chat">' + lines.map((l, i) => {
-        const a = avatarOf(l.who);
-        return '<div class="spirit-row' + (i % 2 ? " alt" : "") + '">' +
-          '<img class="spirit-avatar" src="' + esc(a ? a.url : Spirits.localAvatarSvg(item)) + '" alt="">' +
-          '<div class="spirit-bubble"><span class="spirit-who">' + esc(l.who) + "</span>" + esc(l.text) + "</div>" +
-          "</div>";
-      }).join("") + "</div>" +
-        '<div class="spirit-foot">（剧情由 ' + esc(Spirits.textInfo().key ? (Spirits.textInfo().label || "AI") : "本地模板") + " 现编）</div>";
-    };
-    // 写日记（v109：原来的「给我写信」改成了日记，正文也会存进详情页的日记本）
-    $("#spLetter").onclick = async () => {
-      out.innerHTML = '<div class="spirit-loading">📔 它正在写日记…</div>';
-      const s = Spirits.load();
-      const r = Spirits.ensureIn(s, item.id);
-      const pp = r.persona || Spirits.localPersona(item);
-      const ap2 = Spirits.appearanceOf(item, r.appearanceSeed || 0, r.gender || "");
-      const text = await Spirits.diaryNow(item, r, ap2, diaryCtx(item, r));
-      out.innerHTML = '<div class="spirit-letter-body">' + esc(text).replace(/\n/g, "<br>") + "</div>" +
-        '<div class="spirit-foot">已存进它的日记本（详情页「📔 日记本」里能看到）</div>';
-    };
-  }
 
   // 绘图通道配置弹层（默认免密钥；填国内 API key 就切过去）
   function showImageCfgModal() {
@@ -5681,9 +5689,14 @@
         " · " + spiritCount + " 只精灵 · 本机累计出图 " + genTotal() + " 张</div>" +
         '</div><span style="color:var(--text-2)">›</span></button>';
       html += '<button class="setting-item" id="btnTextCfg"><div>' +
-        '<div class="t">🤖 AI 文字模型（助手 + 精灵性格/来信）</div>' +
+        '<div class="t">🤖 AI 文字模型（助手 + 人设/日记/剧情）</div>' +
         '<div class="d">当前：' + esc(tin.label) + (tin.model ? " · " + esc(tin.model) : "") + (tin.key ? " · 已填 key" : " · 未填 key（精灵走本地模板）") +
         '</div></div><span style="color:var(--text-2)">›</span></button>';
+      const ow = Spirits.getOwner();
+      html += '<button class="setting-item" id="btnOwner"><div>' +
+        '<div class="t">👤 主人设定（昵称 / 性别）</div>' +
+        '<div class="d">当前：' + esc(ow.name || "未填昵称") + " · " + (ow.gender === "boy" ? "男生（用「他」）" : "女生（用「她」）") +
+        ' · 日记与剧情会照这个写</div></div><span style="color:var(--text-2)">›</span></button>';
     }
 
     html += '<div class="section-title">🎖️ 我的称号</div>';
@@ -5798,6 +5811,8 @@
     if (imgBtn) imgBtn.onclick = () => showImageCfgModal();
     const txtBtn = $("#btnTextCfg");
     if (txtBtn) txtBtn.onclick = () => showTextCfgModal();
+    const ownBtn = $("#btnOwner");
+    if (ownBtn) ownBtn.onclick = () => showOwnerModal();
 
     // 主题选择
     document.querySelectorAll("#themeList .theme-opt").forEach((b) => b.onclick = () => {
