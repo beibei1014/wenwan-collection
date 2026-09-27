@@ -2415,7 +2415,9 @@
     return focusVisible(allItems).filter((i) => !i.gifted && i.playStatus === "done");
   }
   // 精灵形象：优先 AI 绘图（带缓存），失败/断网自动换成本地程序化小精灵
-  function spiritImgHtml(item, rec, size, cls) {
+  // face=true → 卡片缩略图要"裁头像"：AI 立绘是竖版全身像，放大并往上对齐正好框住脑袋
+  //（本地兜底形象本身就是一张方形脸贴图，不能裁，所以只有存在 AI 图时才加 face）
+  function spiritImgHtml(item, rec, size, cls, face) {
     const cfg = Spirits.getImageCfg();
     let url = rec && rec.imgUrl;
     if (!url) {
@@ -2423,16 +2425,22 @@
     }
     const fallback = Spirits.localAvatarSvg(item);
     const src = url || fallback;
-    return '<img class="' + (cls || "spirit-img") + '" src="' + esc(src) + '" data-fallback="' + esc(fallback) + '"' +
+    const klass = (cls || "spirit-img") + (face && url ? " face" : "");
+    return '<img class="' + klass + '" src="' + esc(src) + '" data-fallback="' + esc(fallback) + '"' +
       ' data-item="' + esc(item.id) + '" alt="' + esc((rec && rec.persona && rec.persona.name) || item.name || "精灵") + '"' +
       ' loading="lazy" style="width:' + size + "px;height:" + size + 'px">';
   }
-  // 图片挂了 → 自动切本地形象（只切一次，避免死循环）
+  // 卡片缩略图：正方形小框裁头像（框体负责裁切，图在里面放大）
+  function spiritThumbHtml(item, rec, size) {
+    return '<span class="spirit-thumb">' + spiritImgHtml(item, rec, size, "spirit-img", true) + "</span>";
+  }
+  // 图片挂了 → 自动切本地形象（只切一次，避免死循环；本地形象是方形脸贴图，顺带去掉裁头像）
   function bindSpiritImgFallback(root) {
     (root || view).querySelectorAll("img[data-fallback]").forEach((img) => {
       img.addEventListener("error", () => {
         if (img.dataset.fellback) return;
         img.dataset.fellback = "1";
+        img.classList.remove("face");
         img.src = img.dataset.fallback;
       });
     });
@@ -2569,7 +2577,7 @@
       const idle = it.lastPlayedAt ? Math.floor((Date.now() - it.lastPlayedAt) / 86400000) : null;
       const si = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
       html += '<div class="spirit-card' + (si.canBreak ? " can-break" : "") + '" data-spirit="' + esc(it.id) + '">' +
-        spiritImgHtml(it, rec, 96, "spirit-img") +
+        spiritThumbHtml(it, rec, 96) +
         '<div class="spirit-meta">' +
         '<div class="spirit-name">' + esc((p && p.name) || it.name || "精灵") +
         '<span class="spirit-stage">' + si.icon + " " + esc(si.name) + "</span>" +

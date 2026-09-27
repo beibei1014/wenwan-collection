@@ -250,18 +250,20 @@
       return await callImageApi(info, prompt, size, seed, useRef);
     } catch (e) {
       const msg = (e && e.message) || "";
-      // ① 参考图不被支持（部分模型/尺寸限制）→ 去掉 image 再试一次，并记住以后不再传（文本锚点仍在，不会换人）
-      if (useRef && !_noRef && /image|InvalidParameter|not support|参数/i.test(msg)) {
-        _noRef = true;
-        return await callImageApi(info, prompt, size, seed, "");
-      }
-      // ② 尺寸不合法（Seedream 5 要求 ≥3,686,400 像素）：自动换成 2K 再试一次
+      // ① 尺寸被服务端拒 → 换默认档再试一次。
+      //    ⚠️ 这条必须排在「参考图」判断**前面**：尺寸报错里也带 "image" 字样，
+      //    否则会被当成"不支持参考图"，去掉参考图后拿同样的坏尺寸再试一遍 → 还是失败（实测踩过）
       if (isSizeErr(msg) && size !== DEFAULT_SIZE) {
         const next = Object.assign({}, cfg, { size: DEFAULT_SIZE });
         setImageCfg(next);
         const r = await callImageApi(providerInfo(next), prompt, DEFAULT_SIZE, seed, useRef);
         r.autoFixed = "尺寸已改为 " + DEFAULT_SIZE;
         return r;
+      }
+      // ② 参考图不被支持（部分模型/尺寸限制）→ 去掉 image 再试一次，并记住以后不再传（文本锚点仍在，不会换人）
+      if (useRef && !_noRef && !isSizeErr(msg) && /image|InvalidParameter|not support|参数/i.test(msg)) {
+        _noRef = true;
+        return await callImageApi(info, prompt, size, seed, "");
       }
       // ③ 模型名不对（常见：把控制台显示名 Doubao-Seedream-5.0-lite 填进来了）→ 拉账号模型列表自动纠正一次
       if (!/NotFound|does not exist|not exist|InvalidEndpointOrModel/i.test(msg) || _autoFixed) throw e;
@@ -281,7 +283,7 @@
   }
   let _noRef = false;
   function isSizeErr(msg) {
-    return /size.*not valid|at least\s*\d+\s*pixels|InvalidParameter.*size|尺寸/i.test(String(msg || ""));
+    return /size.*(not valid|invalid)|at least\s*\d+\s*pixels|尺寸/i.test(String(msg || ""));
   }
   let _autoFixed = false;
   async function callImageApi(info, prompt, size, seed, ref) {
