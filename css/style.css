@@ -1125,5 +1125,58 @@ img { display:block; }
 .net-bar-btn:active { transform:scale(.96); }
 @media (min-width:560px) { .net-bar { left:auto; right:100px; max-width:420px; } }
 
+/* ============ 🍡 挂瓷精灵（v94） ============ */
+.spirit-letter-box {
+  background:linear-gradient(180deg,#fff9ec,#fff3d6); border:1px solid #f0dfae; border-radius:14px;
+  padding:12px 14px; margin-top:10px;
+}
+.spirit-letter-head { font-size:12px; font-weight:700; color:#8a6a1f; margin-bottom:6px; }
+.spirit-letter-body { font-size:13px; line-height:1.85; color:#5c4a2e; white-space:pre-wrap; }
+
+.spirit-grid { display:grid; grid-template-columns:1fr; gap:10px; }
+.spirit-card {
+  display:flex; gap:12px; align-items:center; cursor:pointer;
+  background:var(--card); border:1px solid var(--line); border-radius:14px; padding:10px;
+  box-shadow:var(--shadow); transition:transform .12s;
+}
+.spirit-card:active { transform:scale(.985); }
+.spirit-img { border-radius:14px; object-fit:cover; background:#fff; flex-shrink:0; border:1px solid var(--line); }
+.spirit-img.big { border-radius:18px; }
+.spirit-meta { min-width:0; flex:1; }
+.spirit-name { font-size:15px; font-weight:700; color:var(--wood); }
+.spirit-title { font-size:11px; color:var(--gold); margin-top:2px; }
+.spirit-line { font-size:12px; color:var(--text-2); margin-top:4px; line-height:1.5; }
+.spirit-tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+.spirit-trait {
+  font-size:10px; font-weight:600; padding:2px 7px; border-radius:9px;
+  background:#f3ece0; color:#8a7355; border:1px solid #e6dcc8;
+}
+.spirit-trait.idle { background:#fde8d7; color:#e67e22; border-color:#f7c9a3; }
+
+.spirit-modal { text-align:center; }
+.spirit-modal-top { display:flex; justify-content:center; }
+.spirit-modal-name { font-size:19px; font-weight:800; color:var(--wood); margin-top:8px; }
+.spirit-modal-title { font-size:12px; color:var(--gold); margin-top:3px; }
+.spirit-modal-line { font-size:13px; color:var(--text-2); margin-top:8px; line-height:1.7; }
+.spirit-modal-tags { display:flex; flex-wrap:wrap; gap:5px; justify-content:center; margin-top:8px; }
+.spirit-btns { display:flex; gap:6px; margin-top:14px; }
+.spirit-btns .btn { flex:1; font-size:12px; padding:9px 4px; }
+.spirit-out { margin-top:12px; text-align:left; }
+.spirit-loading { text-align:center; font-size:12px; color:var(--text-2); padding:12px 0; }
+.spirit-chat { display:flex; flex-direction:column; gap:8px; }
+.spirit-bubble {
+  background:#f7f2e8; border:1px solid var(--line); border-radius:12px; padding:8px 10px;
+  font-size:13px; line-height:1.65; color:var(--text);
+}
+.spirit-bubble:nth-child(even) { background:#fff9ec; }
+.spirit-who { display:block; font-size:11px; font-weight:700; color:var(--gold); margin-bottom:2px; }
+.spirit-foot { text-align:center; font-size:10px; color:var(--text-2); margin-top:8px; }
+.prov-row { display:flex; flex-wrap:wrap; gap:6px; }
+.prov-chip {
+  font-size:12px; font-weight:600; padding:6px 10px; border-radius:20px;
+  background:var(--card); border:1px solid var(--line); color:var(--text-2); cursor:pointer;
+}
+.prov-chip.active { background:var(--wood); color:#f5f0e8; border-color:var(--wood); }
+
 
 

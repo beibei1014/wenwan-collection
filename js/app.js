@@ -2409,6 +2409,266 @@
     sync();
   }
 
+  /* ---------- 🍡 挂瓷精灵（v94） ---------- */
+  // 只有「已挂瓷 + 在库 + 文玩类」的串会成精
+  function spiritItems() {
+    return focusVisible(allItems).filter((i) => !i.gifted && i.playStatus === "done");
+  }
+  // 精灵形象：优先 AI 绘图（带缓存），失败/断网自动换成本地程序化小精灵
+  function spiritImgHtml(item, rec, size, cls) {
+    const cfg = Spirits.getImageCfg();
+    let url = rec && rec.imgUrl;
+    if (!url) {
+      url = (cfg.provider === "pollinations") ? Spirits.pollinationsUrl(item, (rec && rec.variant) || 0) : "";
+    }
+    const fallback = Spirits.localAvatarSvg(item);
+    const src = url || fallback;
+    return '<img class="' + (cls || "spirit-img") + '" src="' + esc(src) + '" data-fallback="' + esc(fallback) + '"' +
+      ' data-item="' + esc(item.id) + '" alt="' + esc((rec && rec.persona && rec.persona.name) || item.name || "精灵") + '"' +
+      ' loading="lazy" style="width:' + size + "px;height:" + size + 'px">';
+  }
+  // 图片挂了 → 自动切本地形象（只切一次，避免死循环）
+  function bindSpiritImgFallback(root) {
+    (root || view).querySelectorAll("img[data-fallback]").forEach((img) => {
+      img.addEventListener("error", () => {
+        if (img.dataset.fellback) return;
+        img.dataset.fellback = "1";
+        img.src = img.dataset.fallback;
+      });
+    });
+  }
+
+  function renderSpiritPage() {
+    topbarTitle.textContent = "挂瓷精灵";
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+    const list = spiritItems();
+    const store = Spirits.load();
+
+    if (!list.length) {
+      view.innerHTML = '<div class="empty"><div class="empty-icon">🍡</div>' +
+        "<p>还没有精灵诞生<br>把一串盘到「已挂瓷」，它就会成精<br>（顺便去给它们标一下软糯程度，形象会跟着变）</p>" +
+        '<button class="btn primary" id="spiritGoHome" style="margin-top:16px">去盘串</button></div>';
+      const g = $("#spiritGoHome");
+      if (g) g.onclick = () => location.hash = "#/";
+      return;
+    }
+
+    let html = "";
+    // 每日来信（每天第一次进来自动投一封）
+    const tk = Spirits.todayKey();
+    const todayLetter = list.map((it) => ({ it, rec: store[it.id] }))
+      .filter((x) => x.rec && x.rec.lastLetterDay === tk && x.rec.letters && x.rec.letters.length)
+      .map((x) => ({ it: x.it, letter: x.rec.letters[x.rec.letters.length - 1] }))[0] || null;
+    html += '<div class="spirit-letter-box" id="spiritLetterBox">';
+    if (todayLetter) {
+      html += '<div class="spirit-letter-head">📮 今天的信 · 来自「' + esc((todayLetter.letter.from) || todayLetter.it.name) + '」</div>' +
+        '<div class="spirit-letter-body">' + esc(todayLetter.letter.text).replace(/\n/g, "<br>") + "</div>";
+    } else {
+      html += '<div class="spirit-letter-head">📮 正在收今天的信…</div>' +
+        '<div class="spirit-letter-body" style="color:var(--text-2)">精灵们正在磨墨，稍等一下下～</div>';
+    }
+    html += "</div>";
+
+    html += '<div class="section-title" style="margin-top:14px">🍡 我的精灵（' + list.length + '）' +
+      '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点击看它说话</small></div>';
+    html += '<div class="spirit-grid">';
+    list.forEach((it) => {
+      const rec = store[it.id] || {};
+      const p = rec.persona || null;
+      const idle = it.lastPlayedAt ? Math.floor((Date.now() - it.lastPlayedAt) / 86400000) : null;
+      html += '<div class="spirit-card" data-spirit="' + esc(it.id) + '">' +
+        spiritImgHtml(it, rec, 96, "spirit-img") +
+        '<div class="spirit-meta">' +
+        '<div class="spirit-name">' + esc((p && p.name) || it.name || "精灵") + "</div>" +
+        '<div class="spirit-title">' + esc((p && p.title) || "正在酝酿性格…") + "</div>" +
+        '<div class="spirit-line">' + esc((p && p.line) || "") + "</div>" +
+        '<div class="spirit-tags">' + ((p && p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
+        (idle != null ? '<span class="spirit-trait idle">' + idle + " 天没盘</span>" : "") + "</div>" +
+        "</div></div>";
+    });
+    html += "</div>";
+    view.innerHTML = html;
+    bindSpiritImgFallback(view);
+    view.querySelectorAll(".spirit-card").forEach((c) => c.addEventListener("click", () => {
+      const it = allItems.find((x) => x.id === c.dataset.spirit);
+      if (it) showSpiritModal(it);
+    }));
+    // 异步补性格 + 今天的信
+    ensureSpiritData(list, !todayLetter);
+  }
+
+  // 补齐性格（一次把缺的都补上，再统一刷新）与当天来信
+  let _spiritBusy = false;
+  async function ensureSpiritData(list, needLetter) {
+    if (_spiritBusy) return;
+    _spiritBusy = true;
+    try {
+      // 1) 补齐所有缺性格的精灵（无 key 时是本地模板，很快）
+      let changed = false;
+      for (const it of list) {
+        const s = Spirits.load();
+        if (!s[it.id] || !s[it.id].persona) {
+          await Spirits.persona(it);
+          changed = true;
+        }
+      }
+      // 注意：这里的重渲染期间 _spiritBusy 仍为 true，避免自己递归进来
+      if (changed && location.hash === "#/spirit") renderSpiritPage();
+
+      // 2) 每天第一封自动来信
+      if (needLetter) {
+        const tk = Spirits.todayKey();
+        const store2 = Spirits.load();
+        const pending = list.filter((it) => !store2[it.id] || store2[it.id].lastLetterDay !== tk);
+        if (pending.length) {
+          const it = pending[Math.floor(Math.random() * pending.length)];
+          const rec = Spirits.ensureIn(store2, it.id);
+          const p = rec.persona || (await Spirits.persona(it));
+          const idle = it.lastPlayedAt ? Math.floor((Date.now() - it.lastPlayedAt) / 86400000) : null;
+          const text = await Spirits.letter({ item: it, persona: p, idleDays: idle }, (user && user.displayName) || "");
+          rec.letters.push({ at: Date.now(), text, from: p.name || it.name });
+          rec.letters = rec.letters.slice(-20);
+          rec.lastLetterDay = tk;
+          Spirits.save(store2);
+          if (location.hash === "#/spirit") renderSpiritPage();
+        }
+      }
+    } catch (e) { /* 静默：本地模板兜底已在 Spirits 内部处理 */ }
+    _spiritBusy = false;
+  }
+
+  // 精灵详情弹层
+  function showSpiritModal(item) {
+    const mask = $("#modalMask");
+    const modal = $("#modal");
+    const store = Spirits.load();
+    const rec = Spirits.ensureIn(store, item.id);
+    Spirits.save(store);
+    const p = rec.persona || Spirits.localPersona(item);
+    const idle = item.lastPlayedAt ? Math.floor((Date.now() - item.lastPlayedAt) / 86400000) : null;
+    const colorName = { white: "奶白", green: "绿", yellowbrown: "黄棕", blackgray: "黑灰", duo: "多宝", lightflower: "浅花", deepflower: "深花" }[item.color] || "素色";
+    const softName = item.softness === "soft" ? "软糯" : (item.softness === "slight" ? "微糯" : "未标注");
+
+    modal.innerHTML =
+      '<div class="spirit-modal">' +
+      '<div class="spirit-modal-top">' + spiritImgHtml(item, rec, 132, "spirit-img big") + "</div>" +
+      '<div class="spirit-modal-name">' + esc(p.name || item.name || "精灵") + "</div>" +
+      '<div class="spirit-modal-title">' + esc(p.title || "") + "</div>" +
+      '<div class="spirit-modal-line">“' + esc(p.line || "") + '”</div>' +
+      '<div class="spirit-modal-tags">' + (p.traits || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
+      '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div>" +
+      '<div class="spirit-btns">' +
+      '<button class="btn ghost" id="spNewLook">🔁 换形象</button>' +
+      '<button class="btn ghost" id="spChat">💬 它们聊天</button>' +
+      '<button class="btn ghost" id="spLetter">💌 给我写信</button>' +
+      "</div>" +
+      '<div class="spirit-out" id="spiritOut"></div>' +
+      '<button class="btn primary" id="spClose" style="width:100%;margin-top:12px">关闭</button>' +
+      "</div>";
+    mask.hidden = false;
+    modal.hidden = false;
+    modal.style.display = "";
+    bindSpiritImgFallback(modal);
+    const out = $("#spiritOut");
+    const close = () => { mask.hidden = true; modal.hidden = true; };
+    $("#spClose").onclick = close;
+    mask.onclick = close;
+
+    // 换形象
+    $("#spNewLook").onclick = () => {
+      const s = Spirits.load();
+      const r = Spirits.ensureIn(s, item.id);
+      r.variant = (r.variant || 0) + 1;
+      r.imgUrl = "";
+      Spirits.save(s);
+      const img = modal.querySelector("img[data-item]");
+      if (img) {
+        img.dataset.fellback = "";
+        img.removeAttribute("data-fellback");
+        img.src = Spirits.pollinationsUrl(item, r.variant);
+      }
+      toast("换个形象中…（几秒钟出图）");
+    };
+    // 它们聊天
+    $("#spChat").onclick = async () => {
+      out.innerHTML = '<div class="spirit-loading">💬 精灵们正在凑到一起…</div>';
+      const all = spiritItems();
+      const others = all.filter((x) => x.id !== item.id);
+      const shuffled = others.sort(() => Math.random() - 0.5).slice(0, 2);
+      const group = [item].concat(shuffled).map((it) => {
+        const st = Spirits.load();
+        return { item: it, persona: (st[it.id] && st[it.id].persona) || Spirits.localPersona(it) };
+      });
+      const lines = await Spirits.chat(group);
+      out.innerHTML = '<div class="spirit-chat">' + lines.map((l) =>
+        '<div class="spirit-bubble"><span class="spirit-who">' + esc(l.who) + "</span>" + esc(l.text) + "</div>").join("") + "</div>" +
+        '<div class="spirit-foot">（剧情由 AI 现编 · ' + (Spirits.getImageCfg && getAiKey() ? "DeepSeek" : "本地模板") + "）</div>";
+    };
+    // 写信
+    $("#spLetter").onclick = async () => {
+      out.innerHTML = '<div class="spirit-loading">💌 正在写信…</div>';
+      const s = Spirits.load();
+      const r = Spirits.ensureIn(s, item.id);
+      const pp = r.persona || Spirits.localPersona(item);
+      const i2 = item.lastPlayedAt ? Math.floor((Date.now() - item.lastPlayedAt) / 86400000) : null;
+      const text = await Spirits.letter({ item, persona: pp, idleDays: i2 }, (user && user.displayName) || "");
+      r.letters.push({ at: Date.now(), text, from: pp.name || item.name });
+      r.letters = r.letters.slice(-20);
+      r.lastLetterDay = Spirits.todayKey();
+      Spirits.save(s);
+      out.innerHTML = '<div class="spirit-letter-body">' + esc(text).replace(/\n/g, "<br>") + "</div>";
+    };
+  }
+
+  // 绘图通道配置弹层（默认免密钥；填国内 API key 就切过去）
+  function showImageCfgModal() {
+    const mask = $("#modalMask");
+    const modal = $("#modal");
+    const cfg = Spirits.getImageCfg();
+    const opts = Object.keys(Spirits.PROVIDERS).map((k) =>
+      '<button type="button" class="prov-chip' + (cfg.provider === k ? " active" : "") + '" data-prov="' + k + '">' +
+      esc(Spirits.PROVIDERS[k].label) + "</button>").join("");
+    modal.innerHTML = "<h3>🎨 精灵形象 · 绘图通道</h3>" +
+      '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:12px">' +
+      "默认用<b>免密钥</b>通道（Pollinations，国内可直连，出图偶尔不稳）。<br>" +
+      "想更稳更漂亮，可填国内 API key（硅基流动 / 火山方舟 / 智谱），<b>key 只存本机、不入开源仓库</b>。</p>" +
+      '<div class="prov-row" id="provRow">' + opts + "</div>" +
+      '<div class="form-group" style="margin-top:12px"><div class="form-label">API Key <small>走免密钥通道时留空</small></div>' +
+      '<input class="form-input" id="imgKey" placeholder="sk-..." value="' + esc(cfg.key || "") + '"></div>' +
+      '<div class="form-group"><div class="form-label">模型名 <small>留空用该服务商默认</small></div>' +
+      '<input class="form-input" id="imgModel" placeholder="如 Kwai-Kolors/Kolors" value="' + esc(cfg.model || "") + '"></div>' +
+      '<div class="form-group"><div class="form-label">接口地址 <small>用服务商默认时留空</small></div>' +
+      '<input class="form-input" id="imgEndpoint" placeholder="https://.../v1/images/generations" value="' + esc(cfg.endpoint || "") + '"></div>' +
+      '<div style="display:flex;gap:8px;margin-top:6px">' +
+      '<button class="btn ghost" id="imgCfgCancel" style="flex:1">取消</button>' +
+      '<button class="btn primary" id="imgCfgSave" style="flex:2">保存</button></div>';
+    mask.hidden = false;
+    modal.hidden = false;
+    modal.style.display = "";
+    const done = () => { mask.hidden = true; modal.hidden = true; };
+    let chosen = cfg.provider || "pollinations";
+    modal.querySelectorAll(".prov-chip").forEach((b) => b.onclick = () => {
+      chosen = b.dataset.prov;
+      modal.querySelectorAll(".prov-chip").forEach((x) => x.classList.toggle("active", x === b));
+    });
+    $("#imgCfgCancel").onclick = done;
+    mask.onclick = done;
+    $("#imgCfgSave").onclick = () => {
+      const next = {
+        provider: chosen,
+        key: $("#imgKey").value.trim(),
+        model: $("#imgModel").value.trim(),
+        endpoint: $("#imgEndpoint").value.trim(),
+      };
+      if (chosen !== "pollinations" && !next.key) { toast("这条路需要填 API Key；只想免费用就选「免密钥」"); return; }
+      Spirits.setImageCfg(next);
+      done();
+      toast("已切换绘图通道：" + Spirits.PROVIDERS[chosen].label);
+      renderSettings();
+    };
+  }
+
   /* ---------- 进入应用（登录后） ---------- */
   async function enterApp(passedSession) {
     const session = passedSession || await DB.getSession();
@@ -4267,9 +4527,21 @@
         : "") +
       "</div>";
 
+    // ===== 2.5 挂瓷精灵 · 绘图通道 =====
+    {
+      const cfg = Spirits.getImageCfg();
+      const info = Spirits.providerInfo(cfg);
+      const spiritCount = spiritItems().length;
+      html += '<div class="section-title">🍡 挂瓷精灵</div>';
+      html += '<button class="setting-item" id="btnImgCfg"><div>' +
+        '<div class="t">🎨 精灵形象 · 绘图通道</div>' +
+        '<div class="d">当前：' + esc(info.label) + (info.keyless ? "（免密钥，出图可能不稳，建议配国内 API）" : "（已配 key）") +
+        ' · 已诞生 ' + spiritCount + " 只精灵</div>" +
+        '</div><span style="color:var(--text-2)">›</span></button>';
+    }
+
     html += '<div class="section-title">🎖️ 我的称号</div>';
-    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">';
-    html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:8px">展示中的称号（点击 ✕ 移除）</div>';
+    html += '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px">';    html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:8px">展示中的称号（点击 ✕ 移除）</div>';
     html += '<div id="myBadges" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>';
     html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:6px">🏆 称号库（已解锁的，点击选择/取消）</div>';
     html += '<div id="badgeLibrary" style="display:flex;flex-wrap:wrap;gap:8px;max-height:220px;overflow-y:auto"></div>';
@@ -4373,6 +4645,10 @@
     }
     renderMyBadges();
     renderBadgeLibrary();
+
+    // 挂瓷精灵 · 绘图通道配置
+    const imgBtn = $("#btnImgCfg");
+    if (imgBtn) imgBtn.onclick = () => showImageCfgModal();
 
     // 主题选择
     document.querySelectorAll("#themeList .theme-opt").forEach((b) => b.onclick = () => {
@@ -4548,6 +4824,7 @@
     }
     else if (h === "#/stats") renderStatsPage();
     else if (h === "#/quest") renderQuestPage();
+    else if (h === "#/spirit") renderSpiritPage();   // 🍡 挂瓷精灵（占原「分类」的导航位）
     else if (h === "#/fav") renderFavPage();
     else if (h.startsWith("#/box/")) renderBoxPage(decodeURIComponent(h.slice(6)));
     else if (h === "#/" || h === "#") renderHome();
@@ -4624,7 +4901,7 @@
       location.hash = id ? "#/item/" + id : "#/";                            // 编辑 → 详情/首页
       return;
     }
-    if (h === "#/settings" || h === "#/profile" || h === "#/new" || h === "#/cat" || h === "#/stats" || h === "#/quest") { location.hash = "#/"; return; }
+    if (h === "#/settings" || h === "#/profile" || h === "#/new" || h === "#/cat" || h === "#/stats" || h === "#/quest" || h === "#/spirit") { location.hash = "#/"; return; }
     if (h.startsWith("#/box/")) { location.hash = "#/cat"; return; }
     if (h === "#/") { return; }
     history.back();
@@ -4647,6 +4924,7 @@
     let active = "home";
     if (h === "#/settings") active = "settings";
     else if (h === "#/cat") active = "cat";
+    else if (h === "#/spirit") active = "spirit";
     else if (h === "#/stats") active = "stats";
     else if (h === "#/quest") active = "quest";
     else if (h === "#/fav") active = "fav";
@@ -4664,6 +4942,7 @@
       else if (tab === "stats") location.hash = "#/stats";
       else if (tab === "settings") location.hash = "#/settings";
       else if (tab === "quest") location.hash = "#/quest";
+      else if (tab === "spirit") location.hash = "#/spirit";
       else if (tab === "fav") location.hash = "#/fav";
       else if (tab === "add") location.hash = "#/new";
     });
