@@ -3744,11 +3744,12 @@
       "默认用<b>免密钥</b>通道（Pollinations，国内可直连，出图偶尔不稳）。<br>" +
       "想更稳更漂亮，可填国内 API key（智谱 / 硅基流动 / 火山方舟），<b>key 只存本机、不入开源仓库</b>。</p>" +
       '<div class="cfg-tip">💰 <b>怎么选最省</b>：按量付费即可，都比包月/包天划算。<br>' +
-      "· <b>智谱</b>：GLM-Image 约 <b>¥0.1/张</b>（新旗舰，比火山便宜）· CogView-4 约 <b>¥0.06/张</b> · <b>CogView-3-Flash 免费</b><br>" +
-      "· <b>火山方舟</b>：Seedream 5.0 flash 约 <b>¥0.13/张</b>（支持图生图、参考图不加钱）· lite ¥0.22<br>" +
+      "· <b>智谱</b>：GLM-Image 约 <b>¥0.1/张</b>（新旗舰）· CogView-4 约 <b>¥0.06/张</b> · <b>CogView-3-Flash 免费</b><br>" +
+      "· <b>火山方舟</b>：Seedream 5.0 flash 约 <b>¥0.13/张</b> · lite ¥0.22<br>" +
       "· <b>魔搭 / 硅基流动</b>：有免费额度，适合先试<br>" +
+      "🖼 <b>图生图（突破/换形象时带参考图）</b>：<b>方舟支持</b>；<b>智谱不支持</b>（官方 API 没有参考图字段）→ 自动退回「文字锚点」保证同一个角色，不会变性换人。<br>" +
       "⚠️ 智谱的「拉取模型」只会列出语言模型（glm-*），<b>图像模型要手填或用上面的常用模型按钮</b>。<br>" +
-      "⚠️ 方舟 flash 默认会打「AI generated」水印，本 App 已自动帮你传 <code>watermark:false</code> 关掉。<br>" +
+      "⚠️ <b>水印</b>：方舟 flash 默认带「AI generated」，已自动传 <code>watermark:false</code> 关掉；智谱默认也带水印，已自动传 <code>watermark_enabled:false</code>（去 个人中心→安全管理→去水印管理 签个免责声明才生效）。<br>" +
       "⚠️ 别买「私有实例 / 专属部署」那种<b>按天计价</b>的（图像模型约 100 元/算力单元/天，一个月就是几千块）。</div>" +
       '<div class="prov-row" id="provRow">' + opts + "</div>" +
       '<div class="form-group" style="margin-top:14px"><div class="form-label">形象风格 <small>换完记得点保存，再看精灵页</small></div>' +

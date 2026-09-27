@@ -355,6 +355,7 @@
   function providerInfo(cfg) {
     const p = PROVIDERS[cfg.provider] || PROVIDERS.pollinations;
     return {
+      provider: cfg.provider || "pollinations",
       label: p.label,
       endpoint: cfg.endpoint || p.endpoint || "",
       model: cfg.model || p.model || "",
@@ -362,6 +363,11 @@
       key: cfg.key || "",
     };
   }
+  // 「已经自动修正过」的记忆要**按服务商分开记**：
+  // 否则给智谱关掉参考图之后，再切回方舟也会被一起关掉（方舟本来是支持图生图的）
+  const _fixed = { noRef: {}, noWatermark: {}, autoModel: {} };
+  function fixedOf(kind, key) { return !!_fixed[kind][key || "?"]; }
+  function markFixed(kind, key) { _fixed[kind][key || "?"] = true; }
 
   /* ---------- 风格预设（默认 = 日漫风，用户明确要求） ---------- */
   // anime   = 日漫风 Q 版角色（像用户参考图那种 2D 日漫手绘、赛璐璐上色）
@@ -467,28 +473,31 @@
     const prompt = promptFor(item, styleKey || cfg.style || DEFAULT_STYLE, stage, ap);
     const size = cfg.size || DEFAULT_SIZE;
     const seed = seedOf(item.id, 0);   // 同一只精灵用固定种子 → 各形态看起来是同一个"人"在长大
-    // 图生图参考：拿上一形态的图当参考，是"同一个角色"最可靠的做法（方舟 Seedream 支持 image 字段）
-    const useRef = _noRef ? "" : ((opts && opts.ref) || "");
+    // 图生图参考：拿上一形态的图当参考，是"同一个角色"最可靠的做法。
+    // 方舟（Seedream）确实支持；别的家先带上试一次，不支持就自动去掉并**按这家**记住。
+    const pk = info.provider;
+    const useRef = fixedOf("noRef", pk) ? "" : ((opts && opts.ref) || "");
     try {
       return await callWithSizeFallback(info, prompt, size, seed, useRef, cfg);
     } catch (e) {
       const msg = (e && e.message) || "";
       // ① 尺寸被服务端拒（callWithSizeFallback 已经把能试的都试完了）→ 报告一句能看懂的提示
       if (isSizeErr(msg)) throw new Error("尺寸不被这个模型接受（" + msg + "）。请到 设置 → 精灵形象 把「出图尺寸」换成「竖版立绘 3:4」再试。");
-      // ② 参考图不被支持（部分模型/尺寸限制）→ 去掉 image 再试一次，并记住以后不再传（文本锚点仍在，不会换人）
-      if (useRef && !_noRef && /image|InvalidParameter|not support|参数/i.test(msg)) {
-        _noRef = true;
+      // ② 参考图不被支持（部分服务商/模型没有这个字段）→ 去掉 image 再试一次，并按这家记住
+      //    （文本锚点仍在：性别/发型/瞳色/配饰/服装都写死在 prompt 里，不会变性换人）
+      if (useRef && !fixedOf("noRef", pk) && /image|InvalidParameter|not support|参数/i.test(msg)) {
+        markFixed("noRef", pk);
         return await callImageApi(info, prompt, size, seed, "");
       }
       // ③ 模型名不对（常见：把控制台显示名 Doubao-Seedream-5.0-lite 填进来了）→ 拉账号模型列表自动纠正一次
-      if (!/NotFound|does not exist|not exist|InvalidEndpointOrModel/i.test(msg) || _autoFixed) throw e;
+      if (!/NotFound|does not exist|not exist|InvalidEndpointOrModel/i.test(msg) || fixedOf("autoModel", pk)) throw e;
       let fixed = "";
       try {
         const ids = await listModels("image", { provider: cfg.provider, key: info.key, endpoint: info.endpoint });
         fixed = pickBestModel(info.model, ids);
       } catch (e2) { /* 拉不到就算了 */ }
       if (!fixed || normModelName(fixed) === normModelName(info.model)) throw e;
-      _autoFixed = true;
+      markFixed("autoModel", pk);
       const next = Object.assign({}, cfg, { model: fixed });
       setImageCfg(next);
       const r = await callImageApi(providerInfo(next), prompt, size, seed, useRef);
@@ -517,7 +526,6 @@
     }
     throw lastErr;
   }
-  let _noRef = false;
   // 判断"是不是尺寸被服务端拒了"。各家报错文案差别很大，所以中英都要认：
   //   方舟：The parameter `size` specified in the request is not valid: image size must be at least 3686400 pixels
   //   智谱：size 参数不合法 / 不支持的尺寸
@@ -530,18 +538,22 @@
     if (/size/i.test(s) && /not valid|invalid|unsupported|illegal|must be|不合法|不支持|超出|越界|exceed/i.test(s)) return true;
     return false;
   }
-  let _autoFixed = false;
-  let _noWatermarkParam = false;      // 万一这个模型不认 watermark 字段，别再传
   async function callImageApi(info, prompt, size, seed, ref) {
     const isArk = /ark\.cn-beijing\.volces\.com/.test(info.endpoint);
+    const isZhipu = /bigmodel\.cn/.test(info.endpoint);
+    const pk = info.provider || info.endpoint;
     const payload = { model: info.model, prompt: prompt, n: 1, size: size || DEFAULT_SIZE };
     // 火山方舟（Seedream）支持 seed：固定种子能让"长大"的各形态保持同一个角色的辨识度
     if (isArk && seed != null) payload.seed = seed;
-    // 图生图参考（保持同一个角色）；只在方舟端点加，避免其它服务商报未知字段
-    if (ref && isArk) payload.image = ref;
-    // v115：Seedream 5.0 flash 等模型**默认会打「AI generated」水印**，必须显式关掉，
-    // 否则立绘右下角一直挂着一行水印（方舟专用参数，其它服务商不传）
-    if (isArk && !_noWatermarkParam) payload.watermark = false;
+    // 图生图参考图：方舟（Seedream）支持；其它家也先带上试一次 ——
+    // 不支持的服务商会报错，generateImage 的 ② 分支会去掉它重试并**按这家**记住，
+    // 所以"能图生图的就用上、不能的自动退回纯文本锚点"，不用每家单独判断。
+    if (ref) payload.image = ref;
+    // 关水印：两家字段名不一样（方舟 watermark / 智谱 watermark_enabled），被拒就整个不传
+    if (!fixedOf("noWatermark", pk)) {
+      if (isArk) payload.watermark = false;
+      else if (isZhipu) payload.watermark_enabled = false;
+    }
     const resp = await fetch(info.endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + info.key },
@@ -553,9 +565,12 @@
         const j = await resp.json();
         msg = (j.error && (j.error.message || j.error.code)) || j.message || j.msg || msg;
       } catch (e) { /* 忽略 */ }
-      // 这个模型不认 watermark 字段 → 记下来，**并立刻去掉重试一次**（不能因为关水印而出不了图）
-      if (payload.watermark === false && /watermark|unknown|unexpected|InvalidParameter/i.test(msg)) {
-        _noWatermarkParam = true;
+      // 这个模型不认水印字段（或没签去水印免责声明）→ 记下来，**并立刻去掉重试一次**。
+      // ⚠️ 判据只认"水印"字样：早期写成 /不合法|InvalidParameter/，会把普通参数错误
+      //    （比如"不支持 image 字段"）也当成水印问题，白花一次请求才发现真正原因。
+      if ((payload.watermark === false || payload.watermark_enabled === false) &&
+          /watermark|水印|去水印|未签署/i.test(msg)) {
+        markFixed("noWatermark", pk);
         return await callImageApi(info, prompt, size, seed, ref);
       }
       throw new Error(msg);
