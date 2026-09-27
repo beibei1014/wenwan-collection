@@ -11,7 +11,9 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
-  <link rel="stylesheet" href="css/style.css?v=20261023">
+  <link rel="stylesheet" href="css/style.css?v=20261024">
+  <!-- v113：文玩手账皮肤（在 style.css 之后加载，只加外观不动原样式） -->
+  <link rel="stylesheet" href="css/skin.css?v=20261024">
 </head>
 <body>
   <!-- 顶部标题栏 -->
@@ -24,17 +26,17 @@
   <!-- 主视图容器 -->
   <main id="view" class="view"></main>
 
-  <!-- 底部导航栏 -->
+  <!-- 底部导航栏（v113：emoji 换成线性 SVG 图标，跨设备显示一致、更耐看） -->
   <nav class="tabbar" id="tabbar">
-    <button class="tab-item" id="tabHome" data-tab="home"><span class="tab-icon">🏠</span><span class="tab-label">首页</span></button>
+    <button class="tab-item" id="tabHome" data-tab="home"><span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 10.6 12 3.4l8.8 7.2"/><path d="M5.4 9.6V20.6h13.2V9.6"/><path d="M9.7 20.6v-5.6h4.6v5.6"/></svg></span><span class="tab-label">首页</span></button>
     <!-- v94：原「分类」这一格换成「精灵」（用户要求：分类换成精灵）。分类 tab 元素保留但隐藏，随时可恢复 -->
-    <button class="tab-item" id="tabSpirit" data-tab="spirit"><span class="tab-icon">🍡</span><span class="tab-label">精灵</span></button>
+    <button class="tab-item" id="tabSpirit" data-tab="spirit"><span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2l1.9 5.1 5.1 1.9-5.1 1.9L12 17.2l-1.9-5.1L5 10.2l5.1-1.9z"/><path d="M18.4 16.2l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z"/></svg></span><span class="tab-label">精灵</span></button>
     <button class="tab-item" id="tabCat" data-tab="cat" style="display:none"><span class="tab-icon">🗂</span><span class="tab-label">分类</span></button>
-    <button class="tab-item" id="tabFav" data-tab="fav"><span class="tab-icon">❤️</span><span class="tab-label">喜欢</span></button>
+    <button class="tab-item" id="tabFav" data-tab="fav"><span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.2s-7.3-4.7-7.3-9.7A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.3 3.2c0 5-7.3 9.7-7.3 9.7z"/></svg></span><span class="tab-label">喜欢</span></button>
     <button class="tab-item" id="tabAdd" data-tab="add"><span class="tab-fab">＋</span></button>
-    <button class="tab-item" id="tabQuest" data-tab="quest"><span class="tab-icon">🎯</span><span class="tab-label">任务</span></button>
-    <button class="tab-item" id="tabStats" data-tab="stats"><span class="tab-icon">🏆</span><span class="tab-label">成就</span></button>
-    <button class="tab-item" id="tabSettings" data-tab="settings"><span class="tab-icon">⚙</span><span class="tab-label">设置</span></button>
+    <button class="tab-item" id="tabQuest" data-tab="quest"><span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.2"/><circle cx="12" cy="12" r="3.3"/></svg></span><span class="tab-label">任务</span></button>
+    <button class="tab-item" id="tabStats" data-tab="stats"><span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7.4 4h9.2v4.6a4.6 4.6 0 0 1-9.2 0z"/><path d="M7.4 5.4H4.8v1.8a3.4 3.4 0 0 0 3.4 3.4"/><path d="M16.6 5.4h2.6v1.8a3.4 3.4 0 0 1-3.4 3.4"/><path d="M12 13.2v4.2"/><path d="M8.6 20.2h6.8"/></svg></span><span class="tab-label">成就</span></button>
+    <button class="tab-item" id="tabSettings" data-tab="settings"><span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.1"/><path d="M12 3.4v2.3M12 18.3v2.3M4.7 7.8l2 1.2M17.3 15l2 1.2M4.7 16.2l2-1.2M17.3 9l2-1.2"/></svg></span><span class="tab-label">设置</span></button>
   </nav>
 
   <!-- 全局弹层 -->

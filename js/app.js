@@ -4908,36 +4908,16 @@
   }
 
   /* ---------- 主题系统 ---------- */
-  const THEMES = [
-    { id: "light", name: "浅色", icon: "☀️" },
-    { id: "dark", name: "深色", icon: "🌙" },
-    { id: "system", name: "跟随系统", icon: "📱" },
-    { id: "dopamine-pink", name: "多巴胺·粉", icon: "🍬" },
-    { id: "dopamine-yellow", name: "多巴胺·黄", icon: "🍋" },
-    { id: "dopamine-green", name: "多巴胺·绿", icon: "🌿" },
-    { id: "morandi", name: "莫兰迪·原木", icon: "🪵" },
-    { id: "morandi-blue", name: "莫兰迪·蓝", icon: "🫐" },
-    { id: "morandi-purple", name: "莫兰迪·紫", icon: "🍇" },
-    { id: "morandi-green", name: "莫兰迪·绿", icon: "🍃" },
-  ];
-  // 主题色点（用于紧凑选择器）
-  function themeDotColor(id) {
-    const map = {
-      "light": "#f5f0e8", "dark": "#1e1a16", "system": "#8a7a68",
-      "dopamine-pink": "#e0447c", "dopamine-yellow": "#ffa500", "dopamine-green": "#1e9e5a",
-      "morandi": "#b5a48a", "morandi-blue": "#7d95ad", "morandi-purple": "#8d7aa8", "morandi-green": "#7d9d87",
-    };
-    return map[id] || "#b8860b";
-  }
-  function getTheme() {
-    try { return localStorage.getItem("ww_theme") || "light"; } catch (e) { return "light"; }
-  }
-  function applyTheme(theme) {
-    document.documentElement.setAttribute("data-theme", theme);
-    try { localStorage.setItem("ww_theme", theme); } catch (e) {}
-  }
+  /* ---------- 主题（v113 起固定为「文玩手账」皮肤，设置里的主题选项已撤销） ----------
+     原来有 10 套主题（浅色/深色/跟随系统/多巴胺×3/莫兰迪×4）。UI 升级成统一手账风后，
+     只保留这一套：把 data-theme 固定成 light（老用户存在本地的旧主题也会被覆盖掉），
+     style.css 里的其它主题变量留着不影响（css/skin.css 只覆盖浅色这一套配色）。 */
+  const THEME_ID = "light";
+  function getTheme() { return THEME_ID; }
+  function applyTheme() { document.documentElement.setAttribute("data-theme", THEME_ID); }
   function initTheme() {
-    applyTheme(getTheme());
+    applyTheme();
+    try { localStorage.removeItem("ww_theme"); } catch (e) { /* 忽略 */ }
   }
 
   /* ---------- 徽章（称号）系统 ---------- */
@@ -5836,17 +5816,7 @@
     html += '<div id="badgeLibrary" style="display:flex;flex-wrap:wrap;gap:8px;max-height:220px;overflow-y:auto"></div>';
     html += "</div>";
 
-    // ===== 3. 外观主题 =====
-    html += '<div class="section-title">🎨 外观主题 <small style="color:var(--text-2);font-weight:400;font-size:11px">← 左右滑动查看 →</small></div>';
-    html += '<div class="theme-strip" id="themeList">';
-    THEMES.forEach((t) => {
-      const active = getTheme() === t.id;
-      html += '<button type="button" class="theme-opt' + (active ? " active" : "") + '" data-theme="' + t.id + '" title="' + t.name + '">' +
-        '<span class="theme-dot" style="background:' + themeDotColor(t.id) + '"></span>' +
-        '<span class="theme-icon">' + t.icon + "</span>" +
-        '<span class="theme-name">' + t.name + "</span></button>";
-    });
-    html += "</div>";
+    // ===== 3. 外观主题（v113 起取消：UI 统一成「文玩手账」皮肤，不再提供主题切换） =====
 
     // ===== 4. 收藏盒子管理 =====
     html += '<div class="section-title">收藏盒子管理</div>';
@@ -5944,22 +5914,7 @@
     const ownBtn = $("#btnOwner");
     if (ownBtn) ownBtn.onclick = () => showOwnerModal();
 
-    // 主题选择
-    document.querySelectorAll("#themeList .theme-opt").forEach((b) => b.onclick = () => {
-      applyTheme(b.dataset.theme);
-      document.querySelectorAll("#themeList .theme-opt").forEach((x) => x.classList.toggle("active", x === b));
-      toast("已切换主题");
-    });
-    // 电脑鼠标滚轮 → 横向滚动
-    const themeStrip = document.querySelector("#themeList");
-    if (themeStrip) {
-      themeStrip.addEventListener("wheel", (e) => {
-        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-          e.preventDefault();
-          themeStrip.scrollLeft += e.deltaY;
-        }
-      }, { passive: false });
-    }
+    // 主题选择（v113 已取消：皮肤固定为「文玩手账」）
 
     $("#btnChangePwd").onclick = () => showChangePasswordModal();
     // 文玩专注模式开关
@@ -6132,6 +6087,18 @@
     else renderHome();
 
     updateTabbar();
+
+    // v113：每次切页给 #view 加一个入场转场（重排一次动画，避免只播第一次）
+    // 0.9 秒后再给一个 anim-settled 兜底：万一动画没跑起来（省电模式/无头浏览器等），
+    // 靠 CSS 强制落回最终状态，避免元素卡在 opacity:0 看着"整页发白"
+    try {
+      view.classList.remove("page-in");
+      view.classList.remove("anim-settled");
+      void view.offsetWidth;
+      view.classList.add("page-in");
+      clearTimeout(window.__animSettleT);
+      window.__animSettleT = setTimeout(() => { try { view.classList.add("anim-settled"); } catch (e) { /* 忽略 */ } }, 900);
+    } catch (e) { /* 忽略 */ }
 
     // 回到来源列表页：恢复原来的滚动位置（只恢复一次）
     // 说明：列表是同步渲染的（缩略图用 padding 撑成固定方格，不会因图片加载而变高），
