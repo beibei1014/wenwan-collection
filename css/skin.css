@@ -733,5 +733,18 @@
   border: 1px solid color-mix(in srgb, var(--tape) 70%, var(--line) 30%);
   color: #6b5320;
 }
+/* 「✨ 定设定」小标签（图鉴卡片上，点它直接开这一只的向导） */
+.look-setup-tag {
+  font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; cursor: pointer;
+  background: linear-gradient(180deg, #fdf3dc, #f6e2b8);
+  border: 1px solid color-mix(in srgb, var(--gold) 60%, var(--line) 40%);
+  color: #7a5518; animation: setupPulse 2.2s var(--ease-out) infinite;
+}
+@keyframes setupPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(192, 138, 46, .22); transform: scale(1); }
+  50% { box-shadow: 0 0 0 4px rgba(192, 138, 46, 0); transform: scale(1.04); }
+}
+@media (prefers-reduced-motion: reduce) { .look-setup-tag { animation: none; } }
+.look-setup-tag:active { transform: scale(.94); }
 
 

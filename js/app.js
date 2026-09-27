@@ -2946,11 +2946,13 @@
       const si = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
       const room = rec.roomId ? Rooms.getRoom(rec.roomId) : null;
       const wroteToday = (rec.diary || []).some((e) => e && e.date === tk) && (rec.diarySeenAt || 0) < ((rec.diary || []).slice(-1)[0] || {}).at;
+      const needSetup = spiritNeedsSetup(rec);
       html += '<div class="spirit-card' + (si.canBreak ? " can-break" : "") + '" data-spirit="' + esc(it.id) + '">' +
         spiritThumbHtml(it, rec, 96) +
         '<div class="spirit-meta">' +
         '<div class="spirit-name">' + esc(spiritName(it, store)) +
         '<span class="spirit-stage">' + si.icon + " " + esc(si.name) + "</span>" +
+        (needSetup ? '<span class="look-setup-tag" data-setup="' + esc(it.id) + '">✨ 定设定</span>' : "") +
         (si.canBreak ? '<span class="spirit-break-tag">✨ 可突破</span>' : "") +
         (wroteToday ? '<span class="spirit-break-tag" style="background:#e8f0ff;color:#3b5b9a">📔 写日记了</span>' : "") + "</div>" +
         '<div class="spirit-title">' + esc((p && p.title) || "正在酝酿性格…") +
@@ -2974,6 +2976,12 @@
       const id = c.dataset.spirit;
       if (id) location.hash = "#/spirit/" + encodeURIComponent(id);
     }));
+    // v127：卡片上的「✨ 定设定」→ 直接开这一只的向导（不跳详情页）
+    view.querySelectorAll("[data-setup]").forEach((el) => el.onclick = (e) => {
+      e.stopPropagation();
+      const it = list.filter((x) => x.id === el.dataset.setup)[0];
+      if (it) showSpiritSetupModal(it);
+    });
     const back = $("#spBackRooms");
     if (back) back.onclick = () => location.hash = "#/spirit";
     bindRedrawAll(list, renderAllSpiritsPage);
@@ -6927,11 +6935,15 @@
     });
   });
 
-  /* ---------- v113 一次性迁移：形象与日记全部推倒重来 ----------
-     用户要求：「把现在所有已经生成过的形象都删掉，不要出现在记录里面（进化史），全部按现在的设定重新生图；
-     日记也是，今天写了 3 篇要去掉，只保留每天随机写」。
-     用 ww_imgver 记录版本，只在版本变化时执行一次；清空后进精灵页会自动重新出图。 */
-  const ART_VER = "v124";
+  /* ---------- 一次性迁移：形象（+设定）全部推倒重来 ----------
+     v124：用户要求「把之前生成的清理了，全部重新生成一次，日记也是」（那时还清了日记）。
+     v127：加了「设定向导」后，用户要求「**删除所有精灵的图片**，我全部重新根据升级的来重新做设定，
+           更新后我进系统一个一个来出图」→ 这次：
+             · 清掉 立绘 / 进化史 / 取景 / CG（**不动日记**：用户这次只说图片）
+             · 清掉旧的 look 设定 + lookAsked，并标 setupPending → **进系统后一只一只弹向导**
+             · 不自动出图！定完一只才画一只（`spiritNeedsSetup` 会让出图跳过它们）
+     用 ww_imgver 记录版本，只在版本变化时执行一次。 */
+  const ART_VER = "v127c";
   function migrateSpiritArtOnce() {
     try {
       if (localStorage.getItem("ww_imgver") === ART_VER) return false;
@@ -6940,7 +6952,7 @@
       Object.keys(s).forEach((k) => {
         const r = s[k];
         if (!r || typeof r !== "object") return;
-        if (r.imgUrl || (r.imgHistory || []).length || (r.diary || []).length || r.face) touched++;
+        if (r.imgUrl || (r.imgHistory || []).length || r.face || r.cgUrl || r.look) touched++;
         r.imgUrl = "";
         r.imgAt = 0;
         r.face = null;
@@ -6949,9 +6961,17 @@
         r._imgErr = "";
         r._imgErrAt = 0;
         r.lookStale = false;
-        r.diary = [];             // 日记同样从零开始，之后按「每天最多 1 篇」随机写
-        r.diaryAt = 0;
-        r.diarySeenAt = 0;
+        // CG 也清掉（觉醒期/完成体的专属插画，按新设定重画）
+        r.cgUrl = "";
+        r.cgKey = "";
+        r.cgStage = 0;
+        r.cgAt = 0;
+        r._cgErr = "";
+        r._cgErrAt = 0;
+        // 设定清空 → 重新走「设定向导」（发色 / 特征 / 性格 / 一句话）
+        r.look = null;
+        delete r.lookAsked;
+        r.setupPending = true;
       });
       Spirits.save(s);
       try { localStorage.setItem("ww_imgver", ART_VER); } catch (e2) { /* 忽略 */ }
@@ -6985,12 +7005,14 @@
       try { view.innerHTML = bootSkeletonHtml(); } catch (e) { /* 忽略 */ }
       const ok = await enterApp();
       if (ok) {
-        // 一次性迁移：清掉所有旧立绘（含进化史）与旧日记，并**立刻**按当前模型/形象设定重新出图
-        // （v124：用户换了火山的 flash 并充值，要求把之前生成的全部清理重出一次、日记也重来）
+        // 一次性迁移（v127c）：清掉所有精灵的立绘 / 进化史 / 取景 / CG 与旧设定
+        // 用户要求「删除所有精灵的图片，我全部重新根据升级的来重新做设定，进系统一个一个来出图」
+        // → 这里**不出图**，只把设定清空标记 setupPending；进精灵页会一只一只弹「设定向导」，定完才画
         if (migrateSpiritArtOnce()) {
           const list = spiritItems();
-          toast(list.length ? ("形象与日记已重置，正在重新出图…（" + list.length + " 只）") : "形象与日记已重置");
-          if (list.length) ensureSpiritLook(list).then(() => ensureSpiritImages(list));
+          toast(list.length
+            ? ("已清空 " + list.length + " 只精灵的形象，进「精灵」页一只一只定设定吧 ✨（定完才会出图）")
+            : "形象已重置");
         }
         if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
           navigator.serviceWorker.register("sw.js").then((reg) => {
