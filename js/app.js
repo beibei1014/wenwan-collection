@@ -2579,6 +2579,7 @@
     rec.imgUrl = url;
     rec.imgAt = Date.now();
     rec.imgErr = "";
+    rec._imgErr = "";   // ⚠️ 必须清掉：出图成功却留着旧错误 → 列表页会一直弹那条早就过期的红字（v105 笔误成 imgErr，v108 修）
     rec.face = await analyzeFaceBox(url);   // 顺手算出"头像取景"，缩略图就不用等下一轮
     bumpGenCount(rec);
     return url;
@@ -2592,6 +2593,7 @@
   }
   // 逐个补形象：API 通道需要 POST 出图 → 缓存到本地精灵记录里
   let _imgBusy = false;
+  let _lastImgErrShown = "";
   async function ensureSpiritImages(list) {
     if (_imgBusy) return;
     const cfg = Spirits.getImageCfg();
@@ -2603,22 +2605,31 @@
         const st = Spirits.load();
         const rec = Spirits.ensureIn(st, it.id);
         if (!spiritImgStale(rec)) continue;          // 已经是本地存好的图 → 不再烧额度
+        // 刚失败过就别反复重试（配置错的时候会在每次进页面时白烧额度）
+        if (rec._imgErr && Date.now() - (rec._imgErrAt || 0) < 10 * 60 * 1000) continue;
         try {
           const r = await Spirits.generateImage(it, rec.variant || 0, null, rec.stage || 1, { appearanceSeed: rec.appearanceSeed || 0, gender: rec.gender || "" });
           await saveSpiritImage(it, rec, r, rec.stage || 1);
           Spirits.save(st);
           changed = true;
-          if (r.autoFixed) toast("模型名不对，已自动改用：" + r.autoFixed);
+          if (r.autoFixed) toast("已自动修正：" + r.autoFixed);
         } catch (e) {
           const msg = (e && e.message) || "出图失败";
-          if (rec._imgErr !== msg) { rec._imgErr = msg; rec.imgUrl = ""; changed = true; }
+          rec._imgErr = msg;
+          rec._imgErrAt = Date.now();     // 保留旧图（不清 imgUrl），只记下错误与时间
+          changed = true;
           Spirits.save(st);
         }
       }
       if (changed && location.hash === "#/spirit") renderSpiritPage();
+      // 同一条错误只提示一次，避免"早就修好了还一直弹红字"
       const st2 = Spirits.load();
       const errs = Object.keys(st2).map((k) => st2[k]._imgErr).filter(Boolean);
-      if (errs.length && location.hash === "#/spirit") toast("出图失败：" + errs[0]);
+      const emsg = errs[0] || "";
+      if (emsg && location.hash === "#/spirit" && _lastImgErrShown !== emsg) {
+        _lastImgErrShown = emsg;
+        toast("出图失败：" + emsg);
+      }
     } catch (e) { /* 静默 */ }
     _imgBusy = false;
   }
@@ -2699,7 +2710,7 @@
       const st = Spirits.load();
       list.forEach((it) => {
         const r = Spirits.ensureIn(st, it.id);
-        r.imgUrl = ""; r.imgAt = 0; r.face = null; r._imgErr = ""; r.imgHistory = [];
+        r.imgUrl = ""; r.imgAt = 0; r.face = null; r._imgErr = ""; r._imgErrAt = 0; r.imgHistory = [];
       });
       Spirits.save(st);
       toast("开始重画 " + n + " 只精灵…");
@@ -2821,6 +2832,7 @@
       r.imgUrl = "";
       r.imgAt = 0;
       r._imgErr = "";
+      r._imgErrAt = 0;
       Spirits.save(s);
       const nap = Spirits.appearanceOf(item, r.appearanceSeed, r.gender || "");
       toast("新设定：" + Spirits.appearanceText(nap) + "（正在重画…）");
@@ -2850,6 +2862,7 @@
       r.imgAt = 0;
       r.face = null;
       r._imgErr = "";
+      r._imgErrAt = 0;
       Spirits.save(s);
       toast("改成" + (r.gender === "boy" ? "男孩" : "女孩") + "了（正在重画…）");
       const img = modal.querySelector("img[data-item]");
@@ -2918,6 +2931,7 @@
       const prevImg = r.imgUrl || "";
       r.variant = (r.variant || 0) + 1;
       r._imgErr = "";
+      r._imgErrAt = 0;
       Spirits.save(s);
       const img = modal.querySelector("img[data-item]");
       if (cfg2.provider === "pollinations") {
@@ -3128,7 +3142,7 @@
         done();
         Spirits.setImageCfg(next);
         const st = Spirits.load();
-        Object.keys(st).forEach((k) => { st[k].imgUrl = ""; st[k].imgAt = 0; st[k]._imgErr = ""; });
+        Object.keys(st).forEach((k) => { st[k].imgUrl = ""; st[k].imgAt = 0; st[k]._imgErr = ""; st[k]._imgErrAt = 0; });
         Spirits.save(st);
         toast("已切换：" + Spirits.PROVIDERS[chosen].label + " · " + Spirits.STYLE_PRESETS[chosenStyle].label + "（正在重画 " + n + " 张）");
         renderSettings();

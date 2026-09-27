@@ -10,14 +10,15 @@
 
   const STORE_KEY = "ww_spirits";      // { [itemId]: { persona, variant, imgUrl, letters, chats, lastLetterDay } }
   const CFG_KEY = "ww_imgcfg";         // 绘图通道配置
-  // 出图尺寸：Seedream 5.0 要求「至少 3,686,400 像素」（1024x1024 才 1,048,576 → 会被拒），
-  // 所以默认用 2K 档（2048² ≈ 4.19M 像素，稳过）；竖版立绘可选 3:4。
-  const DEFAULT_SIZE = "2K";
+  // 出图尺寸：Seedream 5 要求「总像素 3,686,400 ~ 16,777,216，宽高比 1/16~16」，
+  // 所以默认用**明确的竖版宽×高**（1728x2304 = 398 万像素，稳过，而且正好是立绘比例）。
+  // ⚠️ 不要用 "2K" 这种简写：不同模型对它的解释不一样，有的会当成 1024x1024 → 直接报 "must be at least 3686400 pixels"。
+  const DEFAULT_SIZE = "1728x2304";
   const SIZE_PRESETS = [
-    { v: "2K", label: "2K（推荐）" },
-    { v: "1728x2304", label: "竖版立绘 3:4" },
+    { v: "1728x2304", label: "竖版立绘 3:4（推荐）" },
     { v: "2048x2048", label: "方形 2048" },
-    { v: "4K", label: "4K（最清晰也最贵）" },
+    { v: "2304x1728", label: "横版 4:3" },
+    { v: "3072x3072", label: "4K 方形（最清晰也最贵）" },
   ];
   const AI_BASE = "https://api.deepseek.com";
   const AI_MODEL = "deepseek-v4-flash";
@@ -43,31 +44,61 @@
   }
 
   /* ---------- 外观锚点（v104）：每只精灵有固定人设，所有形态共享，突破不会变性/变色 ---------- */
-  const HAIR_STYLES = ["short spiky", "long straight", "twin tails", "shoulder-length bob", "high ponytail", "messy soft curls"];
+  // 发型**按性别分池**（v108）：以前男女共用一张表，结果男孩抽到 "long straight" / "twin tails"
+  // → 男孩顶着双马尾（用户实测吐槽）。现在男孩只有短发池，女孩只有长发/双马尾池。
+  const BOY_HAIR = ["short spiky", "short neat and tidy", "messy short hair with bangs", "short hair with a side part",
+    "short fluffy hair", "buzz cut with a small tuft"];
+  const GIRL_HAIR = ["long straight", "twin tails", "shoulder-length bob", "long wavy hair", "high ponytail", "twin braids"];
+  const HAIR_STYLES = BOY_HAIR.concat(GIRL_HAIR);        // 兼容：仍导出全表
   const EYE_COLORS = ["amber", "sky blue", "violet", "deep brown", "emerald", "golden"];
   const ACCESSORIES = ["a small shell hairpin", "a silk scarf", "a single round earring", "a forehead bead band",
     "a bead bracelet on the wrist", "a hair ribbon", "a tiny bell charm", "a wooden pendant"];
   const VIBES = ["calm and reliable", "cheerful and talkative", "quiet and thoughtful", "playful and mischievous",
     "gentle and caring", "cool and a little proud"];
+  // 中文说法（界面用；prompt 仍用英文原文）
+  const HAIR_ZH = {
+    "short spiky": "利落短发", "short neat and tidy": "清爽短发", "messy short hair with bangs": "蓬松碎短发",
+    "short hair with a side part": "侧分短发", "short fluffy hair": "柔软短发", "buzz cut with a small tuft": "寸头 + 小揪揪",
+    "long straight": "黑长直", "twin tails": "双马尾", "shoulder-length bob": "齐肩短发", "long wavy hair": "长卷发",
+    "high ponytail": "高马尾", "twin braids": "双麻花辫",
+  };
+  const EYES_ZH = { amber: "琥珀色", "sky blue": "天蓝色", violet: "紫罗兰色", "deep brown": "深棕色", emerald: "翠绿色", golden: "金色" };
+  const ACC_ZH = {
+    "a small shell hairpin": "贝壳小发夹", "a silk scarf": "丝巾", "a single round earring": "单颗圆耳饰",
+    "a forehead bead band": "额头珠链（手串同款珠子）", "a bead bracelet on the wrist": "手腕上的珠子手链",
+    "a hair ribbon": "发带", "a tiny bell charm": "小铃铛挂饰", "a wooden pendant": "木质吊坠",
+  };
+  const VIBE_ZH = {
+    "calm and reliable": "沉静可靠", "cheerful and talkative": "活泼话多", "quiet and thoughtful": "安静爱想事情",
+    "playful and mischievous": "调皮爱闹", "gentle and caring": "温柔体贴", "cool and a little proud": "有点酷、有点傲娇",
+  };
   // 由「串 id + 外观种子」决定；外观种子只在用户点「换外观设定」时变
   // gender 可被用户强制（rec.gender："boy"/"girl"）；没强制时按 2/3 男孩的概率随机（用户反馈"女孩太多"）
   function appearanceOf(item, seedN, gender) {
     const h = hashStr(String((item && item.id) || "") + "#" + (seedN || 0));
     const g = (gender === "boy" || gender === "girl") ? gender : ((h % 3) !== 0 ? "boy" : "girl");
+    const hairs = g === "boy" ? BOY_HAIR : GIRL_HAIR;
     return {
       gender: g,
-      hair: HAIR_STYLES[(h >> 3) % HAIR_STYLES.length],
+      hair: hairs[(h >> 3) % hairs.length],
       eyes: EYE_COLORS[(h >> 6) % EYE_COLORS.length],
       acc: ACCESSORIES[(h >> 9) % ACCESSORIES.length],
       vibe: VIBES[(h >> 12) % VIBES.length],
     };
   }
   function appearanceText(ap) {
-    return (ap.gender === "boy" ? "👦 男孩" : "👧 女孩") + " · " + ap.hair + " · " + ap.eyes + " eyes · " + ap.acc;
+    return (ap.gender === "boy" ? "👦 男孩" : "👧 女孩") + " · " + (HAIR_ZH[ap.hair] || ap.hair) + " · " +
+      (EYES_ZH[ap.eyes] || ap.eyes) + "眼睛 · " + (ACC_ZH[ap.acc] || ap.acc);
   }
   function appearancePrompt(ap) {
-    return "a " + (ap.gender === "boy" ? "boy" : "girl") + " character with " + ap.hair + " hair, " +
-      ap.eyes + " eyes, wearing " + ap.acc + ", " + ap.vibe + " personality";
+    const isBoy = ap.gender === "boy";
+    // 男性/女性特征要写死，并且**明确排除异性发型**（只写 "boy" 模型偶尔照样给长发）
+    return (isBoy
+      ? "a young boy character, clearly male, boyish face, short masculine hair style: "
+      : "a young girl character, clearly female, girlish face, feminine hair style: ") +
+      ap.hair + ", " + ap.eyes + " eyes, wearing " + ap.acc + ", " + ap.vibe + " personality, " +
+      (isBoy ? "no long hair, no twin tails, no ponytail, no feminine hair style"
+             : "no boyish buzz cut, no masculine short hair");
   }
   // 一致性硬约束：每次出图都带上，防止突破后"换人"
   // ⚠️ 这里曾经写过 "character evolution sheet"（进化图鉴）→ 模型真的画成了**多格图鉴**：
@@ -146,7 +177,15 @@
     try {
       const raw = localStorage.getItem(CFG_KEY);
       const o = raw ? JSON.parse(raw) : null;
-      if (o && o.provider) return o;
+      if (o && o.provider) {
+        // 老配置里的 "2K"/"1K" 简写在不同模型上含义不同（有的当成 1024x1024 → 报"像素不够"）
+        // → 读到就顺手迁成明确的宽×高
+        if (o.size === "2K" || o.size === "1K" || o.size === "4K") {
+          o.size = DEFAULT_SIZE;
+          try { localStorage.setItem(CFG_KEY, JSON.stringify(o)); } catch (e2) { /* 忽略 */ }
+        }
+        return o;
+      }
     } catch (e) { /* 忽略 */ }
     return { provider: "pollinations", key: "", model: "", endpoint: "", style: DEFAULT_STYLE, size: DEFAULT_SIZE };
   }
@@ -258,21 +297,13 @@
     // 图生图参考：拿上一形态的图当参考，是"同一个角色"最可靠的做法（方舟 Seedream 支持 image 字段）
     const useRef = _noRef ? "" : ((opts && opts.ref) || "");
     try {
-      return await callImageApi(info, prompt, size, seed, useRef);
+      return await callWithSizeFallback(info, prompt, size, seed, useRef, cfg);
     } catch (e) {
       const msg = (e && e.message) || "";
-      // ① 尺寸被服务端拒 → 换默认档再试一次。
-      //    ⚠️ 这条必须排在「参考图」判断**前面**：尺寸报错里也带 "image" 字样，
-      //    否则会被当成"不支持参考图"，去掉参考图后拿同样的坏尺寸再试一遍 → 还是失败（实测踩过）
-      if (isSizeErr(msg) && size !== DEFAULT_SIZE) {
-        const next = Object.assign({}, cfg, { size: DEFAULT_SIZE });
-        setImageCfg(next);
-        const r = await callImageApi(providerInfo(next), prompt, DEFAULT_SIZE, seed, useRef);
-        r.autoFixed = "尺寸已改为 " + DEFAULT_SIZE;
-        return r;
-      }
+      // ① 尺寸被服务端拒（callWithSizeFallback 已经把能试的都试完了）→ 报告一句能看懂的提示
+      if (isSizeErr(msg)) throw new Error("尺寸不被这个模型接受（" + msg + "）。请到 设置 → 精灵形象 把「出图尺寸」换成「竖版立绘 3:4」再试。");
       // ② 参考图不被支持（部分模型/尺寸限制）→ 去掉 image 再试一次，并记住以后不再传（文本锚点仍在，不会换人）
-      if (useRef && !_noRef && !isSizeErr(msg) && /image|InvalidParameter|not support|参数/i.test(msg)) {
+      if (useRef && !_noRef && /image|InvalidParameter|not support|参数/i.test(msg)) {
         _noRef = true;
         return await callImageApi(info, prompt, size, seed, "");
       }
@@ -291,6 +322,27 @@
       r.autoFixed = fixed;   // 交给界面提示"已自动改用 xxx"
       return r;
     }
+  }
+  // 尺寸兜底阶梯：按「明确的宽×高」依次试（都 ≥368 万像素），第一个能出图的就写回配置。
+  // 之所以不写死成 "2K"：有的模型把 "2K" 当成 1024x1024 → 会一直报像素不够。
+  const SIZE_LADDER = ["1728x2304", "2048x2048", "3072x3072"];
+  async function callWithSizeFallback(info, prompt, size, seed, ref, cfg) {
+    const cands = [size].concat(SIZE_LADDER.filter((s) => s !== size));
+    let lastErr = null;
+    for (let i = 0; i < cands.length; i++) {
+      try {
+        const r = await callImageApi(info, prompt, cands[i], seed, ref);
+        if (i > 0) {
+          setImageCfg(Object.assign({}, cfg, { size: cands[i] }));
+          r.autoFixed = "尺寸已改为 " + cands[i];
+        }
+        return r;
+      } catch (e) {
+        lastErr = e;
+        if (!isSizeErr((e && e.message) || "")) throw e;   // 不是尺寸问题 → 交给上层按参考图/模型名兜底
+      }
+    }
+    throw lastErr;
   }
   let _noRef = false;
   function isSizeErr(msg) {
