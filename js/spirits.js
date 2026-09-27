@@ -275,11 +275,11 @@
         "stylish detailed outfit, glowing aura and light particles, sharp determined eyes, cinematic lighting",
     },
     {
-      n: 4, name: "完成体", icon: "👑", need: 180, sizeZh: "约 7.5 头身（成年，气场全开）",
-      look: "a stunning fully-realized young adult anime character, mature adult proportions " +
-        "about 7.5 heads tall, elegant long limbs, refined adult facial features, " +
-        "magnificent ornate outfit with elegant details, powerful graceful aura, beautiful and cool, " +
-        "masterpiece quality, epic composition, breathtaking",
+      n: 4, name: "完成体", icon: "👑", need: 180, sizeZh: "约 8.5 头身（成年，又帅又美）",
+      look: "a stunning fully grown-up version of the same character, tall elegant fashion-model proportions " +
+        "about 8.5 heads tall, long slim legs, sharp refined facial features, strikingly handsome and beautiful, " +
+        "cool and glamorous presence, confident charismatic aura, magnificent ornate outfit with elegant flowing details, " +
+        "cinematic rim lighting, subtle glowing accents, masterpiece quality, epic composition, breathtaking",
     },
   ];
   // 每次出图都带上：明确"这是同一个人的下一个年龄段，比上一形态更高更成熟"
@@ -330,6 +330,19 @@
   };
   const SIZE_DEFAULT_LADDER = ["1728x2304", "2048x2048", "1024x1024"];
   function sizeLadderFor(provider) { return SIZE_BY_PROVIDER[provider] || SIZE_DEFAULT_LADDER; }
+  /* ---------- v125：CG 一律用**横版**（用户要求：CG 要横构图，像动画截图 / 电影感） ----------
+     立绘仍然是竖版（全身站姿），只有 CG（觉醒期/完成体专属插画、两只精灵的事件插画）走横版。
+     注意：方舟 Seedream 要求 ≥ 3686400 像素，所以横版首选 2304x1728（4:3，398 万像素，稳过）。 */
+  const CG_SIZE_BY_PROVIDER = {
+    ark: ["2304x1728", "2560x1440", "2048x2048", "1024x1024"],
+    zhipu: ["1568x1056", "1472x1088", "1024x1024"],                 // GLM-Image 官方支持的横版档
+    siliconflow: ["1024x768", "1024x1024"],
+    modelscope: ["1024x768", "1024x1024"],
+    bailian: ["1152x768", "1024x1024"],
+  };
+  const CG_SIZE_DEFAULT_LADDER = ["2304x1728", "2560x1440", "1536x1024", "1024x768", "1024x1024"];
+  function cgLadderFor(provider) { return CG_SIZE_BY_PROVIDER[provider] || CG_SIZE_DEFAULT_LADDER; }
+  function cgSizeFor(provider) { return cgLadderFor(provider)[0]; }
   /* ---------- 图生图（带参考图）支持情况 ----------
      实测/查文档结论：
        · ark（Seedream 5.0 flash/lite/pro）：**支持** `image` 字段，参考图不额外收费
@@ -350,7 +363,7 @@
      用户最容易踩的：火山方舟控制台里那串 `api-key-20260927150936` 是密钥**名称**，
      真正的密钥要点「复制 / 👁 显示」才看得到，形如 `ark-xxxxxxxx-…`。 */
   const KEY_UI_HINT = {
-    ark: "方舟：要填 <b>ark- 开头</b>的那一串（形如 <code>ark-8位-4位-4位-4位-12位</code>，有些末尾还会多一小段如 <code>-69485</code>）。控制台里显示的 <code>api-key-2026…</code> 是密钥的<b>名称</b>；密钥那行显示成 <code>ark-26b0fc78-…</code> 是<b>截断显示</b> → 一定要点右边的「📋 复制」整串复制，别手选文字。",
+    ark: "方舟：要填 <b>ark- 开头</b>的那一串（形如 <code>ark-8位-4位-4位-4位-12位</code>，有些末尾还会多一小段如 <code>-69485</code>）。控制台里显示的 <code>api-key-2026…</code> 是密钥的<b>名称</b>；密钥那行显示成 <code>ark-xxxxxxxx-…</code> 是<b>截断显示</b> → 一定要点右边的「📋 复制」整串复制，别手选文字。",
     zhipu: "智谱：形如 <code>xxxxxxxx.yyyyyyyy</code>（<b>中间有一个点</b>），在「API Keys」页面点复制即可。",
     siliconflow: "硅基流动：<b>sk- 开头</b>的一长串。",
     modelscope: "魔搭：在「访问令牌 / SDK 令牌」页面复制，一般以 <code>ms-</code> 开头。",
@@ -477,6 +490,8 @@
     let cmp;
     if (isChar) {
       // 先写死"这个人是谁"（外观锚点），再写"他现在多大"（形态描述）→ 突破只会长大，不会换人
+      // 注意：这里始终是**立绘**（全身角色图、干净背景），四个阶段都有立绘；
+      //      觉醒期/完成体**额外**再出一张 CG（场景插画），见 promptForCg（v125）。
       cmp = appearancePrompt(ap) + ", with " + color + " hair and " + color + " themed outfit" + colorHint + ", " +
         lk + ", " +
         "full body character illustration, standing pose, whole body visible from head to toe, " +
@@ -550,14 +565,16 @@
   }
   // 尺寸兜底阶梯：先按这家服务商自己的合法档位试，再退回通用档。
   // 之所以不写死成 "2K"：有的模型把 "2K" 当成 1024x1024 → 会一直报像素不够。
-  async function callWithSizeFallback(info, prompt, size, seed, ref, cfg) {
-    const ladder = sizeLadderFor(cfg && cfg.provider);
+  async function callWithSizeFallback(info, prompt, size, seed, ref, cfg, o) {
+    const opt = o || {};
+    const ladder = opt.ladder || sizeLadderFor(cfg && cfg.provider);
     const cands = [size].concat(ladder.filter((s) => s !== size));
     let lastErr = null;
     for (let i = 0; i < cands.length; i++) {
       try {
         const r = await callImageApi(info, prompt, cands[i], seed, ref);
-        if (i > 0) {
+        // CG 的横版尺寸是"临时"的：不能把用户给立绘选的竖版尺寸改掉
+        if (i > 0 && !opt.keepSize) {
           setImageCfg(Object.assign({}, cfg, { size: cands[i] }));
           r.autoFixed = "尺寸已改为 " + cands[i];
         }
@@ -1185,6 +1202,84 @@
     return storyLocal(a, b, level, roomName, aff);
   }
 
+  /* ---------- v125：CG（场景插画） ----------
+     规则（用户要求）：**幼生期 / 成长期只有立绘**；**觉醒期 / 完成体额外再出一张 CG**。
+     精灵之间达成的事件（契合度解锁的剧情）也各配一张双人 CG。都是日漫风。 */
+  const CG_STYLE = "Japanese anime key visual CG illustration, 2D anime movie still, cel shading, " +
+    "soft pastel palette, cinematic lighting, atmospheric mood, detailed painted background with gentle bokeh, " +
+    "expressive body language, warm cozy feeling, masterpiece quality, " +
+    "WIDE LANDSCAPE HORIZONTAL COMPOSITION, 16:9 cinematic framing like an anime film screenshot, " +
+    "wide scenery on both sides, generous environment around the character, not a portrait, not a vertical poster, " +
+    "no text, no letters, no words, no title, no labels, no watermark, no signature, no logo, " +
+    "single continuous scene, no split panels, no collage";
+  const CG_MOOD = [
+    "just met and politely getting to know each other, a little shy, warm afternoon light",
+    "comfortably chatting like friends, one of them laughing, golden sunset light through the window",
+    "sitting close together in comfortable silence, trusting each other, soft lamplight at dusk",
+    "leaning on each other like old friends, quiet and intimate, warm night light and floating dust motes",
+    "a deep bond, they understand each other without words, breathtaking magical light, petals or light particles in the air",
+  ];
+  // 单只精灵的 CG（觉醒期 / 完成体用）
+  function promptForCg(item, styleKey, stage, appearance) {
+    const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
+    const st = styleOf(item, key).text;
+    const bead = beadColor(item);
+    const color = (bead && bead.word) ? bead.word : (COLOR_EN[item.color] || "jade green");
+    const ap = appearance || appearanceOf(item, 0);
+    const lk = stageDef(stage).look;
+    return CG_STYLE + ", " + appearancePrompt(ap) + ", with " + color + " hair and " + color + " themed outfit, " +
+      lk + ", solo single character only, exactly one figure in the whole image, " +
+      "a breathtaking key visual for a big moment: the character alone in a beautiful scene that matches its " +
+      "personality, dramatic pose and camera angle, full body visible from head to toe, " +
+      "the horizontal frame filled with the wide scenery of the scene (sky / room / distant view) on both sides of the character, " +
+      "light particles and elegant atmosphere, no other characters, " + st;
+  }
+  // 两只精灵的事件 CG（房间剧情用）
+  function storyCgPrompt(a, b, level, roomName) {
+    const apA = a.appearance || appearanceOf(a.item, a.variant || 0, a.gender || "");
+    const apB = b.appearance || appearanceOf(b.item, b.variant || 0, b.gender || "");
+    const nmA = (a.persona && a.persona.name) || a.item.name || "first character";
+    const nmB = (b.persona && b.persona.name) || b.item.name || "second character";
+    const mood = CG_MOOD[Math.min(CG_MOOD.length - 1, Math.max(0, Number(level) || 0))];
+    return CG_STYLE + ", " + mood + ", " +
+      "scene: a cozy little room called \"" + (roomName || "little room") + "\" at home, " +
+      "two anime characters together in the same scene: " +
+      "① " + appearancePrompt(apA) + " (name: " + nmA + "), " +
+      "② " + appearancePrompt(apB) + " (name: " + nmB + "), " +
+      "they are the same two characters as before, keep their hair color, eye color, outfits and accessories consistent, " +
+      "landscape wide shot of the whole room, the two of them standing or sitting side by side with the room around them, " +
+      "keep exactly two characters in the image, no extra people, no duplicates";
+  }
+  // 用**任意 prompt**出图（剧情 CG 用；精灵主图仍走 generateImage）
+  async function generateCustom(prompt, opts) {
+    const cfg = getImageCfg();
+    const info = providerInfo(cfg);
+    const pk = info.provider;
+    // v125：CG 走**横版**尺寸（立绘仍用用户在设置里选的竖版档）→ 不覆盖用户的立绘尺寸
+    const isCg = !!(opts && opts.landscape);
+    if (info.keyless) {
+      return { url: "https://image.pollinations.ai/prompt/" + encodeURIComponent(prompt) +
+        (isCg ? "?width=1024&height=768" : "?width=768&height=1024") +
+        "&nologo=true&seed=" + seedOf((opts && opts.seedKey) || prompt, (opts && opts.variant) || 0), kind: "url" };
+    }
+    if (!info.key) throw new Error("还没填 API Key");
+    if (!info.endpoint) throw new Error("还没填接口地址");
+    const size = isCg ? cgSizeFor(pk) : (cfg.size || DEFAULT_SIZE);
+    const ref = fixedOf("noRef", pk) ? "" : ((opts && opts.ref) || "");
+    const seed = seedOf((opts && opts.seedKey) || prompt, (opts && opts.variant) || 0);
+    const pass = isCg ? { ladder: cgLadderFor(pk), keepSize: true } : null;
+    try {
+      return await callWithSizeFallback(info, prompt, size, seed, ref, cfg, pass);
+    } catch (e) {
+      const msg = (e && e.message) || "";
+      if (ref && !fixedOf("noRef", pk) && /image|InvalidParameter|not support|参数/i.test(msg)) {
+        markFixed("noRef", pk);
+        return await callImageApi(info, prompt, size, seed, "");
+      }
+      throw e;
+    }
+  }
+
   /* ---------- 对外接口 ---------- */
   /* ---------- 拉取账号可用模型（方舟/兼容服务都能用；用户开通后一键选，不用手打 ID） ---------- */
   function modelsUrlFrom(endpoint) {
@@ -1273,7 +1368,7 @@
     if (provider === "ark" && !/^ark-/.test(k) && !/^[0-9a-f-]{30,}$/i.test(k)) {
       return "方舟的 API Key 一般以 ark- 开头，请确认复制完整（别只复制了名字或前半段）。";
     }
-    // ★ 最常见的"复制不完整"：控制台里密钥显示成 `ark-26b0fc78-…-72b99c…`（末尾省略号），
+    // ★ 最常见的"复制不完整"：控制台里密钥显示成 `ark-xxxxxxxx-…-xxxxxx…`（末尾省略号），
     //   手选文字就会少掉最后几位 → 请求 401 → 浏览器只报 Failed to fetch，很难自查。
     //   方舟完整密钥 = ark- + UUID（8-4-4-4-**12** 位十六进制）。
     //   ⚠️ 只在"形状能证明被截断"时才拦（前四组齐全、最后一组不足 12 位）——
@@ -1282,7 +1377,7 @@
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k.slice(4)) &&
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1,11}$/i.test(k.slice(4))) {
       return "这串密钥看起来**没复制完整**：方舟 key 一般形如 `ark-` + 8-4-4-4-12 位（有些末尾还会多一小段，如 `-69485`），你填的有 " + k.length +
-        " 个字符、最后一段明显短了一截。控制台里密钥显示成 `ark-26b0fc78-…-72b99c…`（末尾省略号）时，**别手选文字，点它右边的「📋 复制」按钮**整串复制。";
+        " 个字符、最后一段明显短了一截。控制台里密钥显示成 `ark-xxxxxxxx-…-xxxxxx…`（末尾省略号）时，**别手选文字，点它右边的「📋 复制」按钮**整串复制。";
     }
     if (provider === "siliconflow" && !/^sk-/.test(k)) return "硅基流动的 key 一般以 sk- 开头。";
     if (provider === "zhipu" && k.length < 20) return "智谱的 key 看起来不完整。";
@@ -1326,5 +1421,9 @@
     // v109：真实主色 / 中文人物设定 / 日记 / 房间剧情
     beadColor, detectBeadColor, hexToWord,
     personaZh, personaZhLocal, ensureDiary, diarySlots, diaryLocal, roomStory, storyLocal,
+    // v125：剧情 CG
+    storyCgPrompt, promptForCg, generateCustom, CG_STYLE, CG_SIZE_BY_PROVIDER, cgSizeFor, cgLadderFor,
+    // v125：阶段规则 —— 幼生/成长只有立绘；觉醒/完成体额外出 CG
+    cgStages: [3, 4], needCg: function (stage) { return (Number(stage) || 1) >= 3; },
   };
 })();

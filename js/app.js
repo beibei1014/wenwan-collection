@@ -2559,13 +2559,15 @@
     try {
       let changed = false;
       for (const it of list) {
-        const st = Spirits.load();
-        const rec = Spirits.ensureIn(st, it.id);
+        const rec = Spirits.ensureIn(Spirits.load(), it.id);
         if (!rec.imgUrl) continue;
         if (rec.face && rec.face.v === FACE_VER) continue;
         const f = await analyzeFaceBox(rec.imgUrl);
-        rec.face = f || { l: 0, t: 0, w: 0, ar: 0, v: FACE_VER };   // 算不出来也记一笔（w=0 用固定比例），免得每次重算
-        Spirits.save(st);
+        // ⚠️ 上面 await 过（算取景要解码图片），期间出图/CG/日记可能已经写过存档 →
+        //    必须**重新 load** 只写 face 字段，绝不能 save 那份旧快照（会覆盖掉刚生成的 CG/立绘，白烧额度）
+        const st2 = Spirits.load();
+        Spirits.ensureIn(st2, it.id).face = f || { l: 0, t: 0, w: 0, ar: 0, v: FACE_VER };   // 算不出来也记一笔（w=0 用固定比例），免得每次重算
+        Spirits.save(st2);
         changed = true;
       }
       if (changed) rerenderSpiritView();
@@ -2589,6 +2591,8 @@
   /* ---------- v97：走 API 通道真正出图（POST 拿图） ---------- */
   // 统一的存档尺寸：**所有路径都用同一档**（首出/换形象/换设定/突破），避免"缩略图与立绘清晰度不一致"
   const SPIRIT_IMG_SIZE = 512;
+  // v125：CG 是横版插画，存大一点（长边 768）才看得清细节；一张 ≈ 60-90KB，本地存得下
+  const CG_IMG_SIZE = 768;
   // 把出图结果压成小图存本地（火山方舟返回的 URL 只有 24 小时有效，所以 b64 一律压成 data URI 长期保存）
   function shrinkToDataUri(src, max, quality) {
     return new Promise((resolve) => {
@@ -2690,16 +2694,22 @@
         if (rec._imgErr && Date.now() - (rec._imgErrAt || 0) < 10 * 60 * 1000) continue;
         try {
           const r = await Spirits.generateImage(it, rec.variant || 0, null, rec.stage || 1, { appearanceSeed: rec.appearanceSeed || 0, gender: rec.gender || "" });
-          await saveSpiritImage(it, rec, r, rec.stage || 1);
-          Spirits.save(st);
+          // ⚠️ 出图要好几秒，期间 CG/取景/日记可能已经写过存档 →
+          //    必须**重新 load** 再写（否则会把并发任务的结果覆盖掉，CG 会被白白重画一次）
+          const st2 = Spirits.load();
+          const rec2 = Spirits.ensureIn(st2, it.id);
+          await saveSpiritImage(it, rec2, r, rec2.stage || 1);
+          Spirits.save(st2);
           changed = true;
           if (r.autoFixed) toast("已自动修正：" + r.autoFixed);
         } catch (e) {
           const msg = (e && e.message) || "出图失败";
-          rec._imgErr = msg;
-          rec._imgErrAt = Date.now();     // 保留旧图（不清 imgUrl），只记下错误与时间
+          const st2 = Spirits.load();
+          const rec2 = Spirits.ensureIn(st2, it.id);
+          rec2._imgErr = msg;
+          rec2._imgErrAt = Date.now();     // 保留旧图（不清 imgUrl），只记下错误与时间
           changed = true;
-          Spirits.save(st);
+          Spirits.save(st2);
         }
       }
       if (changed && location.hash === "#/spirit") renderSpiritPage();
@@ -2758,9 +2768,7 @@
     if (dh) dh.onclick = () => location.hash = "#/spirits";
     // 异步补性格 + 人设/形象细节（要在出图之前）→ 出图 + 老图头像取景 + 日记 + 房间契合度/剧情
     ensureSpiritData(list, false);
-    ensureSpiritLook(list).then(() => {
-      ensureSpiritImages(list);
-    });
+    ensureSpiritLook(list).then(() => ensureSpiritImages(list)).then(() => ensureSpiritCg(list));   // v125：立绘好了再画 CG（拿立绘当参考、更像同一个人）
     ensureSpiritFaces(list);
     ensureSpiritExtras(list);
     tickRooms(list);
@@ -2819,7 +2827,7 @@
     if (back) back.onclick = () => location.hash = "#/spirit";
     bindRedrawAll(list, renderAllSpiritsPage);
     ensureSpiritData(list, false);
-    ensureSpiritLook(list).then(() => ensureSpiritImages(list));
+    ensureSpiritLook(list).then(() => ensureSpiritImages(list)).then(() => ensureSpiritCg(list));
     ensureSpiritFaces(list);
     ensureSpiritExtras(list);
     tickRooms();          // 进这一页也推进契合度/补写剧情（v114：之前只有精灵页会推）
@@ -2974,6 +2982,19 @@
         const room = Rooms.getRoom(q.roomId) || { name: "它们的小房间" };
         const txt = await Spirits.roomStory(spiritSp(a), spiritSp(b), q.level, room.name, Rooms.affinityOf(q.a, q.b));
         Rooms.writeStory(q.a, q.b, q.level, "", txt);
+        // v125：这段事件也配一张双人 CG（每段剧情只画一次，失败不阻塞）
+        try {
+          const cgPrompt = Spirits.storyCgPrompt(spiritSp(a), spiritSp(b), q.level, room.name);
+          // 横版 CG（用户要求）：长边 = CG_IMG_SIZE，比立绘大一点，横构图看得清
+          const cg = await Spirits.generateCustom(cgPrompt, { seedKey: Rooms.pairKey(q.a, q.b) + "#cg" + q.level, variant: 0, landscape: true });
+          const cgUrl = cg.b64
+            ? await shrinkToDataUri("data:image/png;base64," + cg.b64, CG_IMG_SIZE, 0.86)
+            : ((await urlToDataUri(cg.url, CG_IMG_SIZE, 0.86)) || cg.url);
+          if (cgUrl) {
+            Rooms.setStoryImage(q.a, q.b, q.level, cgUrl);
+            try { localStorage.setItem("ww_gen_total", String(Number(localStorage.getItem("ww_gen_total") || "0") + 1)); } catch (e2) { /* 忽略 */ }
+          }
+        } catch (e) { /* CG 失败不影响剧情文字 */ }
       }
       updateStoryDot();
       if (res.changed || pend.length) rerenderSpiritView();
@@ -3057,6 +3078,81 @@
     } catch (e) { /* 静默 */ }
   }
 
+  /* ---------- v125：CG（觉醒期 / 完成体额外一张场景插画） ----------
+     规则：幼生期 / 成长期**只有立绘**；觉醒期 / 完成体**立绘 + CG 都有**。
+     CG 跟着"阶段 + 外观设定 + 换形象次数"缓存，变了才重画（每张 ≈ 一次出图额度）。 */
+  let _cgBusy = false;
+  // CG 的缓存 key：阶段 / 人设种子 / 性别 / 换形象次数 / 服务商 —— 任一变了才重画
+  function cgKeyOf(rec) {
+    return (Number(rec.stage) || 1) + "|" + (rec.appearanceSeed || 0) + "|" + (rec.gender || "") +
+      "|" + (rec.variant || 0) + "|" + (Spirits.getImageCfg().provider || "");
+  }
+  // 单只精灵：形象变了（换外观/换形象）或刚突破 → 撤掉不匹配的旧 CG，并把新的补上
+  function refreshCgAfter(item) {
+    try {
+      const s = Spirits.load();
+      const r = Spirits.ensureIn(s, item.id);
+      const stage = Number(r.stage) || 1;
+      if (!Spirits.needCg(stage)) {
+        if (r.cgUrl || r.cgKey) { r.cgUrl = ""; r.cgKey = ""; r.cgStage = 0; Spirits.save(s); }
+        return;
+      }
+      if (r.cgUrl && r.cgKey === cgKeyOf(r)) return;               // 已经是最新的
+      if (r.cgUrl || r.cgKey) {                                     // 旧 CG 跟新形象对不上了 → 先撤掉
+        r.cgUrl = ""; r.cgKey = ""; r.cgStage = 0; Spirits.save(s);
+      }
+      ensureSpiritCg([item]);
+    } catch (e) { /* 静默 */ }
+  }
+  async function ensureSpiritCg(list) {
+    if (_cgBusy) return;
+    _cgBusy = true;
+    try {
+      let changed = false;
+      for (const it of list) {
+        const st0 = Spirits.load();
+        const rec = Spirits.ensureIn(st0, it.id);
+        const stage = Number(rec.stage) || 1;
+        if (!Spirits.needCg(stage)) {
+          // 早期阶段：清掉 CG（只保留立绘）
+          if (rec.cgUrl || rec.cgKey) { rec.cgUrl = ""; rec.cgKey = ""; rec.cgStage = 0; Spirits.save(st0); changed = true; }
+          continue;
+        }
+        const key = cgKeyOf(rec);
+        if (rec.cgUrl && rec.cgKey === key) continue;
+        if (rec._cgErr && Date.now() - (rec._cgErrAt || 0) < 10 * 60 * 1000) continue;   // 刚失败过就别反复烧额度
+        const ap = Spirits.appearanceOf(it, rec.appearanceSeed || 0, rec.gender || "");
+        try {
+          const res = await Spirits.generateCustom(Spirits.promptForCg(it, null, stage, ap),
+            { seedKey: it.id + "#cg" + stage, variant: rec.variant || 0, ref: rec.imgUrl || "", landscape: true });
+          const url = res.b64
+            ? await shrinkToDataUri("data:image/png;base64," + res.b64, CG_IMG_SIZE, 0.86)
+            : ((await urlToDataUri(res.url, CG_IMG_SIZE, 0.86)) || res.url);
+          if (url) {
+            const s2 = Spirits.load();
+            const r2 = Spirits.ensureIn(s2, it.id);
+            r2.cgUrl = url;
+            r2.cgAt = Date.now();
+            r2.cgStage = stage;
+            r2.cgKey = key;
+            r2._cgErr = "";
+            bumpGenCount(r2);          // CG 也是要花钱的一张，计入额度
+            Spirits.save(s2);
+            changed = true;
+          }
+        } catch (e) {
+          const s2 = Spirits.load();
+          const r2 = Spirits.ensureIn(s2, it.id);
+          r2._cgErr = (e && e.message) || "CG 出图失败";
+          r2._cgErrAt = Date.now();
+          Spirits.save(s2);
+        }
+      }
+      if (changed) rerenderSpiritView();
+    } catch (e) { /* 静默 */ }
+    _cgBusy = false;
+  }
+
   /* ---------- 精灵形象 / 进阶动作（v111：详情页直接调，不再依赖弹层） ----------
      host = { refresh(), refreshTop(), busy(on, text) } —— 由页面提供，用于原地刷新与按钮状态 */
   async function spiritReRoll(item, host) {
@@ -3086,6 +3182,7 @@
     }
     if (h.busy) h.busy(false);
     if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
+    refreshCgAfter(item);      // v125：换了人设 → 觉醒期/完成体的 CG 也跟着换
   }
 
   async function spiritNewLook(item, host) {
@@ -3107,6 +3204,7 @@
       toast("换个形象中…（几秒钟出图）");
       if (h.busy) h.busy(false);
       if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
+      refreshCgAfter(item);      // v125：立绘换了 → CG 也跟着换
       return;
     }
     toast("正在重画同一个角色…（消耗 1 次出图）");
@@ -3124,6 +3222,7 @@
     }
     if (h.busy) h.busy(false);
     if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
+    refreshCgAfter(item);      // v125：立绘换了 → CG 也跟着换
   }
 
   async function spiritBreak(item, host) {
@@ -3152,6 +3251,8 @@
       if (res.autoFixed) toast("已自动修正：" + res.autoFixed);
       if (h.busy) h.busy(false);
       if (h.refresh) h.refresh();
+      // v125：突破到觉醒期/完成体之后，顺手把 CG 也画了（后台进行，不挡突破演出）
+      refreshCgAfter(item);
       // 突破演出：全屏特效 + 新立绘（点「好耶」回到页面顶部看新形象）
       const mask2 = $("#modalMask"), modal2 = $("#modal");
       modal2.innerHTML = '<div class="spirit-evolve">' +
@@ -3275,12 +3376,25 @@
 
     h += '<div class="sd-card"><div class="sd-card-title">📔 日记本（' + diary.length + "）</div>";
     if (!diary.length) {
-      h += '<div class="room-none">还没写过日记。它们一天会不定时写 0-2 篇，明天再来看看～</div>';
+      h += '<div class="room-none">还没写过日记。它们一天最多写 1 篇（不定时），明天再来看看～</div>';
     } else {
       h += '<div class="sd-diary">' + diary.slice(0, 8).map((d) =>
         '<div class="sd-diary-item"><div class="sd-diary-date">' + esc(d.date || "") + "<span>" + fmtTime(d.at) + "</span></div>" +
         '<div class="sd-diary-text">' + esc(String(d.text || "").replace(/^第[^\n]*\n/, "")).replace(/\n/g, "<br>") + "</div></div>").join("") +
         (diary.length > 8 ? '<div class="room-none">（只显示最近 8 篇，共 ' + diary.length + " 篇）</div>" : "") + "</div>";
+    }
+    h += "</div>";
+
+    // v125：CG 插画（觉醒期 / 完成体才有）
+    h += '<div class="sd-card"><div class="sd-card-title">🎬 CG 插画' +
+      (Spirits.needCg(si.stage) ? "" : '<small style="font-weight:400;color:var(--text-2)"> · 觉醒期 / 完成体才有</small>') + "</div>";
+    if (rec.cgUrl) {
+      h += '<img class="cg-thumb" id="sdCg" src="' + esc(rec.cgUrl) + '" alt="CG">' +
+        '<div class="sd-gen-hint">点图看大图 · 觉醒期 / 完成体的专属场景插画</div>';
+    } else if (Spirits.needCg(si.stage)) {
+      h += '<div class="room-none">' + (rec._cgErr ? ("CG 出图失败：" + esc(rec._cgErr)) : "正在画它的专属 CG…（每张 ≈ 一次出图额度）") + "</div>";
+    } else {
+      h += '<div class="room-none">它现在还是' + esc(si.name) + '，只有立绘；突破到「觉醒期」就会解锁一张专属 CG 🎬</div>';
     }
     h += "</div>";
 
@@ -3310,6 +3424,8 @@
     const rr = $("#sdReRoll"); if (rr) rr.onclick = () => spiritReRoll(it, host);
     const art = $("#sdArt");
     if (art) art.onclick = () => openSpiritViewer(rec.imgUrl || Spirits.localAvatarSvg(it));
+    const cgEl = $("#sdCg");
+    if (cgEl) cgEl.onclick = () => openSpiritViewer(rec.cgUrl || "");
     const gb = $("#sdGoBead"); if (gb) gb.onclick = () => location.hash = "#/item/" + it.id;
     const ch = $("#sdChat"); if (ch) ch.onclick = () => showSpiritChatModal(it);
     const sl = $("#sdSpiritList"); if (sl) sl.onclick = () => location.hash = "#/spirit";
@@ -3451,6 +3567,7 @@
     modal.innerHTML = "<h3>" + esc(room.emoji || "🏠") + " " + esc(room.name) + "</h3>" +
       '<div style="font-size:12px;color:var(--text-2);text-align:center;margin-bottom:10px">' +
       esc((a ? nameOf(a, store) : "?") + " × " + (b ? nameOf(b, store) : "?")) + " · 第 " + (level + 1) + " 段</div>" +
+      (st.img ? '<img class="story-cg" src="' + esc(st.img) + '" alt="事件 CG">' : "") +
       '<div class="story-text">' + esc(st.text).replace(/\n/g, "<br>") + "</div>" +
       '<button class="btn primary" id="storyOk" style="width:100%;margin-top:14px">看完了</button>';
     mask.hidden = false;
@@ -3619,7 +3736,7 @@
     if (Spirits.isFetchFail(m)) {
       return "这个错几乎都是 <b>API Key 不对</b>：方舟在 key 无效时不返回跨域头，浏览器只能报 Failed to fetch。<br>" +
         "① 确认填的是 <b>ark- 开头</b>的密钥本体（不是 api-key-… 那个<b>名称</b>）；<br>" +
-        "② 确认<b>复制完整</b>：控制台显示成 <code>ark-26b0fc78-…</code> 是截断显示，手选会少一截 → 点「📋 复制」；<br>" +
+        "② 确认<b>复制完整</b>：控制台显示成 <code>ark-xxxxxxxx-…</code> 是截断显示，手选会少一截 → 点「📋 复制」；<br>" +
         "③ 确认这把 key 属于<b>当前这个账号</b>（换了账号就要换 key）。";
     }
     if (/ModelNotOpen|not activated|未开通|未激活|access denied|AccessDenied|forbidden|403/i.test(m)) {
@@ -3752,10 +3869,14 @@
           const p = rec.persona || (await Spirits.persona(it));
           const idle = it.lastPlayedAt ? Math.floor((Date.now() - it.lastPlayedAt) / 86400000) : null;
           const text = await Spirits.letter({ item: it, persona: p, idleDays: idle }, (user && user.displayName) || "");
-          rec.letters.push({ at: Date.now(), text, from: p.name || it.name });
-          rec.letters = rec.letters.slice(-20);
-          rec.lastLetterDay = tk;
-          Spirits.save(store2);
+          // ⚠️ 写信是异步的，中间可能已经出过图/CG → 重新 load 再写，别覆盖别人的结果
+          const st3 = Spirits.load();
+          const r3 = Spirits.ensureIn(st3, it.id);
+          r3.letters = (Array.isArray(r3.letters) ? r3.letters : []);
+          r3.letters.push({ at: Date.now(), text, from: p.name || it.name });
+          r3.letters = r3.letters.slice(-20);
+          r3.lastLetterDay = tk;
+          Spirits.save(st3);
           if (location.hash === "#/spirit") renderSpiritPage();
         }
       }

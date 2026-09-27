@@ -195,6 +195,17 @@
     saveBonds(bonds);
     return slot;
   }
+  // v125：给某段剧情存一张 CG（事件插画）
+  function setStoryImage(a, b, level, url) {
+    const bonds = loadBonds();
+    const bd = bonds[pairKey(a, b)];
+    if (!bd) return null;
+    const slot = (bd.stories || []).filter((s) => s.level === level)[0];
+    if (!slot) return null;
+    slot.img = url || "";
+    saveBonds(bonds);
+    return slot;
+  }
   function markRead(a, b, level) {
     const bonds = loadBonds();
     const bd = bonds[pairKey(a, b)];
@@ -260,5 +271,6 @@
     membersOf, roomOf, roomCounts,
     loadBonds, saveBonds, bondOf, affinityOf, levelInfo, tick, storyText, writeStory, markRead,
     unreadStories, pendingStories, storiesOfRoom, roomAffinity,
+    setStoryImage,
   };
 })();

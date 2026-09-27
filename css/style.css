@@ -1323,6 +1323,15 @@ img { display:block; }
 .story-title { font-size:13px; font-weight:700; color:var(--wood); }
 .story-sub { font-size:11px; color:var(--text-2); margin-top:3px; }
 .story-text { font-size:13.5px; line-height:1.95; color:var(--text); max-height:52vh; overflow:auto; }
+/* v125：CG（精灵专属插画 / 剧情事件插画）—— 一律**横版**（用户要求：CG 要横构图） */
+.cg-thumb {
+  width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:14px; display:block; cursor:zoom-in;
+  box-shadow:var(--shadow-1); background:var(--ph-bg, #efe9dd);
+}
+.story-cg {
+  width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:14px; display:block; margin-bottom:10px;
+  box-shadow:var(--shadow-1); background:var(--ph-bg, #efe9dd);
+}
 
 /* 选人列表 */
 .pick-list { max-height:52vh; overflow:auto; }
