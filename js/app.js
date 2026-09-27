@@ -2688,7 +2688,7 @@
       const lines = await Spirits.chat(group);
       out.innerHTML = '<div class="spirit-chat">' + lines.map((l) =>
         '<div class="spirit-bubble"><span class="spirit-who">' + esc(l.who) + "</span>" + esc(l.text) + "</div>").join("") + "</div>" +
-        '<div class="spirit-foot">（剧情由 AI 现编 · ' + (Spirits.getImageCfg && getAiKey() ? "DeepSeek" : "本地模板") + "）</div>";
+        '<div class="spirit-foot">（剧情由 ' + esc(Spirits.textInfo().key ? (Spirits.textInfo().label || "AI") : "本地模板") + " 现编）</div>";
     };
     // 写信
     $("#spLetter").onclick = async () => {
@@ -2732,8 +2732,10 @@
       '<div class="form-group"><div class="form-label">接口地址 <small>用服务商默认时留空</small></div>' +
       '<input class="form-input" id="imgEndpoint" placeholder="https://.../v1/images/generations" value="' + esc(cfg.endpoint || "") + '"></div>' +
       '<div style="display:flex;gap:8px;margin-top:6px">' +
+      '<button class="btn ghost" id="imgCfgTest" style="flex:1">🔍 测试连接</button>' +
       '<button class="btn ghost" id="imgCfgCancel" style="flex:1">取消</button>' +
-      '<button class="btn primary" id="imgCfgSave" style="flex:2">保存</button></div>';
+      '<button class="btn primary" id="imgCfgSave" style="flex:2">保存</button></div>' +
+      '<div id="imgCfgMsg" style="font-size:12px;line-height:1.7;margin-top:10px;color:var(--text-2);word-break:break-all"></div>';
     mask.hidden = false;
     modal.hidden = false;
     modal.style.display = "";
@@ -2748,9 +2750,33 @@
       }
       chosen = b.dataset.prov;
       modal.querySelectorAll("#provRow .prov-chip").forEach((x) => x.classList.toggle("active", x === b));
+      // 换服务商时自动带上该家的默认模型名 / 接口地址（省得用户去查）
+      const pv = Spirits.PROVIDERS[chosen] || {};
+      if (pv.model) $("#imgModel").value = pv.model;
+      $("#imgEndpoint").value = "";
     });
     $("#imgCfgCancel").onclick = done;
     mask.onclick = done;
+    // 测试连接：直接按当前填的内容试一次出图，把服务端原因原样显示（方舟未开通会明确报 ModelNotOpen）
+    $("#imgCfgTest").onclick = async () => {
+      const btn = $("#imgCfgTest");
+      const msgEl = $("#imgCfgMsg");
+      const keep = Spirits.getImageCfg();
+      // 临时用弹层里正在填的配置去测（不改动已保存的配置）
+      Spirits.setImageCfg({ provider: chosen, key: $("#imgKey").value.trim(), model: $("#imgModel").value.trim(), endpoint: $("#imgEndpoint").value.trim(), style: chosenStyle });
+      btn.disabled = true; btn.textContent = "测试中…";
+      msgEl.textContent = "正在请 " + Spirits.PROVIDERS[chosen].label + " 画一张测试图…（几秒到十几秒）";
+      try {
+        const r = await Spirits.testImage();
+        msgEl.innerHTML = (r.ok ? "✅ " : "❌ ") + esc(r.msg);
+      } catch (e) {
+        msgEl.innerHTML = "❌ " + esc((e && e.message) || "测试失败") +
+          '<br><span style="color:var(--text-2)">提示：方舟报 ModelNotOpen = 该模型还没在控制台点「开通」；报 NotFound = 模型名写错了。</span>';
+      } finally {
+        btn.disabled = false; btn.textContent = "🔍 测试连接";
+        Spirits.setImageCfg(keep);   // 还原成已保存的配置
+      }
+    };
     $("#imgCfgSave").onclick = () => {
       const next = {
         provider: chosen,
@@ -2771,8 +2797,74 @@
     };
   }
 
-  /* ---------- 进入应用（登录后） ---------- */
-  async function enterApp(passedSession) {
+  // 文字通道配置弹层（AI 助手 + 精灵性格/来历；可切火山方舟白嫖免费额度）
+  function showTextCfgModal() {
+    const mask = $("#modalMask");
+    const modal = $("#modal");
+    const cfg = Spirits.getTextCfg();
+    const opts = Object.keys(Spirits.TEXT_PROVIDERS).map((k) =>
+      '<button type="button" class="prov-chip' + (cfg.provider === k ? " active" : "") + '" data-tprov="' + k + '">' +
+      esc(Spirits.TEXT_PROVIDERS[k].label) + "</button>").join("");
+    modal.innerHTML = "<h3>🤖 AI 文字模型</h3>" +
+      '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:12px">' +
+      "这里管的是<b>文字</b>：收藏喵助手的回答、精灵的性格 / 小剧场 / 每日来信。<br>" +
+      "火山方舟里 <b>deepseek-v4-1-flash / glm-5-3-flash / doubao-seed-2-1-lite</b> 等都送免费额度（50 万 tokens），够用很久。<br>" +
+      "⚠️ 需要先在方舟控制台<b>点「开通」</b>，否则会报 ModelNotOpen。</p>" +
+      '<div class="prov-row" id="tprovRow">' + opts + "</div>" +
+      '<div class="form-group" style="margin-top:12px"><div class="form-label">API Key <small>只存本机</small></div>' +
+      '<input class="form-input" id="tKey" placeholder="sk-… 或 ark-…" value="' + esc(cfg.key || "") + '"></div>' +
+      '<div class="form-group"><div class="form-label">模型名 <small>方舟填控制台里的模型 ID，或你的接入点 ep-…</small></div>' +
+      '<input class="form-input" id="tModel" placeholder="如 deepseek-v4-1-flash-260910" value="' + esc(cfg.model || "") + '"></div>' +
+      '<div class="form-group"><div class="form-label">接口地址 <small>用默认时留空</small></div>' +
+      '<input class="form-input" id="tEndpoint" placeholder="https://…/chat/completions" value="' + esc(cfg.endpoint || "") + '"></div>' +
+      '<div style="display:flex;gap:8px;margin-top:6px">' +
+      '<button class="btn ghost" id="tCfgTest" style="flex:1">🔍 测试连接</button>' +
+      '<button class="btn ghost" id="tCfgCancel" style="flex:1">取消</button>' +
+      '<button class="btn primary" id="tCfgSave" style="flex:2">保存</button></div>' +
+      '<div id="tCfgMsg" style="font-size:12px;line-height:1.7;margin-top:10px;color:var(--text-2);word-break:break-all"></div>';
+    mask.hidden = false;
+    modal.hidden = false;
+    modal.style.display = "";
+    const done = () => { mask.hidden = true; modal.hidden = true; };
+    let chosen = cfg.provider || "deepseek";
+    modal.querySelectorAll(".prov-chip").forEach((b) => b.onclick = () => {
+      chosen = b.dataset.tprov;
+      modal.querySelectorAll("#tprovRow .prov-chip").forEach((x) => x.classList.toggle("active", x === b));
+      const p = Spirits.TEXT_PROVIDERS[chosen] || {};
+      if (p.model) $("#tModel").value = p.model;
+      $("#tEndpoint").value = "";
+    });
+    $("#tCfgCancel").onclick = done;
+    mask.onclick = done;
+    $("#tCfgTest").onclick = async () => {
+      const btn = $("#tCfgTest"), msgEl = $("#tCfgMsg");
+      const keep = Spirits.getTextCfg();
+      Spirits.setTextCfg({ provider: chosen, key: $("#tKey").value.trim(), model: $("#tModel").value.trim(), endpoint: $("#tEndpoint").value.trim() });
+      btn.disabled = true; btn.textContent = "测试中…";
+      msgEl.textContent = "正在让文字模型说句话…";
+      try {
+        const r = await Spirits.testText();
+        msgEl.innerHTML = (r.ok ? "✅ " : "❌ ") + esc(r.msg);
+      } catch (e) {
+        msgEl.innerHTML = "❌ " + esc((e && e.message) || "测试失败") +
+          '<br><span style="color:var(--text-2)">ModelNotOpen = 该模型还没在控制台点「开通」；NotFound = 模型名写错。</span>';
+      } finally {
+        btn.disabled = false; btn.textContent = "🔍 测试连接";
+        Spirits.setTextCfg(keep);
+      }
+    };
+    $("#tCfgSave").onclick = () => {
+      const next = { provider: chosen, key: $("#tKey").value.trim(), model: $("#tModel").value.trim(), endpoint: $("#tEndpoint").value.trim() };
+      Spirits.setTextCfg(next);
+      // 兼容旧的「AI 助手密钥」：DeepSeek 官方通道继续用 ww_dskey
+      if (chosen === "deepseek") { try { localStorage.setItem("ww_dskey", next.key); } catch (e) { /* 忽略 */ } }
+      done();
+      toast("已切换文字模型：" + (Spirits.TEXT_PROVIDERS[chosen] || {}).label);
+      renderSettings();
+    };
+  }
+
+  /* ---------- 进入应用（登录后） ---------- */  async function enterApp(passedSession) {
     const session = passedSession || await DB.getSession();
     if (!session || !session.user) { location.hash = "#/auth"; return false; }
     user = session.user;
@@ -4629,17 +4721,22 @@
         : "") +
       "</div>";
 
-    // ===== 2.5 挂瓷精灵 · 绘图通道 =====
+    // ===== 2.5 挂瓷精灵 · 绘图通道 / 文字通道 =====
     {
       const cfg = Spirits.getImageCfg();
       const info = Spirits.providerInfo(cfg);
+      const tin = Spirits.textInfo();
       const spiritCount = spiritItems().length;
       html += '<div class="section-title">🍡 挂瓷精灵</div>';
       html += '<button class="setting-item" id="btnImgCfg"><div>' +
         '<div class="t">🎨 精灵形象 · 绘图通道</div>' +
-        '<div class="d">当前：' + esc(info.label) + (info.keyless ? "（免密钥，出图可能不稳，建议配国内 API）" : "（已配 key）") +
+        '<div class="d">当前：' + esc(info.label) + ' · ' + esc((Spirits.STYLE_PRESETS[cfg.style] || Spirits.STYLE_PRESETS[Spirits.DEFAULT_STYLE]).label) +
         ' · 已诞生 ' + spiritCount + " 只精灵</div>" +
         '</div><span style="color:var(--text-2)">›</span></button>';
+      html += '<button class="setting-item" id="btnTextCfg"><div>' +
+        '<div class="t">🤖 AI 文字模型（助手 + 精灵性格/来信）</div>' +
+        '<div class="d">当前：' + esc(tin.label) + (tin.model ? " · " + esc(tin.model) : "") + (tin.key ? " · 已填 key" : " · 未填 key（精灵走本地模板）") +
+        '</div></div><span style="color:var(--text-2)">›</span></button>';
     }
 
     html += '<div class="section-title">🎖️ 我的称号</div>';
@@ -4682,7 +4779,8 @@
     html += '<button class="setting-item" id="btnExport"><div><div class="t">📤 导出备份</div><div class="d">下载全部数据为备份文件（含图片链接）</div></div><span class="arrow">›</span></button>';
     html += '<button class="setting-item" id="btnImport"><div><div class="t">📥 导入备份</div><div class="d">从备份文件恢复数据（会覆盖当前数据）</div></div><span class="arrow">›</span></button>';
     html += '<button class="setting-item" id="btnClear"><div><div class="t">🗑 清空全部数据</div><div class="d">删除所有收藏记录（不可恢复）</div></div><span class="arrow">›</span></button>';
-    html += '<button class="setting-item" id="btnAiKey"><div><div class="t">🤖 AI 助手密钥</div><div class="d">默认用内置 key；可填你自己的 DeepSeek key（存本机，更安全）</div></div><span class="arrow">›</span></button>';
+    // v98：这一项已合并到上方「🤖 AI 文字模型」（可在那里选 DeepSeek 官方 / 火山方舟 / 自定义）
+    // html += '<button class="setting-item" id="btnAiKey">…</button>';   // 保留代码，入口不再展示
     html += '<button class="setting-item" id="btnLogout"><div><div class="t">🚪 退出登录</div><div class="d">退出后本机不再保留登录状态</div></div><span class="arrow">›</span></button>';
     html += "</div>";
 
@@ -4751,6 +4849,8 @@
     // 挂瓷精灵 · 绘图通道配置
     const imgBtn = $("#btnImgCfg");
     if (imgBtn) imgBtn.onclick = () => showImageCfgModal();
+    const txtBtn = $("#btnTextCfg");
+    if (txtBtn) txtBtn.onclick = () => showTextCfgModal();
 
     // 主题选择
     document.querySelectorAll("#themeList .theme-opt").forEach((b) => b.onclick = () => {
@@ -5168,39 +5268,45 @@
   let aiHistory = []; // [{role:"user"|"assistant", content:string}]
   const AI_HISTORY_MAX = 6; // 最多保留 6 条（3 轮问答）
   async function askAI(userMessage) {
-    const key = getAiKey();
-    if (!key) throw new Error("还未配置 DeepSeek API key，请到「设置 → AI 助手密钥」填写你自己的 key");
+    // v98：文字统一走「文字通道」（默认 DeepSeek 官方；可在设置里切火山方舟白嫖免费额度）
+    const tin = (window.Spirits && Spirits.textInfo) ? Spirits.textInfo() : { key: getAiKey(), endpoint: AI_BASE + "/chat/completions", model: AI_MODEL, label: "DeepSeek" };
+    if (!tin.key) throw new Error("还未配置 AI API key，请到「设置 → AI 文字模型」填写你自己的 key");
     const summary = buildCollSummary();
     const sysMsg = "你是我的收藏馆AI小助手，懂文玩/手串/拼图/收藏。请用简体中文、简短友好地回答。\n"
       + "规则：1) 回答涉及时间的问题时，必须以【当前日期】为基准，不要臆测日期；2) 判断「今天有没有盘串」「今天盘了几串」时，直接依据【今日已盘】和明细里标注的【今天盘过】统计，不要凭空说没有；3) 数据里没有的不要编造；4) 记住前面的对话，用户可能用「它/这个/第2串」指代上文。\n"
       + "以下是收藏数据：\n" + summary;
-    const body = {
-      model: AI_MODEL,
-      messages: [
-        { role: "system", content: sysMsg },
-        ...aiHistory,
-        { role: "user", content: userMessage },
-      ],
-      max_tokens: 1000,
-      stream: false,
-      // 关闭 DeepSeek V4 思考模式：只返回结论(content)，不再输出 reasoning_content
-      thinking: { type: "disabled" },
-    };
-    const resp = await fetch(AI_BASE + "/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      let msg = "请求失败";
-      try { const j = await resp.json(); msg = j.error && j.error.message ? j.error.message : msg; } catch (e) {}
-      throw new Error("DeepSeek " + resp.status + "：" + msg);
+    const messages = [
+      { role: "system", content: sysMsg },
+      ...aiHistory,
+      { role: "user", content: userMessage },
+    ];
+    let answer;
+    if (window.Spirits && Spirits.textChat && Spirits.getTextCfg && Spirits.getTextCfg().provider !== "deepseek") {
+      answer = await Spirits.textChat(messages, 1000);   // 走方舟/自定义通道
+    } else {
+      const body = {
+        model: tin.model || AI_MODEL,
+        messages: messages,
+        max_tokens: 1000,
+        stream: false,
+        // 关闭思考模式：只返回结论(content)，不再输出 reasoning_content
+        thinking: { type: "disabled" },
+      };
+      const resp = await fetch(tin.endpoint || (AI_BASE + "/chat/completions"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tin.key },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        let msg = "请求失败";
+        try { const j = await resp.json(); msg = j.error && j.error.message ? j.error.message : msg; } catch (e) {}
+        throw new Error((tin.label || "AI") + " " + resp.status + "：" + msg);
+      }
+      const data = await resp.json();
+      const msg = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message : null;
+      answer = msg ? ((msg.content && msg.content.trim()) ? msg.content.trim() : (msg.reasoning_content || "")) : "";
     }
-    const data = await resp.json();
-    const msg = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message : null;
-    if (!msg) return "";
-    // 关闭思考后正文在 content；仍留 reasoning_content 兜底以防某些情况
-    const answer = (msg.content && msg.content.trim()) ? msg.content.trim() : (msg.reasoning_content || "");
+    if (!answer) return "";
     // 记入历史（限制长度，避免越积越多）
     if (answer) {
       aiHistory.push({ role: "user", content: userMessage });

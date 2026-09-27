@@ -35,7 +35,7 @@
   const PROVIDERS = {
     pollinations: { label: "免密钥 · Pollinations（只有 sana 小模型，风格不稳）", keyless: true },
     siliconflow: { label: "硅基流动 SiliconFlow（注册送额度，推荐）", endpoint: "https://api.siliconflow.cn/v1/images/generations", model: "Kwai-Kolors/Kolors" },
-    ark: { label: "火山方舟（豆包 Seedream）", endpoint: "https://ark.cn-beijing.volces.com/api/v3/images/generations", model: "doubao-seedream-3-0-t2i-250415" },
+    ark: { label: "火山方舟（豆包 Seedream，有免费额度）", endpoint: "https://ark.cn-beijing.volces.com/api/v3/images/generations", model: "doubao-seedream-5-0-flash-260915" },
     zhipu: { label: "智谱 CogView（约 ¥0.06/张，最便宜之一）", endpoint: "https://open.bigmodel.cn/api/paas/v4/images/generations", model: "cogview-4" },
     modelscope: { label: "魔搭 ModelScope（送免费额度）", endpoint: "https://api-inference.modelscope.cn/v1/images/generations", model: "Qwen/Qwen-Image" },
     bailian: { label: "阿里百炼 通义万相（浏览器直连受限，不推荐）", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations", model: "wan2.6-t2i" },
@@ -47,7 +47,7 @@
       const o = raw ? JSON.parse(raw) : null;
       if (o && o.provider) return o;
     } catch (e) { /* 忽略 */ }
-    return { provider: "pollinations", key: "", model: "", endpoint: "", style: "flat" };
+    return { provider: "pollinations", key: "", model: "", endpoint: "", style: DEFAULT_STYLE };
   }
   function setImageCfg(cfg) { try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch (e) { /* 忽略 */ } }
   function providerInfo(cfg) {
@@ -61,10 +61,25 @@
     };
   }
 
-  /* ---------- 风格预设（用户嫌"3D 娃娃丑"，参考图是扁平贴纸风） ---------- */
-  // flat = 扁平 2D 贴纸风（参考图那种：粗描边、几乎无渐变、马卡龙配色）
-  // creature = 宝可梦式原创生物   chibi = Q 版拟人娃娃   ink = 国风水墨
+  /* ---------- 风格预设（默认 = 日漫风，用户明确要求） ---------- */
+  // anime   = 日漫风 Q 版角色（像用户参考图那种 2D 日漫手绘、赛璐璐上色）
+  // animepet= 日漫风小生物（宝可梦那种原创生物）
+  // flat    = 扁平贴纸风   ink = 国风水墨
   const STYLE_PRESETS = {
+    anime: {
+      label: "日漫风 · Q版角色",
+      text: "Japanese anime illustration, 2D anime style, cute chibi character, big sparkling anime eyes with white highlights, " +
+        "cel shading, flat anime coloring, clean bold line art, soft pastel color palette, small gentle smile, soft blush, " +
+        "chibi proportion with slightly big head, full body, centered composition, plain solid pastel background, " +
+        "hand-drawn 2D anime art, kawaii, no 3D render, no realistic face, no photo, no gradient mesh",
+    },
+    animepet: {
+      label: "日漫风 · 小生物",
+      text: "Japanese anime style cute mascot creature, original pokemon-like creature design, cel shading, flat anime coloring, " +
+        "clean bold line art, big anime eyes with white highlight, tiny smile, small cute ears, round soft body, " +
+        "full body, centered composition, plain solid pastel background, hand-drawn 2D anime, kawaii, " +
+        "no 3D render, no realistic face, no human, no photo",
+    },
     flat: {
       label: "扁平贴纸风",
       text: "flat 2D illustration, clean bold dark outlines, flat colors with almost no shading or gradient, " +
@@ -72,26 +87,13 @@
         "centered composition, plain solid pastel background, cute mascot creature, character fills the frame, " +
         "no shading, no gradient, no 3D render, no realistic face, no human, no photo",
     },
-    creature: {
-      label: "宝可梦式生物",
-      text: "2D anime illustration, cel-shaded flat colors, clean bold outlines, hand-drawn 2D style, " +
-        "original cute creature mascot in the style of a pokemon, simple solid oval eyes with one small white highlight, " +
-        "tiny smile, small cute ears, full body, character fills the frame, centered composition, plain white background, " +
-        "no 3D render, no realistic face, no human, no photo",
-    },
-    chibi: {
-      label: "Q版拟人娃娃",
-      text: "flat 2D anime chibi character, cute kawaii style, clean bold outlines, flat pastel colors, " +
-        "big simple eyes with highlight, small smile, tiny body, chibi proportion, soft blue palette, " +
-        "sticker illustration, plain background, no 3D, no realistic face, no photo, no uncanny eyes",
-    },
     ink: {
       label: "国风水墨",
       text: "Chinese ink painting style, xieyi brush strokes, minimal color wash, elegant negative space, " +
         "cute small spirit creature, 2D illustration, rice paper texture, centered, plain background, no 3D, no photo",
     },
   };
-  const DEFAULT_STYLE = "flat";
+  const DEFAULT_STYLE = "anime";
   function styleOf(item, styleKey) { return STYLE_PRESETS[styleKey] || STYLE_PRESETS[DEFAULT_STYLE]; }
 
   /* ---------- 形象 prompt（颜色 + 软糯 + 风格预设） ---------- */
@@ -106,12 +108,18 @@
     "": "smooth polished surface, friendly gentle expression",
   };
   function promptFor(item, styleKey) {
-    const st = styleOf(item, styleKey).text;
+    const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
+    const st = styleOf(item, key).text;
     const color = COLOR_EN[item.color] || "jade green";
     const soft = SOFT_EN[item.softness || ""] || SOFT_EN[""];
-    const bits = ["a cute little mascot creature whose body color is " + color, soft];
-    if (item.softness === "soft") bits.push("round blob-like silhouette, soft chewy texture");
-    if (item.softness === "slight") bits.push("slightly squishy but mostly smooth silhouette");
+    const isChar = (key === "anime");          // 日漫 Q 版角色：颜色落在头发/衣服上
+    const subject = isChar
+      ? ("a cute chibi anime character with " + color + " hair and " + color + " outfit, themed in " + color)
+      : ("a cute little mascot creature whose body color is " + color);
+    const bits = [subject, soft];
+    if (item.softness === "soft") bits.push(isChar ? "round soft cheeks, relaxed happy sleepy eyes" : "round blob-like silhouette, soft chewy texture");
+    if (item.softness === "slight") bits.push(isChar ? "calm gentle eyes, neat tidy look" : "slightly squishy but mostly smooth silhouette");
+    if (item.personaTrait) bits.push(item.personaTrait);
     return bits.join(", ") + ", " + st;
   }
   function seedOf(id, variant) { return (hashStr(id) % 900000) + 1000 + (variant || 0) * 7919; }
@@ -227,29 +235,62 @@
     return { name, title, traits, line, from: "local" };
   }
 
-  /* ---------- DeepSeek 调用（复用 app 的 key） ---------- */
-  function getAiKey() { try { const k = localStorage.getItem("ww_dskey"); return k && k.trim() ? k.trim() : ""; } catch (e) { return ""; } }
-  async function aiChat(messages, maxTokens) {
-    const key = getAiKey();
-    if (!key) throw new Error("no-key");
-    const resp = await fetch(AI_BASE + "/chat/completions", {
+  /* ---------- 文字通道（性格 / 小剧场 / 来信；默认 DeepSeek 官方，可切火山方舟白嫖额度） ---------- */
+  const TEXT_KEY = "ww_textcfg";
+  const TEXT_PROVIDERS = {
+    deepseek: { label: "DeepSeek 官方", endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash" },
+    ark: { label: "火山方舟（有免费额度）", endpoint: "https://ark.cn-beijing.volces.com/api/v3/chat/completions", model: "deepseek-v4-1-flash-260910" },
+    custom: { label: "自定义（OpenAI 兼容）", endpoint: "", model: "" },
+  };
+  function getTextCfg() {
+    let key = "";
+    try { const k = localStorage.getItem("ww_dskey"); key = k && k.trim() ? k.trim() : ""; } catch (e) { /* 忽略 */ }
+    try {
+      const raw = localStorage.getItem(TEXT_KEY);
+      const o = raw ? JSON.parse(raw) : null;
+      if (o && o.provider) return { provider: o.provider, key: o.key || "", model: o.model || "", endpoint: o.endpoint || "" };
+    } catch (e) { /* 忽略 */ }
+    return { provider: "deepseek", key: key, model: TEXT_PROVIDERS.deepseek.model, endpoint: TEXT_PROVIDERS.deepseek.endpoint };
+  }
+  function setTextCfg(cfg) { try { localStorage.setItem(TEXT_KEY, JSON.stringify(cfg)); } catch (e) { /* 忽略 */ } }
+  function textInfo(cfg) {
+    const c = cfg || getTextCfg();
+    const p = TEXT_PROVIDERS[c.provider] || TEXT_PROVIDERS.deepseek;
+    return {
+      provider: c.provider,
+      label: p.label,
+      endpoint: c.endpoint || p.endpoint || "",
+      model: c.model || p.model || "",
+      key: c.key || "",
+    };
+  }
+  // 统一的文字请求入口（OpenAI 兼容；关掉思考模式只要结论）
+  async function textChat(messages, maxTokens) {
+    const info = textInfo();
+    if (!info.key) { const e = new Error("no-key"); e.code = "no-key"; throw e; }
+    if (!info.endpoint) throw new Error("还没填接口地址");
+    const resp = await fetch(info.endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + info.key },
       body: JSON.stringify({
-        model: AI_MODEL, messages: messages, max_tokens: maxTokens || 700, stream: false,
-        thinking: { type: "disabled" },   // 只要结论，不要思考过程
+        model: info.model, messages: messages, max_tokens: maxTokens || 700, stream: false,
+        thinking: { type: "disabled" },
       }),
     });
     if (!resp.ok) {
-      let m = "请求失败";
-      try { const j = await resp.json(); m = (j.error && j.error.message) || m; } catch (e) { /* 忽略 */ }
-      throw new Error("DeepSeek " + resp.status + "：" + m);
+      let m = "HTTP " + resp.status;
+      try { const j = await resp.json(); m = (j.error && (j.error.message || j.error.code)) || j.message || m; } catch (e) { /* 忽略 */ }
+      throw new Error(m);
     }
     const data = await resp.json();
     const msg = data.choices && data.choices[0] && data.choices[0].message;
     if (!msg) return "";
     return ((msg.content && msg.content.trim()) || msg.reasoning_content || "").trim();
   }
+
+  /* ---------- DeepSeek 调用（复用 app 的 key；已统一走文字通道） ---------- */
+  function getAiKey() { return textInfo().key; }
+  async function aiChat(messages, maxTokens) { return textChat(messages, maxTokens); }
   function spiritDesc(item, persona) {
     const colorName = { white: "奶白", green: "绿", yellowbrown: "黄棕", blackgray: "黑灰", duo: "多彩", lightflower: "浅花", deepflower: "深花" }[item.color] || "素色";
     const softName = item.softness === "soft" ? "软糯" : (item.softness === "slight" ? "微糯" : "普通");
@@ -354,8 +395,25 @@
   }
 
   /* ---------- 对外接口 ---------- */
+  /* ---------- 连通性自检（设置页「测试连接」用；出错时把服务端原因带出来） ---------- */
+  async function testImage() {
+    const cfg = getImageCfg();
+    const info = providerInfo(cfg);
+    if (info.keyless) return { ok: true, msg: "免密钥通道：无需 key（但只有 sana 小模型，风格不稳）" };
+    const fake = { id: "conn-test", color: "green", softness: "soft", beadShape: "round" };
+    const r = await generateImage(fake, 0);
+    return { ok: true, msg: "出图成功：" + (r.kind === "b64" ? "返回 base64 图片" : r.url.slice(0, 60)) };
+  }
+  async function testText() {
+    const info = textInfo();
+    if (!info.key) return { ok: false, msg: "还没填 API Key" };
+    const txt = await textChat([{ role: "user", content: "只回复两个字：正常" }], 16);
+    return { ok: true, msg: "文字模型回复：" + (txt || "(空)").slice(0, 40) };
+  }
+
   window.Spirits = {
     PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, getImageCfg, setImageCfg, providerInfo,
+    TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText,
     promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf,
     localPersona, persona, chat, letter, localChat, localLetter,
     todayKey, load, save, ensureIn,
