@@ -1171,7 +1171,21 @@
       try {
         const saved = await DB.put(item);
         if (!saved || saved.playStatus !== st) { item.playStatus = prev; toast("⚠️ 状态未保存：缺少 play_status 字段"); }
-        else { done(); toast("已切换为「" + beadStatusLabel(st) + "」"); refreshAfterToggle(); }
+        else {
+          done();
+          // 🎉 挂瓷成精：就在这一刻掷性别（男女 3:1），之后不可更改
+          if (st === "done" && prev !== "done") {
+            const b = Spirits.born(item);
+            if (b.isNew) {
+              toast("🎉 它成精了！是只" + (b.gender === "boy" ? "👦 男孩子" : "👧 女孩子") + "精灵（性别出生即定，不能改哦）");
+            } else {
+              toast("已切换为「" + beadStatusLabel(st) + "」");
+            }
+          } else {
+            toast("已切换为「" + beadStatusLabel(st) + "」");
+          }
+          refreshAfterToggle();
+        }
       } catch (err) { item.playStatus = prev; toast("切换失败：" + err.message); }
     });
 
@@ -2922,6 +2936,9 @@
     h += '<div class="sd-card"><div class="sd-card-title">📝 人物设定</div>' +
       '<div class="sd-persona">' + (rec.personaZh ? esc(rec.personaZh) : '<span style="color:var(--text-2)">正在为它写设定…（第一次会调用一次文字模型，稍等几秒）</span>') + "</div>" +
       '<div class="sd-look">🔒 ' + esc(Spirits.appearanceText(ap)) + "</div>" +
+      '<div class="sd-look-sub">🎂 ' + (rec.bornAt
+        ? "出生于 " + Math.max(1, Math.round((Date.now() - rec.bornAt) / 86400000)) + " 天前 —— 性别在挂瓷成精那一刻随机定下（男 3 : 女 1），之后就固定了，不能改～"
+        : "性别在挂瓷成精那一刻随机定下（男 3 : 女 1），之后固定不变") + "</div>" +
       '<div class="sd-look-sub">🎨 ' + (bead ? "立绘主色取自原串照片：" + esc(bead.hex) + "（" + esc(bead.word) + "）" : "立绘主色按颜色分类生成") + "</div></div>";
 
     h += '<div class="sd-card"><div class="sd-card-title">📿 原型手串</div><div class="sd-bead">' +
@@ -3305,6 +3322,8 @@
       let changed = false;
       for (const it of list) {
         const s = Spirits.load();
+        // 老精灵补记「出生」（性别由 born/ensureIn 定档，不会在这里被改）
+        if (!s[it.id] || !s[it.id].bornAt) Spirits.born(it);
         if (!s[it.id] || !s[it.id].persona) {
           await Spirits.persona(it);
           changed = true;
@@ -3371,7 +3390,6 @@
       // 固定人设：突破/换形象都保留这些特征（不会变性、不会换人）
       '<div class="spirit-look">🔒 ' + esc(Spirits.appearanceText(ap)) +
       '<button type="button" class="link-btn" id="spReRoll">🎲 换外观设定</button>' +
-      '<button type="button" class="link-btn" id="spGender">' + (ap.gender === "boy" ? "👧 换成女孩" : "👦 换成男孩") + "</button>" +
       '<span class="spirit-gen-note">已为它出图 ' + (Number(rec.genCount) || 1) + " 张 · 本机累计 " + genTotal() + " 张</span></div>" +
       (si.isMax
         ? '<div class="spirit-prog max">👑 已是完成体，不再进阶</div>'
@@ -3408,7 +3426,7 @@
       r._imgErrAt = 0;
       Spirits.save(s);
       const nap = Spirits.appearanceOf(item, r.appearanceSeed, r.gender || "");
-      toast("新设定：" + Spirits.appearanceText(nap) + "（正在重画…）");
+      toast("新设定：" + Spirits.appearanceText(nap) + "（性别不变，正在重画…）");
       const img = modal.querySelector("img[data-item]");
       if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; }
       try {
@@ -3424,34 +3442,8 @@
       }
     };
 
-    // 👦/👧 换性别：只翻性别，发型/瞳色/配饰都不动（用户反馈"女孩太多"，也想自己控制）
-    const gbtn = $("#spGender");
-    if (gbtn) gbtn.onclick = async () => {
-      const s = Spirits.load();
-      const r = Spirits.ensureIn(s, item.id);
-      const cur = Spirits.appearanceOf(item, r.appearanceSeed || 0, r.gender || "").gender;
-      r.gender = cur === "boy" ? "girl" : "boy";
-      r.imgUrl = "";
-      r.imgAt = 0;
-      r.face = null;
-      r._imgErr = "";
-      r._imgErrAt = 0;
-      Spirits.save(s);
-      toast("改成" + (r.gender === "boy" ? "男孩" : "女孩") + "了（正在重画…）");
-      const img = modal.querySelector("img[data-item]");
-      if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; }
-      try {
-        const res = await Spirits.generateImage(item, r.variant || 0, null, r.stage || 1, { appearanceSeed: r.appearanceSeed || 0, gender: r.gender });
-        const s2 = Spirits.load();
-        const r2 = Spirits.ensureIn(s2, item.id);
-        await saveSpiritImage(item, r2, res, r2.stage || 1);
-        Spirits.save(s2);
-        close();
-        showSpiritModal(item);
-      } catch (e) {
-        toast("重画出错：" + ((e && e.message) || ""));
-      }
-    };
+    // ⚠️ v110：性别在「挂瓷成精」那一刻随机定下来（男女 3:1），之后**不提供任何修改入口**
+    //（用户明确要求"不让后期修改"）
 
     // ✨ 突破：进入下一个形态，并按新形态重新出图（保留进化史）
     const brk = $("#spBreak");

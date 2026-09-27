@@ -37,10 +37,41 @@
   }
   function save(o) { try { localStorage.setItem(STORE_KEY, JSON.stringify(o)); } catch (e) { /* 空间不足忽略 */ } }
   function ensureIn(store, id) {
-    if (!store[id]) store[id] = { persona: null, variant: 0, imgUrl: "", letters: [], chats: [], lastLetterDay: "", stage: 1, imgHistory: [] };
-    if (store[id].stage == null) store[id].stage = 1;              // 老数据兼容：默认幼生期
-    if (!Array.isArray(store[id].imgHistory)) store[id].imgHistory = [];
-    return store[id];
+    if (!store[id]) {
+      // 新生：性别留空，等「挂瓷成精」那一刻由 born() 掷一次（男女 3:1）
+      store[id] = { persona: null, variant: 0, imgUrl: "", letters: [], chats: [], lastLetterDay: "", stage: 1, imgHistory: [], gender: "", bornAt: 0 };
+      return store[id];
+    }
+    const rec = store[id];
+    if (rec.stage == null) rec.stage = 1;              // 老数据兼容：默认幼生期
+    if (!Array.isArray(rec.imgHistory)) rec.imgHistory = [];
+    // 老记录（v110 之前成精的）没有 gender：按**旧规则**（hash(串id+外观种子)）定下来，
+    // 这样它已经画好的立绘和界面显示的人设不会打架；新精灵一律走 born() 的 3:1 随机
+    if (rec.gender !== "boy" && rec.gender !== "girl") rec.gender = legacyGender(id, rec.appearanceSeed || 0);
+    return rec;
+  }
+  // 性别：出生时掷一次，比例 男:女 = 3:1（用户要求）
+  function rollGender(seedStr) { return (hashStr(String(seedStr || "")) % 4 !== 0) ? "boy" : "girl"; }
+  // v107~v109 的旧规则（2/3 男孩），只用于给老记录"定档"
+  function legacyGender(id, seedN) { return (hashStr(String(id || "") + "#" + (seedN || 0)) % 3) !== 0 ? "boy" : "girl"; }
+  // 挂瓷成精：给这只精灵"定性别"，之后不可更改（重复调用不会改性别）
+  function born(item) {
+    const store = load();
+    const rec = ensureIn(store, item.id);
+    let isNew = false, gender = rec.gender;
+    if (!rec.bornAt) {
+      rec.bornAt = Date.now();
+      if (rec.gender !== "boy" && rec.gender !== "girl") {
+        rec.gender = rollGender(String(item.id));
+        isNew = true;
+        rec.persona = null;        // 新生：性格 / 人物设定按定下来的性别重新写
+        rec.personaZh = null;
+        rec.personaZhKey = "";
+      }
+      save(store);
+      gender = rec.gender;
+    } else save(store);
+    return { isNew: isNew, gender: gender, bornAt: rec.bornAt };
   }
 
   /* ---------- 外观锚点（v104）：每只精灵有固定人设，所有形态共享，突破不会变性/变色 ---------- */
@@ -73,10 +104,12 @@
     "playful and mischievous": "调皮爱闹", "gentle and caring": "温柔体贴", "cool and a little proud": "有点酷、有点傲娇",
   };
   // 由「串 id + 外观种子」决定；外观种子只在用户点「换外观设定」时变
-  // gender 可被用户强制（rec.gender："boy"/"girl"）；没强制时按 2/3 男孩的概率随机（用户反馈"女孩太多"）
+  // 性别**不参与**随机：它由「挂瓷成精」那一刻的 born() 定下来（男女 3:1），之后换外观/突破都不会变
   function appearanceOf(item, seedN, gender) {
     const h = hashStr(String((item && item.id) || "") + "#" + (seedN || 0));
-    const g = (gender === "boy" || gender === "girl") ? gender : ((h % 3) !== 0 ? "boy" : "girl");
+    const g = (gender === "boy" || gender === "girl") ? gender
+      : (item && item.gender === "boy" || item && item.gender === "girl") ? item.gender
+      : rollGender((item && item.id) || "");        // 兜底：老记录/未成精时按 id 稳定掷一次
     const hairs = g === "boy" ? BOY_HAIR : GIRL_HAIR;
     return {
       gender: g,
@@ -999,6 +1032,8 @@
     promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
     localPersona, persona, chat, letter, localChat, localLetter,
     todayKey, load, save, ensureIn,
+    // v110：性别在「挂瓷成精」时定下来（男女 3:1），之后不可改
+    born, rollGender, legacyGender,
     // v109：真实主色 / 中文人物设定 / 日记 / 房间剧情
     beadColor, detectBeadColor, hexToWord,
     personaZh, personaZhLocal, ensureDiary, diarySlots, diaryLocal, diaryNow, roomStory, storyLocal,
