@@ -2634,6 +2634,12 @@
       "默认用<b>免密钥</b>通道（Pollinations，国内可直连，出图偶尔不稳）。<br>" +
       "想更稳更漂亮，可填国内 API key（硅基流动 / 火山方舟 / 智谱），<b>key 只存本机、不入开源仓库</b>。</p>" +
       '<div class="prov-row" id="provRow">' + opts + "</div>" +
+      '<div class="form-group" style="margin-top:14px"><div class="form-label">形象风格 <small>换完记得点保存，再看精灵页</small></div>' +
+      '<div class="prov-row" id="styleRow">' +
+      Object.keys(Spirits.STYLE_PRESETS).map((k) =>
+        '<button type="button" class="prov-chip' + ((cfg.style || Spirits.DEFAULT_STYLE) === k ? " active" : "") + '" data-style="' + k + '">' +
+        esc(Spirits.STYLE_PRESETS[k].label) + "</button>").join("") +
+      "</div></div>" +
       '<div class="form-group" style="margin-top:12px"><div class="form-label">API Key <small>走免密钥通道时留空</small></div>' +
       '<input class="form-input" id="imgKey" placeholder="sk-..." value="' + esc(cfg.key || "") + '"></div>' +
       '<div class="form-group"><div class="form-label">模型名 <small>留空用该服务商默认</small></div>' +
@@ -2648,9 +2654,15 @@
     modal.style.display = "";
     const done = () => { mask.hidden = true; modal.hidden = true; };
     let chosen = cfg.provider || "pollinations";
+    let chosenStyle = cfg.style || Spirits.DEFAULT_STYLE;
     modal.querySelectorAll(".prov-chip").forEach((b) => b.onclick = () => {
+      if (b.dataset.style) {
+        chosenStyle = b.dataset.style;
+        modal.querySelectorAll("#styleRow .prov-chip").forEach((x) => x.classList.toggle("active", x === b));
+        return;
+      }
       chosen = b.dataset.prov;
-      modal.querySelectorAll(".prov-chip").forEach((x) => x.classList.toggle("active", x === b));
+      modal.querySelectorAll("#provRow .prov-chip").forEach((x) => x.classList.toggle("active", x === b));
     });
     $("#imgCfgCancel").onclick = done;
     mask.onclick = done;
@@ -2660,11 +2672,16 @@
         key: $("#imgKey").value.trim(),
         model: $("#imgModel").value.trim(),
         endpoint: $("#imgEndpoint").value.trim(),
+        style: chosenStyle,
       };
       if (chosen !== "pollinations" && !next.key) { toast("这条路需要填 API Key；只想免费用就选「免密钥」"); return; }
       Spirits.setImageCfg(next);
       done();
-      toast("已切换绘图通道：" + Spirits.PROVIDERS[chosen].label);
+      toast("已切换：" + Spirits.PROVIDERS[chosen].label + " · " + Spirits.STYLE_PRESETS[chosenStyle].label);
+      // 换了通道/风格：清掉缓存形象，下次进精灵页重新出图
+      const st = Spirits.load();
+      Object.keys(st).forEach((k) => { st[k].imgUrl = ""; st[k].variant = 0; });
+      Spirits.save(st);
       renderSettings();
     };
   }

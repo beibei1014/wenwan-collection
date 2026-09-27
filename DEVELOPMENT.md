@@ -85,7 +85,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v94）
+## 五、功能清单（截至 v95）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -258,6 +258,14 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
     - **设置页新增**「🍡 挂瓷精灵 · 🎨 精灵形象 · 绘图通道」入口：显示当前通道 + 已诞生精灵数；点开可切换 5 种通道（免密钥/硅基流动/火山方舟/智谱/自定义）并填 **API Key**（提示"只存本机、不入开源仓库"）、模型名、接口地址。**用户开好国内 API 后在这里填 key 即可切换，代码不用改。**
     - **踩坑修复**：`ensureSpiritData()` 第一版"每生成一只就 re-render 并提前 return"，但 `_spiritBusy` 在 re-render 之后才置 false，导致重渲染被自己拦住、只生成了第一只精灵就停住（性格/来信都卡住）。改成**一次把缺的性格全补完再统一重渲染**（重渲染期间 busy 仍为 true 防递归），最后再生成当天来信。
     - **验证**：① `spirits.js` 单元测试 **22/22**（prompt 含颜色/软糯/2D 风格且明确 no 3D；seed 稳定且换形象会变；本地 SVG 兜底随颜色变化；本地性格稳定且软糯/微糯/未标各不相同；无 key 时 persona/聊天/来信全走模板）；② 真 app.js 端到端 **30/30**：导航第 2 格是精灵且分类已隐藏、喜欢仍在、点精灵进页面、只有 3 只挂瓷串成精、每张图要么走绘图通道要么已自动回退本地（"通道,回退本地,通道"）、无 key 也有性格且标签渲染、**当天自动收到一封信且只投一封**、弹层三大按钮（换形象换 seed / 聊天 5 条气泡 / 写信带落款）全部可用、设置里显示"当前：免密钥"且有 4 家通道可选可填 key。缓存 v94
+77. **🎨 风格预设 + 通道扩充（v95）**：用户发来一张**扁平 2D 贴纸风**参考图（粗描边、几乎无渐变/阴影、马卡龙配色、Q 版比例），说之前那些"太丑"，并考虑注册国内绘图。**实测排查结论（重要）**：
+    - **免费通道退化了**：`GET https://image.pollinations.ai/models` 现在只返回 **`["sana"]`** —— 传 `model=flux` / `turbo` / `gptimage` 返回的**字节数完全相同**（16330），说明 model 参数被忽略，全部由 sana 出图；`model=kontext` 直接 500。**sana 是小模型，跟随风格指令的能力很弱**：即使 prompt 里写满 `flat 2D illustration, bold dark outlines, flat colors, no shading, no gradient, sticker art`，它依然出"柔光半写实/3D 球体"。
+    - **所以"丑"不是 prompt 的问题，是模型能力问题** → 结论：要那种扁平贴纸风**必须换模型**（Kolors / Seedream / FLUX / CogView / Qwen-Image 这类），用户的判断是对的。
+    - **四个国内端点实测都通**（`api-inference.modelscope.cn` 200、`api.siliconflow.cn` 404-on-GET 但可达、`open.bigmodel.cn` 401、`ark.cn-beijing.volces.com` 401 —— 401/404 都是"可达但需要 key/正确方法"）。
+    - **新增 4 个风格预设** `STYLE_PRESETS`（存 `imgcfg.style`，**默认 `flat`**）：`flat`扁平贴纸风（照着用户参考图写的：`flat 2D illustration, clean bold dark outlines, flat colors with almost no shading or gradient, pastel palette, sticker art, minimal geometric shapes, no shading, no gradient, no 3D render, no realistic face, no human`）、`creature`宝可梦式生物、`chibi`Q版拟人娃娃、`ink`国风水墨。`promptFor(item, styleKey)` / `pollinationsUrl(item, variant, styleKey)` 都吃风格参数（不传则取当前配置）；颜色与软糯描述依然拼在风格之前。
+    - **通道从 5 个扩到 6 个**：新增 **魔搭 ModelScope**（`https://api-inference.modelscope.cn/v1/images/generations`，国内、送免费额度、OpenAI 兼容），并给每个通道标注了推荐度（如"硅基流动（注册送额度，推荐）"、"免密钥 · Pollinations（只有 sana 小模型，风格不稳）"）。
+    - **设置弹层新增「形象风格」一行**（4 个 chips）；保存时**清空所有精灵的形象缓存**（`imgUrl="" / variant=0`），下次进精灵页按新通道/新风格重新出图。
+    - **验证**：① `spirits.js` 单元测试 **10/10**（预设≥4 且含 flat、默认 flat、扁平预设含 flat/粗描边/no shading/no gradient 且仍排除 3D 真人、所有预设都带颜色+软糯、文案互不相同、通道含魔搭等 5 家、默认配置带 style、URL 跟随风格变化）；② 端到端 **9/9**（弹层里 6 个通道 + 4 个风格 chips、默认选中扁平、切成水墨保存后 `cfg.style==="ink"` 且出图 URL 带上水墨文案、切回扁平成功、精灵页不受影响）。缓存 v95
 
 > 🧪 **可复用的端到端测试套路（推荐）**：把 `index.html` 的 body 注入一个临时页面 → 在脚本前定义 `window.SUPABASE_CONFIG` 与假 `window.supabase.createClient`（`auth.getSession/getUser` 返回假 session，`from(t)` 返回链式对象，`then` 直接 resolve 固定数据）→ 按原顺序动态 `appendChild` 加载 `js/*.js` → `location.hash` 切路由 + 断言。这样能用真实 `app.js` 验证交互，不用登录、不碰线上库。
 

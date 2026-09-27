@@ -33,10 +33,11 @@
 
   /* ---------- 绘图通道（默认免密钥；可切国内 API） ---------- */
   const PROVIDERS = {
-    pollinations: { label: "免密钥 · Pollinations", keyless: true },
-    siliconflow: { label: "硅基流动 SiliconFlow", endpoint: "https://api.siliconflow.cn/v1/images/generations", model: "Kwai-Kolors/Kolors" },
+    pollinations: { label: "免密钥 · Pollinations（只有 sana 小模型，风格不稳）", keyless: true },
+    siliconflow: { label: "硅基流动 SiliconFlow（注册送额度，推荐）", endpoint: "https://api.siliconflow.cn/v1/images/generations", model: "Kwai-Kolors/Kolors" },
     ark: { label: "火山方舟（豆包 Seedream）", endpoint: "https://ark.cn-beijing.volces.com/api/v3/images/generations", model: "doubao-seedream-3-0-t2i-250415" },
-    zhipu: { label: "智谱 CogView", endpoint: "https://open.bigmodel.cn/api/paas/v4/images/generations", model: "cogview-3-flash" },
+    zhipu: { label: "智谱 CogView（有免费模型）", endpoint: "https://open.bigmodel.cn/api/paas/v4/images/generations", model: "cogview-3-flash" },
+    modelscope: { label: "魔搭 ModelScope（国内免费额度）", endpoint: "https://api-inference.modelscope.cn/v1/images/generations", model: "Qwen/Qwen-Image" },
     custom: { label: "自定义（OpenAI 兼容）", endpoint: "", model: "" },
   };
   function getImageCfg() {
@@ -45,7 +46,7 @@
       const o = raw ? JSON.parse(raw) : null;
       if (o && o.provider) return o;
     } catch (e) { /* 忽略 */ }
-    return { provider: "pollinations", key: "", model: "", endpoint: "" };
+    return { provider: "pollinations", key: "", model: "", endpoint: "", style: "flat" };
   }
   function setImageCfg(cfg) { try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch (e) { /* 忽略 */ } }
   function providerInfo(cfg) {
@@ -59,7 +60,40 @@
     };
   }
 
-  /* ---------- 形象 prompt（用户要求：2D 日漫手绘 / 宝可梦那种，不要 3D） ---------- */
+  /* ---------- 风格预设（用户嫌"3D 娃娃丑"，参考图是扁平贴纸风） ---------- */
+  // flat = 扁平 2D 贴纸风（参考图那种：粗描边、几乎无渐变、马卡龙配色）
+  // creature = 宝可梦式原创生物   chibi = Q 版拟人娃娃   ink = 国风水墨
+  const STYLE_PRESETS = {
+    flat: {
+      label: "扁平贴纸风",
+      text: "flat 2D illustration, clean bold dark outlines, flat colors with almost no shading or gradient, " +
+        "pastel palette, simple round eyes, tiny smile, tiny blush, sticker art, minimal geometric shapes, " +
+        "centered composition, plain solid pastel background, cute mascot creature, character fills the frame, " +
+        "no shading, no gradient, no 3D render, no realistic face, no human, no photo",
+    },
+    creature: {
+      label: "宝可梦式生物",
+      text: "2D anime illustration, cel-shaded flat colors, clean bold outlines, hand-drawn 2D style, " +
+        "original cute creature mascot in the style of a pokemon, simple solid oval eyes with one small white highlight, " +
+        "tiny smile, small cute ears, full body, character fills the frame, centered composition, plain white background, " +
+        "no 3D render, no realistic face, no human, no photo",
+    },
+    chibi: {
+      label: "Q版拟人娃娃",
+      text: "flat 2D anime chibi character, cute kawaii style, clean bold outlines, flat pastel colors, " +
+        "big simple eyes with highlight, small smile, tiny body, chibi proportion, soft blue palette, " +
+        "sticker illustration, plain background, no 3D, no realistic face, no photo, no uncanny eyes",
+    },
+    ink: {
+      label: "国风水墨",
+      text: "Chinese ink painting style, xieyi brush strokes, minimal color wash, elegant negative space, " +
+        "cute small spirit creature, 2D illustration, rice paper texture, centered, plain background, no 3D, no photo",
+    },
+  };
+  const DEFAULT_STYLE = "flat";
+  function styleOf(item, styleKey) { return STYLE_PRESETS[styleKey] || STYLE_PRESETS[DEFAULT_STYLE]; }
+
+  /* ---------- 形象 prompt（颜色 + 软糯 + 风格预设） ---------- */
   const COLOR_EN = {
     white: "creamy white", green: "emerald green", yellowbrown: "warm golden brown",
     blackgray: "deep charcoal gray", duo: "vivid multicolored patches", lightflower: "soft pale pink",
@@ -70,22 +104,20 @@
     slight: "slightly soft smooth polished surface, calm gentle expression",
     "": "smooth polished surface, friendly gentle expression",
   };
-  const STYLE = "2D anime illustration, cel-shaded flat colors, clean bold outlines, hand-drawn 2D style, " +
-    "original cute creature mascot in the style of a pokemon, simple solid oval eyes with one small white highlight, " +
-    "tiny smile, small cute ears, full body, character fills the frame, centered composition, plain white background, " +
-    "no 3D render, no realistic face, no human, no photo";
-  function promptFor(item) {
+  function promptFor(item, styleKey) {
+    const st = styleOf(item, styleKey).text;
     const color = COLOR_EN[item.color] || "jade green";
     const soft = SOFT_EN[item.softness || ""] || SOFT_EN[""];
-    const bits = ["a cute little creature mascot whose body color is " + color, soft];
-    if (item.softness === "soft") bits.push("soft chewy texture, round blob-like silhouette");
+    const bits = ["a cute little mascot creature whose body color is " + color, soft];
+    if (item.softness === "soft") bits.push("round blob-like silhouette, soft chewy texture");
     if (item.softness === "slight") bits.push("slightly squishy but mostly smooth silhouette");
-    return bits.join(", ") + ", " + STYLE;
+    return bits.join(", ") + ", " + st;
   }
   function seedOf(id, variant) { return (hashStr(id) % 900000) + 1000 + (variant || 0) * 7919; }
   // 免密钥通道：直接把 URL 交给 <img>（浏览器自己下载，天然带缓存）；其余通道要 POST 生成
-  function pollinationsUrl(item, variant) {
-    return "https://image.pollinations.ai/prompt/" + encodeURIComponent(promptFor(item)) +
+  function pollinationsUrl(item, variant, styleKey) {
+    const style = styleKey || getImageCfg().style || DEFAULT_STYLE;
+    return "https://image.pollinations.ai/prompt/" + encodeURIComponent(promptFor(item, style)) +
       "?width=512&height=512&nologo=true&seed=" + seedOf(item.id, variant);
   }
 
@@ -290,7 +322,7 @@
 
   /* ---------- 对外接口 ---------- */
   window.Spirits = {
-    PROVIDERS, getImageCfg, setImageCfg, providerInfo,
+    PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, getImageCfg, setImageCfg, providerInfo,
     promptFor, pollinationsUrl, localAvatarSvg, seedOf,
     localPersona, persona, chat, letter, localChat, localLetter,
     todayKey, load, save, ensureIn,
