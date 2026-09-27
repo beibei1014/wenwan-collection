@@ -295,8 +295,8 @@
       { id: "doubao-seedream-5-0-pro-260628", note: "pro · 更贵 · 分层/精细编辑" },
     ],
     zhipu: [
-      { id: "cogview-4", note: "约 ¥0.06/张 · 支持任意分辨率" },
-      { id: "cogview-3-flash", note: "flash · 通常有免费额度" },
+      { id: "cogview-4", note: "约 ¥0.06/张 · 质量更好（推荐）" },
+      { id: "cogview-3-flash", note: "flash · **完全免费**（智谱官方免费模型）" },
     ],
     siliconflow: [{ id: "Kwai-Kolors/Kolors", note: "注册送额度 · 出图快" }],
     modelscope: [{ id: "Qwen/Qwen-Image", note: "每日免费额度" }],

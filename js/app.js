@@ -2609,6 +2609,28 @@
       img.src = src;
     });
   }
+  // v116：有些服务商（智谱/硅基流动/魔搭等）只返回一个**会过期的图片链接**，
+  // 存下来 20 小时后会被判为"过期" → 又把所有精灵重出一遍（白烧额度）。
+  // 所以拿到 http 链接后先尝试下载并按同样规格压成本地 data URI；下载不到（对方没给跨域头）就保持原样。
+  async function urlToDataUri(url, max, quality) {
+    if (!url || !/^https?:/i.test(url)) return "";
+    try {
+      const resp = await fetch(url, { mode: "cors" });
+      if (!resp.ok) return "";
+      const blob = await resp.blob();
+      if (!/^image\//i.test(blob.type || "")) return "";
+      const dataUri = await new Promise((resolve) => {
+        try {
+          const fr = new FileReader();
+          fr.onload = () => resolve(String(fr.result || ""));
+          fr.onerror = () => resolve("");
+          fr.readAsDataURL(blob);
+        } catch (e) { resolve(""); }
+      });
+      if (!dataUri) return "";
+      return (await shrinkToDataUri(dataUri, max, quality)) || dataUri;
+    } catch (e) { return ""; }
+  }
   // 出图计数（帮用户盯住免费额度）：单只精灵 rec.genCount + 本机累计
   function bumpGenCount(rec) {
     try {
@@ -2624,6 +2646,10 @@
     if (res.b64) {
       const small = await shrinkToDataUri("data:image/png;base64," + res.b64, SPIRIT_IMG_SIZE, 0.86);
       url = small || ("data:image/png;base64," + res.b64);
+    } else if (url) {
+      // 外链先尽量转成本地图（不然 20 小时后会被当成过期 → 又重出一遍）
+      const local = await urlToDataUri(url, SPIRIT_IMG_SIZE, 0.86);
+      if (local) url = local;
     }
     if (!url) return "";
     const hist = Array.isArray(rec.imgHistory) ? rec.imgHistory : [];
