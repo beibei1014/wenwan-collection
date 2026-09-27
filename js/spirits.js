@@ -20,6 +20,37 @@
     { v: "2304x1728", label: "横版 4:3" },
     { v: "3072x3072", label: "4K 方形（最清晰也最贵）" },
   ];
+  // v117：各家能用的尺寸不一样，所以尺寸 chip 跟着服务商走（避免选了个一定被拒的档）
+  //   智谱：CogView-3-Flash 只有固定几档（768x1344 等）；GLM-Image 推荐 1056x1568；CogView-4 任意分辨率
+  const SIZE_PRESETS_BY_PROVIDER = {
+    ark: [
+      { v: "1728x2304", label: "竖版立绘 3:4（推荐）" },
+      { v: "2048x2048", label: "方形 2048" },
+      { v: "3072x3072", label: "4K 方形（最贵）" },
+    ],
+    zhipu: [
+      { v: "1056x1568", label: "竖版立绘 3:4（GLM-Image 推荐）" },
+      { v: "768x1344", label: "竖版（免费档也能用）" },
+      { v: "1024x1024", label: "方形 1024（三档都支持）" },
+      { v: "864x1152", label: "竖版 3:4（小图，更省）" },
+    ],
+    siliconflow: [
+      { v: "1024x1024", label: "方形 1024（推荐）" },
+      { v: "768x1024", label: "竖版 3:4" },
+      { v: "1024x768", label: "横版 4:3" },
+    ],
+    modelscope: [
+      { v: "1024x1024", label: "方形 1024（推荐）" },
+      { v: "768x1024", label: "竖版 3:4" },
+      { v: "1024x768", label: "横版 4:3" },
+    ],
+    bailian: [
+      { v: "1024x1024", label: "方形 1024（推荐）" },
+      { v: "768x1152", label: "竖版 2:3" },
+      { v: "1152x768", label: "横版 3:2" },
+    ],
+  };
+  function sizePresetsFor(provider) { return SIZE_PRESETS_BY_PROVIDER[provider] || SIZE_PRESETS; }
   const AI_BASE = "https://api.deepseek.com";
   const AI_MODEL = "deepseek-v4-flash";
 
@@ -280,7 +311,7 @@
   // 各家能接受的尺寸不一样：被服务端拒了就按这份清单依次退让（不是限制用户，只是自动救场）
   const SIZE_BY_PROVIDER = {
     ark: ["1728x2304", "2048x2048", "3072x3072"],
-    zhipu: ["768x1344", "864x1152", "1024x1024"],          // CogView-4 支持任意分辨率；CogView-3 只有固定几档（优先竖版立绘）
+    zhipu: ["1056x1568", "768x1344", "1024x1024"],          // 见 SIZE_PRESETS_BY_PROVIDER：三档都能用的尺寸优先
     siliconflow: ["1024x1024", "768x1024", "1024x768"],
     modelscope: ["1024x1024", "768x1024", "1024x768"],
     bailian: ["1024x1024", "768x1152", "1152x768"],
@@ -295,7 +326,8 @@
       { id: "doubao-seedream-5-0-pro-260628", note: "pro · 更贵 · 分层/精细编辑" },
     ],
     zhipu: [
-      { id: "cogview-4", note: "约 ¥0.06/张 · 质量更好（推荐）" },
+      { id: "glm-image", note: "智谱新旗舰 · 约 ¥0.1/张 · 比火山便宜，画质更好（推荐）" },
+      { id: "cogview-4", note: "约 ¥0.06/张 · 最便宜的付费档" },
       { id: "cogview-3-flash", note: "flash · **完全免费**（智谱官方免费模型）" },
     ],
     siliconflow: [{ id: "Kwai-Kolors/Kolors", note: "注册送额度 · 出图快" }],
@@ -1127,7 +1159,12 @@
     const filtered = ids.filter((id) => isImg
       ? /seedream|kolors|flux|qwen-image|t2i|stable|sd[-_.]?xl|image/i.test(id) && !/i2v|t2v|3d|edit|seedance/i.test(id)
       : /deepseek|glm|doubao-seed|qwen|gpt|moonshot|kimi|step|hunyuan/i.test(id) && !/seedream|seedance|3d|vision|embedding|image|tts|asr/i.test(id));
-    return filtered.length ? filtered : ids.slice(0, 40);
+    if (filtered.length) return filtered;
+    // ★ 一份图像模型都没匹配到：说明这家的 /models 只列语言模型（典型就是智谱，只给 glm-*）。
+    //   这时候把"全是语言模型"的原样返回会让用户以为能选，所以标记出来，界面据此给提示。
+    const looksText = ids.length && ids.every((id) => /glm|gpt|claude|deepseek|qwen(?!-image)|moonshot|kimi|llama/i.test(id));
+    if (looksText) { const e = new Error("这家 /models 只列语言模型，图像模型要手填"); e.textOnly = true; e.ids = ids.slice(0, 40); throw e; }
+    return ids.slice(0, 40);
   }
 
   /* ---------- 模型名自动纠正（用户常把控制台显示名填进来，如 Doubao-Seedream-5.0-lite） ---------- */
@@ -1199,7 +1236,7 @@
   }
 
   window.Spirits = {
-    PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo, sizeLadderFor, MODEL_PICKS,
+    PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, SIZE_PRESETS_BY_PROVIDER, sizePresetsFor, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo, sizeLadderFor, MODEL_PICKS,
     STAGES, stageDef, stageInfo, growthOf,
     appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
     COLOR_ZH, HAIR_ZH, EYES_ZH, ACC_ZH, VIBE_ZH,

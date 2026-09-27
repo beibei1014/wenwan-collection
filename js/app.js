@@ -3743,9 +3743,13 @@
       '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:12px">' +
       "默认用<b>免密钥</b>通道（Pollinations，国内可直连，出图偶尔不稳）。<br>" +
       "想更稳更漂亮，可填国内 API key（智谱 / 硅基流动 / 火山方舟），<b>key 只存本机、不入开源仓库</b>。</p>" +
-      '<div class="cfg-tip">💰 <b>怎么选最省</b>：按量付费即可。<b>方舟 Seedream 5.0 flash ≈ ¥0.13/张</b>（支持图生图、参考图不加钱，就选它）；智谱 CogView 约 ¥0.06/张；魔搭、硅基流动有免费额度。<br>' +
+      '<div class="cfg-tip">💰 <b>怎么选最省</b>：按量付费即可，都比包月/包天划算。<br>' +
+      "· <b>智谱</b>：GLM-Image 约 <b>¥0.1/张</b>（新旗舰，比火山便宜）· CogView-4 约 <b>¥0.06/张</b> · <b>CogView-3-Flash 免费</b><br>" +
+      "· <b>火山方舟</b>：Seedream 5.0 flash 约 <b>¥0.13/张</b>（支持图生图、参考图不加钱）· lite ¥0.22<br>" +
+      "· <b>魔搭 / 硅基流动</b>：有免费额度，适合先试<br>" +
+      "⚠️ 智谱的「拉取模型」只会列出语言模型（glm-*），<b>图像模型要手填或用上面的常用模型按钮</b>。<br>" +
       "⚠️ 方舟 flash 默认会打「AI generated」水印，本 App 已自动帮你传 <code>watermark:false</code> 关掉。<br>" +
-      "⚠️ 别买「私有实例 / 专属部署」那种<b>按天计价</b>的（图像模型约 100 元/算力单元/天，一个月就是几千块），个人用按量就够。</div>" +
+      "⚠️ 别买「私有实例 / 专属部署」那种<b>按天计价</b>的（图像模型约 100 元/算力单元/天，一个月就是几千块）。</div>" +
       '<div class="prov-row" id="provRow">' + opts + "</div>" +
       '<div class="form-group" style="margin-top:14px"><div class="form-label">形象风格 <small>换完记得点保存，再看精灵页</small></div>' +
       '<div class="prov-row" id="styleRow">' +
@@ -3766,12 +3770,9 @@
       '<button type="button" class="btn ghost" id="imgListModels" style="width:100%;margin-top:6px;font-size:12px">📋 拉取我账号里的可用模型</button></div>' +
       '<div class="form-group"><div class="form-label">接口地址 <small>用服务商默认时留空</small></div>' +
       '<input class="form-input" id="imgEndpoint" placeholder="https://.../v1/images/generations" value="' + esc(cfg.endpoint || "") + '"></div>' +
-      '<div class="form-group"><div class="form-label">出图尺寸 <small>默认竖版立绘 1728x2304（3:4）；尺寸不对会自动换一档</small></div>' +
-      '<div class="prov-row" id="sizeRow">' +
-      Spirits.SIZE_PRESETS.map((sz) =>
-        '<button type="button" class="prov-chip' + ((cfg.size || Spirits.DEFAULT_SIZE) === sz.v ? " active" : "") + '" data-size="' + sz.v + '">' +
-        esc(sz.label) + "</button>").join("") +
-      '</div><div class="cfg-hint" id="sizeHint">这家常用的尺寸：' + esc(Spirits.sizeLadderFor(cfg.provider || "pollinations").slice(0, 3).join(" / ")) + "（不对会自动换档并记住）</div></div>" +
+      '<div class="form-group"><div class="form-label">出图尺寸 <small>跟着服务商走（各家能用的档不一样）；被拒会自动换一档</small></div>' +
+      '<div class="prov-row" id="sizeRow"></div>' +
+      '<div class="cfg-hint" id="sizeHint"></div></div>' +
       '<div style="display:flex;gap:8px;margin-top:6px">' +
       '<button class="btn ghost" id="imgCfgTest" style="flex:1">🔍 测试连接</button>' +
       '<button class="btn ghost" id="imgCfgCancel" style="flex:1">取消</button>' +
@@ -3803,18 +3804,31 @@
       if (note) note.textContent = picks.length ? picks[0].note : "";
     }
     bindModelQuick(chosen);
-    // ⚠️ 只给这三行的 chip 绑"服务商/风格/尺寸"处理：
-    //    之前用 modal.querySelectorAll(".prov-chip") 会把「常用模型」快捷按钮也算进来，
-    //    点一下模型名就把 chosen 置成 undefined、说明也被清空（再点保存就把配置写坏了）
-    modal.querySelectorAll("#provRow .prov-chip, #styleRow .prov-chip, #sizeRow .prov-chip").forEach((b) => b.onclick = () => {
+    // 尺寸 chip 也按服务商渲染（各家能用的档不一样），并在换服务商时同步
+    function bindSizeRow(provider) {
+      const row = $("#sizeRow"), hint = $("#sizeHint");
+      const list = Spirits.sizePresetsFor(provider);
+      const cur = chosenSize;
+      const hit = list.filter((s) => s.v === cur)[0];
+      if (!hit) chosenSize = list[0].v;          // 当前尺寸这家不支持 → 自动选这家的第一档（推荐的）
+      if (row) {
+        row.innerHTML = list.map((sz) =>
+          '<button type="button" class="prov-chip' + (chosenSize === sz.v ? " active" : "") + '" data-size="' + sz.v + '">' +
+          esc(sz.label) + "</button>").join("");
+        row.querySelectorAll("[data-size]").forEach((b) => b.onclick = () => {
+          chosenSize = b.dataset.size;
+          row.querySelectorAll("[data-size]").forEach((x) => x.classList.toggle("active", x === b));
+        });
+      }
+      if (hint) {
+        hint.textContent = "这家能用的档：" + list.map((s) => s.v).join(" / ") + "（被拒会自动换一档并记住）";
+      }
+    }
+    bindSizeRow(chosen);
+    modal.querySelectorAll("#provRow .prov-chip, #styleRow .prov-chip").forEach((b) => b.onclick = () => {
       if (b.dataset.style) {
         chosenStyle = b.dataset.style;
         modal.querySelectorAll("#styleRow .prov-chip").forEach((x) => x.classList.toggle("active", x === b));
-        return;
-      }
-      if (b.dataset.size) {
-        chosenSize = b.dataset.size;
-        modal.querySelectorAll("#sizeRow .prov-chip").forEach((x) => x.classList.toggle("active", x === b));
         return;
       }
       chosen = b.dataset.prov;
@@ -3823,12 +3837,8 @@
       const pv = Spirits.PROVIDERS[chosen] || {};
       if (pv.model) $("#imgModel").value = pv.model;
       $("#imgEndpoint").value = "";
-      // 顺带提示这家的合法尺寸（各家的尺寸档不一样，避免白跑一次失败请求）
-      const hint = $("#sizeHint");
-      if (hint) {
-        const lad = Spirits.sizeLadderFor(chosen);
-        hint.textContent = "这家常用的尺寸：" + lad.slice(0, 3).join(" / ") + "（不对会自动换档并记住）";
-      }
+      // 尺寸 chip 也跟着这家能用的档重建（避免选了个一定被拒的档）
+      bindSizeRow(chosen);
       // 常用的模型名一键填入（跟着服务商换）
       bindModelQuick(chosen);
     });
@@ -3852,7 +3862,22 @@
           });
         }
       } catch (e) {
-        box.innerHTML = '<span style="font-size:12px;color:var(--red)">拉取失败：' + esc((e && e.message) || "") + "</span>";
+        // ★ 服务商的 /models 只列语言模型（智谱就是这样，只给 glm-*）：
+        //   不是"拉取失败"，而是这家根本不在这里列图像模型 → 直接告诉用户该填什么
+        if (e && e.textOnly) {
+          const picks = Spirits.MODEL_PICKS[chosen] || [];
+          box.innerHTML =
+            '<div style="font-size:11.5px;line-height:1.8;color:#6b5320;background:#fff8e8;border:1px dashed #e6d3a8;border-radius:10px;padding:8px 10px">' +
+            "ℹ️ 这家的 /models 接口<b>只列出语言模型</b>（你看到的 glm-* 都是聊天模型，不能出图）。" +
+            "<br>图像模型要<b>手填</b>：" + picks.map((m) => "<b>" + esc(m.id) + "</b>").join(" / ") +
+            "<br>（上面的「常用模型」按钮点一下就能填进去，不用手打）</div>";
+          box.querySelectorAll("[data-pick]").forEach((b) => b.onclick = () => {
+            $("#imgModel").value = b.dataset.pick;
+            box.querySelectorAll("[data-pick]").forEach((x) => x.classList.toggle("active", x === b));
+          });
+        } else {
+          box.innerHTML = '<span style="font-size:12px;color:var(--red)">拉取失败：' + esc((e && e.message) || "") + "</span>";
+        }
       } finally {
         btn.disabled = false; btn.textContent = "📋 拉取我账号里的可用模型";
       }
