@@ -478,6 +478,13 @@ img { display:block; }
 }
 .tab-item.active { color:var(--wood); }
 .tab-item.active .tab-icon { transform:scale(1.1); }
+/* 有新剧情时精灵 tab 上的小红点 */
+.tab-item { position:relative; }
+.tab-dot {
+  position:absolute; top:5px; right:50%; margin-right:-22px;
+  width:8px; height:8px; border-radius:50%; background:#e0483c;
+  box-shadow:0 0 0 2px rgba(255,255,255,.95);
+}
 .tab-icon { font-size:20px; line-height:1; }
 .tab-fab {
   width:46px; height:46px; border-radius:50%; margin-top:-18px;
@@ -1251,6 +1258,111 @@ img { display:block; }
   background:var(--card); border:1px solid var(--line); color:var(--text-2); cursor:pointer;
 }
 .prov-chip.active { background:var(--wood); color:#f5f0e8; border-color:var(--wood); }
+
+/* ============================================================
+   v109：小房间 / 契合度 / 剧情 / 精灵详情页 / 日记
+   ============================================================ */
+/* 房间区（精灵列表页） */
+.room-grid { display:grid; grid-template-columns:1fr; gap:10px; }
+.room-card {
+  background:var(--card); border:1px solid var(--line); border-radius:14px; padding:10px 12px;
+  box-shadow:var(--shadow); cursor:pointer;
+}
+.room-card:active { transform:scale(.99); }
+.room-head { display:flex; align-items:center; gap:6px; }
+.room-emoji { font-size:18px; }
+.room-emoji.big { font-size:30px; }
+.room-name { font-size:14px; font-weight:700; color:var(--wood); }
+.room-dot {
+  margin-left:auto; font-size:11px; font-weight:700; color:#fff; background:#e0483c;
+  border-radius:12px; padding:2px 8px;
+}
+.room-members { display:flex; align-items:center; gap:6px; margin-top:9px; flex-wrap:wrap; }
+.room-more { font-size:11px; color:var(--text-2); }
+.room-none { font-size:12px; color:var(--text-2); line-height:1.7; }
+.room-foot { font-size:11px; color:var(--text-2); margin-top:8px; }
+.room-hint { font-size:11px; color:var(--text-2); margin-top:8px; line-height:1.7; }
+.room-empty {
+  background:#fbf7ef; border:1px dashed var(--line); border-radius:14px; padding:12px;
+  font-size:12px; color:var(--text-2); line-height:1.8;
+}
+.room-track { height:5px; border-radius:4px; background:#efe7da; overflow:hidden; margin-top:4px; }
+.room-track.big { height:8px; }
+.room-track i { display:block; height:100%; background:linear-gradient(90deg,#e8b96a,#d98f4a); }
+
+/* 房间页 */
+.room-page-head {
+  display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--line);
+  border-radius:14px; padding:12px; box-shadow:var(--shadow); margin-bottom:12px;
+}
+.room-page-meta { flex:1; min-width:0; }
+.room-page-name { font-size:16px; font-weight:800; color:var(--wood); }
+.room-page-sub { font-size:11px; color:var(--text-2); margin-top:2px; }
+.room-mem-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:10px; }
+.room-mem { text-align:center; cursor:pointer; }
+.room-mem-name { font-size:11px; font-weight:700; color:var(--wood); margin-top:4px; }
+.room-mem-sub { font-size:10px; color:var(--text-2); }
+.aff-row { border-top:1px dashed var(--line); padding:9px 0; }
+.aff-row:first-of-type { border-top:0; }
+.aff-head { display:flex; justify-content:space-between; font-size:12px; font-weight:700; color:var(--wood); }
+.aff-num { color:var(--gold); }
+.aff-sub { font-size:11px; color:var(--text-2); margin-top:4px; }
+.story-row {
+  border:1px solid var(--line); border-radius:12px; padding:9px 11px; margin-top:8px; cursor:pointer;
+  background:var(--card);
+}
+.story-row.unread { border-color:#e0a83c; background:#fffaf0; }
+.story-title { font-size:13px; font-weight:700; color:var(--wood); }
+.story-sub { font-size:11px; color:var(--text-2); margin-top:3px; }
+.story-text { font-size:13.5px; line-height:1.95; color:var(--text); max-height:52vh; overflow:auto; }
+
+/* 选人列表 */
+.pick-list { max-height:52vh; overflow:auto; }
+.pick-row {
+  display:flex; align-items:center; gap:10px; padding:9px 2px; border-bottom:1px dashed var(--line); cursor:pointer;
+}
+.pick-row:last-child { border-bottom:0; }
+.pick-meta { flex:1; min-width:0; }
+.pick-name { font-size:13px; font-weight:700; color:var(--wood); }
+.pick-sub { font-size:11px; color:var(--text-2); margin-top:2px; }
+.pick-go { font-size:12px; color:var(--gold); font-weight:700; }
+
+/* 精灵详情页 */
+.sd-top { text-align:center; margin-bottom:12px; }
+.sd-art { display:flex; justify-content:center; cursor:zoom-in; }
+.sd-art .spirit-img.big { max-height:34vh; border-radius:18px; }
+.sd-name { font-size:19px; font-weight:800; color:var(--wood); margin-top:8px; }
+.sd-title { font-size:12px; color:var(--text-2); margin-top:3px; }
+.sd-line { font-size:13px; color:var(--text); margin-top:8px; line-height:1.7; }
+.sd-card {
+  background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 13px;
+  box-shadow:var(--shadow); margin-top:12px;
+}
+.sd-card-title { font-size:13px; font-weight:800; color:var(--wood); margin-bottom:8px; }
+.sd-persona { font-size:13.5px; line-height:2; color:var(--text); white-space:pre-wrap; }
+.sd-look { font-size:11px; color:var(--text-2); margin-top:10px; line-height:1.8; }
+.sd-look-sub { font-size:11px; color:var(--text-2); margin-top:4px; }
+.sd-bead { display:flex; gap:12px; align-items:flex-start; }
+.sd-bead img, .sd-bead .placeholder {
+  width:88px; height:88px; border-radius:12px; object-fit:cover; flex-shrink:0;
+  background:#f4efe6; display:flex; align-items:center; justify-content:center; font-size:26px;
+}
+.sd-bead-meta { min-width:0; flex:1; }
+.sd-bead-name { font-size:14px; font-weight:700; color:var(--wood); }
+.sd-bead-sub { font-size:11px; color:var(--text-2); margin-top:3px; }
+.sd-room-line { font-size:14px; font-weight:700; color:var(--wood); }
+.sd-mates { margin-top:10px; }
+.sd-mate { display:flex; gap:10px; align-items:center; padding:8px 0; border-top:1px dashed var(--line); cursor:pointer; }
+.sd-mate-meta { flex:1; min-width:0; }
+.sd-mate-name { font-size:13px; font-weight:700; color:var(--wood); }
+.sd-mate-aff { font-size:11px; color:var(--text-2); margin-top:2px; }
+.sd-diary { margin-top:4px; }
+.sd-diary-item { border-top:1px dashed var(--line); padding:10px 0; }
+.sd-diary-item:first-child { border-top:0; }
+.sd-diary-date { font-size:11px; font-weight:700; color:var(--gold); display:flex; justify-content:space-between; }
+.sd-diary-text { font-size:13px; line-height:1.9; color:var(--text); margin-top:5px; }
+.sd-actions { display:flex; gap:10px; margin-top:14px; }
+.sd-actions .btn { flex:1; }
 
 
 

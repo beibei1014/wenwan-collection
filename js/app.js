@@ -2496,7 +2496,8 @@
       extra = "position:absolute;left:" + (-Math.round(f.l * wr)) + "px;top:" + (-Math.round((f.t * wr) / f.ar)) +
         "px;width:" + wr + "px;height:auto";
     }
-    return '<span class="spirit-thumb">' + spiritImgHtml(item, rec, size, "spirit-img", extra, !ok) + "</span>";
+    return '<span class="spirit-thumb" style="width:' + size + "px;height:" + size + 'px">' +
+      spiritImgHtml(item, rec, size, "spirit-img", extra, !ok) + "</span>";
   }
   // 老图（v106 之前生成的）没有取景数据 → 进精灵页时补算一次并存起来，不用重新出图
   let _faceBusy = false;
@@ -2651,23 +2652,29 @@
     }
 
     let html = "";
-    // 每日来信（每天第一次进来自动投一封）
+    // 📔 今日日记（v109：原来的「每日来信」改成了精灵日记，正文在每只精灵的详情页里看）
     const tk = Spirits.todayKey();
-    const todayLetter = list.map((it) => ({ it, rec: store[it.id] }))
-      .filter((x) => x.rec && x.rec.lastLetterDay === tk && x.rec.letters && x.rec.letters.length)
-      .map((x) => ({ it: x.it, letter: x.rec.letters[x.rec.letters.length - 1] }))[0] || null;
+    const todayDiary = list.map((it) => ({ it, rec: store[it.id] }))
+      .map((x) => {
+        const d = ((x.rec && x.rec.diary) || []).filter((e) => e && e.date === tk).pop();
+        return d ? { it: x.it, entry: d } : null;
+      }).filter(Boolean).sort((a, b) => (b.entry.at || 0) - (a.entry.at || 0))[0] || null;
     html += '<div class="spirit-letter-box" id="spiritLetterBox">';
-    if (todayLetter) {
-      html += '<div class="spirit-letter-head">📮 今天的信 · 来自「' + esc((todayLetter.letter.from) || todayLetter.it.name) + '」</div>' +
-        '<div class="spirit-letter-body">' + esc(todayLetter.letter.text).replace(/\n/g, "<br>") + "</div>";
+    if (todayDiary) {
+      const nm = (todayDiary.it && ((store[todayDiary.it.id] || {}).persona || {}).name) || todayDiary.it.name;
+      html += '<div class="spirit-letter-head">📔 今天的日记 · 来自「' + esc(nm) + '」</div>' +
+        '<div class="spirit-letter-body">' + esc(String(todayDiary.entry.text || "").replace(/^第[^\n]*\n/, "")).replace(/\n/g, "<br>") + "</div>" +
+        '<div style="font-size:11px;color:var(--text-2);margin-top:8px">点下面任意一只精灵，看它自己的日记本</div>';
     } else {
-      html += '<div class="spirit-letter-head">📮 正在收今天的信…</div>' +
-        '<div class="spirit-letter-body" style="color:var(--text-2)">精灵们正在磨墨，稍等一下下～</div>';
+      html += '<div class="spirit-letter-head">📔 日记本</div>' +
+        '<div class="spirit-letter-body" style="color:var(--text-2)">精灵们一天会不定时写 0-2 篇日记，点开某一只看看它今天写了什么～</div>';
     }
     html += "</div>";
 
+    html += renderRoomsSection(list, store);
+
     html += '<div class="section-title" style="margin-top:14px">🍡 我的精灵（' + list.length + '）' +
-      '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点击看它说话</small>' +
+      '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点它进详情页</small>' +
       '<button type="button" class="link-btn" id="spRedrawAll" style="float:right;font-size:11px">🖌 全部重画</button></div>';
     html += '<div class="spirit-grid">';
     list.forEach((it) => {
@@ -2693,10 +2700,15 @@
     html += "</div>";
     view.innerHTML = html;
     bindSpiritImgFallback(view);
+    // 点卡片 → 进这只精灵自己的详情页（v109：不再是弹层）
     view.querySelectorAll(".spirit-card").forEach((c) => c.addEventListener("click", () => {
-      const it = allItems.find((x) => x.id === c.dataset.spirit);
-      if (it) showSpiritModal(it);
+      const id = c.dataset.spirit;
+      if (id) location.hash = "#/spirit/" + encodeURIComponent(id);
     }));
+    view.querySelectorAll("[data-room]").forEach((c) => c.addEventListener("click", () => {
+      location.hash = "#/room/" + encodeURIComponent(c.dataset.room);
+    }));
+    bindRoomSection();
     // 🖌 全部重画：画风/prompt 升级后，一次性把已有立绘全部作废重出（先问一句，别静默烧额度）
     const redrawAll = $("#spRedrawAll");
     if (redrawAll) redrawAll.onclick = async () => {
@@ -2716,10 +2728,571 @@
       toast("开始重画 " + n + " 只精灵…");
       renderSpiritPage();
     };
-    // 异步补性格 + 今天的信 + （API 通道）AI 出图 + 老图的头像取景
-    ensureSpiritData(list, !todayLetter);
+    // 异步补性格 + 日记 + （API 通道）AI 出图 + 老图的头像取景 + 房间契合度/剧情
+    ensureSpiritData(list, false);
     ensureSpiritImages(list);
     ensureSpiritFaces(list);
+    ensureSpiritExtras(list);
+    tickRooms(list);
+  }
+
+  /* ============================================================
+   * v109：小房间 / 契合度 / 剧情 / 精灵独立详情页 / 日记
+   * ============================================================ */
+  function spiritItemById(id) { return allItems.find((x) => x.id === id) || null; }
+  function spiritRecOf(id) { return Spirits.load()[id] || {}; }
+  function setSpiritRoom(id, roomId) {
+    const s = Spirits.load();
+    const r = Spirits.ensureIn(s, id);
+    r.roomId = roomId || "";
+    Spirits.save(s);
+  }
+  // 带 roomId 的精灵列表（房间模块需要）
+  function roomItems() {
+    const s = Spirits.load();
+    return spiritItems().map((it) => Object.assign({}, it, { roomId: (s[it.id] && s[it.id].roomId) || "" }));
+  }
+  function nameOf(it, store) {
+    const rec = (store || Spirits.load())[it.id] || {};
+    return (rec.persona && rec.persona.name) || it.name || "精灵";
+  }
+  function spiritSp(it) {
+    const rec = spiritRecOf(it.id);
+    return {
+      item: it,
+      persona: rec.persona || Spirits.localPersona(it),
+      stage: rec.stage || 1,
+      variant: rec.variant || 0,
+      idleDays: it.lastPlayedAt ? Math.floor((Date.now() - it.lastPlayedAt) / 86400000) : null,
+    };
+  }
+  function diaryCtx(it, rec) {
+    const now = Date.now();
+    const tk = Spirits.todayKey();
+    const playedToday = !!(it.lastPlayedAt && (now - it.lastPlayedAt) < 20 * 3600 * 1000 &&
+      Spirits.todayKey(new Date(it.lastPlayedAt)) === tk);
+    return {
+      idleDays: it.lastPlayedAt ? Math.floor((now - it.lastPlayedAt) / 86400000) : null,
+      dayNo: Math.max(1, DB.daysWith(it)),
+      plays: it.playCount || 0,
+      playedToday: playedToday,
+    };
+  }
+  function fmtTime(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+  function unreadStoryCount() { return Rooms.unreadStories(roomItems()).length; }
+  // 精灵 tab 上的小红点（有新剧情时）
+  function updateStoryDot() {
+    const tab = document.getElementById("tabSpirit");
+    if (!tab) return;
+    let dot = tab.querySelector(".tab-dot");
+    const n = unreadStoryCount();
+    if (n) { if (!dot) { dot = document.createElement("span"); dot.className = "tab-dot"; tab.appendChild(dot); } }
+    else if (dot) dot.remove();
+  }
+
+  /* ---------- 房间区（精灵列表页顶部） ---------- */
+  function renderRoomsSection(list, store) {
+    const rooms = Rooms.listRooms();
+    const items = roomItems();
+    const unreadByRoom = {};
+    Rooms.unreadStories(items).forEach((u) => { if (u.roomId) unreadByRoom[u.roomId] = (unreadByRoom[u.roomId] || 0) + 1; });
+    let h = '<div class="section-title" style="margin-top:14px">🏠 精灵的小房间（' + rooms.length + "）" +
+      '<button type="button" class="link-btn" id="spNewRoom" style="float:right;font-size:11px">＋ 新建房间</button></div>';
+    if (!rooms.length) {
+      h += '<div class="room-empty">还没有房间。建一间小屋把精灵放进去，住在一起的精灵会慢慢攒「契合度」，' +
+        "攒够了就会发生属于它们的故事 ✨</div>";
+    } else {
+      h += '<div class="room-grid">';
+      rooms.forEach((r) => {
+        const mem = Rooms.membersOf(r.id, items);
+        const aff = Rooms.roomAffinity(r.id, items);
+        const un = unreadByRoom[r.id] || 0;
+        h += '<div class="room-card" data-room="' + esc(r.id) + '">' +
+          '<div class="room-head"><span class="room-emoji">' + esc(r.emoji || "🏠") + "</span>" +
+          '<span class="room-name">' + esc(r.name) + "</span>" +
+          (un ? '<span class="room-dot">📖 ' + un + "</span>" : "") + "</div>" +
+          '<div class="room-members">' +
+          (mem.length ? mem.slice(0, 5).map((it) => spiritThumbHtml(it, store[it.id] || {}, 42)).join("")
+            : '<span class="room-none">还没有精灵入住</span>') +
+          (mem.length > 5 ? '<span class="room-more">+' + (mem.length - 5) + "</span>" : "") + "</div>" +
+          '<div class="room-foot">' + (mem.length < 2 ? "住满 2 只才会攒契合度"
+            : (aff.best ? "最合拍：" + esc(nameOf(aff.best.a, store)) + " × " + esc(nameOf(aff.best.b, store)) + " · " + aff.best.aff : "")) + "</div>" +
+          "</div>";
+      });
+      h += "</div>";
+    }
+    const homeless = list.filter((it) => !(store[it.id] || {}).roomId).length;
+    if (homeless) h += '<div class="room-hint">🛏 还没入住的精灵：' + homeless + " 只 —— 进房间点「＋ 放入精灵」安排入住</div>";
+    return h;
+  }
+  function bindRoomSection() {
+    const nb = $("#spNewRoom");
+    if (nb) nb.onclick = (e) => { e.stopPropagation(); showRoomEditModal(null); };
+  }
+
+  /* ---------- 契合度推进 + 剧情生成 ---------- */
+  let _roomBusy = false;
+  async function tickRooms() {
+    if (_roomBusy) return;
+    _roomBusy = true;
+    try {
+      const items = roomItems();
+      const res = Rooms.tick(items);
+      const pend = Rooms.pendingStories(items).slice(0, 3);      // 一次最多补 3 段，别把额度打光
+      for (const q of pend) {
+        const a = items.find((x) => x.id === q.a), b = items.find((x) => x.id === q.b);
+        if (!a || !b) continue;
+        const room = Rooms.getRoom(q.roomId) || { name: "它们的小房间" };
+        const txt = await Spirits.roomStory(spiritSp(a), spiritSp(b), q.level, room.name, Rooms.affinityOf(q.a, q.b));
+        Rooms.writeStory(q.a, q.b, q.level, "", txt);
+      }
+      updateStoryDot();
+      const h = location.hash;
+      if ((res.changed || pend.length) && (h === "#/spirit" || h.indexOf("#/room/") === 0)) {
+        if (h === "#/spirit") renderSpiritPage(); else renderRoomPage(decodeURIComponent(h.slice(7)));
+      }
+    } catch (e) { /* 静默 */ }
+    _roomBusy = false;
+  }
+
+  /* ---------- 补齐：真实主色 / 中文人设 / 日记 ---------- */
+  let _extraBusy = false;
+  async function ensureSpiritExtras(list) {
+    if (_extraBusy) return;
+    _extraBusy = true;
+    try {
+      let changed = false;
+      for (const it of list) {
+        const rec0 = Spirits.ensureIn(Spirits.load(), it.id);
+        const ap = Spirits.appearanceOf(it, rec0.appearanceSeed || 0, rec0.gender || "");
+        if (!Spirits.beadColor(it) && it.photos && it.photos.length) {
+          const c = await Spirits.detectBeadColor(it);
+          if (c) changed = true;
+        }
+        const before = rec0.personaZh;
+        await Spirits.personaZh(it, ap, rec0.persona, rec0.stage || 1, DB.daysWith(it), it.playCount || 0);
+        if (Spirits.load()[it.id].personaZh !== before) changed = true;
+        const st = Spirits.load();
+        const r2 = Spirits.ensureIn(st, it.id);
+        const added = await Spirits.ensureDiary(it, r2, ap, diaryCtx(it, r2));
+        if (added) changed = true;
+      }
+      const h = location.hash;
+      if (changed && (h === "#/spirit" || h.indexOf("#/spirit/") === 0)) {
+        if (h === "#/spirit") renderSpiritPage(); else renderSpiritDetailPage(decodeURIComponent(h.slice(9)));
+      }
+    } catch (e) { /* 静默 */ }
+    _extraBusy = false;
+  }
+
+  /* ---------- 精灵独立详情页 ---------- */
+  function renderSpiritDetailPage(id) {
+    const it = spiritItemById(id);
+    if (!it) { location.hash = "#/spirit"; return; }
+    topbarTitle.textContent = "精灵详情";
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+    const store = Spirits.load();
+    const rec = store[id] || {};
+    const p = rec.persona || Spirits.localPersona(it);
+    const ap = Spirits.appearanceOf(it, rec.appearanceSeed || 0, rec.gender || "");
+    const si = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
+    const idle = it.lastPlayedAt ? Math.floor((Date.now() - it.lastPlayedAt) / 86400000) : null;
+    const colorName = Spirits.COLOR_ZH[it.color] || "素色";
+    const softName = it.softness === "soft" ? "软糯" : (it.softness === "slight" ? "微糯" : "未标注");
+    const bead = Spirits.beadColor(it);
+    const photo = it.photos && it.photos[0];
+    const room = rec.roomId ? Rooms.getRoom(rec.roomId) : null;
+    const items = roomItems();
+    const mates = room ? Rooms.membersOf(room.id, items).filter((x) => x.id !== id) : [];
+    const diary = (rec.diary || []).slice().reverse();
+    const hist = (rec.imgHistory || []).filter((x) => x && x.url);
+
+    let h = '<div class="sd-top"><div class="sd-art" id="sdArt">' + spiritImgHtml(it, rec, 240, "spirit-img big") + "</div>" +
+      '<div class="sd-name">' + esc(p.name || it.name) + '<span class="spirit-stage big">' + si.icon + " " + esc(si.name) + "</span></div>" +
+      '<div class="sd-title">' + esc(p.title || "") + "</div>" +
+      '<div class="sd-line">“' + esc(p.line || "") + '”</div>' +
+      '<div class="spirit-tags" style="justify-content:center">' + ((p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
+      '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div></div>";
+
+    h += '<div class="sd-card"><div class="sd-card-title">📝 人物设定</div>' +
+      '<div class="sd-persona">' + (rec.personaZh ? esc(rec.personaZh) : '<span style="color:var(--text-2)">正在为它写设定…（第一次会调用一次文字模型，稍等几秒）</span>') + "</div>" +
+      '<div class="sd-look">🔒 ' + esc(Spirits.appearanceText(ap)) + "</div>" +
+      '<div class="sd-look-sub">🎨 ' + (bead ? "立绘主色取自原串照片：" + esc(bead.hex) + "（" + esc(bead.word) + "）" : "立绘主色按颜色分类生成") + "</div></div>";
+
+    h += '<div class="sd-card"><div class="sd-card-title">📿 原型手串</div><div class="sd-bead">' +
+      (photo ? '<img src="' + esc(photoUrl(photo)) + '" alt="">' : '<div class="placeholder">📿</div>') +
+      '<div class="sd-bead-meta"><div class="sd-bead-name">' + esc(it.name || "未命名") + "</div>" +
+      '<div class="sd-bead-sub">' + esc(colorName) + (it.species ? " · " + esc(it.species) : "") + " · " + esc(softName) + "</div>" +
+      '<div class="sd-bead-sub">陪伴 ' + DB.daysWith(it) + " 天 · 盘玩 " + (it.playCount || 0) + " 次</div>" +
+      '<button class="btn ghost" id="sdGoBead" style="margin-top:8px;font-size:12px">查看手串详情</button></div></div></div>';
+
+    h += '<div class="sd-card"><div class="sd-card-title">🌱 成长</div>' +
+      (si.isMax ? '<div class="spirit-prog max">已是完成体 · 巅峰形态 👑</div>'
+        : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
+          '<span class="spirit-prog-txt">' + si.growth + " / " + si.need + " → " + esc(si.next) + "（再 " + si.toNext + " 点可突破）</span></div>") +
+      (hist.length > 1 ? '<div class="spirit-hist">' + hist.map((x) => {
+        const d = Spirits.stageDef(x.stage);
+        return '<div class="spirit-hist-item' + (x.stage === si.stage ? " now" : "") + '" title="' + esc(d.name) + '">' +
+          '<img src="' + esc(x.url) + '" alt=""><span>' + d.icon + esc(d.name) + "</span></div>";
+      }).join("") + "</div>" : "") +
+      '<button class="btn primary" id="sdOpenModal" style="width:100%;margin-top:12px">⚙️ 形象与进阶（突破 / 换形象 / 换性别）</button></div>';
+
+    h += '<div class="sd-card"><div class="sd-card-title">🏠 住的房间</div>';
+    if (room) {
+      h += '<div class="sd-room-line"><span class="room-emoji">' + esc(room.emoji || "🏠") + "</span> " + esc(room.name) +
+        '<button class="link-btn" id="sdRoomGo" style="float:right">进房间看看</button></div>';
+      if (mates.length) {
+        h += '<div class="sd-mates">' + mates.map((m) => {
+          const aff = Rooms.affinityOf(id, m.id), li = Rooms.levelInfo(aff);
+          return '<div class="sd-mate" data-mate="' + esc(m.id) + '">' + spiritThumbHtml(m, store[m.id] || {}, 40) +
+            '<div class="sd-mate-meta"><div class="sd-mate-name">' + esc(nameOf(m, store)) + "</div>" +
+            '<div class="sd-mate-aff">契合度 ' + aff + " · " + esc(li.levelName) +
+            (li.next == null ? "（已经是最懂彼此的那一档）" : "（再攒 " + li.need + " 就有新剧情）") + "</div>" +
+            '<div class="room-track"><i style="width:' + li.pct + '%"></i></div></div></div>';
+        }).join("") + "</div>";
+      } else {
+        h += '<div class="room-none" style="margin-top:8px">目前自己住一间。再放一只进去，它们就会开始攒契合度～</div>';
+      }
+    } else {
+      h += '<div class="room-none">还没入住。给它安排一间小屋，同住的精灵会慢慢攒契合度 ✨</div>';
+    }
+    h += '<button class="btn ghost" id="sdRoomPick" style="width:100%;margin-top:10px;font-size:13px">' +
+      (room ? "🏠 换房间 / 搬出去" : "🏠 安排入住") + "</button></div>";
+
+    h += '<div class="sd-card"><div class="sd-card-title">📔 日记本（' + diary.length + "）" +
+      '<button class="link-btn" id="sdDiaryNew" style="float:right">✍️ 让它现在写一篇</button></div>';
+    if (!diary.length) {
+      h += '<div class="room-none">还没写过日记。精灵一天会不定时写 0-2 篇，明天再来看看～</div>';
+    } else {
+      h += '<div class="sd-diary">' + diary.slice(0, 8).map((d) =>
+        '<div class="sd-diary-item"><div class="sd-diary-date">' + esc(d.date || "") + "<span>" + fmtTime(d.at) + "</span></div>" +
+        '<div class="sd-diary-text">' + esc(String(d.text || "").replace(/^第[^\n]*\n/, "")).replace(/\n/g, "<br>") + "</div></div>").join("") +
+        (diary.length > 8 ? '<div class="room-none">（只显示最近 8 篇，共 ' + diary.length + " 篇）</div>" : "") + "</div>";
+    }
+    h += "</div>";
+
+    h += '<div class="sd-actions">' +
+      '<button class="btn ghost" id="sdChat">💬 它们聊天</button>' +
+      '<button class="btn ghost" id="sdSpiritList">🍡 所有精灵</button></div>';
+
+    view.innerHTML = h;
+    bindSpiritImgFallback(view);
+
+    const art = $("#sdArt");
+    if (art) art.onclick = () => openSpiritViewer(rec.imgUrl || Spirits.localAvatarSvg(it));
+    const gb = $("#sdGoBead"); if (gb) gb.onclick = () => location.hash = "#/item/" + it.id;
+    const om = $("#sdOpenModal"); if (om) om.onclick = () => showSpiritModal(it);
+    const ch = $("#sdChat"); if (ch) ch.onclick = () => showSpiritChatModal(it);
+    const sl = $("#sdSpiritList"); if (sl) sl.onclick = () => location.hash = "#/spirit";
+    const rg = $("#sdRoomGo"); if (rg) rg.onclick = (e) => { e.stopPropagation(); location.hash = "#/room/" + encodeURIComponent(room.id); };
+    const rp = $("#sdRoomPick"); if (rp) rp.onclick = () => showSpiritRoomPicker(it);
+    view.querySelectorAll("[data-mate]").forEach((el) => el.onclick = () => { location.hash = "#/spirit/" + encodeURIComponent(el.dataset.mate); });
+    const dn = $("#sdDiaryNew");
+    if (dn) dn.onclick = async () => {
+      dn.disabled = true;
+      dn.textContent = "它正在写…";
+      const st = Spirits.load();
+      const r = Spirits.ensureIn(st, it.id);
+      const nap = Spirits.appearanceOf(it, r.appearanceSeed || 0, r.gender || "");
+      try {
+        await Spirits.diaryNow(it, r, nap, diaryCtx(it, r));
+        toast("日记写好了 📔");
+      } catch (e) {
+        toast("写日记失败：" + ((e && e.message) || ""));
+      }
+      renderSpiritDetailPage(id);
+    };
+    ensureSpiritExtras([it]);
+  }
+
+  /* ---------- 房间页 ---------- */
+  function renderRoomPage(roomId) {
+    const room = Rooms.getRoom(roomId);
+    if (!room) { location.hash = "#/spirit"; return; }
+    topbarTitle.textContent = room.name;
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+    const store = Spirits.load();
+    const items = roomItems();
+    const mem = Rooms.membersOf(roomId, items);
+    const stories = Rooms.storiesOfRoom(roomId);
+
+    let h = '<div class="room-page-head"><span class="room-emoji big">' + esc(room.emoji || "🏠") + "</span>" +
+      '<div class="room-page-meta"><div class="room-page-name">' + esc(room.name) + "</div>" +
+      '<div class="room-page-sub">' + mem.length + " 只精灵住在里面 · 共 " + stories.length + " 段剧情</div></div>" +
+      '<button class="link-btn" id="rmEdit">✏️ 设置</button></div>';
+
+    h += '<div class="sd-card"><div class="sd-card-title">🛏 住在这里的精灵（' + mem.length + "）" +
+      '<button class="link-btn" id="rmAdd" style="float:right">＋ 放入精灵</button></div>';
+    if (!mem.length) h += '<div class="room-none">房间还空着，点右上角「＋ 放入精灵」安排入住。</div>';
+    else h += '<div class="room-mem-grid">' + mem.map((it) => {
+      const rec = store[it.id] || {};
+      const si = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
+      return '<div class="room-mem" data-sp="' + esc(it.id) + '">' + spiritThumbHtml(it, rec, 56) +
+        '<div class="room-mem-name">' + esc(nameOf(it, store)) + "</div>" +
+        '<div class="room-mem-sub">' + si.icon + esc(si.name) + "</div></div>";
+    }).join("") + "</div>";
+    h += "</div>";
+
+    if (mem.length >= 2) {
+      h += '<div class="sd-card"><div class="sd-card-title">💞 契合度</div>';
+      for (let i = 0; i < mem.length; i++) for (let j = i + 1; j < mem.length; j++) {
+        const a = mem[i], b = mem[j];
+        const aff = Rooms.affinityOf(a.id, b.id), li = Rooms.levelInfo(aff);
+        h += '<div class="aff-row"><div class="aff-head"><span>' + esc(nameOf(a, store)) + " × " + esc(nameOf(b, store)) +
+          '</span><span class="aff-num">' + aff + " · " + esc(li.levelName) + "</span></div>" +
+          '<div class="room-track big"><i style="width:' + li.pct + '%"></i></div>' +
+          '<div class="aff-sub">' + (li.next == null ? "已经是最懂彼此的那一档了 👑" : "再一起住 " + li.need + " 天会有新剧情") + "</div></div>";
+      }
+      h += '<div class="room-hint">每天同住 +1 契合度；如果两只最近都在盘，当天 +2。</div></div>';
+    } else {
+      h += '<div class="sd-card"><div class="room-none">至少要有 2 只精灵，才会开始攒契合度。</div></div>';
+    }
+
+    h += '<div class="sd-card"><div class="sd-card-title">📖 剧情（' + stories.length + "）</div>";
+    if (!stories.length) h += '<div class="room-none">契合度到 7 就会解锁第一段剧情。</div>';
+    else h += stories.map((s) => {
+      const a = items.find((x) => x.id === s.pair[0]), b = items.find((x) => x.id === s.pair[1]);
+      const nm = (a ? nameOf(a, store) : "") + " × " + (b ? nameOf(b, store) : "");
+      const unread = s.story.text && !s.story.read;
+      return '<div class="story-row' + (unread ? " unread" : "") + '" data-story="' + esc(s.key) + '" data-level="' + s.story.level + '">' +
+        '<div class="story-title">' + (unread ? "🔴 " : "📖 ") + esc(nm) + "</div>" +
+        '<div class="story-sub">第 ' + (s.story.level + 1) + " 段" + (s.story.text ? " · 点开看故事" : " · 正在酝酿…") + "</div></div>";
+    }).join("");
+    if (stories.some((s) => s.story.text && !s.story.read)) h += '<div class="room-hint">🔴 有新剧情，点开才算看过哦</div>';
+    h += "</div>";
+
+    h += '<button class="btn ghost" id="rmBack" style="width:100%;margin-top:10px">← 回到精灵列表</button>';
+    view.innerHTML = h;
+    bindSpiritImgFallback(view);
+    const eb = $("#rmEdit"); if (eb) eb.onclick = () => showRoomEditModal(room);
+    const ab = $("#rmAdd"); if (ab) ab.onclick = () => showSpiritPicker(room.id);
+    const bk = $("#rmBack"); if (bk) bk.onclick = () => location.hash = "#/spirit";
+    view.querySelectorAll("[data-sp]").forEach((el) => el.onclick = () => { location.hash = "#/spirit/" + encodeURIComponent(el.dataset.sp); });
+    view.querySelectorAll("[data-story]").forEach((el) => el.onclick = () => {
+      showStoryModal(el.dataset.story, +el.dataset.level);
+    });
+  }
+
+  /* ---------- 剧情阅读 ---------- */
+  function showStoryModal(pairKey, level) {
+    const parts = String(pairKey).split("|");
+    const bd = Rooms.bondOf(parts[0], parts[1]);
+    if (!bd) return;
+    const st = (bd.stories || []).filter((s) => s.level === level)[0];
+    if (!st || !st.text) { toast("这段剧情还在酝酿…"); return; }
+    const store = Spirits.load();
+    const a = spiritItemById(parts[0]), b = spiritItemById(parts[1]);
+    const room = Rooms.getRoom(st.roomId) || { name: "它们的小房间", emoji: "🏠" };
+    const mask = $("#modalMask"), modal = $("#modal");
+    modal.innerHTML = "<h3>" + esc(room.emoji || "🏠") + " " + esc(room.name) + "</h3>" +
+      '<div style="font-size:12px;color:var(--text-2);text-align:center;margin-bottom:10px">' +
+      esc((a ? nameOf(a, store) : "?") + " × " + (b ? nameOf(b, store) : "?")) + " · 第 " + (level + 1) + " 段</div>" +
+      '<div class="story-text">' + esc(st.text).replace(/\n/g, "<br>") + "</div>" +
+      '<button class="btn primary" id="storyOk" style="width:100%;margin-top:14px">看完了</button>';
+    mask.hidden = false;
+    modal.hidden = false;
+    modal.style.display = "";
+    const done = () => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; };
+    $("#storyOk").onclick = () => {
+      Rooms.markRead(parts[0], parts[1], level);
+      done();
+      updateStoryDot();
+      const h = location.hash;
+      if (h.indexOf("#/room/") === 0) renderRoomPage(decodeURIComponent(h.slice(7)));
+      else if (h === "#/spirit") renderSpiritPage();
+    };
+    mask.onclick = done;
+  }
+
+  /* ---------- 房间设置（新建 / 改名 / 成员 / 删除） ---------- */
+  function showRoomEditModal(room) {
+    const mask = $("#modalMask"), modal = $("#modal");
+    const isNew = !room;
+    const items = roomItems();
+    const mem = room ? Rooms.membersOf(room.id, items) : [];
+    modal.innerHTML = "<h3>" + (isNew ? "🏠 新建小房间" : "🏠 房间设置") + "</h3>" +
+      '<div class="form-group"><div class="form-label">房间名</div>' +
+      '<input class="form-input" id="rmName" maxlength="8" placeholder="如：窗边小桌" value="' + esc(room ? room.name : "") + '"></div>' +
+      '<div class="form-group"><div class="form-label">房间图标</div><div class="prov-row" id="rmEmojiRow">' +
+      Rooms.ROOM_EMOJIS.map((e) => '<button type="button" class="prov-chip' + ((room ? room.emoji : "🏠") === e ? " active" : "") +
+        '" data-emoji="' + e + '">' + e + "</button>").join("") + "</div></div>" +
+      (isNew ? "" : '<div class="form-group"><div class="form-label">住在这里（' + mem.length + '）<small>点名字可以搬出去</small></div>' +
+        '<div class="prov-row">' + (mem.length ? mem.map((it) => '<button type="button" class="prov-chip" data-out="' + esc(it.id) + '">' +
+          esc(nameOf(it, Spirits.load())) + " ✕</button>").join("") : '<span style="font-size:12px;color:var(--text-2)">还没有精灵入住</span>') + "</div></div>") +
+      '<div style="display:flex;gap:8px;margin-top:12px">' +
+      '<button class="btn ghost" id="rmCancel" style="flex:1">取消</button>' +
+      (isNew ? "" : '<button class="btn danger" id="rmDel" style="flex:1">删除房间</button>') +
+      '<button class="btn primary" id="rmSave" style="flex:1">保存</button></div>';
+    mask.hidden = false;
+    modal.hidden = false;
+    modal.style.display = "";
+    let emoji = room ? room.emoji : "🏠";
+    const close = () => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; };
+    modal.querySelectorAll("[data-emoji]").forEach((b) => b.onclick = () => {
+      emoji = b.dataset.emoji;
+      modal.querySelectorAll("[data-emoji]").forEach((x) => x.classList.toggle("active", x === b));
+    });
+    modal.querySelectorAll("[data-out]").forEach((b) => b.onclick = () => {
+      setSpiritRoom(b.dataset.out, "");
+      close();
+      toast("已搬出去");
+      renderRoomPage(room.id);
+    });
+    $("#rmCancel").onclick = close;
+    mask.onclick = close;
+    if (!isNew) $("#rmDel").onclick = async () => {
+      const yes = await confirmModal("删除「" + room.name + "」？", "房间里的精灵会变成「未入住」，精灵本身和立绘都不受影响。", "删除", true);
+      if (!yes) { showRoomEditModal(room); return; }
+      const ids = Rooms.membersOf(room.id, roomItems()).map((x) => x.id);
+      ids.forEach((id) => setSpiritRoom(id, ""));
+      Rooms.removeRoom(room.id);
+      toast("房间已删除");
+      location.hash = "#/spirit";
+    };
+    $("#rmSave").onclick = () => {
+      const name = ($("#rmName").value || "").trim();
+      if (isNew) {
+        const r = Rooms.createRoom(name, emoji);
+        toast("房间建好了：" + r.emoji + r.name);
+        close();
+        location.hash = "#/room/" + encodeURIComponent(r.id);
+      } else {
+        Rooms.updateRoom(room.id, { name: name || room.name, emoji: emoji });
+        toast("已保存");
+        close();
+        renderRoomPage(room.id);
+      }
+    };
+  }
+
+  /* ---------- 选精灵放进房间 ---------- */
+  function showSpiritPicker(roomId) {
+    const mask = $("#modalMask"), modal = $("#modal");
+    const items = roomItems();
+    const store = Spirits.load();
+    const inRoom = items.filter((x) => x.roomId === roomId);
+    const others = items.filter((x) => x.roomId !== roomId);
+    modal.innerHTML = "<h3>＋ 放入精灵</h3>" +
+      '<p style="font-size:12px;color:var(--text-2);text-align:center;margin-bottom:10px">点一下放进这间房（一只精灵同时只住一间）</p>' +
+      '<div class="pick-list">' + (others.length ? others.map((it) => {
+        const rec = store[it.id] || {};
+        const si = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
+        const where = it.roomId ? (Rooms.getRoom(it.roomId) || {}).name : "未入住";
+        return '<div class="pick-row" data-pick="' + esc(it.id) + '">' + spiritThumbHtml(it, rec, 44) +
+          '<div class="pick-meta"><div class="pick-name">' + esc(nameOf(it, store)) + " " + si.icon + "</div>" +
+          '<div class="pick-sub">现在在：' + esc(where || "未入住") + "</div></div>" +
+          '<span class="pick-go">放入 ›</span></div>';
+      }).join("") : '<div class="room-none">所有精灵都在这间房里了</div>') + "</div>" +
+      '<button class="btn ghost" id="pickCancel" style="width:100%;margin-top:12px">关闭</button>';
+    mask.hidden = false;
+    modal.hidden = false;
+    modal.style.display = "";
+    const close = () => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; };
+    modal.querySelectorAll("[data-pick]").forEach((el) => el.onclick = () => {
+      setSpiritRoom(el.dataset.pick, roomId);
+      close();
+      toast("已经住进来啦 🏠");
+      renderRoomPage(roomId);
+      updateStoryDot();
+    });
+    $("#pickCancel").onclick = close;
+    mask.onclick = close;
+  }
+  // 从精灵详情页选房间
+  function showSpiritRoomPicker(it) {
+    const mask = $("#modalMask"), modal = $("#modal");
+    const rooms = Rooms.listRooms();
+    const cur = (spiritRecOf(it.id) || {}).roomId || "";
+    modal.innerHTML = "<h3>🏠 安排房间</h3>" +
+      '<p style="font-size:12px;color:var(--text-2);text-align:center;margin-bottom:10px">和同屋的精灵会慢慢攒契合度</p>' +
+      '<div class="pick-list">' +
+      rooms.map((r) => {
+        const n = Rooms.membersOf(r.id, roomItems()).length;
+        return '<div class="pick-row" data-room-pick="' + esc(r.id) + '">' +
+          '<span class="room-emoji">' + esc(r.emoji || "🏠") + "</span>" +
+          '<div class="pick-meta"><div class="pick-name">' + esc(r.name) + "</div>" +
+          '<div class="pick-sub">' + n + " 只精灵" + (cur === r.id ? " · 现在住这里" : "") + "</div></div>" +
+          '<span class="pick-go">' + (cur === r.id ? "已在此 ›" : "入住 ›") + "</span></div>";
+      }).join("") +
+      '<div class="pick-row" data-room-pick=""><span class="room-emoji">🚪</span>' +
+      '<div class="pick-meta"><div class="pick-name">搬出去（不入住）</div><div class="pick-sub">仍是你的精灵，只是不攒契合度</div></div>' +
+      '<span class="pick-go">›</span></div>' +
+      '<div class="pick-row" data-new-room="1"><span class="room-emoji">＋</span>' +
+      '<div class="pick-meta"><div class="pick-name">新建一间房</div><div class="pick-sub">给它们一个新地方</div></div><span class="pick-go">›</span></div>' +
+      "</div>" +
+      '<button class="btn ghost" id="srCancel" style="width:100%;margin-top:12px">关闭</button>';
+    mask.hidden = false;
+    modal.hidden = false;
+    modal.style.display = "";
+    const close = () => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; };
+    modal.querySelectorAll("[data-room-pick]").forEach((el) => el.onclick = () => {
+      setSpiritRoom(it.id, el.dataset.roomPick);
+      close();
+      toast(el.dataset.roomPick ? "已经住进房间啦 🏠" : "已搬出去");
+      renderSpiritDetailPage(it.id);
+    });
+    const nr = modal.querySelector("[data-new-room]");
+    if (nr) nr.onclick = () => { close(); showRoomEditModal(null); };
+    $("#srCancel").onclick = close;
+    mask.onclick = close;
+  }
+
+  /* ---------- 立绘大图 ---------- */
+  function openSpiritViewer(src) {
+    const viewer = $("#viewer");
+    if (!viewer || !src) return;
+    viewer.hidden = false;
+    viewer.classList.add("show");
+    $("#viewerImg").src = src;
+    $("#viewerNav").innerHTML = "";
+    $("#viewerClose").onclick = () => { viewer.classList.remove("show"); viewer.hidden = true; };
+    viewer.onclick = (e) => { if (e.target === viewer) { viewer.classList.remove("show"); viewer.hidden = true; } };
+  }
+
+  /* ---------- 精灵聊天（独立弹层，详情页用） ---------- */
+  function showSpiritChatModal(item) {
+    const mask = $("#modalMask"), modal = $("#modal");
+    modal.innerHTML = "<h3>💬 它们聊天</h3><div id=" + '"spChatOut"' + '><div class="spirit-loading">精灵们正在凑到一起…</div></div>' +
+      '<button class="btn ghost" id="chatClose" style="width:100%;margin-top:12px">关闭</button>';
+    mask.hidden = false;
+    modal.hidden = false;
+    modal.style.display = "";
+    const close = () => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; };
+    $("#chatClose").onclick = close;
+    mask.onclick = close;
+    (async () => {
+      const out = $("#spChatOut");
+      if (!out) return;
+      const all = spiritItems();
+      const others = all.filter((x) => x.id !== item.id).sort(() => Math.random() - 0.5).slice(0, 2);
+      const group = [item].concat(others).map((it) => {
+        const rec = Spirits.load()[it.id] || {};
+        return { item: it, persona: rec.persona || Spirits.localPersona(it), avatar: rec.imgUrl || Spirits.localAvatarSvg(it) };
+      });
+      const lines = await Spirits.chat(group);
+      const avatarOf = (who) => {
+        const w = String(who || "").trim();
+        let hit = group.find((g) => (g.persona.name || "") === w);
+        if (!hit) hit = group.find((g) => w && ((g.persona.name || "").indexOf(w) >= 0 || w.indexOf(g.persona.name || "x") >= 0));
+        if (!hit) hit = group.find((g) => (g.item.name || "") === w);
+        return hit ? { url: hit.avatar, name: hit.persona.name || hit.item.name } : null;
+      };
+      const o2 = $("#spChatOut");
+      if (!o2) return;
+      o2.innerHTML = '<div class="spirit-chat">' + lines.map((l, i) => {
+        const a = avatarOf(l.who);
+        return '<div class="spirit-row' + (i % 2 ? " alt" : "") + '">' +
+          '<img class="spirit-avatar" src="' + esc(a ? a.url : Spirits.localAvatarSvg(item)) + '" alt="">' +
+          '<div class="spirit-bubble"><span class="spirit-who">' + esc(l.who) + "</span>" + esc(l.text) + "</div></div>";
+      }).join("") + "</div>" +
+        '<div class="spirit-foot">（剧情由 ' + esc(Spirits.textInfo().key ? (Spirits.textInfo().label || "AI") : "本地模板") + " 现编）</div>";
+    })();
   }
 
   // 补齐性格（一次把缺的都补上，再统一刷新）与当天来信
@@ -2809,7 +3382,7 @@
       (si.canBreak ? '<button class="btn primary spirit-break-btn" id="spBreak">✨ 突破 →' + esc(si.next) + "</button>" : "") +
       '<button class="btn ghost" id="spNewLook">🔁 换形象</button>' +
       '<button class="btn ghost" id="spChat">💬 它们聊天</button>' +
-      '<button class="btn ghost" id="spLetter">💌 给我写信</button>' +
+      '<button class="btn ghost" id="spLetter">📔 写日记</button>' +
       "</div>" +
       '<div class="spirit-out" id="spiritOut"></div>' +
       '<button class="btn primary" id="spClose" style="width:100%;margin-top:12px">关闭</button>' +
@@ -2986,19 +3559,16 @@
       }).join("") + "</div>" +
         '<div class="spirit-foot">（剧情由 ' + esc(Spirits.textInfo().key ? (Spirits.textInfo().label || "AI") : "本地模板") + " 现编）</div>";
     };
-    // 写信
+    // 写日记（v109：原来的「给我写信」改成了日记，正文也会存进详情页的日记本）
     $("#spLetter").onclick = async () => {
-      out.innerHTML = '<div class="spirit-loading">💌 正在写信…</div>';
+      out.innerHTML = '<div class="spirit-loading">📔 它正在写日记…</div>';
       const s = Spirits.load();
       const r = Spirits.ensureIn(s, item.id);
       const pp = r.persona || Spirits.localPersona(item);
-      const i2 = item.lastPlayedAt ? Math.floor((Date.now() - item.lastPlayedAt) / 86400000) : null;
-      const text = await Spirits.letter({ item, persona: pp, idleDays: i2 }, (user && user.displayName) || "");
-      r.letters.push({ at: Date.now(), text, from: pp.name || item.name });
-      r.letters = r.letters.slice(-20);
-      r.lastLetterDay = Spirits.todayKey();
-      Spirits.save(s);
-      out.innerHTML = '<div class="spirit-letter-body">' + esc(text).replace(/\n/g, "<br>") + "</div>";
+      const ap2 = Spirits.appearanceOf(item, r.appearanceSeed || 0, r.gender || "");
+      const text = await Spirits.diaryNow(item, r, ap2, diaryCtx(item, r));
+      out.innerHTML = '<div class="spirit-letter-body">' + esc(text).replace(/\n/g, "<br>") + "</div>" +
+        '<div class="spirit-foot">已存进它的日记本（详情页「📔 日记本」里能看到）</div>';
     };
   }
 
@@ -3029,7 +3599,7 @@
       '<button type="button" class="btn ghost" id="imgListModels" style="width:100%;margin-top:6px;font-size:12px">📋 拉取我账号里的可用模型</button></div>' +
       '<div class="form-group"><div class="form-label">接口地址 <small>用服务商默认时留空</small></div>' +
       '<input class="form-input" id="imgEndpoint" placeholder="https://.../v1/images/generations" value="' + esc(cfg.endpoint || "") + '"></div>' +
-      '<div class="form-group"><div class="form-label">出图尺寸 <small>Seedream 5 要求 ≥368 万像素（2K 稳过），选竖版就是立绘</small></div>' +
+      '<div class="form-group"><div class="form-label">出图尺寸 <small>默认竖版立绘 1728x2304（3:4）；尺寸不对会自动换一档</small></div>' +
       '<div class="prov-row" id="sizeRow">' +
       Spirits.SIZE_PRESETS.map((sz) =>
         '<button type="button" class="prov-chip' + ((cfg.size || Spirits.DEFAULT_SIZE) === sz.v ? " active" : "") + '" data-size="' + sz.v + '">' +
@@ -5412,6 +5982,8 @@
     else if (h === "#/stats") renderStatsPage();
     else if (h === "#/quest") renderQuestPage();
     else if (h === "#/spirit") renderSpiritPage();   // 🍡 挂瓷精灵（占原「分类」的导航位）
+    else if (h.startsWith("#/spirit/")) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));   // 每只精灵的独立页面
+    else if (h.startsWith("#/room/")) renderRoomPage(decodeURIComponent(h.slice(7)));             // 小房间
     else if (h === "#/fav") renderFavPage();
     else if (h.startsWith("#/box/")) renderBoxPage(decodeURIComponent(h.slice(6)));
     else if (h === "#/" || h === "#") renderHome();
@@ -5511,7 +6083,7 @@
     let active = "home";
     if (h === "#/settings") active = "settings";
     else if (h === "#/cat") active = "cat";
-    else if (h === "#/spirit") active = "spirit";
+    else if (h === "#/spirit" || h.indexOf("#/spirit/") === 0 || h.indexOf("#/room/") === 0) active = "spirit";
     else if (h === "#/stats") active = "stats";
     else if (h === "#/quest") active = "quest";
     else if (h === "#/fav") active = "fav";
@@ -5520,6 +6092,7 @@
       if (tab === "add") return;
       t.classList.toggle("active", tab === active);
     });
+    updateStoryDot();
   }
   tabbar.querySelectorAll(".tab-item").forEach((t) => {
     t.addEventListener("click", () => {

@@ -242,6 +242,10 @@
     blackgray: "deep charcoal gray", duo: "vivid multicolored patches", lightflower: "soft pale pink",
     deepflower: "deep rose pink",
   };
+  const COLOR_ZH = {
+    white: "奶白", green: "绿", yellowbrown: "黄棕", blackgray: "黑灰",
+    duo: "多宝多彩", lightflower: "浅花", deepflower: "深花",
+  };
   const SOFT_EN = {
     soft: "extremely soft and squishy mochi-like round body, relaxed happy sleepy eyes",
     slight: "slightly soft smooth polished surface, calm gentle expression",
@@ -250,7 +254,10 @@
   function promptFor(item, styleKey, stage, appearance) {
     const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
     const st = styleOf(item, key).text;
-    const color = COLOR_EN[item.color] || "jade green";
+    // 颜色：优先用"从手串照片里采到的真实主色"（用户要求立绘要贴近原串），拿不到才退回颜色分类
+    const bead = beadColor(item);
+    const color = (bead && bead.word) ? bead.word : (COLOR_EN[item.color] || "jade green");
+    const colorHint = (bead && bead.hex) ? (", the exact color sampled from the real bracelet is " + bead.hex + ", keep the character close to this color") : "";
     const soft = SOFT_EN[item.softness || ""] || SOFT_EN[""];
     const isChar = (key === "anime");          // 日漫 Q 版角色：颜色落在头发/衣服上
     const lk = stageDef(stage == null ? 1 : stage).look;   // 该形态的外形描述（进阶的核心）
@@ -258,13 +265,13 @@
     let cmp;
     if (isChar) {
       // 先写死"这个人是谁"（外观锚点），再写"他现在多大"（形态描述）→ 突破只会长大，不会换人
-      cmp = appearancePrompt(ap) + ", with " + color + " hair and " + color + " themed outfit, " +
+      cmp = appearancePrompt(ap) + ", with " + color + " hair and " + color + " themed outfit" + colorHint + ", " +
         lk + ", " +
         "full body character illustration, standing pose, whole body visible from head to toe, " +
         "detailed outfit and shoes, vertical composition, " +
         "centered with comfortable margin around the character";
     } else {
-      cmp = "a " + (ap.gender === "boy" ? "boy" : "girl") + " creature mascot whose body color is " + color +
+      cmp = "a " + (ap.gender === "boy" ? "boy" : "girl") + " creature mascot whose body color is " + color + colorHint +
         ", wearing " + ap.acc + ", " + ap.vibe + " personality, " + lk + ", " +
         "full body creature illustration, whole body visible, centered with comfortable margin";
     }
@@ -609,6 +616,273 @@
     return localLetter(spirit, userName);
   }
 
+  /* ============================================================
+   * v109：中文人物设定 / 精灵日记 / 房间剧情
+   * ============================================================ */
+
+  /* ---------- 手串真实主色（让立绘颜色贴近实物） ---------- */
+  const BEAD_KEY = "ww_beadcolor";          // { [itemId]: { hex, word, at } }
+  function loadBead() { try { return JSON.parse(localStorage.getItem(BEAD_KEY) || "{}") || {}; } catch (e) { return {}; } }
+  function beadColor(item) { return item && loadBead()[item.id] ? loadBead()[item.id] : null; }
+  function hueName(h, s, l) {
+    if (s < 0.12) return l > 0.72 ? "ivory white" : (l < 0.3 ? "deep charcoal black" : "soft neutral grey");
+    if (h < 15 || h >= 345) return l < 0.4 ? "deep wine red" : "warm coral red";
+    if (h < 45) return l < 0.4 ? "rich reddish brown" : "warm honey amber";
+    if (h < 70) return l < 0.4 ? "dark olive brown" : "golden yellow";
+    if (h < 105) return l < 0.4 ? "deep forest green" : "fresh yellow green";
+    if (h < 165) return l < 0.4 ? "deep jade green" : "clear jade green";
+    if (h < 200) return "teal blue green";
+    if (h < 260) return l < 0.4 ? "deep navy blue" : "soft sky blue";
+    if (h < 300) return "violet purple";
+    return "rose pink";
+  }
+  function hexToWord(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+    if (!m) return "";
+    const n = parseInt(m[1], 16);
+    const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+    const s = max === min ? 0 : (l > 0.5 ? (max - min) / (2 - max - min) : (max - min) / (max + min));
+    let h = 0;
+    if (max !== min) {
+      if (max === r) h = ((g - b) / (max - min)) % 6;
+      else if (max === g) h = (b - r) / (max - min) + 2;
+      else h = (r - g) / (max - min) + 4;
+      h = (h * 60 + 360) % 360;
+    }
+    return hueName(h, s, l);
+  }
+  // 从手串照片中心采样，取一个"实物主色"（失败返回 null，调用方退回颜色分类）
+  async function detectBeadColor(item) {
+    const p = item && item.photos && item.photos[0];
+    const src = p && (p.url || (p.data ? "" : ""));
+    if (!src) return null;
+    return await new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+          const scale = Math.min(1, 80 / Math.max(w, h));
+          const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+          const cv = document.createElement("canvas");
+          cv.width = cw; cv.height = ch;
+          const c = cv.getContext("2d");
+          c.drawImage(img, 0, 0, cw, ch);
+          const d = c.getImageData(Math.floor(cw * 0.22), Math.floor(ch * 0.22), Math.max(1, Math.floor(cw * 0.56)), Math.max(1, Math.floor(ch * 0.56))).data;
+          let r = 0, g = 0, b = 0, n = 0;
+          for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+          if (!n) { resolve(null); return; }
+          r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n);
+          const hex = "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+          const out = { hex: hex, word: hexToWord(hex), at: Date.now() };
+          const all = loadBead();
+          all[item.id] = out;
+          try { localStorage.setItem(BEAD_KEY, JSON.stringify(all)); } catch (e) { /* 忽略 */ }
+          resolve(out);
+        } catch (e) { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  }
+
+  /* ---------- 中文人物设定（200-300 字） ---------- */
+  const TRAIT_ZH_EXTRA = {
+    soft: ["抱着睡最舒服", "一碰就想化", "慢半拍的温柔"],
+    slight: ["嘴上不说但心里有数", "安静地陪着你", "有点小讲究"],
+    "": ["沉稳老练", "不争不抢", "晒太阳专业户"],
+  };
+  function personaZhLocal(item, ap, persona, stage, days, plays) {
+    const p = persona || {};
+    const def = stageDef(stage);
+    const colorName = COLOR_ZH[item.color] || "素色";
+    const softName = item.softness === "soft" ? "很软糯" : (item.softness === "slight" ? "微糯" : "偏硬朗");
+    const hair = HAIR_ZH[ap.hair] || ap.hair, eyes = EYES_ZH[ap.eyes] || ap.eyes, acc = ACC_ZH[ap.acc] || ap.acc;
+    const vibe = VIBE_ZH[ap.vibe] || ap.vibe;
+    const extra = (TRAIT_ZH_EXTRA[item.softness || ""] || TRAIT_ZH_EXTRA[""])[hashStr(item.id) % 3];
+    const name = p.name || item.name || "它";
+    return [
+      (p.name || item.name || "这只精灵") + "的原型是主人收藏的一串「" + (item.name || "手串") + "」，" + colorName + "，" + softName + "。" +
+      "盘到挂瓷的那天晚上，它从珠子里醒了过来，现在是一只" + def.name + "的" + (ap.gender === "boy" ? "小男孩" : "小女孩") + "精灵。",
+      "外形上，它" + (ap.gender === "boy" ? "留着" : "梳着") + hair + "，" + eyes + "的眼睛，" + acc + "是它身上最像原串的记号；" +
+      "衣服和头发的颜色都取自原来的珠子，" + (colorName.indexOf("多") === 0 ? "五颜六色，像一串会走路的多宝" : "就是那一种" + colorName + "，看久了很安稳") + "。",
+      "性格" + vibe + "，说话" + (p.line ? "爱用「" + p.line + "」这种腔调" : "慢悠悠的") + "，" + extra + "。" +
+      "它不太会催人，主人忙的时候就自己找个角落待着，" + (plays > 12 ? "被盘得多了，已经很有底气" : "被摸得还不多，偶尔会小声提醒一下") + "。",
+      "到今天为止，它陪着主人 " + (days || 0) + " 天了，被正经盘过 " + (plays || 0) + " 次。" +
+      "它最喜欢的位置是主人的手心，其次是靠近窗户的那一小块桌子——那里下午会有光。",
+    ].join("");
+  }
+  async function personaZh(item, ap, persona, stage, days, plays, force) {
+    const store = load();
+    const rec = ensureIn(store, item.id);
+    const key = (ap.gender || "") + "|" + ap.hair + "|" + ap.eyes + "|" + ap.acc + "|" + (item.color || "") + "|" + (persona && persona.name || "");
+    if (!force && rec.personaZh && rec.personaZhKey === key) return rec.personaZh;
+    let txt = "";
+    if (getAiKey()) {
+      try {
+        const sys = "你在为一个中文文玩收藏 App 写「挂瓷精灵」的人物设定卡。手串盘到挂瓷会成精，变成一只 Q 版小精灵。"
+          + "请写一段连贯的中文人物设定，200-300 字，用第三人称旁观介绍（不要用「你」称呼精灵），"
+          + "必须包含：① 外形（性别、发型、瞳色、配饰、衣服/头发颜色要说明取自古珠的颜色）"
+          + "② 性格（含 2-3 个具体小习惯）③ 与主人的关系与日常。"
+          + "语气温和好读，不要 Markdown、不要标题、不要分点、不要解释，直接输出正文。";
+        const user = "原型手串：" + (item.name || "未命名") + "；颜色：" + (COLOR_ZH[item.color] || "素色") +
+          "；软糯：" + (item.softness === "soft" ? "软糯" : item.softness === "slight" ? "微糯" : "未标注") +
+          "；形态：" + stageDef(stage).name + "；陪伴 " + (days || 0) + " 天；盘玩 " + (plays || 0) + " 次；" +
+          "固定人设：" + appearanceText(ap) + "；性格基调：" + (VIBE_ZH[ap.vibe] || ap.vibe) +
+          ((persona && persona.traits && persona.traits.length) ? "（" + persona.traits.join("、") + "）" : "") +
+          "。请写它的中文人物设定。";
+        txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 700) || "").trim();
+        txt = txt.replace(/^["「]|["」]$/g, "").trim();
+      } catch (e) { txt = ""; }
+    }
+    if (!txt || txt.length < 60) txt = personaZhLocal(item, ap, persona, stage, days, plays);
+    if (txt.length > 420) txt = txt.slice(0, 420);
+    rec.personaZh = txt;
+    rec.personaZhKey = key;
+    rec.personaZhAt = Date.now();
+    save(store);
+    return txt;
+  }
+
+  /* ---------- 精灵日记（不定时写，一天 0-2 篇） ---------- */
+  const DIARY_MAX = 40;
+  function diarySlots(item, dateKey) {
+    const h = hashStr(String(item.id) + "#" + dateKey);
+    const n = (h % 4 === 0) ? 0 : ((h % 4 === 3) ? 2 : 1);
+    const hours = [8, 11, 14, 17, 20, 22];
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(hours[(h >> (3 + i * 3)) % hours.length]);
+    out.sort((a, b) => a - b);
+    return out;
+  }
+  function diaryLocal(item, rec, ap, ctx) {
+    const p = rec.persona || {};
+    const seed = hashStr(item.id + todayKey() + String((rec.diary || []).length));
+    const idle = ctx && ctx.idleDays != null ? ctx.idleDays : null;
+    const def = stageDef(rec.stage || 1);
+    const colorName = COLOR_ZH[item.color] || "素色";
+    const pool = [
+      "今天主人路过的时候看了我一眼，没摸。我假装在睡觉，其实偷偷亮了一下。",
+      "擦桌子的时候我被挪了个位置，新位置能看到一点点窗外。挺好，能看见天。",
+      "主人手上有点汗，摸我的时候温温的。我不嫌弃，真的。",
+      "我在想一个很严肃的问题：我到底是" + colorName + "的，还是" + colorName + "里最亮的那一颗？",
+      "刚才和隔壁的聊了两句，它说它比我早挂瓷。可我觉得我比它圆。",
+      "今天什么都没发生。什么都没发生的一天，也算一天。我记下来了。",
+      "主人好像有点累。我没敢说话，就把自己擦亮了一点点，让他一眼看到我。",
+      "我做了个梦，梦见自己被串成了一条项链，跟着主人出门了。醒来还在老地方。",
+    ];
+    const head = "第 " + ((ctx && ctx.dayNo) || 1) + " 天 · " + def.name;
+    let body = pick(pool, seed);
+    if (idle != null && idle >= 3) body = "已经 " + idle + " 天没被盘了，我数得很清楚。不是催，就是记一下。";
+    if (ctx && ctx.playedToday) body = "今天被盘了 " + ctx.plays + " 次，身上暖暖的。我喜欢被盘完那一下的安静。";
+    return head + "\n" + body;
+  }
+  async function diaryWrite(item, rec, ap, ctx) {
+    const p = rec.persona || {};
+    if (getAiKey()) {
+      try {
+        const sys = "你在写「挂瓷精灵」的日记。精灵是主人收藏的手串盘到挂瓷后变成的小生物，用第一人称写，"
+          + "简体中文，60-140 字，口语化、可爱、有生活细节，不要 Markdown、不要标题、不要解释，直接写正文。";
+        const user = "精灵设定：" + spiritDesc(item, p, rec.stage) + "；人设：" + appearanceText(ap) +
+          (ctx && ctx.playedToday ? "；今天被盘了 " + ctx.plays + " 次" : "") +
+          (ctx && ctx.idleDays != null ? "；已经 " + ctx.idleDays + " 天没被盘" : "") +
+          "；今天是陪主人的第 " + ((ctx && ctx.dayNo) || 1) + " 天。请写今天的日记。";
+        const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 400) || "").trim();
+        if (txt && txt.length >= 20) {
+          return "第 " + ((ctx && ctx.dayNo) || 1) + " 天 · " + stageDef(rec.stage || 1).name + "\n" + txt.replace(/^["「]|["」]$/g, "").trim();
+        }
+      } catch (e) { /* 兜底 */ }
+    }
+    return diaryLocal(item, rec, ap, ctx);
+  }
+  // 按"今天的排期"补写日记：返回新写的条数
+  async function ensureDiary(item, rec, ap, ctx) {
+    const tk = todayKey();
+    const slots = diarySlots(item, tk);
+    const nowH = new Date().getHours();
+    const list = Array.isArray(rec.diary) ? rec.diary : [];
+    let added = 0;
+    for (let i = 0; i < slots.length; i++) {
+      if (slots[i] > nowH) continue;
+      if (list.some((d) => d && d.date === tk && d.slot === i)) continue;
+      const text = await diaryWrite(item, rec, ap, ctx);
+      list.push({ at: Date.now(), date: tk, slot: i, text: text, ai: !!getAiKey() });
+      added++;
+    }
+    if (added) {
+      rec.diary = list.slice(-DIARY_MAX);
+      const store = load();
+      const r2 = ensureIn(store, item.id);
+      r2.diary = rec.diary;
+      save(store);
+    } else if (!list.length && !rec.diaryAt) {
+      // 第一次进来：先补一篇"开篇日记"，日记本不要是空的
+      const text = await diaryWrite(item, rec, ap, ctx);
+      list.push({ at: Date.now(), date: tk, slot: 0, text: text, ai: !!getAiKey() });
+      rec.diary = list.slice(-DIARY_MAX);
+      rec.diaryAt = Date.now();
+      const store = load();
+      ensureIn(store, item.id).diary = rec.diary;
+      store[item.id].diaryAt = rec.diaryAt;
+      save(store);
+      added = 1;
+    }
+    return added;
+  }
+
+  // 立刻写一篇（详情页「✍️ 让它现在写一篇」用）
+  async function diaryNow(item, rec, ap, ctx) {
+    const text = await diaryWrite(item, rec, ap, ctx);
+    const list = Array.isArray(rec.diary) ? rec.diary : [];
+    list.push({ at: Date.now(), date: todayKey(), slot: 9, text: text, ai: !!getAiKey(), manual: true });
+    rec.diary = list.slice(-DIARY_MAX);
+    rec.diaryAt = Date.now();
+    const store = load();
+    const r2 = ensureIn(store, item.id);
+    r2.diary = rec.diary;
+    r2.diaryAt = rec.diaryAt;
+    save(store);
+    return text;
+  }
+
+  /* ---------- 房间剧情（两只精灵的故事） ---------- */
+  function storyLocal(a, b, level, roomName, aff) {
+    const na = (a.persona && a.persona.name) || a.item.name || "它";
+    const nb = (b.persona && b.persona.name) || b.item.name || "它";
+    const seed = hashStr(a.item.id + b.item.id + level);
+    const stage = ["刚认识，还互相打量", "已经熟络，开始互相打趣", "默契到不用说话", "像老朋友一样交心", "彼此都懂的知己"][Math.min(level, 4)];
+    const line = pick([
+      "「你先晒还是我先晒？」" + na + "问。" + nb + "没答，只是往窗边挪了挪，把最好的那块光让了出来。",
+      na + "把白天听到的动静讲了一遍，" + nb + "听完只说了一句：「你记性真好。」" + na + "得意了一整晚。",
+      "主人今天没来。" + na + "数到第三十下的时候，" + nb + "开口了：「别数了，他总会来的。」",
+      na + "不小心滚到了桌子边缘，" + nb + "用身体顶住了它。之后两只都没提这件事。",
+    ], seed);
+    const line2 = pick([
+      "外面下雨，" + roomName + "里安静得能听见彼此的声音。它们谁都没睡，就那么待着，直到天亮。",
+      "有一天主人顺手把两只一起拿起来盘，" + na + "和" + nb + "第一次靠得那么近，谁都没说话，但都悄悄亮了一下。",
+      "它们开始有了自己的小规矩：谁先被盘，谁就负责讲今天听到的事。",
+      "夜里" + roomName + "很暗，" + nb + "说：「其实我不太怕黑。」" + na + "说：「我知道，但我还是想挨着你。」",
+    ], seed + 5);
+    return "【" + roomName + " · 第 " + (level + 1) + " 段】\n" +
+      na + "和" + nb + "认识第 " + (aff || 0) + " 天了，现在是「" + stage + "」的关系。\n" + line + "\n" + line2;
+  }
+  async function roomStory(a, b, level, roomName, aff) {
+    if (getAiKey()) {
+      try {
+        const sys = "你在写一个中文文玩 App 里的「精灵小剧场」。主人的手串盘到挂瓷会变成小精灵，它们住在同一个房间里，"
+          + "住得越久越有默契。请写一段 250-400 字的小故事：有场景、有动作、有 2-6 句对白，"
+          + "温柔可爱、有生活质感、不要煽情说教；不要 Markdown、不要标题、不要分点、不要解释，直接输出正文。";
+        const user = "房间：" + roomName + "；两只精灵已经相处 " + (aff || 0) + " 天（默契等级 " + (level + 1) + "/5）。\n" +
+          "甲：" + spiritDesc(a.item, a.persona, a.stage) + "\n乙：" + spiritDesc(b.item, b.persona, b.stage) +
+          "\n请写它们之间刚发生的这段故事。";
+        const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 900) || "").trim();
+        if (txt && txt.length >= 80) return "【" + roomName + " · 第 " + (level + 1) + " 段】\n" + txt.replace(/^["「]|["」]$/g, "").trim();
+      } catch (e) { /* 兜底 */ }
+    }
+    return storyLocal(a, b, level, roomName, aff);
+  }
+
   /* ---------- 对外接口 ---------- */
   /* ---------- 拉取账号可用模型（方舟/兼容服务都能用；用户开通后一键选，不用手打 ID） ---------- */
   function modelsUrlFrom(endpoint) {
@@ -719,10 +993,14 @@
   window.Spirits = {
     PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo,
     STAGES, stageDef, stageInfo, growthOf,
-    appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, EYE_COLORS, ACCESSORIES,
+    appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
+    COLOR_ZH, HAIR_ZH, EYES_ZH, ACC_ZH, VIBE_ZH,
     TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText, listModels,
     promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
     localPersona, persona, chat, letter, localChat, localLetter,
     todayKey, load, save, ensureIn,
+    // v109：真实主色 / 中文人物设定 / 日记 / 房间剧情
+    beadColor, detectBeadColor, hexToWord,
+    personaZh, personaZhLocal, ensureDiary, diarySlots, diaryLocal, diaryNow, roomStory, storyLocal,
   };
 })();
