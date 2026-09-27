@@ -2415,9 +2415,9 @@
     return focusVisible(allItems).filter((i) => !i.gifted && i.playStatus === "done");
   }
   // 精灵形象：优先 AI 绘图（带缓存），失败/断网自动换成本地程序化小精灵
-  // face=true → 卡片缩略图要"裁头像"：AI 立绘是竖版全身像，放大并往上对齐正好框住脑袋
-  //（本地兜底形象本身就是一张方形脸贴图，不能裁，所以只有存在 AI 图时才加 face）
-  function spiritImgHtml(item, rec, size, cls, face) {
+  // extraStyle：缩略图的取景参数（见 analyzeFaceBox / spiritThumbHtml）
+  // face：还没算出取景时用 CSS 固定比例先顶着（本地兜底脸贴图本身是方形，不能裁，所以只在有 AI 图时才加）
+  function spiritImgHtml(item, rec, size, cls, extraStyle, face) {
     const cfg = Spirits.getImageCfg();
     let url = rec && rec.imgUrl;
     if (!url) {
@@ -2427,12 +2427,96 @@
     const src = url || fallback;
     const klass = (cls || "spirit-img") + (face && url ? " face" : "");
     return '<img class="' + klass + '" src="' + esc(src) + '" data-fallback="' + esc(fallback) + '"' +
-      ' data-item="' + esc(item.id) + '" alt="' + esc((rec && rec.persona && rec.persona.name) || item.name || "精灵") + '"' +
-      ' loading="lazy" style="width:' + size + "px;height:" + size + 'px">';
+      ' data-item="' + esc(item.id) + '" data-size="' + size + '" alt="' + esc((rec && rec.persona && rec.persona.name) || item.name || "精灵") + '"' +
+      ' loading="lazy" style="width:' + size + "px;height:" + size + 'px' + (extraStyle ? ";" + extraStyle : "") + '">';
   }
-  // 卡片缩略图：正方形小框裁头像（框体负责裁切，图在里面放大）
+
+  /* ---------- 头像取景：从立绘里自动找出"脑袋"那一块 ----------
+     出图构图每张都不一样（角色有时很小、有时贴顶，之前甚至被画成多格图鉴），
+     固定比例裁切必然有的裁到空白、有的把脸切掉 → 所以按**图片内容**自动算：
+     ① 用四角颜色认出背景色；② 找出人物的外接框；③ 取最上面 40%（头 + 一点肩）；
+     ④ 横向以"最上面 20% 那一段的像素重心"为中心（抬手/歪头的也不会偏）。
+     结果存成比例 {l,t,w,ar}，渲染时换算成 img 的放大与偏移（见 spiritThumbHtml）。 */
+  function analyzeFaceBox(url) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const ar = (img.width || 1) / (img.height || 1);      // 宽/高
+          const W = 140, H = Math.max(1, Math.round(W / ar));
+          const cv = document.createElement("canvas");
+          cv.width = W; cv.height = H;
+          const ctx = cv.getContext("2d");
+          ctx.drawImage(img, 0, 0, W, H);
+          const d = ctx.getImageData(0, 0, W, H).data;
+          let br = 0, bg = 0, bb = 0, n = 0;
+          [[0, 0], [W - 4, 0], [0, H - 4], [W - 4, H - 4]].forEach((c) => {
+            for (let y = c[1]; y < Math.min(c[1] + 4, H); y++) for (let x = c[0]; x < Math.min(c[0] + 4, W); x++) {
+              const i = (y * W + x) * 4; br += d[i]; bg += d[i + 1]; bb += d[i + 2]; n++;
+            }
+          });
+          br /= n; bg /= n; bb /= n;
+          let top = -1, bot = -1, cnt = 0;
+          const rowCnt = new Array(H).fill(0), rowSum = new Array(H).fill(0);
+          for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+              const i = (y * W + x) * 4;
+              if (Math.max(Math.abs(d[i] - br), Math.abs(d[i + 1] - bg), Math.abs(d[i + 2] - bb)) <= 30) continue;
+              if (top < 0) top = y;
+              bot = y; cnt++;
+              rowCnt[y]++; rowSum[y] += x;
+            }
+          }
+          if (top < 0 || bot - top < 6 || cnt < W * H * 0.01) { resolve(null); return; }   // 基本一片纯色 → 交回固定比例兜底
+          const chH = bot - top + 1;
+          const headH = Math.max(8, Math.round(chH * 0.40));
+          let cx = 0, cn = 0;
+          const bandEnd = Math.min(bot, top + Math.max(5, Math.round(chH * 0.20)));
+          for (let y = top; y <= bandEnd; y++) { cx += rowSum[y]; cn += rowCnt[y]; }
+          cx = cn ? cx / cn : W / 2;
+          let side = Math.max(headH * 1.15, W * 0.22);     // 留点余量；也别放太大（放大过头会糊）
+          side = Math.min(side, W, H);
+          const left = Math.max(0, Math.min(cx - side / 2, W - side));
+          const tp = Math.max(0, Math.min(top - side * 0.05, H - side));
+          resolve({ l: left / W, t: tp / H, w: side / W, ar: ar });
+        } catch (e) { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+  }
+  // 卡片缩略图：正方形小框，里面按取景参数放大 + 偏移，正好框住脑袋
   function spiritThumbHtml(item, rec, size) {
-    return '<span class="spirit-thumb">' + spiritImgHtml(item, rec, size, "spirit-img", true) + "</span>";
+    const f = rec && rec.face;
+    const ok = !!(f && f.w > 0 && f.ar > 0);
+    let extra = "";
+    if (ok) {
+      const wr = Math.round(size / f.w);
+      extra = "position:absolute;left:" + (-Math.round(f.l * wr)) + "px;top:" + (-Math.round((f.t * wr) / f.ar)) +
+        "px;width:" + wr + "px;height:auto";
+    }
+    return '<span class="spirit-thumb">' + spiritImgHtml(item, rec, size, "spirit-img", extra, !ok) + "</span>";
+  }
+  // 老图（v106 之前生成的）没有取景数据 → 进精灵页时补算一次并存起来，不用重新出图
+  let _faceBusy = false;
+  async function ensureSpiritFaces(list) {
+    if (_faceBusy) return;
+    _faceBusy = true;
+    try {
+      let changed = false;
+      for (const it of list) {
+        const st = Spirits.load();
+        const rec = Spirits.ensureIn(st, it.id);
+        if (!rec.imgUrl || rec.face) continue;
+        const f = await analyzeFaceBox(rec.imgUrl);
+        rec.face = f || { l: 0, t: 0, w: 0, ar: 0 };   // 算不出来也记一笔（w=0 表示继续用固定比例），免得每次重算
+        Spirits.save(st);
+        changed = true;
+      }
+      if (changed && location.hash === "#/spirit") renderSpiritPage();
+    } catch (e) { /* 静默 */ }
+    _faceBusy = false;
   }
   // 图片挂了 → 自动切本地形象（只切一次，避免死循环；本地形象是方形脸贴图，顺带去掉裁头像）
   function bindSpiritImgFallback(root) {
@@ -2440,7 +2524,9 @@
       img.addEventListener("error", () => {
         if (img.dataset.fellback) return;
         img.dataset.fellback = "1";
-        img.classList.remove("face");
+        const s = Number(img.dataset.size) || 96;
+        img.className = "spirit-img" + (/big/.test(img.className) ? " big" : "");
+        img.style.cssText = "width:" + s + "px;height:" + s + "px";
         img.src = img.dataset.fallback;
       });
     });
@@ -2493,6 +2579,7 @@
     rec.imgUrl = url;
     rec.imgAt = Date.now();
     rec.imgErr = "";
+    rec.face = await analyzeFaceBox(url);   // 顺手算出"头像取景"，缩略图就不用等下一轮
     bumpGenCount(rec);
     return url;
   }
@@ -2517,7 +2604,7 @@
         const rec = Spirits.ensureIn(st, it.id);
         if (!spiritImgStale(rec)) continue;          // 已经是本地存好的图 → 不再烧额度
         try {
-          const r = await Spirits.generateImage(it, rec.variant || 0, null, rec.stage || 1, { appearanceSeed: rec.appearanceSeed || 0 });
+          const r = await Spirits.generateImage(it, rec.variant || 0, null, rec.stage || 1, { appearanceSeed: rec.appearanceSeed || 0, gender: rec.gender || "" });
           await saveSpiritImage(it, rec, r, rec.stage || 1);
           Spirits.save(st);
           changed = true;
@@ -2569,7 +2656,8 @@
     html += "</div>";
 
     html += '<div class="section-title" style="margin-top:14px">🍡 我的精灵（' + list.length + '）' +
-      '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点击看它说话</small></div>';
+      '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点击看它说话</small>' +
+      '<button type="button" class="link-btn" id="spRedrawAll" style="float:right;font-size:11px">🖌 全部重画</button></div>';
     html += '<div class="spirit-grid">';
     list.forEach((it) => {
       const rec = store[it.id] || {};
@@ -2598,9 +2686,29 @@
       const it = allItems.find((x) => x.id === c.dataset.spirit);
       if (it) showSpiritModal(it);
     }));
-    // 异步补性格 + 今天的信 + （API 通道）AI 出图
+    // 🖌 全部重画：画风/prompt 升级后，一次性把已有立绘全部作废重出（先问一句，别静默烧额度）
+    const redrawAll = $("#spRedrawAll");
+    if (redrawAll) redrawAll.onclick = async () => {
+      const st0 = Spirits.load();
+      const n = list.filter((it) => st0[it.id] && st0[it.id].imgUrl).length;
+      if (!n) { toast("还没有立绘可重画"); return; }
+      const yes = await confirmModal("要重画全部 " + n + " 只精灵吗？",
+        "已有的立绘（含进化史里的旧图）都会作废、按最新画风重画，消耗 " + n + " 次出图额度（每只 1 张）。想只重画某一只，进它的详情页点「🔁 换形象」。",
+        "重画 " + n + " 张", true);
+      if (!yes) return;
+      const st = Spirits.load();
+      list.forEach((it) => {
+        const r = Spirits.ensureIn(st, it.id);
+        r.imgUrl = ""; r.imgAt = 0; r.face = null; r._imgErr = ""; r.imgHistory = [];
+      });
+      Spirits.save(st);
+      toast("开始重画 " + n + " 只精灵…");
+      renderSpiritPage();
+    };
+    // 异步补性格 + 今天的信 + （API 通道）AI 出图 + 老图的头像取景
     ensureSpiritData(list, !todayLetter);
     ensureSpiritImages(list);
+    ensureSpiritFaces(list);
   }
 
   // 补齐性格（一次把缺的都补上，再统一刷新）与当天来信
@@ -2653,7 +2761,7 @@
     const p = rec.persona || Spirits.localPersona(item);
     const idle = item.lastPlayedAt ? Math.floor((Date.now() - item.lastPlayedAt) / 86400000) : null;
     const si = Spirits.stageInfo(item, rec.stage, DB.daysWith(item));
-    const ap = Spirits.appearanceOf(item, rec.appearanceSeed || 0);   // 固定人设（性别/发型/瞳色/配饰）
+    const ap = Spirits.appearanceOf(item, rec.appearanceSeed || 0, rec.gender || "");   // 固定人设（性别/发型/瞳色/配饰）
     const colorName = { white: "奶白", green: "绿", yellowbrown: "黄棕", blackgray: "黑灰", duo: "多宝", lightflower: "浅花", deepflower: "深花" }[item.color] || "素色";
     const softName = item.softness === "soft" ? "软糯" : (item.softness === "slight" ? "微糯" : "未标注");
     // 形态进度条 + 已走过的形态（进化史）
@@ -2679,6 +2787,7 @@
       // 固定人设：突破/换形象都保留这些特征（不会变性、不会换人）
       '<div class="spirit-look">🔒 ' + esc(Spirits.appearanceText(ap)) +
       '<button type="button" class="link-btn" id="spReRoll">🎲 换外观设定</button>' +
+      '<button type="button" class="link-btn" id="spGender">' + (ap.gender === "boy" ? "👧 换成女孩" : "👦 换成男孩") + "</button>" +
       '<span class="spirit-gen-note">已为它出图 ' + (Number(rec.genCount) || 1) + " 张 · 本机累计 " + genTotal() + " 张</span></div>" +
       (si.isMax
         ? '<div class="spirit-prog max">👑 已是完成体，不再进阶</div>'
@@ -2713,18 +2822,46 @@
       r.imgAt = 0;
       r._imgErr = "";
       Spirits.save(s);
-      const nap = Spirits.appearanceOf(item, r.appearanceSeed);
+      const nap = Spirits.appearanceOf(item, r.appearanceSeed, r.gender || "");
       toast("新设定：" + Spirits.appearanceText(nap) + "（正在重画…）");
       const img = modal.querySelector("img[data-item]");
       if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; }
       try {
-        const res = await Spirits.generateImage(item, r.variant || 0, null, r.stage || 1, { appearanceSeed: r.appearanceSeed });
+        const res = await Spirits.generateImage(item, r.variant || 0, null, r.stage || 1, { appearanceSeed: r.appearanceSeed, gender: r.gender || "" });
         const s2 = Spirits.load();
         const r2 = Spirits.ensureIn(s2, item.id);
         await saveSpiritImage(item, r2, res, r2.stage || 1);
         Spirits.save(s2);
         close();
         showSpiritModal(item);   // 重新打开，刷新人设标签与立绘
+      } catch (e) {
+        toast("重画出错：" + ((e && e.message) || ""));
+      }
+    };
+
+    // 👦/👧 换性别：只翻性别，发型/瞳色/配饰都不动（用户反馈"女孩太多"，也想自己控制）
+    const gbtn = $("#spGender");
+    if (gbtn) gbtn.onclick = async () => {
+      const s = Spirits.load();
+      const r = Spirits.ensureIn(s, item.id);
+      const cur = Spirits.appearanceOf(item, r.appearanceSeed || 0, r.gender || "").gender;
+      r.gender = cur === "boy" ? "girl" : "boy";
+      r.imgUrl = "";
+      r.imgAt = 0;
+      r.face = null;
+      r._imgErr = "";
+      Spirits.save(s);
+      toast("改成" + (r.gender === "boy" ? "男孩" : "女孩") + "了（正在重画…）");
+      const img = modal.querySelector("img[data-item]");
+      if (img) { img.dataset.fellback = "1"; img.src = img.dataset.fallback; }
+      try {
+        const res = await Spirits.generateImage(item, r.variant || 0, null, r.stage || 1, { appearanceSeed: r.appearanceSeed || 0, gender: r.gender });
+        const s2 = Spirits.load();
+        const r2 = Spirits.ensureIn(s2, item.id);
+        await saveSpiritImage(item, r2, res, r2.stage || 1);
+        Spirits.save(s2);
+        close();
+        showSpiritModal(item);
       } catch (e) {
         toast("重画出错：" + ((e && e.message) || ""));
       }
@@ -2742,7 +2879,7 @@
       brk.disabled = true; brk.textContent = "突破中…";
       try {
         // 突破：把"突破前那张图"当参考图传过去 → 保证是同一个人长大，不会变性/换人
-        const res = await Spirits.generateImage(item, 0, null, nextStage, { appearanceSeed: r0.appearanceSeed || 0, ref: r0.imgUrl || "" });
+        const res = await Spirits.generateImage(item, 0, null, nextStage, { appearanceSeed: r0.appearanceSeed || 0, gender: r0.gender || "", ref: r0.imgUrl || "" });
         const s1 = Spirits.load();
         const r1 = Spirits.ensureIn(s1, item.id);
         const hist = Array.isArray(r1.imgHistory) ? r1.imgHistory : [];
@@ -2791,7 +2928,7 @@
       }
       toast("正在重画同一个角色…（消耗 1 次出图）");
       try {
-        const res = await Spirits.generateImage(item, r.variant, null, r.stage || 1, { appearanceSeed: r.appearanceSeed || 0, ref: prevImg });
+        const res = await Spirits.generateImage(item, r.variant, null, r.stage || 1, { appearanceSeed: r.appearanceSeed || 0, gender: r.gender || "", ref: prevImg });
         const s2 = Spirits.load();
         const r2 = Spirits.ensureIn(s2, item.id);
         const url = await saveSpiritImage(item, r2, res, r2.stage || 1);

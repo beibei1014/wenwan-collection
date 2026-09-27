@@ -50,10 +50,12 @@
   const VIBES = ["calm and reliable", "cheerful and talkative", "quiet and thoughtful", "playful and mischievous",
     "gentle and caring", "cool and a little proud"];
   // 由「串 id + 外观种子」决定；外观种子只在用户点「换外观设定」时变
-  function appearanceOf(item, seedN) {
+  // gender 可被用户强制（rec.gender："boy"/"girl"）；没强制时按 2/3 男孩的概率随机（用户反馈"女孩太多"）
+  function appearanceOf(item, seedN, gender) {
     const h = hashStr(String((item && item.id) || "") + "#" + (seedN || 0));
+    const g = (gender === "boy" || gender === "girl") ? gender : ((h % 3) !== 0 ? "boy" : "girl");
     return {
-      gender: (h % 2 === 0) ? "boy" : "girl",
+      gender: g,
       hair: HAIR_STYLES[(h >> 3) % HAIR_STYLES.length],
       eyes: EYE_COLORS[(h >> 6) % EYE_COLORS.length],
       acc: ACCESSORIES[(h >> 9) % ACCESSORIES.length],
@@ -68,9 +70,18 @@
       ap.eyes + " eyes, wearing " + ap.acc + ", " + ap.vibe + " personality";
   }
   // 一致性硬约束：每次出图都带上，防止突破后"换人"
+  // ⚠️ 这里曾经写过 "character evolution sheet"（进化图鉴）→ 模型真的画成了**多格图鉴**：
+  //    一张图里两只角色、还自己写上 NEWBORN / YOUNG BOY 标题字（用户实测截图）。所以现在反过来：
+  //    明确"只画一个人、不许画分格、不许写字"，见 SINGLE。
   const CONSISTENCY = "same character across all ages, keep exactly the same gender, same hair style and hair color, " +
-    "same eye color, same accessory and same overall design, only grow older, character evolution sheet, " +
+    "same eye color, same accessory and same overall design, only grow older, " +
     "consistent character design, do not change gender, do not change identity";
+  // 只画一个人 + 不许有文字
+  // ⚠️ 连 "character sheet" / "turnaround" 这种词都别出现（哪怕写成 "no character sheet"）——
+  //    实测这两个词一出现，模型就容易画成多格图鉴，所以整句里干脆不出现它们。
+  const SINGLE = "solo, single character only, exactly one figure in the whole image, one person, plain simple background, " +
+    "no other characters, no clones, no panels, no collage, no multiple views, no background characters, " +
+    "no text, no letters, no words, no numbers, no title, no labels, no captions, no watermark, no signature, no logo";
 
   /* ---------- 进阶系统：四形态、三次突破（v103） ----------
      幼生期 → 成长期 → 觉醒期 → 完成体；成长值 = 盘玩次数×3 + 陪伴天数×1
@@ -211,14 +222,14 @@
       cmp = appearancePrompt(ap) + ", with " + color + " hair and " + color + " themed outfit, " +
         lk + ", " +
         "full body character illustration, standing pose, whole body visible from head to toe, " +
-        "detailed outfit and shoes, character design sheet style, vertical composition, " +
+        "detailed outfit and shoes, vertical composition, " +
         "centered with comfortable margin around the character";
     } else {
       cmp = "a " + (ap.gender === "boy" ? "boy" : "girl") + " creature mascot whose body color is " + color +
         ", wearing " + ap.acc + ", " + ap.vibe + " personality, " + lk + ", " +
-        "full body creature illustration, whole body visible, centered with comfortable margin, character design sheet style";
+        "full body creature illustration, whole body visible, centered with comfortable margin";
     }
-    const bits = [cmp, soft, CONSISTENCY];
+    const bits = [cmp, soft, SINGLE, CONSISTENCY];
     if (item.softness === "soft") bits.push(isChar ? "round soft cheeks, relaxed happy sleepy eyes" : "round blob-like silhouette, soft chewy texture");
     if (item.softness === "slight") bits.push(isChar ? "calm gentle eyes, neat tidy look" : "slightly squishy but mostly smooth silhouette");
     return bits.join(", ") + ", " + st;
@@ -237,7 +248,7 @@
   async function generateImage(item, variant, styleKey, stage, opts) {
     const cfg = getImageCfg();
     const info = providerInfo(cfg);
-    const ap = appearanceOf(item, (opts && opts.appearanceSeed) || 0);
+    const ap = appearanceOf(item, (opts && opts.appearanceSeed) || 0, opts && opts.gender);
     if (info.keyless) return { url: pollinationsUrl(item, variant, styleKey, stage, ap), kind: "url" };
     if (!info.key) throw new Error("还没填 API Key");
     if (!info.endpoint) throw new Error("还没填接口地址");

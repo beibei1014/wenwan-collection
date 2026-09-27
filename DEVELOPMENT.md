@@ -86,7 +86,7 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
 
 **Storage**：bucket `bracelet-images`，按用户隔离（RLS），公开读取（public read policy）。
 
-## 五、功能清单（截至 v106）
+## 五、功能清单（截至 v107）
 
 1. **收藏录入/编辑**：名称、分类联动品种/品牌、工艺（干磨/水磨）、到货时间、陪伴时长（自然日自动算）、价格（隐藏小眼睛）、店铺（记忆常用）、状态（**菩提 4 态** + 拼图 2 态 + 已送人；水晶/玉石等只显示在库/已送人）、**主色（自动识别+可手动选）**、拼图完成时间、拼图片数（500/1000/1500/2000）、动漫周边类型、照片+订单截图（各≤9张、批量上传自动压缩≤200KB）、备注、盘玩记录
 2. **底部导航（6+1）**：首页 | 分类 | 喜欢 | ＋（居中新建）| 任务 | 成就 | 设置；`#/quest`(任务) 和 `#/fav`(喜欢) 也从底部直达
@@ -375,6 +375,12 @@ DEVELOPMENT.md      # 本档案（交接文档，务必保持更新）
     - **③ 兜底形象不能被裁**：本地程序化小精灵本身就是一张**方形脸贴图**，放大 2 倍会变成"一只眼睛" → 只有存在 AI 立绘时才加 `face` 类；图片加载失败切回兜底图时 `bindSpiritImgFallback` 会 `classList.remove("face")`。
     - **验证**：端到端 **12/12**（坏尺寸 `txt:1024x1024` → 自动 `txt:2K` 成功且配置写回 2K；**带参考图的换形象：`ref:1024x1024` → `ref:2K` 成功，全程没有任何一次"去掉参考图"的重试**；`.spirit-thumb` 有裁切框、缩略图带 `face` 类且与立绘同源、弹层立绘不带 `face`、`transform:matrix(2,0,0,2,0,0)` origin `48px 0px`；无 AI 图时不加 `face`）。另用「色块假立绘」（头 3~25%、上身 25~50%、腿 50~100%）截屏肉眼验收：缩略图里粉色头部占满方框、下方露一点上身 ✓
     - **测试桩经验**：坏尺寸必须在**每次**出图前重新塞回 `localStorage`（第一条用例通过后配置已被自动修正成 2K，后面的"带参考图+坏尺寸"用例就测不到目标分支了）。缓存 v106
+89. **🚻 修「一张立绘画出两个人 + 女孩太多 + 头像预览不完整」（v107）**：用户实测截图反馈三点：① 一张图的立绘里有**两个角色**，还带 `NEWBORN` / `YOUNG BOY` 标题字；② 串的性别女孩太多；③ 卡片头像预览"没有完整"（有的只拍到头发、有的拍到一片空白）。
+    - **① 元凶是 prompt 里的 "character evolution sheet"**：v104 为了"同一个角色长大"写了 `character evolution sheet`，"character design sheet style" 也是从 v102 一路带下来的 —— 模型看到 `sheet`（图鉴/设定集）就真的画成**多格角色设定图**：排版成 NEWBORN / YOUNG BOY 两格、还自己把形态名当标题写在图上。修法：`promptFor()` 里**彻底删掉 sheet / turnaround 这些词**（连 `no character sheet` 这种否定写法都不留，避免反向带偏），改成 `SINGLE` 常量：`solo, single character only, exactly one figure in the whole image, one person, plain simple background, no other characters, no clones, no panels, no collage, no multiple views, no background characters, no text, no letters, no words, no numbers, no title, no labels, no captions, no watermark, no signature, no logo`。
+    - **② 性别：默认偏男 + 可手动指定**：`appearanceOf(item, seedN, gender)` —— 没指定时按 **2/3 男孩**（原来 `h % 2` 是五五开，用户反馈"女孩太多"）；详情页「🔒 人设行」新增「👦 换成男孩 / 👧 换成女孩」按钮（写 `rec.gender`，**只翻性别**，发型/瞳色/配饰都不动，重画 1 张）。所有出图路径（补图/换形象/换外观设定/突破/换性别）都会把 `rec.gender` 带进 `generateImage`。
+    - **③ 头像取景改成"按图片内容自动找脑袋"**：固定比例裁切必然出错——出图构图每张都不同（角色有时很小居中、有时贴顶、有时还是多格图鉴）：`transform:scale(2)` 那版在用户手机上就出现"只拍到头发"和"拍到一片空白"。新做法 `analyzeFaceBox(url)`：用小画布① 用**四角颜色认背景色**（生成图基本纯色背景）② 扫出**人物外接框** ③ 取外接框**最上面 40%**（头 + 一点肩）④ 横向以"最上面 20% 那一段的**像素重心**"为中心（抬手/歪头的也不会偏），返回比例 `{l,t,w,ar}` 存进 `rec.face`；渲染时 `spiritThumbHtml()` 换算成 img 的 `width` + `left/top` 偏移放进 `.spirit-thumb`（`overflow:hidden` 的方框）里。**老图不用重出**：进精灵页时 `ensureSpiritFaces()` 补算一次并存起来；实在算不出来（纯色图等）就记 `{w:0}` 交给 CSS 固定比例兜底（`.spirit-img.face`），不会反复重算。
+    - **④ 新增「🖌 全部重画」**：prompt 升级后老图都要重画，精灵页标题右侧一个按钮 → `confirmModal`「要重画全部 N 只精灵吗？…消耗 N 次出图额度」→ 清空 `imgUrl/imgAt/face/imgHistory` → 重新出图（`imgHistory` 也清掉，因为进化史里的旧图就是那些多格图鉴）。
+    - **验证**：端到端 **20/20**：prompt 里已无 `sheet`、含 single/one person/no text/no panels、性别写进 prompt（boy/girl 各测一次）；300 次随机**男孩 193/300（64%）**、强制性别发型瞳色不变；**三种构图（小小一只居中 / 顶天立地贴顶 / Q版大头）用色块假立绘**（头 39~49% / 4~26% / 8~42%）自动取景后**脑袋全部完整入框**（取景 0.38-0.54 / 0.02-0.42 / 0.06-0.45），缩略图 img 比框大且偏移正确；「换性别」只出 1 张且 prompt 按新性别写、取景跟着重算；「全部重画」先弹确认、重画 3 只、prompt 都带"只画一个人"。另截屏肉眼验收：三种构图下缩略图都是"完整脑袋 + 一点肩" ✓ 缓存 v107
 
 > 🧪 **可复用的端到端测试套路（推荐）**：把 `index.html` 的 body 注入一个临时页面 → 在脚本前定义 `window.SUPABASE_CONFIG` 与假 `window.supabase.createClient`（`auth.getSession/getUser` 返回假 session，`from(t)` 返回链式对象，`then` 直接 resolve 固定数据）→ 按原顺序动态 `appendChild` 加载 `js/*.js` → `location.hash` 切路由 + 断言。这样能用真实 `app.js` 验证交互，不用登录、不碰线上库。
 
