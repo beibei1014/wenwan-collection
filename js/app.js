@@ -3613,7 +3613,38 @@
     viewer.onclick = (e) => { if (e.target === viewer) { viewer.classList.remove("show"); viewer.hidden = true; } };
   }
 
-  /* ---------- 主人设定（昵称 / 性别）v111 ---------- */
+  /* ---------- 出图报错的"人话翻译"（v123）：把各家最常见的几种失败原因直接说清楚 ---------- */
+  function imageErrHint(msg, provider) {
+    const m = String(msg || "");
+    if (Spirits.isFetchFail(m)) {
+      return "这个错几乎都是 <b>API Key 不对</b>：方舟在 key 无效时不返回跨域头，浏览器只能报 Failed to fetch。<br>" +
+        "① 确认填的是 <b>ark- 开头</b>的密钥本体（不是 api-key-… 那个<b>名称</b>）；<br>" +
+        "② 确认<b>复制完整</b>：控制台显示成 <code>ark-26b0fc78-…</code> 是截断显示，手选会少一截 → 点「📋 复制」；<br>" +
+        "③ 确认这把 key 属于<b>当前这个账号</b>（换了账号就要换 key）。";
+    }
+    if (/ModelNotOpen|not activated|未开通|未激活|access denied|AccessDenied|forbidden|403/i.test(m)) {
+      return "模型没开通 / 被暂停了：去火山控制台 <b>开通管理</b> 确认这个模型是「已开通」；<br>" +
+        "如果你开过「<b>安心体验</b>」（用量超过免费额度时自动暂停、避免扣费），充值后要点它旁边的「<b>前往关闭</b>」才能继续用。";
+    }
+    if (/quota|exceed|insufficient|balance|arrears|额度|余额|欠费|限流|rate/i.test(m)) {
+      return "额度/余额不足或被限流：去控制台看「账户余额」（flash 约 ¥0.12-0.13/张，充 ¥10 ≈ 80 张）。<br>" +
+        "另外「安心体验」开着时，超出免费额度会<b>自动暂停</b> → 需要点「前往关闭」。";
+    }
+    if (/401|Unauthorized|invalid[_ ]?(api)?[_ ]?key|authentication/i.test(m)) {
+      return "key 无效：确认是 <b>ark- 开头</b>那一串、且整串复制完整（含末尾那一小段）。";
+    }
+    if (/NotFound|does not exist|InvalidEndpointOrModel/i.test(m)) {
+      return "模型名不对：控制台显示名（如 Doubao-Seedream-5.0-flash 260915）不能直接用，要填 API 模型 ID（<b>doubao-seedream-5-0-flash-260915</b>）或接入点 <b>ep-…</b>。";
+    }
+    if (/size|尺寸|resolution/i.test(m)) {
+      return "尺寸不合法：App 会自动换一档重试；仍失败就手动换一个尺寸（方舟用 1728x2304 / 2048x2048）。";
+    }
+    if (/watermark|水印/i.test(m)) {
+      return "水印参数被拒：App 会自动去掉该参数重试，正常不影响出图。";
+    }
+    return "把这段红字发我，我帮你看。";
+  }
+
   function showOwnerModal() {
     const mask = $("#modalMask"), modal = $("#modal");
     const ow = Spirits.getOwner();
@@ -3912,11 +3943,7 @@
       } catch (e) {
         const em = (e && e.message) || "测试失败";
         msgEl.innerHTML = "❌ " + esc(em).replace(/\*\*/g, "") +
-          (Spirits.isFetchFail(em)
-            ? '<br><span style="color:var(--text-2)">这个错几乎都是 <b>API Key 不对</b>：方舟在 key 无效时不返回跨域头，浏览器只能报 Failed to fetch。请点控制台密钥那行的「👁 / 📋 复制」，复制 <b>ark- 开头</b>的完整密钥（不是 api-key-… 这个名字）。<br><b>特别注意别漏掉末尾几位</b>：控制台里显示成 <code>ark-26b0fc78-…-72b99c…</code> 是<b>截断显示</b>，手选文字会少一截；完整的是 <b>ark- + 8-4-4-4-12 位（共 40 个字符）</b>。</span>'
-            : (/NotFound|does not exist/i.test(em)
-              ? '<br><span style="color:var(--text-2)">模型名不对：控制台显示的名字（如 <b>Doubao-Seedream-5.0-lite 260128</b>）不能直接用，要填 API 的模型 ID（如 <b>doubao-seedream-5-0-260128</b>），或点「📋 拉取我账号里的可用模型」选一个，或填接入点 <b>ep-…</b>。</span>'
-              : '<br><span style="color:var(--text-2)">ModelNotOpen = 该模型还没在控制台点「开通」；NotFound = 模型名写错（用「📋 拉取」按钮挑）。</span>'));
+          '<br><span style="color:var(--text-2)">👉 ' + imageErrHint(em, chosen) + "</span>";
       } finally {
         btn.disabled = false; btn.textContent = "🔍 测试连接";
         Spirits.setImageCfg(keep);   // 还原成已保存的配置
