@@ -194,7 +194,8 @@
     "strictly no modern or Western clothing (no jacket, no hoodie, no sweatshirt, no T-shirt, no jeans, no denim, no sportswear, no tracksuit, no suit and tie, no sneakers, no zipper coat), " +
     "no peace sign or V-sign hand gestures, no smirking or mischievous grin, use gentle neutral expressions and ancient Chinese hanfu-inspired costume";
   // v150 全局正面风格约束：所有精灵统一「中国古风」（用户要求：整个 App 是中国传统文玩调性）
-  const GUOFENG = "traditional Chinese gufeng (ancient Chinese dynasty) aesthetic, hanfu-inspired classical costume and styling, " +
+  const GUOFENG = "traditional Chinese gufeng (ancient Chinese dynasty) aesthetic, hanfu-inspired classical costume and hairstyle " +
+    "(long flowing hair, hair buns, hairpins, braids and ponytails are all traditional and fine), " +
     "elegant ancient Chinese atmosphere, silk and brocade textures, classical Chinese color palette, no modern elements";
   // 中文说法（界面用；prompt 仍用英文原文）
   const HAIR_ZH = {
@@ -247,7 +248,8 @@
   }
   function appearanceText(ap) {
     const g = ap.vibeIdx != null ? ap.vibeIdx : Math.max(0, VIBES.indexOf(ap.vibe));
-    return (ap.gender === "boy" ? "👦 男孩" : "👧 女孩") + " · " + (HAIR_ZH[ap.hair] || ap.hair) + " · " +
+    // v151：不再显示被锁死的发型（用户反馈：中式古风不该锁发型——发型由「人物设定」说了算）
+    return (ap.gender === "boy" ? "👦 男孩" : "👧 女孩") + " · " +
       (EYES_ZH[ap.eyes] || ap.eyes) + "眼睛 · " + (ACC_ZH[ap.acc] || ap.acc) +
       " · " + (ap.outfitZh || ap.outfit) + " · " + (ap.patternZh || (ap.pattern + " 纹样")) +
       " · " + (MATERIALS_ZH[ap.material] || ap.material) + " · " + (POSES_ZH[g] || "");
@@ -259,16 +261,15 @@
   }
   function appearancePrompt(ap) {
     const isBoy = ap.gender === "boy";
-    // 男性/女性特征要写死，并且**明确排除异性发型**（只写 "boy" 模型偶尔照样给长发）
-    // v112：除了性别/发型/瞳色，还把 服装、纹样、布料、配饰、姿态、道具 全部写进去 —— 形象不再"只有颜色"
+    // v151：**不再锁死发型**（用户反馈：中式古风本就不该锁发型，「长发男孩」完全合理）。
+    //   这里只锚定：性别 + 瞳色 + 配饰 + 服装 + 纹样 + 布料 + 姿态；
+    //   发型完全交给「人物设定」—— buildLookTags 会把人设里的发型细节翻成英文关键词进 prompt。
     return (isBoy
-      ? "a young boy character, clearly male, boyish face, short masculine hair style: "
-      : "a young girl character, clearly female, girlish face, feminine hair style: ") +
-      ap.hair + " hair, " + ap.eyes + " eyes, wearing " + ap.acc + " and " + ap.acc2 + ", " +
+      ? "a young boy character, clearly male, boyish face: "
+      : "a young girl character, clearly female, girlish face: ") +
+      ap.eyes + " eyes, wearing " + ap.acc + " and " + ap.acc2 + ", " +
       "outfit: " + ap.outfit + ", trimmed with " + ap.pattern + ", " + ap.material + " fabric texture, " +
-      "pose: " + ap.pose + (ap.prop ? ", " + ap.prop : "") + ", " + ap.vibe + " personality" +
-      (isBoy ? ", no long hair, no twin tails, no ponytail, no feminine hair style"
-             : ", no boyish buzz cut, no masculine short hair");
+      "pose: " + ap.pose + (ap.prop ? ", " + ap.prop : "") + ", " + ap.vibe + " personality";
   }
   // 一致性硬约束：每次出图都带上，防止突破后"换人"
   // ⚠️ 这里曾经写过 "character evolution sheet"（进化图鉴）→ 模型真的画成了**多格图鉴**：
@@ -710,14 +711,13 @@
       "⑤【最重要】主人写的那句话描述的是**精灵本人**的性格/身份/气质（例如「洒脱的江湖侠士」＝这只精灵是侠士，不是主人是侠士），" +
       "必须把这句话的意思自然融进正文，让整段读起来是一份完整统一的设定，不要引用原话、不要说「主人说过」、不要写成两套人设；" +
       "⑥ 精灵的性别以下方标注为准，指代精灵的代词绝不能用错；" +
-      "⑦【外形必须照给定的写】发型、发色、瞳色、特殊特征一律照下方给定内容，禁止改成别的（给定「短发」就不能写成「长发」）；" +
+      "⑦【发色、瞳色、特殊特征照下方给定内容写；但**发型自由发挥**】中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），按精灵的性别/性格/主人写的设定来定，不要生硬套短发；" +
       "⑧【整段基调是中国古风】衣服一律写中式传统样式（汉服、长衫、褂子、襦裙、道袍等），禁止出现现代服装（夹克、运动服、卫衣、T恤、牛仔裤、西装等）。";
     const NL = String.fromCharCode(10);
     const user = "精灵名：" + ((persona && persona.name) || item.name || "小精灵") +
       NL + spiritGenderLine(ap0) +
       NL + "来自手串：" + ((item && item.name) || "") + (item && item.craft ? "（" + item.craft + "）" : "") +
       NL + "发色：" + ((lk && lk.hairZh) || "跟珠子主色") +
-      NL + "发型（必须照写、不可改成别的）：" + (HAIR_ZH[ap0.hair] || ap0.hair) +
       NL + "服装（必须是中式传统古风样式）：" + (ap0.outfitZh || ap0.outfit) +
       NL + "特殊特征：" + ((lk && lk.feats && lk.feats.length) ? lk.feats.map((f) => f.zh).join("、") : ((lk && lk.noFeat) ? "普通人形" : "未指定")) +
       NL + "性格：" + ((lk && lk.pers) ? lk.pers.zh : "未指定") +
@@ -1335,7 +1335,8 @@
   }
   // 有 AI 时：让它读完中文人物设定，输出英文绘图关键词（形象就"照着人设画"）
   async function buildLookTags(item, ap, personaZh, persona) {
-    const key = lookKeyOf(ap) + "|" + (personaZh ? hashStr(personaZh).toString(36) : "");
+    // v151 前缀：强制重建一次形象关键词 —— 让「人设里描述的发型」真正进入出图 prompt
+    const key = "v151|" + lookKeyOf(ap) + "|" + (personaZh ? hashStr(personaZh).toString(36) : "");
     const all = loadLooks();
     if (all[item.id] && all[item.id].key === key && all[item.id].tags) return all[item.id].tags;
     let tags = "";
@@ -1404,10 +1405,11 @@
       try {
         const sys = "你在为一个中文文玩收藏 App 写「挂瓷精灵」的人物设定卡。手串盘到挂瓷会成精，变成一只小精灵。"
           + "请写一段连贯的中文人物设定，200-300 字，用第三人称旁观介绍（不要用「你」称呼精灵），"
-          + "必须包含：① 外形（性别、发型、瞳色、配饰、衣服/头发颜色要说明取自古珠的颜色）"
+          + "必须包含：① 外形（性别、发型、瞳色、配饰；衣服/头发颜色要说明取自古珠的颜色）"
           + "② 性格（含 2-3 个具体小习惯）③ 与主人的关系与日常。"
-          + "【外形必须严格遵守下方给出的「固定人设」】发型、瞳色、服装、配饰一律照给定的写，"
-          + "绝对禁止自行发明与给定不符的外形（例如给定发型是「短发」，就绝不能写成「长发」）。"
+          + "【瞳色/服装/配饰照下方给出的「固定人设」写；但**发型不受限制、自由发挥**】"
+          + "中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），按精灵的性别、性格和主人写的设定来定，"
+          + "绝不要因为固定人设里没写发型、就生硬地套一个短发。"
           + "【整段基调是中国古风】服装一律写中式传统样式（汉服、长衫、褂子、襦裙、道袍、褙子等），"
           + "绝对禁止出现任何现代服装（夹克、运动服、卫衣、T恤、牛仔裤、西装、风衣等）。"
           + "【最重要】主人给的设定原话描述的都是**精灵本人**的性格/身份/气质，必须原样体现在精灵身上；"
@@ -1417,7 +1419,7 @@
           "；颜色：" + (COLOR_ZH[item.color] || "素色") +
           "；软糯：" + (item.softness === "soft" ? "软糯" : item.softness === "slight" ? "微糯" : "未标注") +
           "；形态：" + stageDef(stage).name + "；陪伴 " + (days || 0) + " 天；盘玩 " + (plays || 0) + " 次；" +
-          "固定人设（发型/瞳色/服装/配饰必须一字不改地照写，尤其发型不得换成别的）：" + appearanceText(ap) + "；" + spiritGenderLine(ap) +
+          "固定人设（瞳色/服装/配饰照写；发型自由发挥，下方不含发型限制）：" + appearanceText(ap) + "；" + spiritGenderLine(ap) +
           "；性格基调：" + (VIBE_ZH[ap.vibe] || ap.vibe) +
           ((persona && persona.traits && persona.traits.length) ? "（" + persona.traits.join("、") + "）" : "") +
           ((lk0.base) ? "。\n主人给它的设定原话（描述的是精灵自己，必须原样体现）：" + lk0.base : "") +
