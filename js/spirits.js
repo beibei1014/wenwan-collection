@@ -66,7 +66,35 @@
   function load() {
     try { const raw = localStorage.getItem(STORE_KEY); const o = raw ? JSON.parse(raw) : {}; return o && typeof o === "object" ? o : {}; } catch (e) { return {}; }
   }
-  function save(o) { try { localStorage.setItem(STORE_KEY, JSON.stringify(o)); } catch (e) { /* 空间不足忽略 */ } }
+  // 配额超限时尽量保住最新一张立绘：丢 CG、裁历史/日记/来信，腾出空间再存一次，
+  // 避免「存不进去 → 下次判过期 → 又重出图烧额度」的死循环
+  function pruneForQuota(o) {
+    try {
+      Object.keys(o).forEach((k) => {
+        const r = o[k];
+        if (!r || typeof r !== "object") return;
+        if (r.cgUrl) r.cgUrl = "";
+        if (Array.isArray(r.imgHistory)) r.imgHistory = r.imgHistory.slice(-1);
+        if (Array.isArray(r.diary)) r.diary = r.diary.slice(-8);
+        if (Array.isArray(r.letters)) r.letters = r.letters.slice(-5);
+      });
+    } catch (e) { /* 忽略 */ }
+    return o;
+  }
+  function save(o) {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(o));
+      // 通知同步层：本地精灵数据变了，稍后推到云端（跨手机同步用）
+      try { window.__spiritsDirty = true; window.dispatchEvent(new CustomEvent("ww:spirits-changed")); } catch (e2) { /* 忽略 */ }
+    } catch (e) {
+      const quota = e && (e.name === "QuotaExceededError" || e.code === 22 || e.code === 1014);
+      if (quota) {
+        try { localStorage.setItem(STORE_KEY, JSON.stringify(pruneForQuota(o))); return; } catch (e2) { /* 仍失败 */ }
+      }
+      // 实在存不下：通知界面（别再静默重试烧额度）
+      try { window.dispatchEvent(new CustomEvent("ww:storage-full", { detail: { key: STORE_KEY } })); } catch (e3) { /* 忽略 */ }
+    }
+  }
   function ensureIn(store, id) {
     if (!store[id]) {
       // 新生：性别留空，等「挂瓷成精」那一刻由 born() 掷一次（男女 3:1）
@@ -739,8 +767,9 @@
     // 方舟（Seedream）确实支持；别的家先带上试一次，不支持就自动去掉并**按这家**记住。
     const pk = info.provider;
     const useRef = fixedOf("noRef", pk) ? "" : ((opts && opts.ref) || "");
+    const firstSize = (cfg && cfg.sizeFallback && cfg.sizeFallback !== size) ? cfg.sizeFallback : null;
     try {
-      return await callWithSizeFallback(info, prompt, size, seed, useRef, cfg);
+      return await callWithSizeFallback(info, prompt, size, seed, useRef, cfg, { firstSize: firstSize });
     } catch (e) {
       const msg = (e && e.message) || "";
       // ① 尺寸被服务端拒（callWithSizeFallback 已经把能试的都试完了）→ 报告一句能看懂的提示
@@ -772,15 +801,19 @@
   async function callWithSizeFallback(info, prompt, size, seed, ref, cfg, o) {
     const opt = o || {};
     const ladder = opt.ladder || sizeLadderFor(cfg && cfg.provider);
-    const cands = [size].concat(ladder.filter((s) => s !== size));
+    // 候选顺序：用户首选尺寸（cfg.size，**绝不改动**）→ 上次能用的退让尺寸（sizeFallback，避免每次都拿被拒尺寸试一遍）→ 该服务商合法档位
+    const first = (opt.firstSize && opt.firstSize !== size) ? [opt.firstSize] : [];
+    const cands = [size].concat(first, ladder.filter((s) => s !== size && s !== opt.firstSize));
     let lastErr = null;
     for (let i = 0; i < cands.length; i++) {
       try {
         const r = await callImageApi(info, prompt, cands[i], seed, ref);
-        // CG 的横版尺寸是"临时"的：不能把用户给立绘选的竖版尺寸改掉
-        if (i > 0 && !opt.keepSize) {
-          setImageCfg(Object.assign({}, cfg, { size: cands[i] }));
-          r.autoFixed = "尺寸已改为 " + cands[i];
+        // ⚠️ 绝不覆盖用户首选尺寸：只把"这次能用的尺寸"记到 sizeFallback，下次优先尝试，
+        //    避免反复拿被拒尺寸去试（每次试错都要烧一次请求额度）
+        if (i > 0 && !opt.keepSize && cands[i] !== (cfg && cfg.sizeFallback)) {
+          cfg.sizeFallback = cands[i];
+          try { setImageCfg(cfg); } catch (e2) { /* 忽略 */ }
+          r.autoFixed = "尺寸已自动适配为 " + cands[i];
         }
         return r;
       } catch (e) {
@@ -1342,7 +1375,12 @@
       } catch (e) { txt = ""; }
     }
     if (!txt || txt.length < 60) txt = personaZhLocal(item, ap, persona, stage, days, plays);
-    if (txt.length > 420) txt = txt.slice(0, 420);
+    if (txt.length > 420) {
+      // 在 420 字内找最后一个句号/叹号/问号，截到它之后，避免把句子切成半句
+      const cut = txt.slice(0, 420);
+      const m = cut.match(/^[\s\S]*[。！？.!?]/);
+      txt = (m ? m[0] : cut).trim() + (m ? "" : "…");
+    }
     rec.personaZh = txt;
     rec.personaZhKey = key;
     rec.personaZhAt = Date.now();

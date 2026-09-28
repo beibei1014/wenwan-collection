@@ -438,6 +438,28 @@
     return y + " 年" + (d ? " " + Math.floor(d / 30) + " 个月" : "");
   }
 
+  /* ---------- 精灵跨设备同步（整库 store 一行/user_id，last-write-wins） ----------
+     本地 localStorage 为主；云端只做「换手机不丢」。任何异常都静默，绝不影响主流程。 */
+  async function getSpiritStore() {
+    const sb = getSupabase();
+    const user = (await sb.auth.getUser()).data.user;
+    if (!user) throw new Error("未登录");
+    const { data, error } = await sb.from("spirit_store").select("data, updated_at").eq("user_id", user.id).maybeSingle();
+    if (error) throw error;
+    return data || null;
+  }
+  async function putSpiritStore(data) {
+    const sb = getSupabase();
+    const user = (await sb.auth.getUser()).data.user;
+    if (!user) throw new Error("未登录");
+    const { error } = await sb.from("spirit_store").upsert(
+      { user_id: user.id, data: data || {}, updated_at: new Date().toISOString() },
+      { onConflict: "user_id" }
+    );
+    if (error) throw error;
+    return true;
+  }
+
   window.DB = {
     getSupabase,
     getSession, signUp, signIn, signOut, updatePassword, onAuthChange,
@@ -446,6 +468,7 @@
     uploadPhoto, deletePhoto,
     exportBackup, importBackup,
     fileToPhoto, daysWith, formatDays, uid,
+    getSpiritStore, putSpiritStore,
     onNetChange, getNet: () => NET,          // 网络状态（给界面显示「网络不稳/正在重试」）
   };
 })();

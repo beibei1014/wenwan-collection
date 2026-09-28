@@ -2779,6 +2779,8 @@
   // 逐个补形象：API 通道需要 POST 出图 → 缓存到本地精灵记录里
   let _imgBusy = false;
   let _lastImgErrShown = "";
+  // 按精灵 id 记录「正在出图」，防止手动重画与自动补图、或多次点击同时打同一只（反复出图 = 反复烧钱）
+  const _genInFlight = {};
   // v127：这只精灵在等用户先确认设定（发色/特征/性格）→ 先别出图，免得画完又得重画
   function spiritNeedsSetup(rec) {
     const r = rec || {};
@@ -2809,12 +2811,14 @@
     try {
       let changed = false;
       for (const it of list) {
+        if (_genInFlight[it.id]) continue;            // 这只正在别处出图（手动重画/其它页面），别重复打
         const st = Spirits.load();
         const rec = Spirits.ensureIn(st, it.id);
         if (spiritNeedsSetup(rec)) continue;         // v127：等用户先确认设定（发色/特征/性格）
         if (!spiritImgStale(rec)) continue;          // 已经是本地存好的图 → 不再烧额度
         // 刚失败过就别反复重试（配置错的时候会在每次进页面时白烧额度）
         if (rec._imgErr && Date.now() - (rec._imgErrAt || 0) < 10 * 60 * 1000) continue;
+        _genInFlight[it.id] = true;
         try {
           const r = await Spirits.generateImage(it, rec.variant || 0, null, rec.stage || 1, { appearanceSeed: rec.appearanceSeed || 0, gender: rec.gender || "" });
           // ⚠️ 出图要好几秒，期间 CG/取景/日记可能已经写过存档 →
@@ -2833,6 +2837,8 @@
           rec2._imgErrAt = Date.now();     // 保留旧图（不清 imgUrl），只记下错误与时间
           changed = true;
           Spirits.save(st2);
+        } finally {
+          delete _genInFlight[it.id];
         }
       }
       if (changed && location.hash === "#/spirit") renderSpiritPage();
@@ -3339,19 +3345,21 @@
      host = { refresh(), refreshTop(), busy(on, text) } —— 由页面提供，用于原地刷新与按钮状态 */
   async function spiritReRoll(item, host) {
     const h = host || {};
-    const s = Spirits.load();
-    const r = Spirits.ensureIn(s, item.id);
-    r.appearanceSeed = (r.appearanceSeed || 0) + 1;
-    r.imgUrl = "";
-    r.imgAt = 0;
-    r.face = null;
-    r._imgErr = ""; r._imgErrAt = 0;
-    Spirits.save(s);
-    const nap = Spirits.appearanceOf(item, r.appearanceSeed, r.gender || "");
-    toast("新设定：" + Spirits.appearanceText(nap) + "（性别不变，正在生成…）");
-    if (h.busy) h.busy(true, "正在重画…");
-    if (h.refresh) h.refresh();
+    if (_imgBusy || _genInFlight[item.id]) { toast("正在出图，稍等一下～"); return; }
+    _imgBusy = true; _genInFlight[item.id] = true;
     try {
+      const s = Spirits.load();
+      const r = Spirits.ensureIn(s, item.id);
+      r.appearanceSeed = (r.appearanceSeed || 0) + 1;
+      r.imgUrl = "";
+      r.imgAt = 0;
+      r.face = null;
+      r._imgErr = ""; r._imgErrAt = 0;
+      Spirits.save(s);
+      const nap = Spirits.appearanceOf(item, r.appearanceSeed, r.gender || "");
+      toast("新设定：" + Spirits.appearanceText(nap) + "（性别不变，正在生成…）");
+      if (h.busy) h.busy(true, "正在重画…");
+      if (h.refresh) h.refresh();
       const res = await Spirits.generateImage(item, r.variant || 0, null, r.stage || 1, { appearanceSeed: r.appearanceSeed, gender: r.gender || "" });
       const s2 = Spirits.load();
       const r2 = Spirits.ensureIn(s2, item.id);
@@ -3361,37 +3369,41 @@
       toast("人设换好了 🎲");
     } catch (e) {
       toast("重画出错：" + ((e && e.message) || ""));
+    } finally {
+      if (h.busy) h.busy(false);
+      if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
+      refreshCgAfter(item);      // v125：换了人设 → 觉醒期/完成体的 CG 也跟着换
+      _imgBusy = false; delete _genInFlight[item.id];
     }
-    if (h.busy) h.busy(false);
-    if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
-    refreshCgAfter(item);      // v125：换了人设 → 觉醒期/完成体的 CG 也跟着换
   }
 
   async function spiritNewLook(item, host) {
     const h = host || {};
-    const cfg2 = Spirits.getImageCfg();
-    const s = Spirits.load();
-    const r = Spirits.ensureIn(s, item.id);
-    const prevImg = r.imgUrl || "";
-    r.variant = (r.variant || 0) + 1;
-    r._imgErr = ""; r._imgErrAt = 0;
-    Spirits.save(s);
-    if (cfg2.provider === "pollinations") {
-      // 免密钥通道：换 seed 重出（URL 直接交给 <img>，不占用 POST 通道）
-      if (h.busy) h.busy(true, "换个形象中…");
-      const s2 = Spirits.load();
-      const r2 = Spirits.ensureIn(s2, item.id);
-      await saveSpiritImage(item, r2, { url: Spirits.pollinationsUrl(item, r.variant, null, r.stage || 1, Spirits.appearanceOf(item, r.appearanceSeed || 0, r.gender || "")) }, r2.stage || 1);
-      Spirits.save(s2);
-      toast("换个形象中…（几秒钟出图）");
-      if (h.busy) h.busy(false);
-      if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
-      refreshCgAfter(item);      // v125：立绘换了 → CG 也跟着换
-      return;
-    }
-    toast("正在重画同一个角色…（消耗 1 次出图）");
-    if (h.busy) h.busy(true, "正在重画…");
+    if (_imgBusy || _genInFlight[item.id]) { toast("正在出图，稍等一下～"); return; }
+    _imgBusy = true; _genInFlight[item.id] = true;
     try {
+      const cfg2 = Spirits.getImageCfg();
+      const s = Spirits.load();
+      const r = Spirits.ensureIn(s, item.id);
+      const prevImg = r.imgUrl || "";
+      r.variant = (r.variant || 0) + 1;
+      r._imgErr = ""; r._imgErrAt = 0;
+      Spirits.save(s);
+      if (cfg2.provider === "pollinations") {
+        // 免密钥通道：换 seed 重出（URL 直接交给 <img>，不占用 POST 通道）
+        if (h.busy) h.busy(true, "换个形象中…");
+        const s2 = Spirits.load();
+        const r2 = Spirits.ensureIn(s2, item.id);
+        await saveSpiritImage(item, r2, { url: Spirits.pollinationsUrl(item, r.variant, null, r.stage || 1, Spirits.appearanceOf(item, r.appearanceSeed || 0, r.gender || "")) }, r2.stage || 1);
+        Spirits.save(s2);
+        toast("换个形象中…（几秒钟出图）");
+        if (h.busy) h.busy(false);
+        if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
+        refreshCgAfter(item);      // v125：立绘换了 → CG 也跟着换
+        return;
+      }
+      toast("正在重画同一个角色…（消耗 1 次出图）");
+      if (h.busy) h.busy(true, "正在重画…");
       const res = await Spirits.generateImage(item, r.variant, null, r.stage || 1, { appearanceSeed: r.appearanceSeed || 0, gender: r.gender || "", ref: prevImg });
       const s2 = Spirits.load();
       const r2 = Spirits.ensureIn(s2, item.id);
@@ -3401,10 +3413,12 @@
       toast("形象换好了 🍡");
     } catch (e) {
       toast("出图失败：" + ((e && e.message) || "未知错误"));
+    } finally {
+      if (h.busy) h.busy(false);
+      if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
+      refreshCgAfter(item);      // v125：立绘换了 → CG 也跟着换
+      _imgBusy = false; delete _genInFlight[item.id];
     }
-    if (h.busy) h.busy(false);
-    if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
-    refreshCgAfter(item);      // v125：立绘换了 → CG 也跟着换
   }
 
   async function spiritBreak(item, host) {
@@ -3416,6 +3430,8 @@
     const nextStage = si0.stage + 1;
     const nextDef = Spirits.stageDef(nextStage);
     const p = r0.persona || Spirits.localPersona(item);
+    if (_imgBusy || _genInFlight[item.id]) { toast("正在出图，稍等一下～"); return; }
+    _imgBusy = true; _genInFlight[item.id] = true;
     if (h.busy) h.busy(true, "突破中…");
     try {
       // 突破：把"突破前那张图"当参考图传过去 → 保证是同一个人长大，不会变性/换人
@@ -3435,6 +3451,7 @@
       if (h.refresh) h.refresh();
       // v125：突破到觉醒期/完成体之后，顺手把 CG 也画了（后台进行，不挡突破演出）
       refreshCgAfter(item);
+      _imgBusy = false; delete _genInFlight[item.id];
       // 突破演出（v126 重做：光晕 + 扩散光环 + 粒子飞散 + 立绘弹入 + 标题逐字）
       // 关键：**默认状态就是最终状态**（都可见），动画由 JS 加 .evolve-play 触发、
       // 1.6 秒后加 .evolve-settled 显式写死最终状态 —— 动画没跑起来也不会缺东西。
@@ -3478,6 +3495,7 @@
     } catch (e) {
       if (h.busy) h.busy(false);
       toast("突破失败：" + ((e && e.message) || "出图失败"));
+      _imgBusy = false; delete _genInFlight[item.id];
     }
   }
 
@@ -4314,8 +4332,17 @@
       const lines = await Spirits.chat(group);
       const avatarOf = (who) => {
         const w = String(who || "").trim();
+        if (!w) return null;
+        // 1) 精确相等（说话人 == 名字）
         let hit = group.find((g) => (g.persona.name || "") === w);
-        if (!hit) hit = group.find((g) => w && ((g.persona.name || "").indexOf(w) >= 0 || w.indexOf(g.persona.name || "x") >= 0));
+        // 2) 名字是这句话的开头（如 "团子说：…" → 团子），优先匹配更长的名字，避免 "团" 抢走 "团子"
+        if (!hit) {
+          const cands = group.filter((g) => g.persona.name && w.indexOf(g.persona.name) === 0);
+          cands.sort((a, b) => b.persona.name.length - a.persona.name.length);
+          hit = cands[0];
+        }
+        // 3) 名字出现在句中（兜底）
+        if (!hit) hit = group.find((g) => g.persona.name && w.indexOf(g.persona.name) >= 0);
         if (!hit) hit = group.find((g) => (g.item.name || "") === w);
         return hit ? { url: hit.avatar, name: hit.persona.name || hit.item.name } : null;
       };
@@ -4435,6 +4462,9 @@
       '<button class="btn ghost" id="imgCfgTest" style="flex:1">🔍 测试连接</button>' +
       '<button class="btn ghost" id="imgCfgCancel" style="flex:1">取消</button>' +
       '<button class="btn primary" id="imgCfgSave" style="flex:2">保存</button></div>' +
+      '<div style="display:flex;gap:8px;margin-top:10px;align-items:center">' +
+      '<button class="btn ghost" id="imgSyncBtn" style="flex:1">☁ 同步精灵到云端</button>' +
+      '<span id="imgSyncStatus" style="font-size:12px;color:var(--text-2)"></span></div>' +
       '<div id="imgCfgMsg" style="font-size:12px;line-height:1.7;margin-top:10px;color:var(--text-2);word-break:break-all"></div>';
     mask.hidden = false;
     modal.hidden = false;
@@ -4511,6 +4541,16 @@
     });
     $("#imgCfgCancel").onclick = done;
     mask.onclick = done;
+    // 跨手机同步：把本地精灵推到云端，并拉回云端最新（换手机/换浏览器即可拿回全部精灵）
+    const syncBtn = $("#imgSyncBtn"), syncStatus = $("#imgSyncStatus");
+    if (syncBtn) syncBtn.onclick = async () => {
+      syncStatus.textContent = "同步中…";
+      try {
+        await DB.putSpiritStore(Spirits.load());
+        await pullSpirits();
+        syncStatus.textContent = "✅ 已同步到云端";
+      } catch (e) { syncStatus.textContent = "⚠️ 失败：" + ((e && e.message) || "未配置 Supabase 云端"); }
+    };
     // 拉取账号里的可用模型（方舟/兼容服务都支持），点一下直接填进模型名
     $("#imgListModels").onclick = async () => {
       const btn = $("#imgListModels"), box = $("#imgModelPick");
@@ -4742,6 +4782,7 @@
     router();
     refreshNetBar();
     checkLevelUp();
+    pullSpirits().catch(() => {});   // 跨手机同步：登录后先把云端精灵拉回本地
     return true;
   }
 
@@ -6930,6 +6971,38 @@
   btnBack.onclick = goBack;
   btnSettings.onclick = () => location.hash = "#/settings";
   window.addEventListener("hashchange", router);
+  // 精灵数据存满本地存储时（立绘/CG 占空间），给用户一个提示，而不是静默丢图后无限重出烧额度
+  window.addEventListener("ww:storage-full", () => {
+    try { toast("精灵数据存满了本地空间，已自动清理部分历史；大图建议尽早同步到云端"); } catch (e) { /* 忽略 */ }
+  });
+
+  /* ---------- 精灵跨手机同步（localStorage 为主，云端为辅；换手机登录同一账号即可拉回） ---------- */
+  let _spiritsDirty = false;          // 本地有没有改动还没推到云端
+  let _spiritSyncTimer = null;
+  window.addEventListener("ww:spirits-changed", () => { _spiritsDirty = true; scheduleSpiritPush(); });
+  function scheduleSpiritPush() {
+    if (_spiritSyncTimer) return;
+    _spiritSyncTimer = setTimeout(() => { _spiritSyncTimer = null; pushSpirits(); }, 4000);
+  }
+  async function pushSpirits() {
+    if (!_spiritsDirty) return;                          // 没改动就不必写云端
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    try { await DB.putSpiritStore(Spirits.load()); _spiritsDirty = false; } catch (e) { /* 未配置/离线：静默 */ }
+  }
+  async function pullSpirits() {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    try {
+      const remote = await DB.getSpiritStore();
+      if (remote && remote.data && Object.keys(remote.data).length) {
+        Spirits.save(remote.data);                       // 云端覆盖本地（换手机拿回全部精灵）
+        if (location.hash === "#/spirit" || location.hash === "#/spirits" || location.hash.indexOf("#/spirit/") === 0) rerenderSpiritView();
+      }
+    } catch (e) { /* 未配置/离线：静默 */ }
+  }
+  // 离开页面 / 切后台时把改动推上去；每 2 分钟兜底推一次（仅在有改动时）
+  window.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") pushSpirits(); });
+  window.addEventListener("beforeunload", () => { try { pushSpirits(); } catch (e) {} });
+  setInterval(() => { pushSpirits(); }, 120000);
 
   /* 底部导航 */
   const tabbar = $("#tabbar");
