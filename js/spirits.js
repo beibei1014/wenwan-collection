@@ -166,6 +166,56 @@
     { en: "rippling wave lines", zh: "水波" }, { en: "lotus scroll pattern", zh: "缠枝莲" },
     { en: "roundel medallion pattern", zh: "团花" }, { en: "ruyi motif", zh: "如意纹" },
   ];
+  // v154：纹样改「人设优先，池子兜底」（用户反馈：设定里明明写了「衣服也有芭蕉叶的纹样」，
+  //   详情页却仍挂着随机抽到的「水波」，标签和人设正文都被随机纹样带偏了）。
+  //   规则：用户自己写的设定（一句话 / 自己填的特征）里只要提到纹样，就照用户写的来；
+  //   没提到，才用上面这个池子按种子随机抽（保持原本的随机感）。
+  const PATTERN_STOP = "，,、。；;：:！!？?（）()「」《》　 的了也都有是用带绣做配加和与及就还又再满全最挺着一件条把被给对向从在到跟比像很太更没不无把以于而其之都" +
+    "缀嵌镶描绘刻勾题印染织滚钉镂掐堆贴缚束裹缠压叠铺衬领口肩袖襟摆裙裤衫袜鞋";
+  // 从一段中文里找「用户写的纹样」。例：衣服也有芭蕉叶的纹样 → 芭蕉叶
+  function patternFromText(text) {
+    const s = String(text || "");
+    if (!s) return null;
+    // ① 常见同义写法先认到池子里（「回字纹」=回纹、「祥云」=云纹…），这样能拿到现成的英文
+    //     ⚠️ 必须先跑这里、再跑下面的池子扫描：否则「如意云纹」会被通用的「云纹」抢走
+    //     ⚠️ 顺序也有讲究：越具体的写法放前面，「云纹」这种最泛的放最后
+    const ALIAS = [
+      [/回字纹|回形纹|回纹/, 1], [/水波纹|波浪纹|水浪纹|水纹/, 2],
+      [/宝相花|团花纹/, 4], [/缠枝莲|缠枝纹|缠枝/, 3],
+      [/如意云纹|如意纹|如意头/, 5], [/祥云|云头纹|云气纹|云纹/, 0],
+    ];
+    for (let i = 0; i < ALIAS.length; i++) {
+      if (ALIAS[i][0].test(s)) { const p = PATTERNS[ALIAS[i][1]]; return { en: p.en, zh: p.zh }; }
+    }
+    // ①b 用户直接点名了池子里的纹样（云纹 / 回纹 / 水波 / 缠枝莲 / 团花 / 如意纹）
+    for (let i = 0; i < PATTERNS.length; i++) {
+      if (s.indexOf(PATTERNS[i].zh) >= 0) return { en: PATTERNS[i].en, zh: PATTERNS[i].zh };
+    }
+    // ② 自定义纹样：先定位「纹样 / 花纹 / 图案 / 纹理 / 暗纹 / 纹」，再往回取紧邻的中文名
+    const m = s.match(/(纹样|花纹|图案|纹理|暗纹|纹)/);
+    if (!m) return null;
+    let i = m.index - 1;
+    if (i >= 0 && s.charAt(i) === "的") i--;                 // 跳过「的」
+    let core = "";
+    while (i >= 0 && core.length < 4) {
+      const ch = s.charAt(i);
+      if (PATTERN_STOP.indexOf(ch) >= 0) break;              // 碰到虚词/标点就停，避免把整句抓进来
+      core = ch + core;
+      i--;
+    }
+    // 去掉开头的数量词（「大朵牡丹」→「牡丹」），但别碰「六角纹」这种连数字都算名字的
+    core = core.trim().replace(/^[大小多少几]{1,2}(?:朵|片|条|块|枚|颗|粒)?/, "").trim();
+    if (!core || /^(一|个|种|些|这|那|它|我|你|他|她)$/.test(core)) return null;
+    // 池子里没有对应英文 → 中文原文直接进 prompt（和「自己填特征」同一套做法，绘图模型看得懂中文描述）
+    return { en: "", zh: core + "纹样" };
+  }
+  // 用户在向导里「自己填」的特征原文（"custom:xxx"）
+  function userFeatText(lk) {
+    const ids = (lk && Array.isArray(lk.feats)) ? lk.feats : [];
+    return ids.filter((x) => String(x).indexOf("custom:") === 0).map((x) => String(x).slice(7)).join("；");
+  }
+  // 用户自己写的设定里提到的纹样（**只用用户原话**，不扫 AI 扩写正文，免得把 AI 编的纹样也当成用户要求）
+  function userPattern(lk) { return patternFromText(lk && lk.base) || patternFromText(userFeatText(lk)); }
   const MATERIALS = ["matte cotton-linen", "plain silk", "lustrous satin brocade", "woven brocade", "gauzy silk", "ramie"];
   const MATERIALS_ZH = { "matte cotton-linen": "棉麻", "plain silk": "素绢", "lustrous satin brocade": "丝光锦缎", "woven brocade": "织锦", "gauzy silk": "轻罗纱", "ramie": "苎麻" };
   const PROPS = [
@@ -242,7 +292,7 @@
   };
   // 由「串 id + 外观种子」决定；外观种子只在用户点「换外观设定」时变
   // 性别**不参与**随机：它由「挂瓷成精」那一刻的 born() 定下来（男女 3:1），之后换外观/突破都不会变
-  function appearanceOf(item, seedN, gender) {
+  function appearanceOf(item, seedN, gender, lkHint) {
     const h = hashStr(String((item && item.id) || "") + "#" + (seedN || 0));
     const g = (gender === "boy" || gender === "girl") ? gender
       : (item && item.gender === "boy" || item && item.gender === "girl") ? item.gender
@@ -250,7 +300,7 @@
     const hairs = g === "boy" ? BOY_HAIR : GIRL_HAIR;
     const vi = (h >> 12) % VIBES.length;
     const pi = (h >> 8) % POSES.length;       // v152：姿态与性格解耦（姿态池可独立扩充）
-    return {
+    const out = {
       gender: g,
       hair: hairs[(h >> 3) % hairs.length],
       eyes: EYE_COLORS[(h >> 6) % EYE_COLORS.length],
@@ -267,6 +317,12 @@
       vibe: VIBES[vi],
       vibeIdx: vi,
     };
+    // v154：纹样「人设优先，池子兜底」—— 用户设定里写了纹样就覆盖随机抽到的那个
+    //   （lkHint 由 lookOf 直接传进来，省一次 localStorage 解析）
+    const lk = lkHint || ((item && item.id) ? (((load()[item.id] || {}).look) || {}) : {});
+    const ov = userPattern(lk);
+    if (ov) { out.pattern = ov.en || ov.zh; out.patternZh = ov.zh; out.patternSrc = "user"; }
+    return out;
   }
   function appearanceText(ap) {
     // v152：**不再锁死姿态**（用户反馈：别限定动作，姿态由「人物设定」自由发挥，效果更好）。
@@ -721,7 +777,7 @@
   function lookOf(item, rec) {
     const r = rec || ((item && item.id) ? (load()[item.id] || {}) : {});
     const lk = r.look || {};
-    const ap = appearanceOf(item, r.appearanceSeed || 0, r.gender || "");
+    const ap = appearanceOf(item, r.appearanceSeed || 0, r.gender || "", lk);
     const bead = beadColor(item);
     const beadWord = (bead && bead.word) ? bead.word : (COLOR_EN[(item && item.color) || ""] || "jade green");
     const beadHex = (bead && bead.hex) ? bead.hex : "";
@@ -1462,8 +1518,8 @@
   }
   // 有 AI 时：让它读完中文人物设定，输出英文绘图关键词（形象就"照着人设画"）
   async function buildLookTags(item, ap, personaZh, persona) {
-    // v152 前缀：强制重建一次形象关键词 —— 让「人设里的发型/姿态」真正进入出图 prompt
-    const key = "v152|" + lookKeyOf(ap) + "|" + (personaZh ? hashStr(personaZh).toString(36) : "");
+    // v154 前缀：强制重建一次形象关键词 —— 让「人设里的发型/姿态/纹样」真正进入出图 prompt
+    const key = "v154|" + lookKeyOf(ap) + "|" + (personaZh ? hashStr(personaZh).toString(36) : "");
     const all = loadLooks();
     if (all[item.id] && all[item.id].key === key && all[item.id].tags) return all[item.id].tags;
     let tags = "";
@@ -1492,7 +1548,10 @@
     const all = loadLooks();
     const r = item && all[item.id];
     if (!r) return true;
-    return !r.tags || r.key.split("|").length !== lookKeyOf(ap).split("|").length;
+    // v154 修正：key 形如 "v154|<9 段外形>|<人设hash>"，要剥掉版本前缀和尾部 hash 再比外形，不能只比段数
+    const seg = String(r.key || "").split("|");
+    if (!r.tags || seg.length < 11) return true;
+    return seg.slice(1, 10).join("|") !== lookKeyOf(ap);
   }
 
   /* ---------- 中文人物设定（200-300 字） ---------- */
@@ -1526,8 +1585,9 @@
     const rec = ensureIn(store, item.id);
     const lk0 = rec.look || {};
     // 缓存键带上用户的一句话/融合设定：改了设定 → 人设卡跟着重写（否则立绘换了设定卡还是旧的）
-    // v152 前缀 = 规则再升级（人设里加入「标志性仪态」+ 姿态不再被系统锁死），旧人设卡作废重写一遍
-    const key = "v152|" + (ap.gender || "") + "|" + ap.hair + "|" + ap.eyes + "|" + ap.acc + "|" + (item.color || "") + "|" + (persona && persona.name || "") +
+    // v154 前缀 = 规则再升级（纹样改「人设优先，池子兜底」），旧人设卡作废重写一遍
+    //   —— 顺带把纹样并进缓存键：以后换纹样，人设正文也会跟着重写，不会再出现"标签是芭蕉叶、正文还写着水波"
+    const key = "v154|" + (ap.gender || "") + "|" + ap.hair + "|" + ap.eyes + "|" + ap.acc + "|" + ap.pattern + "|" + (item.color || "") + "|" + (persona && persona.name || "") +
       "|" + (lk0.base || "") + "|" + (lk0.profile || "") + "|" + (lk0.hairc || "") + ":" + (lk0.customColor || "");
     if (!force && rec.personaZh && rec.personaZhKey === key) return rec.personaZh;
     let txt = "";

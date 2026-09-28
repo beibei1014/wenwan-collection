@@ -3877,7 +3877,7 @@
       '<div class="setup-chips" id="lkPers">' + persChips + "</div></div>" +
       // ④ 一句话
       '<div class="setup-sec"><div class="setup-t"><b>4</b> 一句话基础设定（可选）</div>' +
-      '<div class="setup-desc">随便写一句就行，例：「它像一只爱睡觉的白猫，总趴在窗台」。我会把它扩写成一段小设定，显示在它的详情页。</div>' +
+      '<div class="setup-desc">随便写一句就行，例：「它像一只爱睡觉的白猫，总趴在窗台」。我会把它扩写成一段小设定，显示在它的详情页。<br>写到的<b>纹样</b>会照你说的画（例：「衣服也有芭蕉叶的纹样」），不写就按原来的随机来。</div>' +
       '<input class="form-input" id="lkBase" maxlength="60" placeholder="（可留空）随便说一句它是什么样的" value="' + esc(state.base) + '">' +
       '<label class="setup-check"><input type="checkbox" id="lkAi"' + (state.ai ? " checked" : "") + '> 用 AI 把这句话扩写成详细设定（没填 AI Key 就用本地模板）</label>' +
       "</div>" +
