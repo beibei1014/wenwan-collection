@@ -150,24 +150,24 @@
     "gentle and caring", "cool and a little proud"];
   /* ---------- v112：让立绘"不只靠颜色"——服装 / 纹样 / 布料 / 道具 / 姿态 ---------- */
   const OUTFITS = [
-    { en: "a scholar's crossed-collar robe with a wide sash", zh: "交领长衫 + 宽腰带" },
-    { en: "a chunky knit vest over a collared shirt", zh: "粗针织毛背心 + 衬衫" },
-    { en: "a hooded windbreaker with layered shorts", zh: "连帽风衣 + 层次短裤" },
+    { en: "a crossed-collar Chinese hanfu robe with wide sleeves and a cloth sash", zh: "交领长袍 + 宽布腰带" },
+    { en: "a round-collar Chinese robe (yuanlingpao) with a leather belt", zh: "圆领袍 + 革带" },
+    { en: "a straight-hem deep robe (shenyi) with a layered collar", zh: "直裾深衣 + 层叠领" },
     { en: "a traditional Chinese tang-style jacket with frog buttons and a stand collar", zh: "中式对襟褂 + 盘扣立领" },
-    { en: "a loose linen tunic with rolled sleeves and a rope belt", zh: "亚麻罩衫 + 绳结腰带" },
-    { en: "an embroidered front-button jacket with cloud-patterned trim", zh: "绣花对襟褂 + 云纹滚边" },
-    { en: "a camel cape over a high-neck base layer", zh: "驼色小斗篷 + 高领内搭" },
-    { en: "a multi-pocket utility vest with a rolled scarf", zh: "多口袋马甲 + 围巾" },
-    { en: "a plain wrap-front top with a cloth sash", zh: "素色裹襟上衣 + 布腰封" },
-    { en: "a sporty track jacket with side-striped trousers", zh: "运动夹克 + 侧条纹裤" },
+    { en: "an embroidered Chinese front-button jacket with cloud-patterned trim", zh: "绣花对襟褂 + 云纹滚边" },
+    { en: "a wide-sleeved Chinese Taoist robe with hanging ties", zh: "大袖道袍 + 系带" },
+    { en: "a plain wrap-front Chinese top with a cloth waist wrap", zh: "素色裹襟上衣 + 布腰封" },
+    { en: "a short-sleeve Chinese beizi vest layered over a long robe", zh: "半臂褙子 + 长衫内搭" },
+    { en: "a martial-arts style short Chinese tunic with a waist sash", zh: "短打劲装 + 束腰" },
+    { en: "a brocade-trimmed Chinese robe with a jade toggle", zh: "织锦长袍 + 玉扣" },
   ];
   const PATTERNS = [
-    { en: "cloud motif", zh: "云纹" }, { en: "tiny star specks", zh: "星点" },
-    { en: "rippling wave lines", zh: "水波" }, { en: "small plaid check", zh: "细格" },
-    { en: "polka dots", zh: "圆点" }, { en: "trailing vine leaves", zh: "缠枝" },
+    { en: "cloud motif", zh: "云纹" }, { en: "meander key-fret pattern", zh: "回纹" },
+    { en: "rippling wave lines", zh: "水波" }, { en: "lotus scroll pattern", zh: "缠枝莲" },
+    { en: "roundel medallion pattern", zh: "团花" }, { en: "ruyi motif", zh: "如意纹" },
   ];
-  const MATERIALS = ["matte linen", "soft brushed cotton", "sheeny silk", "cozy wool knit", "washed denim", "papery hemp"];
-  const MATERIALS_ZH = { "matte linen": "哑光亚麻", "soft brushed cotton": "磨毛棉", "sheeny silk": "丝光", "cozy wool knit": "绒线针织", "washed denim": "水洗牛仔", "papery hemp": "麻质" };
+  const MATERIALS = ["matte cotton-linen", "plain silk", "lustrous satin brocade", "woven brocade", "gauzy silk", "ramie"];
+  const MATERIALS_ZH = { "matte cotton-linen": "棉麻", "plain silk": "素绢", "lustrous satin brocade": "丝光锦缎", "woven brocade": "织锦", "gauzy silk": "轻罗纱", "ramie": "苎麻" };
   const PROPS = [
     "holding a small tea cup", "carrying a tiny wooden tray", "holding a round Chinese silk fan painted with ink orchids",
     "holding a small paper lantern", "carrying a little woven basket", "holding a sprig of blossoms",
@@ -189,9 +189,13 @@
   ];
   const POSES_ZH = ["双手交叠站得端正", "抬手比划着说话", "背手歪头、眼神偏一点", "挥着手打招呼、开朗地笑",
     "双手捧在身前、神情温柔", "抱臂微抬下巴、自信"];
-  // 全局负面约束：中国传统文玩调性——不要日式元素、不要剪刀手、不要坏笑
-  const NEG_STYLE = "strictly avoid any Japanese elements (Japanese flag, rising sun motif, kimono, yukata, torii gate, paper fan with red circle), " +
-    "no peace sign or V-sign hand gestures, no smirking or mischievous grin, use gentle neutral expressions and traditional Chinese styling only";
+  // 全局负面约束：中国传统文玩调性——不要日式元素、不要现代/西式服装、不要剪刀手、不要坏笑
+  const NEG_STYLE = "traditional Chinese styling only, strictly no Japanese elements (Japanese flag, rising sun motif, kimono, yukata, torii gate, paper fan with red circle), " +
+    "strictly no modern or Western clothing (no jacket, no hoodie, no sweatshirt, no T-shirt, no jeans, no denim, no sportswear, no tracksuit, no suit and tie, no sneakers, no zipper coat), " +
+    "no peace sign or V-sign hand gestures, no smirking or mischievous grin, use gentle neutral expressions and ancient Chinese hanfu-inspired costume";
+  // v150 全局正面风格约束：所有精灵统一「中国古风」（用户要求：整个 App 是中国传统文玩调性）
+  const GUOFENG = "traditional Chinese gufeng (ancient Chinese dynasty) aesthetic, hanfu-inspired classical costume and styling, " +
+    "elegant ancient Chinese atmosphere, silk and brocade textures, classical Chinese color palette, no modern elements";
   // 中文说法（界面用；prompt 仍用英文原文）
   const HAIR_ZH = {
     "short spiky": "利落短发", "short neat and tidy": "清爽短发", "messy short hair with bangs": "蓬松碎短发",
@@ -245,7 +249,7 @@
     const g = ap.vibeIdx != null ? ap.vibeIdx : Math.max(0, VIBES.indexOf(ap.vibe));
     return (ap.gender === "boy" ? "👦 男孩" : "👧 女孩") + " · " + (HAIR_ZH[ap.hair] || ap.hair) + " · " +
       (EYES_ZH[ap.eyes] || ap.eyes) + "眼睛 · " + (ACC_ZH[ap.acc] || ap.acc) +
-      " · " + (ap.outfitZh || ap.outfit) + " · " + (ap.patternZh || ap.pattern) + "纹" +
+      " · " + (ap.outfitZh || ap.outfit) + " · " + (ap.patternZh || (ap.pattern + " 纹样")) +
       " · " + (MATERIALS_ZH[ap.material] || ap.material) + " · " + (POSES_ZH[g] || "");
   }
   // 形象细节条（详情页给人看的一行短描述）
@@ -460,14 +464,16 @@
   // flat    = 扁平贴纸风   ink = 国风水墨
   const STYLE_PRESETS = {
     anime: {
-      label: "日漫风 · 角色",
+      label: "国风 · 2D 人物",
       // ⚠️ 这里**不能**写 chibi / big head：那是"身形比例"，必须交给阶段描述（STAGES.look），
       //    否则突破到觉醒期/完成体也还是 Q 版大头（用户实测吐槽过）。
-      text: "anime illustration, 2D anime character art, big expressive anime eyes with white highlights, " +
-        "cel shading, flat anime coloring, clean line art, soft pastel color palette, soft blush, " +
-        "richly detailed outfit design with visible fabric folds and seams, small ornamental accessories, " +
-        "expressive pose with personality, full body, centered composition, plain solid pastel background, " +
-        "hand-drawn 2D anime art, no 3D render, no realistic photo, no gradient mesh",
+      // v150：整体基调改为「中国古风」——用户要求所有精灵都画成古风（汉服/古装），不要现代/日式元素。
+      text: "2D hand-drawn illustration in traditional Chinese gufeng style, ancient Chinese hanfu costume and classical styling, " +
+        "big expressive eyes with white highlights, cel shading, flat coloring, clean line art, " +
+        "soft elegant Chinese classical color palette, soft blush, " +
+        "richly detailed traditional Chinese outfit with visible fabric folds and silk brocade texture, classical Chinese ornaments, " +
+        "expressive pose with personality, full body, centered composition, plain solid soft background, " +
+        "hand-drawn 2D art, no 3D render, no realistic photo, no gradient mesh, no modern clothing, no Japanese styling",
     },
     animepet: {
       label: "日漫风 · 小生物",
@@ -703,12 +709,16 @@
       "③ 口吻温柔、有画面感，像手账里的备注；④ 不要出现「AI」「提示词」「角色设定」这类词；" +
       "⑤【最重要】主人写的那句话描述的是**精灵本人**的性格/身份/气质（例如「洒脱的江湖侠士」＝这只精灵是侠士，不是主人是侠士），" +
       "必须把这句话的意思自然融进正文，让整段读起来是一份完整统一的设定，不要引用原话、不要说「主人说过」、不要写成两套人设；" +
-      "⑥ 精灵的性别以下方标注为准，指代精灵的代词绝不能用错。";
+      "⑥ 精灵的性别以下方标注为准，指代精灵的代词绝不能用错；" +
+      "⑦【外形必须照给定的写】发型、发色、瞳色、特殊特征一律照下方给定内容，禁止改成别的（给定「短发」就不能写成「长发」）；" +
+      "⑧【整段基调是中国古风】衣服一律写中式传统样式（汉服、长衫、褂子、襦裙、道袍等），禁止出现现代服装（夹克、运动服、卫衣、T恤、牛仔裤、西装等）。";
     const NL = String.fromCharCode(10);
     const user = "精灵名：" + ((persona && persona.name) || item.name || "小精灵") +
       NL + spiritGenderLine(ap0) +
       NL + "来自手串：" + ((item && item.name) || "") + (item && item.craft ? "（" + item.craft + "）" : "") +
       NL + "发色：" + ((lk && lk.hairZh) || "跟珠子主色") +
+      NL + "发型（必须照写、不可改成别的）：" + (HAIR_ZH[ap0.hair] || ap0.hair) +
+      NL + "服装（必须是中式传统古风样式）：" + (ap0.outfitZh || ap0.outfit) +
       NL + "特殊特征：" + ((lk && lk.feats && lk.feats.length) ? lk.feats.map((f) => f.zh).join("、") : ((lk && lk.noFeat) ? "普通人形" : "未指定")) +
       NL + "性格：" + ((lk && lk.pers) ? lk.pers.zh : "未指定") +
       (base ? (NL + "主人给的一句话设定（描述的是精灵本人，融进正文）：" + base) : "") +
@@ -749,7 +759,7 @@
         ", wearing " + ap.acc + ", " + ap.vibe + " personality, " + stageLook + ", " +
         "full body creature illustration, whole body visible, centered with comfortable margin";
     }
-    const bits = [cmp, soft, SINGLE, CONSISTENCY, GROWTH_LINE, NEG_STYLE];
+    const bits = [cmp, GUOFENG, soft, SINGLE, CONSISTENCY, GROWTH_LINE, NEG_STYLE];
     // v112：把「人物设定 → 形象细节关键词」也拼进去，立绘不再"只有颜色"
     const tags = getLookTags(item);
     if (tags) bits.push(lk.chosen
@@ -1373,7 +1383,7 @@
       (p.name || item.name || "这只精灵") + "的原型是主人收藏的一串「" + (item.name || "手串") + "」，" + colorName + "，" + softName + "。" +
       "盘到挂瓷的那天晚上，它从珠子里醒了过来，现在是一只" + def.name + "的" + (ap.gender === "boy" ? "小男孩" : "小女孩") + "精灵。",
       "外形上，它" + (ap.gender === "boy" ? "留着" : "梳着") + hair + "，" + eyes + "的眼睛，" + acc + "是它身上最像原串的记号；" +
-      "衣服和头发的颜色都取自原来的珠子，" + (colorName.indexOf("多") === 0 ? "五颜六色，像一串会走路的多宝" : "就是那一种" + colorName + "，看久了很安稳") + "。",
+      "一身" + (ap.outfitZh || "中式长衫") + "的古风衣裳，颜色和头发都取自原来的珠子，" + (colorName.indexOf("多") === 0 ? "五颜六色，像一串会走路的多宝" : "就是那一种" + colorName + "，看久了很安稳") + "。",
       "性格" + vibe + "，说话" + (p.line ? "爱用「" + p.line + "」这种腔调" : "慢悠悠的") + "，" + extra + "。" +
       "它不太会催人，主人忙的时候就自己找个角落待着，" + (plays > 12 ? "被盘得多了，已经很有底气" : "被摸得还不多，偶尔会小声提醒一下") + "。",
       "到今天为止，它陪着主人 " + (days || 0) + " 天了，被正经盘过 " + (plays || 0) + " 次。" +
@@ -1385,17 +1395,21 @@
     const rec = ensureIn(store, item.id);
     const lk0 = rec.look || {};
     // 缓存键带上用户的一句话/融合设定：改了设定 → 人设卡跟着重写（否则立绘换了设定卡还是旧的）
-    // v140 前缀 = 规则再次升级（性别/归属约束加严），旧的写错代词的人设卡全部作废重写一遍
-    const key = "v140|" + (ap.gender || "") + "|" + ap.hair + "|" + ap.eyes + "|" + ap.acc + "|" + (item.color || "") + "|" + (persona && persona.name || "") +
+    // v150 前缀 = 规则再升级（外形必须照设定写 + 中国古风），旧的写错发型/现代服装的人设卡全部作废重写一遍
+    const key = "v150|" + (ap.gender || "") + "|" + ap.hair + "|" + ap.eyes + "|" + ap.acc + "|" + (item.color || "") + "|" + (persona && persona.name || "") +
       "|" + (lk0.base || "") + "|" + (lk0.profile || "");
     if (!force && rec.personaZh && rec.personaZhKey === key) return rec.personaZh;
     let txt = "";
     if (getAiKey()) {
       try {
-        const sys = "你在为一个中文文玩收藏 App 写「挂瓷精灵」的人物设定卡。手串盘到挂瓷会成精，变成一只 Q 版小精灵。"
+        const sys = "你在为一个中文文玩收藏 App 写「挂瓷精灵」的人物设定卡。手串盘到挂瓷会成精，变成一只小精灵。"
           + "请写一段连贯的中文人物设定，200-300 字，用第三人称旁观介绍（不要用「你」称呼精灵），"
           + "必须包含：① 外形（性别、发型、瞳色、配饰、衣服/头发颜色要说明取自古珠的颜色）"
           + "② 性格（含 2-3 个具体小习惯）③ 与主人的关系与日常。"
+          + "【外形必须严格遵守下方给出的「固定人设」】发型、瞳色、服装、配饰一律照给定的写，"
+          + "绝对禁止自行发明与给定不符的外形（例如给定发型是「短发」，就绝不能写成「长发」）。"
+          + "【整段基调是中国古风】服装一律写中式传统样式（汉服、长衫、褂子、襦裙、道袍、褙子等），"
+          + "绝对禁止出现任何现代服装（夹克、运动服、卫衣、T恤、牛仔裤、西装、风衣等）。"
           + "【最重要】主人给的设定原话描述的都是**精灵本人**的性格/身份/气质，必须原样体现在精灵身上；"
           + "绝对禁止把设定安到主人头上（例如主人说「洒脱的江湖侠士」＝精灵是侠士，不是主人是侠士），也不许另编一套和原话冲突的人设。"
           + "语气温和好读，不要 Markdown、不要标题、不要分点、不要解释，直接输出正文。";
@@ -1403,7 +1417,7 @@
           "；颜色：" + (COLOR_ZH[item.color] || "素色") +
           "；软糯：" + (item.softness === "soft" ? "软糯" : item.softness === "slight" ? "微糯" : "未标注") +
           "；形态：" + stageDef(stage).name + "；陪伴 " + (days || 0) + " 天；盘玩 " + (plays || 0) + " 次；" +
-          "固定人设：" + appearanceText(ap) + "；" + spiritGenderLine(ap) +
+          "固定人设（发型/瞳色/服装/配饰必须一字不改地照写，尤其发型不得换成别的）：" + appearanceText(ap) + "；" + spiritGenderLine(ap) +
           "；性格基调：" + (VIBE_ZH[ap.vibe] || ap.vibe) +
           ((persona && persona.traits && persona.traits.length) ? "（" + persona.traits.join("、") + "）" : "") +
           ((lk0.base) ? "。\n主人给它的设定原话（描述的是精灵自己，必须原样体现）：" + lk0.base : "") +
@@ -1560,10 +1574,10 @@
   /* ---------- v125：CG（场景插画） ----------
      规则（用户要求）：**幼生期 / 成长期只有立绘**；**觉醒期 / 完成体额外再出一张 CG**。
      精灵之间达成的事件（契合度解锁的剧情）也各配一张双人 CG。都是日漫风。 */
-  const CG_STYLE = "anime key visual CG illustration, 2D anime movie still, cel shading, " +
-    "soft pastel palette, cinematic lighting, atmospheric mood, detailed painted background with gentle bokeh, " +
+  const CG_STYLE = "2D hand-drawn key visual CG illustration in traditional Chinese gufeng style, ancient Chinese scene and hanfu costume, " +
+    "cel shading, soft elegant Chinese classical palette, cinematic lighting, atmospheric mood, detailed painted background with gentle bokeh, " +
     "expressive body language, warm cozy feeling, masterpiece quality, " +
-    "WIDE LANDSCAPE HORIZONTAL COMPOSITION, 16:9 cinematic framing like an anime film screenshot, " +
+    "WIDE LANDSCAPE HORIZONTAL COMPOSITION, 16:9 cinematic framing, " +
     "wide scenery on both sides, generous environment around the character, not a portrait, not a vertical poster, " +
     "no text, no letters, no words, no title, no labels, no watermark, no signature, no logo, " +
     "single continuous scene, no split panels, no collage, " + NEG_STYLE;
@@ -1601,8 +1615,8 @@
     const nmB = (b.persona && b.persona.name) || b.item.name || "second character";
     const mood = CG_MOOD[Math.min(CG_MOOD.length - 1, Math.max(0, Number(level) || 0))];
     return CG_STYLE + ", " + mood + ", " +
-      "scene: a cozy little room called \"" + (roomName || "little room") + "\" at home, " +
-      "two anime characters together in the same scene: " +
+      "scene: a cozy ancient Chinese room called \"" + (roomName || "little room") + "\", " +
+      "two ancient Chinese characters in traditional hanfu costume together in the same scene: " +
       "① " + appearancePrompt(apA) + ", with " + lkA.hairEn + " hair and " + lkA.outfitEn + " outfit" + lookExtra(lkA) + " (name: " + nmA + "), " +
       "② " + appearancePrompt(apB) + ", with " + lkB.hairEn + " hair and " + lkB.outfitEn + " outfit" + lookExtra(lkB) + " (name: " + nmB + "), " +
       "they are the same two characters as before, keep their hair color, eye color, outfits and accessories consistent, " +
