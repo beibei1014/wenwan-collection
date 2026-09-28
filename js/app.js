@@ -3016,6 +3016,8 @@
     }
     const sh = setupHintHtml(list, store);
     if (sh.html) html += sh.html;
+    // v163：沁灵纪入口（主串集合制选择）
+    html += '<button class="btn ghost" id="spMainBtn">📜 沁灵纪（主线主串设置）</button>';
     view.innerHTML = html;
     bindSetupHint(sh.first);
     bindSpiritImgFallback(view);
@@ -3029,6 +3031,8 @@
     if (twBtn) twBtn.onclick = () => location.hash = "#/town";
     const ntBtn = $("#spNightBtn");     // v160：夜话
     if (ntBtn) ntBtn.onclick = () => { _nightFrom = "#/spirit"; location.hash = "#/night"; };
+    const msBtn = $("#spMainBtn");      // v163：沁灵纪（主串集合制）
+    if (msBtn) msBtn.onclick = () => { location.hash = "#/mainstory"; };
     const dh = $("#diaryHint");
     if (dh) dh.onclick = () => location.hash = "#/spirits";
     const eh = $("#echoHint");
@@ -3404,6 +3408,86 @@
       if (changed) rerenderSpiritView();
     } catch (e) { /* 静默 */ }
     _extraBusy = false;
+  }
+
+  /* ---------- v163 · 沁灵纪（主线入口页）：主串集合制选择 ----------
+     主串数量不限：手动勾选任意串 + 「5 星自动纳入」开关。CG 仅对主串集内的串生成。
+     设计 §C.2：ww_story 全局一条（mainIds / mainStar5 / mainAt / switched / wuhe），不进 rec。 */
+  function renderMainStoryPage() {
+    topbarTitle.textContent = "📜 沁灵纪";
+    _onBack = () => { location.hash = "#/spirit"; };   // 返回到「沁灵」页（入口处）
+    const store = Spirits.load();
+    const story = Spirits.readStory();
+    const star5Auto = story.mainStar5 !== false;
+    const manualIds = new Set((Array.isArray(story.mainIds) ? story.mainIds : (story.mainId ? [story.mainId] : [])).map(String));
+    const CG_PER = 8, UNIT = 0.13;                      // 单只主串 8 张 CG；单张约 ¥0.13（成本提示用）
+    const CG_TOTAL = Spirits.CG_TOTAL || 8;
+    const switched = Number(story.switched) || 0;
+
+    const items = allItems.slice().sort((a, b) => (a.name || "").localeCompare(b.name || "", "zh"));
+    let html = '<div class="ms-head">' +
+      '<p class="ms-desc">主线（沁灵纪）不限主串数量。手动勾选任意串，或开启「5 星自动纳入」让评分满 5 星的串自动成为主串。只有主串才会推进「串与我」12 章主线与夜话专属剧情。</p>' +
+      '<label class="ms-toggle"><input type="checkbox" id="msStar5"' + (star5Auto ? " checked" : "") + '> 5 星自动纳入（评分 ≥5 且未送人的串自动成为主串）</label>' +
+      '<div class="ms-actions">' +
+        '<button class="btn ghost" id="msAll">全选</button>' +
+        '<button class="btn ghost" id="msNone">全不选</button>' +
+        '<button class="btn primary" id="msSave">保存</button>' +
+      '</div></div>';
+    html += '<div class="ms-list">';
+    if (!items.length) {
+      html += '<div class="ms-empty">还没有串。先去收藏柜添加你的文玩吧。</div>';
+    }
+    items.forEach((it) => {
+      const auto = star5Auto && !it.gifted && (Number(it.star) || 0) >= 5;
+      const checked = auto || manualIds.has(String(it.id));
+      const star = Number(it.star) || 0;
+      html += '<label class="ms-row' + (it.gifted ? " ms-gifted" : "") + '">' +
+        '<input type="checkbox" class="ms-chk" data-id="' + esc(it.id) + '"' + (checked ? " checked" : "") + (auto ? " disabled" : "") + '>' +
+        '<span class="ms-name">' + esc(it.name || "未命名") + '</span>' +
+        '<span class="ms-meta">' + (star ? ("★" + star + " ") : "") + (it.gifted ? "已送人" : "") +
+          (auto ? ' <em class="ms-auto">⭐自动</em>' : "") + '</span>' +
+        '</label>';
+    });
+    html += '</div>';
+    view.innerHTML = html;
+
+    const star5El = $("#msStar5");
+    if (star5El) star5El.onchange = () => renderMainStoryPage();   // 切自动开关 → 重渲染（自动项出现/消失）
+    const allBtn = $("#msAll"), noneBtn = $("#msNone"), saveBtn = $("#msSave");
+    if (allBtn) allBtn.onclick = () => { view.querySelectorAll(".ms-chk:not([disabled])").forEach((c) => { c.checked = true; }); };
+    if (noneBtn) noneBtn.onclick = () => { view.querySelectorAll(".ms-chk:not([disabled])").forEach((c) => { c.checked = false; }); };
+    if (saveBtn) saveBtn.onclick = async () => {
+      const sel = [];
+      view.querySelectorAll(".ms-chk").forEach((c) => { if (c.checked) sel.push(c.dataset.id); });
+      const star5 = !!(star5El && star5El.checked);
+      // 预览「若这样保存」的有效主串集；只对新进入、且 CG 未齐的主串计费（已齐的直接复用）
+      const oldSet = Spirits.mainSetOf(allItems, store);
+      const newSet = Spirits.mainSetOf(allItems, store, { mainIds: sel, mainStar5: star5 });
+      let newWork = 0;
+      newSet.forEach((id) => {
+        if (oldSet.has(id)) return;                              // 本来就是主串 → 不新增
+        const rec = store[id] || {};
+        const done = Spirits.cgCollectedCount(rec) >= CG_TOTAL;  // CG 已齐 → 复用，不重复计费
+        if (!done) newWork++;
+      });
+      const totalEnabled = newSet.size;
+      let desc;
+      if (newWork === 0) {
+        desc = "这次没有需要新画的主线 CG（" + totalEnabled + " 只主串的 CG 都已就绪，或只是调整了勾选）。确定保存吗？";
+      } else {
+        const cgN = newWork * CG_PER;
+        const cost = (cgN * UNIT).toFixed(2);
+        desc = "这次要启用 " + newWork + " 只主串，共 " + cgN + " 张 CG，约 ¥" + cost + "。";
+        if (totalEnabled > newWork) desc += "（另有 " + (totalEnabled - newWork) + " 只 CG 已就绪，直接复用，不重复计费）";
+        if (switched >= 1) desc += " 你已改动过 " + switched + " 次主串，每次新增主串都要多出 8 张 CG，花钱前想清楚哦。";
+      }
+      const ok2 = await confirmModal("保存主串设置", desc, "保存", false);
+      if (!ok2) return;
+      Spirits.setMainStory(sel, star5);                           // 写 ww_story（不进 rec）
+      _spiritsDirty = true; pushSpirits();                        // 顺带把 ww_story 一起同步到云端
+      toast("已保存主串设置 🪢");
+      renderMainStoryPage();
+    };
   }
 
   /* ---------- 沁灵相关页面的"原地刷新"统一入口（v114） ----------
@@ -5616,7 +5700,7 @@
     if (syncBtn) syncBtn.onclick = async () => {
       syncStatus.textContent = "同步中…";
       try {
-        await DB.putSpiritStore(Spirits.load());
+        await DB.putSpiritStore(packSync());
         await pullSpirits();
         syncStatus.textContent = "✅ 已同步到云端";
       } catch (e) { syncStatus.textContent = "⚠️ 失败：" + ((e && e.message) || "未配置 Supabase 云端"); }
@@ -5838,6 +5922,7 @@
         allItems = cached.items;
         playDays = Game.normDays(cached.playDays || []);
       }
+      Spirits.setMainItems(allItems);   // 离线也要把全量串灌给引擎（算主串集用）
     }
     // 加载盘玩打卡日期（连续打卡用；缺列时静默为空）
     if (!offlineMode) {
@@ -5868,6 +5953,7 @@
     });
     sortItems();
     backfillColors(); // 后台静默补颜色（不阻塞）
+    Spirits.setMainItems(allItems);   // 全量串灌给引擎（mainSetOf 算有效主串集用）
   }
 
   // 为无颜色但有照片的宝贝后台补识别主色（逐个识别保存，完成后刷新）
@@ -7942,6 +8028,7 @@
     else if (h === "#/stats") renderStatsPage();
     else if (h === "#/quest") renderQuestPage();
     else if (h === "#/spirit") renderSpiritPage();   // 🍡 沁灵（占原「分类」的导航位）
+    else if (h === "#/mainstory") renderMainStoryPage();                                       // v163：沁灵纪（主串集合制选择）
     else if (h === "#/spirits") renderAllSpiritsPage();                                            // 全部沁灵
     else if (h.startsWith("#/spirit/")) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));   // 每只沁灵的独立页面
     else if (h.startsWith("#/room/")) renderRoomPage(decodeURIComponent(h.slice(7)));             // 小房间
@@ -8077,17 +8164,27 @@ else if (h.indexOf("#/night/") === 0) {                                         
     if (_spiritSyncTimer) return;
     _spiritSyncTimer = setTimeout(() => { _spiritSyncTimer = null; pushSpirits(); }, 4000);
   }
+  // 跨手机同步：把「沁灵 store（ww_spirits）」+「主线设定（ww_story）」一起打包上传；
+  // 拉回时 unpack 写回两条独立 key（互不破坏）。旧云端只存 spirits 的，pull 时自动兼容。
+  function packSync() {
+    return { spirits: Spirits.load(), story: Spirits.readStory() };
+  }
   async function pushSpirits() {
     if (!_spiritsDirty) return;                          // 没改动就不必写云端
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
-    try { await DB.putSpiritStore(Spirits.load()); _spiritsDirty = false; } catch (e) { /* 未配置/离线：静默 */ }
+    try { await DB.putSpiritStore(packSync()); _spiritsDirty = false; } catch (e) { /* 未配置/离线：静默 */ }
   }
   async function pullSpirits() {
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
     try {
       const remote = await DB.getSpiritStore();
       if (remote && remote.data && Object.keys(remote.data).length) {
-        Spirits.save(remote.data);                       // 云端覆盖本地（换手机拿回全部沁灵）
+        if (remote.data.spirits && typeof remote.data.spirits === "object") {
+          Spirits.save(remote.data.spirits);             // 新格式：{ spirits, story }
+          if (remote.data.story && typeof remote.data.story === "object") Spirits.writeStory(remote.data.story);
+        } else {
+          Spirits.save(remote.data);                     // 旧格式：data 本身就是 spirits store（换手机拿回全部沁灵）
+        }
         if (location.hash === "#/spirit" || location.hash === "#/spirits" || location.hash.indexOf("#/spirit/") === 0) rerenderSpiritView();
       }
     } catch (e) { /* 未配置/离线：静默 */ }

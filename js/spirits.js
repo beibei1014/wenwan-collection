@@ -3393,13 +3393,71 @@
     return Math.min(40, d);
   }
 
-  /* ---------- 全局主串（设计 §C.2：ww_story 全局一条，不进 rec） ---------- */
+  /* ---------- 全局主串（设计 §C.2：ww_story 全局一条，不进 rec） ----------
+     原 storyMainId 是「全局单值」，本改版把主串从单值改为「有效主串集合」（数量不限）。
+     - 来源 A（手动）：ww_story.mainIds（玩家在「沁灵纪」页勾选）
+     - 来源 B（自动）：item.star >= 5 且未送人（开关 ww_story.mainStar5，默认 true）
+     - 兜底：集合为空时取「开沁最早那只」（复用 threadRank 的 bornAt||createdAt 升序）
+     旧值兼容（只读不双写）：老存档若有单值 mainId，折算进 mainIds，绝不双写回 mainId。
+     ⚠️ 原 storyMainId 纯读且恒返回 ""（项目里无任何 setItem("ww_story") 写路径），
+        isMain/isMainIn 原恒 false；本改版是「纯新增」，不破坏老行为。 */
   function storyMainId() {
     try {
       const raw = localStorage.getItem("ww_story");
       const o = raw ? JSON.parse(raw) : null;
-      return (o && o.mainId) ? String(o.mainId) : "";
+      return (o && o.mainId) ? String(o.mainId) : "";        // 弃用兜底：返回 ""（单值写入已从不存在）
     } catch (e) { return ""; }
+  }
+
+  // 全量串定义（app.js 在 loadItems 后灌入）；env 函数算 mainSet 时复用，避免两两枚举
+  let _mainItems = [];
+  function setMainItems(items) { _mainItems = Array.isArray(items) ? items : []; }
+
+  // 读 ww_story（缺省给空对象，保证下游不判 null）
+  function readStory() {
+    try {
+      const raw = localStorage.getItem("ww_story");
+      const o = raw ? JSON.parse(raw) : null;
+      return (o && typeof o === "object") ? o : {};
+    } catch (e) { return {}; }
+  }
+  function writeStory(w) {
+    try { localStorage.setItem("ww_story", JSON.stringify(w || {})); } catch (e) { /* 配额/隐私模式：静默 */ }
+  }
+
+  /* 唯一入口：算出「有效主串集」。O(n) 一次扫描，全程 Set 操作，禁止两两枚举 / 全排列。
+     items：全部串定义（DB.getAll 结果）  store：Spirits.load() 结果
+     storyOverride（可选）：预览用——传 { mainIds, mainStar5 } 算「若这样保存」的集合，不落盘。 */
+  function mainSetOf(items, store, storyOverride) {
+    const st = store || load();
+    const w = storyOverride || readStory();
+    const list = Array.isArray(items) ? items : [];
+    const existing = new Set(list.map((it) => String(it.id)));
+    const ids = new Set();
+    // 步 2：手动勾选里「仍存在于 items」的 id 进集合（剔掉已删除的幽灵 id）
+    const mainIds = Array.isArray(w.mainIds) ? w.mainIds : (w.mainId ? [w.mainId] : []);
+    mainIds.forEach((id) => { const s = String(id); if (existing.has(s)) ids.add(s); });
+    // 步 3：5 星自动纳入（开关默认开）；复用 app.js:315 的 itemStars 钳制语义，>=5 不是 ===5
+    if (w.mainStar5 !== false) {
+      list.forEach((it) => { if (!it.gifted && (Number(it.star) || 0) >= 5) ids.add(String(it.id)); });
+    }
+    // 步 4：兜底（开沁最早那只）—— 防死锁：新用户无勾选无 5 星也能推进主线
+    if (ids.size === 0) {
+      const ranked = threadRank(list, st);
+      if (ranked.length) ids.add(String(ranked[0].id));
+    }
+    return ids;
+  }
+
+  // 写路径：保存主串选择（只写 ww_story，不进 rec）。返回最新 ww_story。
+  function setMainStory(ids, star5) {
+    const w = readStory();
+    w.mainIds = (Array.isArray(ids) ? ids : []).map(String).filter(Boolean);
+    if (star5 !== undefined && star5 !== null) w.mainStar5 = !!star5;
+    w.mainAt = Date.now();
+    w.switched = (Number(w.switched) || 0) + 1;             // 改动次数（确认文案升级用，不硬限）
+    writeStory(w);
+    return w;
   }
 
   /* ---------- soloEnv：单串 env（主线 12 章 / 单串事件） ---------- */
@@ -3409,7 +3467,7 @@
     const bond = bondOf(rec, ctx);
     const bl = bondLevel(bond);
     const st = stageInfo(item, (rec && rec.stage) || 1, dayNo);
-    const mainId = storyMainId();
+    const mainSet = mainSetOf(_mainItems, load());
     return {
       days: dayNo,
       idle: (ctx && ctx.idleDays != null) ? Math.max(0, Number(ctx.idleDays) || 0) : 0,
@@ -3426,7 +3484,7 @@
       room: (ctx && ctx.roomCount != null) ? Math.max(1, Number(ctx.roomCount) || 1) : 1,
       members: (ctx && ctx.members != null) ? Math.max(0, Number(ctx.members) || 0) : 1,
       gifted: (item && item.gifted) ? 1 : 0,
-      isMain: !!(item && mainId && String(item.id) === mainId),
+      isMain: !!(item && mainSet && mainSet.has(String(item.id))),
       occ: occasionOf(item, rec, now),
     };
   }
@@ -3661,7 +3719,7 @@
       tiXingSet: {}, giftedN: 0, giftedAny: false, roomMax: 1, isMainIn: false,
       _roomN: {},             // 临时量，出口前删掉（不进 env 契约）
     };
-    const mainId = storyMainId();
+    const mainSet = mainSetOf(_mainItems, load());
     ms.forEach((m) => {
       /* ---- 老逻辑（一字不动） ---- */
       if (m.born) e.newest = Math.min(e.newest, dayNoOf(m.born, now));
@@ -3685,7 +3743,7 @@
       e.tiXingSet[tiXingOf(m.item)] = 1;
       if (m.gifted) { e.giftedN++; e.giftedAny = true; }
       if (m.roomId) e._roomN[m.roomId] = (e._roomN[m.roomId] || 0) + 1;
-      if (mainId && String(m.id) === mainId) e.isMainIn = true;
+      e.isMainIn = e.isMainIn || mainSet.has(String(m.id));   // 会话内任一只在主串集即 true
     });
     if (!ms.length) e.newest = 0;
     Object.keys(e._roomN).forEach((k) => { if (e._roomN[k] > e.roomMax) e.roomMax = e._roomN[k]; });
@@ -5685,7 +5743,9 @@
     NIGHT_EVENTS, THREAD_FAMILY, THREAD_CAP, OCC_BANDS, eventOf, occasionOf,
     nightThreads, threadEvents, threadEnter, threadChoose, threadReplay, threadBrief, threadTalkBrief, threadMigrate,
     // v163：条件系统（env 契约 / 胎性 / 亲密度兜底 / 主串）
-    soloEnv, tiXingOf, 胎性Of: tiXingOf, tiXingLabel, TIXING_ZH, normTiXing, bondOf, storyMainId, WHEN_KEYS, whenOK, whenNeed, thMember,
+    soloEnv, tiXingOf, 胎性Of: tiXingOf, tiXingLabel, TIXING_ZH, normTiXing, bondOf,
+    storyMainId, mainSetOf, setMainStory, readStory, writeStory, setMainItems,
+    WHEN_KEYS, whenOK, whenNeed, thMember,
     pruneForQuota,
     // v163：CG 资产库（像素在 IndexedDB / 元数据在主 store；「已收集」只认元数据）
     CG_DB_NAME, CG_FALLBACK_KEY, CG_TOTAL, CG_THUMB_KEEP, cgsOf, cgMetaOf, cgCollectedIds, cgCollectedCount,
