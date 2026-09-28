@@ -107,7 +107,53 @@ function loadFile(ctx, rel) {
   vm.runInContext(code, ctx, { filename: rel });
 }
 
-module.exports = { makeContext, loadFile, ok, section, summary };
+module.exports = { makeContext, loadFile, ok, section, summary, makeFakeIDB };
+
+/* ---------- 假 IndexedDB（够 cgIdb* 用的最小实现，事件走微任务） ---------- */
+function makeFakeIDB() {
+  const dbs = {};
+  function makeDB(name) {
+    const data = {};
+    return {
+      name: name, _data: data,
+      objectStoreNames: { contains: (n) => Object.prototype.hasOwnProperty.call(data, n) },
+      createObjectStore(n) { if (!data[n]) data[n] = new Map(); return { name: n }; },
+      transaction(n, mode) {
+        if (!data[n]) data[n] = new Map();
+        const m = data[n];
+        const pending = [];
+        const tx = { oncomplete: null, onerror: null, onabort: null, objectStore: () => os };
+        const os = {
+          get(k) { const r = { onsuccess: null, onerror: null, result: undefined }; pending.push(() => { r.result = m.get(String(k)); if (r.onsuccess) r.onsuccess(); }); return r; },
+          put(v, k) { const r = { onsuccess: null, onerror: null }; pending.push(() => { m.set(String(k), v); if (r.onsuccess) r.onsuccess(); }); return r; },
+          delete(k) { const r = { onsuccess: null, onerror: null }; pending.push(() => { m.delete(String(k)); if (r.onsuccess) r.onsuccess(); }); return r; },
+          getAllKeys() { const r = { onsuccess: null, onerror: null, result: undefined }; pending.push(() => { r.result = Array.from(m.keys()); if (r.onsuccess) r.onsuccess(); }); return r; },
+        };
+        queueMicrotask(() => {
+          queueMicrotask(() => {
+            pending.forEach((f) => f());
+            if (tx.oncomplete) tx.oncomplete();
+          });
+        });
+        return tx;
+      },
+    };
+  }
+  return {
+    _dbs: dbs,
+    open(name) {
+      const req = { onsuccess: null, onerror: null, onupgradeneeded: null, onblocked: null, result: null };
+      queueMicrotask(() => {
+        const isNew = !dbs[name];
+        if (isNew) dbs[name] = makeDB(name);
+        req.result = dbs[name];
+        if (isNew && req.onupgradeneeded) req.onupgradeneeded({ target: req });
+        if (req.onsuccess) req.onsuccess({ target: req });
+      });
+      return req;
+    },
+  };
+}
 
 function summary() {
   console.log("\n----------------------------------------");

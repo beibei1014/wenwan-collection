@@ -79,28 +79,250 @@
   function load() {
     try { const raw = localStorage.getItem(STORE_KEY); const o = raw ? JSON.parse(raw) : {}; return o && typeof o === "object" ? o : {}; } catch (e) { return {}; }
   }
-  // 配额超限时尽量保住最新一张立绘：丢 CG、裁历史/日记/来信，腾出空间再存一次，
-  // 避免「存不进去 → 下次判过期 → 又重出图烧额度」的死循环
+  /* ============================================================
+   * v163：CG 像素库（IndexedDB，库 `ww_cg`）—— 像素与主 store 彻底分离
+   * ------------------------------------------------------------
+   * 问题（已核）：CG 是 data URI，8 张 ≈ 1.6MB。原来塞在主 store（ww_spirits）里，
+   *   而 pruneForQuota 配额一超**第一个丢的就是 CG** → 玩家看到「昨天还在的 CG 今天没了」，
+   *   相册格子还会倒退回未解锁 —— 防剧透机制反而变成剧透。
+   * 方案：像素 → IndexedDB（库 ww_cg，key = "CG-01" …）；
+   *   主 store 只留元数据 rec.cgs[id] = { at,title,caption,vol,volName,chapter,key,hasImg,thumb }
+   * 🔴 铁律：「已收集」只认元数据 hasImg，**绝不**认「图现在在不在本机」。
+   * 第四态 missing = 画成功过（hasImg）但像素不在本机（换设备 —— ww_spirits 同步、IndexedDB 不同步）。
+   * IndexedDB 不可用时（隐身模式 / 老浏览器）退到独立 key `ww_cg_px`：
+   *   它是**独立 key**，pruneForQuota 只处理 ww_spirits 的对象，够不着它。
+   * ============================================================ */
+  const CG_DB_NAME = "ww_cg";
+  const CG_DB_STORE = "pixels";
+  const CG_FALLBACK_KEY = "ww_cg_px";
+  const CG_TOTAL = 8;            // 主线 CG 共 8 张（进度分母）
+  const CG_THUMB_KEEP = 3;       // 主 store 里缩略图保底保留张数（配额超限时从旧到新丢）
+  let _cgDbPromise = null;
+
+  function cgIdbFactory() {
+    try {
+      if (typeof indexedDB !== "undefined" && indexedDB) return indexedDB;
+      if (typeof window !== "undefined" && window && window.indexedDB) return window.indexedDB;
+    } catch (e) { /* 忽略 */ }
+    return null;
+  }
+  function cgIdbOpen() {
+    if (_cgDbPromise) return _cgDbPromise;
+    _cgDbPromise = new Promise((resolve) => {
+      let f = null;
+      try { f = cgIdbFactory(); } catch (e) { f = null; }
+      if (!f) return resolve(null);
+      try {
+        const req = f.open(CG_DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          try { if (!req.result.objectStoreNames.contains(CG_DB_STORE)) req.result.createObjectStore(CG_DB_STORE); }
+          catch (e) { /* 忽略 */ }
+        };
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+        req.onblocked = () => resolve(null);
+      } catch (e) { resolve(null); }
+    });
+    return _cgDbPromise;
+  }
+  function cgIdbGet(id) {
+    return cgIdbOpen().then((db) => new Promise((resolve) => {
+      if (!db) return resolve(null);
+      try {
+        const rq = db.transaction(CG_DB_STORE, "readonly").objectStore(CG_DB_STORE).get(String(id));
+        rq.onsuccess = () => resolve(rq.result || null);
+        rq.onerror = () => resolve(null);
+      } catch (e) { resolve(null); }
+    }));
+  }
+  function cgIdbPut(id, val) {
+    return cgIdbOpen().then((db) => new Promise((resolve) => {
+      if (!db) return resolve(false);
+      try {
+        const tx = db.transaction(CG_DB_STORE, "readwrite");
+        tx.objectStore(CG_DB_STORE).put(val, String(id));
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+        tx.onabort = () => resolve(false);
+      } catch (e) { resolve(false); }
+    }));
+  }
+  function cgIdbDel(id) {
+    return cgIdbOpen().then((db) => new Promise((resolve) => {
+      if (!db) return resolve(false);
+      try {
+        const tx = db.transaction(CG_DB_STORE, "readwrite");
+        tx.objectStore(CG_DB_STORE).delete(String(id));
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch (e) { resolve(false); }
+    }));
+  }
+  function cgIdbKeys() {
+    return cgIdbOpen().then((db) => new Promise((resolve) => {
+      if (!db) return resolve([]);
+      try {
+        const rq = db.transaction(CG_DB_STORE, "readonly").objectStore(CG_DB_STORE).getAllKeys();
+        rq.onsuccess = () => resolve((rq.result || []).map(String));
+        rq.onerror = () => resolve([]);
+      } catch (e) { resolve([]); }
+    }));
+  }
+  // ---- 退路：独立 localStorage key ----
+  function cgFallbackAll() {
+    try { const raw = localStorage.getItem(CG_FALLBACK_KEY); const o = raw ? JSON.parse(raw) : {}; return o && typeof o === "object" ? o : {}; }
+    catch (e) { return {}; }
+  }
+  function cgFallbackSave(o) { try { localStorage.setItem(CG_FALLBACK_KEY, JSON.stringify(o)); } catch (e) { /* 忽略 */ } }
+
+  /* ---------- 像素读写（对外唯一入口） ---------- */
+  // pixels = { full:"data:...", thumb:"data:..." }；返回 true = 至少写进了 full
+  function cgPutPixels(id, pixels) {
+    const key = String(id);
+    const val = { full: String((pixels && pixels.full) || ""), thumb: String((pixels && pixels.thumb) || ""), at: Date.now() };
+    return cgIdbPut(key, val).then((idbOK) => {
+      if (idbOK) {                                   // IDB 成功 → 清掉退路里的旧副本，避免两份
+        const f = cgFallbackAll();
+        if (f[key]) { delete f[key]; cgFallbackSave(f); }
+        return !!val.full;
+      }
+      const f = cgFallbackAll(); f[key] = val; cgFallbackSave(f);
+      return !!val.full;
+    });
+  }
+  function cgGetPixels(id) {
+    const key = String(id);
+    return cgIdbGet(key).then((v) => {
+      if (v && (v.full || v.thumb)) return v;
+      const f = cgFallbackAll();
+      return f[key] || null;
+    });
+  }
+  function cgDelPixels(id) {
+    const key = String(id);
+    return cgIdbDel(key).then(() => {
+      const f = cgFallbackAll();
+      if (f[key]) { delete f[key]; cgFallbackSave(f); }
+      return true;
+    });
+  }
+  function cgHasPixels(id) {
+    return cgGetPixels(id).then((v) => !!(v && (v.full || v.thumb)));
+  }
+
+  /* ---------- CG 元数据（只住主 store；🔴「已收集」以它为准） ---------- */
+  function cgsOf(rec) {                     // 仅写入路径调用（会按需创建）
+    if (!rec || typeof rec !== "object") return {};
+    if (!rec.cgs || typeof rec.cgs !== "object" || Array.isArray(rec.cgs)) rec.cgs = {};
+    return rec.cgs;
+  }
+  // 只读访问：**不创建** rec.cgs（避免给每只没 CG 的沁灵都塞一个空对象，100 只白涨体积）
+  function cgsRO(rec) {
+    if (!rec || typeof rec !== "object") return null;
+    const c = rec.cgs;
+    return (c && typeof c === "object" && !Array.isArray(c)) ? c : null;
+  }
+  function cgMetaOf(rec, id) { const c = cgsRO(rec); return (c && c[String(id)]) || null; }
+  // 已收集的 id 列表（按收集时间升序）—— 判定只看 hasImg，不看像素在不在本机
+  function cgCollectedIds(rec) {
+    const c = cgsRO(rec);
+    if (!c) return [];
+    return Object.keys(c).filter((k) => c[k] && c[k].hasImg)
+      .sort((a, b) => (Number(c[a].at) || 0) - (Number(c[b].at) || 0));
+  }
+  function cgCollectedCount(rec) { return cgCollectedIds(rec).length; }
+  // 落一张「画成功了」的 CG：元数据进主 store，像素另存 IDB。返回 true = 首次收集
+  function cgMarkCollected(rec, id, meta, thumb) {
+    const c = cgsOf(rec), key = String(id), old = c[key] || {};
+    const fresh = !old.hasImg;
+    c[key] = Object.assign({}, old, meta || {}, {
+      hasImg: true,
+      at: Number(old.at) || Date.now(),              // 🔴 首次收集时间不可被覆盖（换设备重画也保留）
+      key: (meta && meta.key) || old.key || "",
+      thumb: (thumb != null) ? String(thumb) : String(old.thumb || ""),
+      err: "",
+    });
+    return fresh;
+  }
+  // 出图失败：只写 err。🔴 已收集过的**绝不**降级成失败（否则格子倒退回剧透态）
+  function cgMarkFailed(rec, id, meta, err) {
+    const c = cgsOf(rec), key = String(id), old = c[key] || {};
+    if (old.hasImg) { c[key] = Object.assign({}, old, { err: String(err || "画失败") }); return false; }
+    c[key] = Object.assign({}, old, meta || {}, { hasImg: false, err: String(err || "画失败"), at: Number(old.at) || Date.now() });
+    return true;
+  }
+  // 格子状态机：locked / failed / ready / missing（pending 是 UI 的临时态，不落盘）
+  //   pixelPresent: true=本机有像素 / false=本机没有 / undefined=还不知道（只给元数据态 "collected"）
+  function cgStateOf(rec, id, pixelPresent) {
+    const m = cgMetaOf(rec, id);
+    if (!m) return "locked";
+    if (!m.hasImg) return m.err ? "failed" : "locked";
+    if (pixelPresent === true) return "ready";
+    if (pixelPresent === false) return "missing";     // 画成功过，但像素不在本机（换设备）
+    return "collected";
+  }
+  // 一步到位：给 UI 用。返回 { id, state, meta, pixels }
+  function cgSlotOf(rec, id) {
+    const m = cgMetaOf(rec, id);
+    if (!m || !m.hasImg) return Promise.resolve({ id: String(id), state: cgStateOf(rec, id), meta: m, pixels: null });
+    return cgGetPixels(id).then((px) => ({
+      id: String(id), state: cgStateOf(rec, id, !!(px && (px.full || px.thumb))), meta: m, pixels: px || null,
+    }));
+  }
+  /* ---------- 状态 → 格子 class / 门槛文案（单一来源，UI 不许自己硬编码字符串） ----------
+     🔴 第四态 missing 必须与 locked / 已解锁都能一眼分开：
+        locked  = 灰虚线 + 🔒 + 「还没到时候」（点了只抖一下）
+        missing = **实线** + ☁ + 「这张在原来那台设备上」（点开走「重新生成」确认，钱是用户的）
+     两条纪律：① missing 的 class 与 locked 不同；② missing 的文案与 locked 不同。 */
+  const CG_STATE_CLASS = {
+    ready: "album-cell", locked: "album-cell locked", pending: "album-cell pending",
+    failed: "album-cell failed", missing: "album-cell missing", placeholder: "album-cell placeholder",
+  };
+  const CG_STATE_HINT = {
+    ready: "", locked: "还没到时候", pending: "正在画…",
+    failed: "画失败了 · 点一下重画", missing: "这张在原来那台设备上", placeholder: "待画",
+  };
+  function cgCellClass(state) { return CG_STATE_CLASS[String(state)] || CG_STATE_CLASS.locked; }
+  function cgCellHint(state) { const s = String(state); return CG_STATE_HINT.hasOwnProperty(s) ? CG_STATE_HINT[s] : ""; }
+
+  // 配额超限时：保底留最新 CG_THUMB_KEEP 张的缩略图，其余从旧到新丢 thumb
+  // ⚠️ 只丢 thumb（可再生），**元数据（含 hasImg）永不丢**
+  function dropOldCgThumbs(rec, keep) {
+    const c = cgsRO(rec);                       // 只读：没有 cgs 就什么都不用丢
+    if (!c) return;
+    const ids = Object.keys(c).filter((k) => c[k] && c[k].hasImg);
+    if (ids.length <= (keep || CG_THUMB_KEEP)) return;
+    ids.sort((a, b) => (Number(c[a].at) || 0) - (Number(c[b].at) || 0));   // 旧 → 新
+    ids.slice(0, ids.length - (keep || CG_THUMB_KEEP)).forEach((k) => { c[k].thumb = ""; });
+  }
+
+  /* ---------- 配额瘦身（v163 重排顺序：CG 最后才丢） ----------
+     旧行为：第一个动作就是 `if (r.cgUrl) r.cgUrl = "";` —— 在 CG 只是"随手重画的插画"时成立，
+     但主线 CG 是**收集品**，丢一张 = 玩家白花钱 + 相册倒退回未解锁（= 剧透）。
+     新顺序：① 先裁可再生 / 非收集类数据（历史图片、日记、来信、回响、节令、聊天记录）
+             ② 再裁 CG 缩略图（从旧到新，保底留最新 CG_THUMB_KEEP 张；像素在 IndexedDB，取回不难）
+             ③ **最后才**丢 rec.cgUrl（v125 那张单张突破 CG，本来就能重画）
+     ⚠️ rec.cgs 的元数据（含 hasImg）永不丢 —— 丢了等于把已解锁的 CG 打回 locked。 */
   function pruneForQuota(o) {
     try {
       Object.keys(o).forEach((k) => {
         const r = o[k];
         if (!r || typeof r !== "object") return;
-        if (r.cgUrl) r.cgUrl = "";
+        /* ① 可再生 / 非收集类数据 */
         if (Array.isArray(r.imgHistory)) r.imgHistory = r.imgHistory.slice(-1);
         if (Array.isArray(r.diary)) r.diary = r.diary.slice(-8);
         if (Array.isArray(r.letters)) r.letters = r.letters.slice(-5);
-        if (Array.isArray(r.echoes)) r.echoes = r.echoes.slice(-5);     // v155：回响信也一起瘦身
-        if (r.replies && typeof r.replies === "object") {               // v155：日记回信只留最近 10 条
+        if (Array.isArray(r.echoes)) r.echoes = r.echoes.slice(-5);
+        if (r.replies && typeof r.replies === "object") {
           const ks = Object.keys(r.replies).sort();
           while (ks.length > 10) delete r.replies[ks.shift()];
         }
-        if (r.fests && typeof r.fests === "object") {                   // v158：节令记录只留最近 8 个
+        if (r.fests && typeof r.fests === "object") {
           const ks = Object.keys(r.fests).sort();
           while (ks.length > 8) delete r.fests[ks.shift()];
         }
-        if (r.night && Array.isArray(r.night.log)) r.night.log = r.night.log.slice(-150);   // v160：夜话聊天记录瘦身
-        if (r.threads && typeof r.threads === "object") {                                  // v162：多会话记录瘦身
+        if (r.night && Array.isArray(r.night.log)) r.night.log = r.night.log.slice(-150);
+        if (r.threads && typeof r.threads === "object") {
           Object.keys(r.threads).forEach((tid) => {
             const th2 = r.threads[tid];
             if (!th2 || typeof th2 !== "object") return;
@@ -112,6 +334,19 @@
             }
           });
         }
+        // v163 新增字段也要能瘦身（跨手机同步走整库一行 JSON，新字段不瘦身会撑爆同步）
+        if (r.marks && typeof r.marks === "object") {                 // 记痕：只留章序最早的 5 条
+          const ks = Object.keys(r.marks).sort((a, b) => String(a).localeCompare(String(b)));
+          while (ks.length > 5) delete r.marks[ks.pop()];
+        }
+        if (r.lingxiTalk && typeof r.lingxiTalk === "object") {       // 新主线对话槽（对齐 rec.talk）
+          if (Array.isArray(r.lingxiTalk.log)) r.lingxiTalk.log = r.lingxiTalk.log.slice(-40);
+          if (Array.isArray(r.lingxiTalk.msgs)) r.lingxiTalk.msgs = r.lingxiTalk.msgs.slice(-40);
+        }
+        /* ② CG 缩略图：从旧到新丢，保底留最新 3 张（元数据永不丢） */
+        dropOldCgThumbs(r, CG_THUMB_KEEP);
+        /* ③ 最后才丢 v125 单张 CG */
+        if (r.cgUrl) r.cgUrl = "";
       });
     } catch (e) { /* 忽略 */ }
     return o;
@@ -5163,5 +5398,10 @@
     NIGHT_EVENTS, THREAD_FAMILY, THREAD_CAP, OCC_BANDS, eventOf, occasionOf,
     nightThreads, threadEvents, threadEnter, threadChoose, threadReplay, threadBrief, threadTalkBrief, threadMigrate,
     pruneForQuota,
+    // v163：CG 资产库（像素在 IndexedDB / 元数据在主 store；「已收集」只认元数据）
+    CG_DB_NAME, CG_FALLBACK_KEY, CG_TOTAL, CG_THUMB_KEEP, cgsOf, cgMetaOf, cgCollectedIds, cgCollectedCount,
+    cgMarkCollected, cgMarkFailed, cgStateOf, cgSlotOf, dropOldCgThumbs,
+    CG_STATE_CLASS, CG_STATE_HINT, cgCellClass, cgCellHint,
+    cgPutPixels, cgGetPixels, cgDelPixels, cgHasPixels,
   };
 })();

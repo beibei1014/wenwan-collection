@@ -2696,7 +2696,8 @@
   /* ---------- v97：走 API 通道真正出图（POST 拿图） ---------- */
   // 统一的存档尺寸：**所有路径都用同一档**（首出/换形象/换设定/深沁），避免"缩略图与立绘清晰度不一致"
   const SPIRIT_IMG_SIZE = 512;
-  // v125：CG 是横版插画，存大一点（长边 768）才看得清细节；一张 ≈ 60-90KB，本地存得下
+  // v125：单张突破 CG（rec.cgUrl）是横版插画，存大一点（长边 768）才看得清细节。
+  // v163：**主线 8 张 CG 不走这里** —— 它们用 CG_MAIN_SIZE=512 存进 IndexedDB，见下方 commitMainlineCg。
   const CG_IMG_SIZE = 768;
   // 把出图结果压成小图存本地（火山方舟返回的 URL 只有 24 小时有效，所以 b64 一律压成 data URI 长期保存）
   function shrinkToDataUri(src, max, quality) {
@@ -2739,6 +2740,95 @@
       if (!dataUri) return "";
       return (await shrinkToDataUri(dataUri, max, quality)) || dataUri;
     } catch (e) { return ""; }
+  }
+  /* ============================================================
+   * v163：主线 CG 的落库入口（存储层，不含出图触发与 UI）
+   * ------------------------------------------------------------
+   * 分工：
+   *   · 像素（data URI）→ Spirits.cgPutPixels() → IndexedDB（库 ww_cg）
+   *   · 元数据（title/caption/vol/chapter/hasImg/thumb）→ rec.cgs[id] → 主 store
+   * 🔴 「已收集」只认元数据 hasImg；像素不在本机 = missing（第四态），不是 locked。
+   * 规格：主线 CG 大图长边 512 / q0.72；缩略图长边 384 / q0.72（美术规范 §B1/§A9）。
+   * ⚠️ 只作用于**主线 8 张**，v125 的单张突破 CG（CG_IMG_SIZE=768 那条路）一行不动。
+   * ============================================================ */
+  const CG_MAIN_SIZE = 512;      // 主线 CG 大图长边（8 张 ≈ 0.44–0.76MB）
+  const CG_MAIN_Q = 0.72;
+  const CG_THUMB_SIZE = 384;     // 相册缩略图长边（宫格只加载它，禁止把 512 塞进 116px 格子）
+  const CG_THUMB_Q = 0.72;
+
+  // 取这只沁灵的最新记录 + flush 闭包（避免「改了旧对象又被 load 覆盖」的经典坑）
+  function cgRecStore(item) {
+    const s = Spirits.load();
+    const r = Spirits.ensureIn(s, item.id);
+    return { store: s, rec: r, flush: function () { Spirits.save(s); } };
+  }
+  // 「已收集」进度：n / 8（分母走 Spirits.CG_TOTAL，不硬编码）
+  function cgAlbumProgress(rec) {
+    try { return { n: Spirits.cgCollectedCount(rec), total: Spirits.CG_TOTAL }; }
+    catch (e) { return { n: 0, total: 8 }; }
+  }
+  // 相册格子的状态（一次读 IDB）。返回 { progress, collected:[{id,state,meta,pixels}] }
+  //   state: ready / missing / failed / locked / collected(未查像素)
+  async function cgAlbumSlots(rec) {
+    try {
+      const ids = Spirits.cgCollectedIds(rec);
+      const slots = [];
+      for (let i = 0; i < ids.length; i++) slots.push(await Spirits.cgSlotOf(rec, ids[i]));
+      return { progress: cgAlbumProgress(rec), collected: slots };
+    } catch (e) { return { progress: { n: 0, total: 8 }, collected: [] }; }
+  }
+  // 把一张「刚画好的主线 CG」落库。res = { b64 } 或 { url }（与 Spirits.generateCustom 一致）
+  // meta = { title, caption, vol, volName, chapter, key, shot }（key = 缓存 key，变更才重画）
+  // 返回 { ok, id, fresh, missing }：ok = 元数据已记（像素写失败也只是 missing，不丢「已收集」）
+  async function commitMainlineCg(item, cgId, res, meta) {
+    const id = String(cgId);
+    const st = cgRecStore(item);
+    let full = "";
+    try {
+      const src = (res && res.b64) ? ("data:image/png;base64," + res.b64) : ((res && res.url) || "");
+      if (!src) { Spirits.cgMarkFailed(st.rec, id, meta, "出图返回为空"); st.flush(); return { ok: false, id: id, reason: "empty" }; }
+      if (/^data:/i.test(src)) full = (await shrinkToDataUri(src, CG_MAIN_SIZE, CG_MAIN_Q)) || src;
+      else full = (await urlToDataUri(src, CG_MAIN_SIZE, CG_MAIN_Q)) || "";
+    } catch (e) { full = ""; }
+    let thumb = "";
+    if (full) { try { thumb = (await shrinkToDataUri(full, CG_THUMB_SIZE, CG_THUMB_Q)) || ""; } catch (e) { thumb = ""; } }
+    // ① 像素 → IndexedDB（不碰主 store）
+    let wrote = false;
+    try { wrote = await Spirits.cgPutPixels(id, { full: full, thumb: thumb }); } catch (e) { wrote = false; }
+    // ② 元数据 → 主 store（🔴 元数据在 = 已收集；不依赖像素在不在）
+    const fresh = Spirits.cgMarkCollected(st.rec, id, meta, thumb);
+    try { bumpGenCount(st.rec); } catch (e) { /* 忽略 */ }
+    st.flush();
+    return { ok: true, id: id, fresh: fresh, missing: !wrote };
+  }
+  // 出图失败：只写 err（🔴 已收集过的绝不降级）
+  function markMainlineCgFailed(item, cgId, meta, err) {
+    try {
+      const st = cgRecStore(item);
+      const r = Spirits.cgMarkFailed(st.rec, cgId, meta, err);
+      st.flush();
+      return r;
+    } catch (e) { return false; }
+  }
+  // 换设备后像素不在本机（missing）→ 重画入口。钱是用户的，必须走 confirmModal
+  async function retryMissingCg(item, cgId, meta) {
+    const yes = await confirmModal(
+      "这张要重新画吗？",
+      "这张 CG 在原来那台设备上，这台手机里没有它的图。重画一次约 ¥0.13，画好还是存进相册。",
+      "重新生成", true);
+    if (!yes) return { ok: false, cancelled: true };
+    const prompt = String((meta && meta.shot) || "").trim();
+    if (!prompt) { toast("这张 CG 缺画面描述，暂时画不了"); return { ok: false, reason: "no_prompt" }; }
+    try {
+      const res = await Spirits.generateCustom(prompt, { seedKey: "mainline#" + cgId, variant: 0, landscape: true });
+      const r = await commitMainlineCg(item, cgId, res, meta);
+      toast(r.missing ? "画好了，先记着「已收集」" : "画好了，存进相册了");
+      return r;
+    } catch (e) {
+      markMainlineCgFailed(item, cgId, meta, (e && e.message) || "出图失败");
+      toast("出图失败：" + ((e && e.message) || "出图失败"));
+      return { ok: false, reason: "error" };
+    }
   }
   // 出图计数（帮用户盯住免费额度）：单只沁灵 rec.genCount + 本机累计
   function bumpGenCount(rec) {
