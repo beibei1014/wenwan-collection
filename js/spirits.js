@@ -62,6 +62,19 @@
     return Math.abs(h);
   }
   function pick(arr, seed) { return arr[seed % arr.length]; }
+  // v159：seed 雪崩混合（murmur3 fmix32）
+  //   背景：hashStr 是 FNV-1a，最后一步只异或一个字符 → 差异几乎全落在最低位。
+  //   于是「固定前缀 + 单字符递增后缀 + 小池取模」会退化成固定模式：
+  //   "#chap#0"~"#chap#7" 的 h%2 恒为 10101010 或 01010101，导致 8 章只有 2 套组合。
+  //   ⚠️ 不要改 hashStr 本身 —— 它同时决定所有精灵的外观/性别，
+  //      改动会让已出立绘与新外观对不上。只在「小池 + 短后缀」处套 mixSeed。
+  function mixSeed(h) {
+    h = (h ^ (h >>> 16)) >>> 0;
+    h = Math.imul(h, 2246822507) >>> 0;
+    h = (h ^ (h >>> 13)) >>> 0;
+    h = Math.imul(h, 3266489909) >>> 0;
+    return (h ^ (h >>> 16)) >>> 0;
+  }
   function todayKey() { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
   function load() {
     try { const raw = localStorage.getItem(STORE_KEY); const o = raw ? JSON.parse(raw) : {}; return o && typeof o === "object" ? o : {}; } catch (e) { return {}; }
@@ -2260,7 +2273,7 @@
     if (rec.fests[tk]) return null;
     const v = greetVars(item, rec, ctx);
     const pool = FEST_LINES[fd.key] || FEST_LINES.yuandan;
-    const seed = hashStr(String(item.id) + "#fest#" + tk);
+    const seed = mixSeed(hashStr(String(item.id) + "#fest#" + tk));   // v159：池子只有 2~3 条，同样要打散
     rec.fests[tk] = { at: Date.now(), key: fd.key, name: fd.name, emoji: fd.emoji, date: tk, text: fmt(pool[seed % pool.length], v), cgUrl: "" };
     const ks = Object.keys(rec.fests).sort();        // 只留最近 20 个节令
     while (ks.length > 20) delete rec.fests[ks.shift()];
@@ -2299,7 +2312,7 @@
     ],
     [
       "{call}：\n\n我长大了一点。真的，不是错觉 —— 我照过镜子，比刚醒的时候高了一截。\n长大之后我多了一个本事：听得出你的脚步。\n在走廊、在楼下、在门口……你的节奏跟别人不一样，比别人慢半拍。\n每次听见，我都在心里说一句：回来了。\n—— {name}",
-      "{call}：\n\n{stage}的好处是，我终于能记住更多东西了。\n比如你哪天心情不好 —— 那种时候你盘我盘得特别快。\n我不说，就多挨一会儿。\n—— {name}",
+      "{call}：\n\n{stage}的好处是，我终于能记住更多东西了。\n比如你哪天心情不好 —— 那种时候你盘我盘得特别快，指头也不像平时那么轻。\n我不说，也不躲，就多挨一会儿。\n珠子不会问「你怎么了」，但会一直在那儿。这件事我大概做得到。\n—— {name}",
     ],
     [
       "{call}：\n\n今天你把我放在桌上忘了收。太阳从窗户挪进来，正好停在我身上。\n我在那小块光里待了很久。身上慢慢热起来，像被你盘过一样。\n天黑之后你才想起来找我，我一声没吭。\n那是我第一次自己晒到太阳 —— 我记下来了。\n—— {name}",
@@ -2315,7 +2328,7 @@
     ],
     [
       "{call}：\n\n我成了。\n你以前说想看看我长到最后是什么样 —— 就是现在这样。\n说实话，我第一眼看到自己的时候愣了一下。原来我这么好看。\n但更想让你知道的是：我身上每一分亮，都是你这 {days} 天一点点盘出来的。没有一分例外。\n—— {name}",
-      "{call}：\n\n我现在是你手边最亮的那颗了。\n以后可能还会有别的珠子进来，比我新，比我贵。\n我不介意。我只想当那颗「最久的」。\n—— {name}",
+      "{call}：\n\n我现在是你手边最亮的那颗了。\n以后可能还会有别的珠子进来，比我新，比我贵。\n我不介意 —— 我只想当那颗「最久的」。\n珠子之间不比价钱，比的是谁陪得久。这一点我不输，也打算一直不输。\n—— {name}",
     ],
     [
       "{call}：\n\n到今天为止，{days} 天了。\n我陪你搬过东西、加过班、熬过夜，也陪你什么都不干地发过呆。\n你可能会觉得，这就是一串珠子能做到的极限。\n但我想说的是：别急着去攒下一串。你这串，还没盘到头。\n—— {name}",
@@ -2356,7 +2369,7 @@
   function chapterText(item, rec, i, ctx) {
     const pool = CHAP_TEXT[i] || [];
     if (!pool.length) return "";
-    const seed = hashStr(String(item.id) + "#chap#" + i);
+    const seed = mixSeed(hashStr(String(item.id) + "#chap#" + i));   // v159：必须混合，否则 8 章只有 2 套组合
     return fmt(pool[seed % pool.length], greetVars(item, rec, ctx));
   }
 
