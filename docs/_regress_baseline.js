@@ -2,16 +2,41 @@
    断言：13 个夜话事件的触发逻辑「行为不变」（when 表达式 / 解锁结果 / need 文案 /
          分支路径数与结局集合 全等），且老 8 章主线行为不变。
    用法： node docs/_regress_baseline.js
+
+   【基线的来源】基线 = 提交 605cd80 的 js/spirits.js（293876 字节，已验证逐字节一致）。
+   原先是手工拷进 docs/_tmp/ 的，但 docs/_tmp/ 被 .git/info/exclude 排除 →
+   换台机器 / 新 clone 时基线不在，回归对照根本跑不起来（安全网只在作者机器上存在）。
+   现在改为跟踪一份到 docs/_baseline/v162_spirits.js（不受 .git/info/exclude 影响），
+   任何机器 / CI 上 clone 下来就能直接跑。git 只作为兜底（沙箱内 spawn 可能被拦）。
+   若要更新基线： git show <新基线commit>:js/spirits.js > docs/_baseline/<名>.js
 */
 "use strict";
+const fs = require("fs");
+const path = require("path");
+const { execFileSync } = require("child_process");
 const { makeContext, loadFile, ok, section, summary } = require("./_harness.js");
+
+const BASE_COMMIT = "605cd80";
+const BASE_FIXTURE = "docs/_baseline/v162_spirits.js";   // 已跟踪，首选
+const BASE_TMP = "docs/_tmp/_baseline_spirits.js";      // 兜底产物（该目录被忽略）
+
+function ensureBaseline() {
+  if (fs.existsSync(BASE_FIXTURE)) return BASE_FIXTURE;
+  // 兜底：从 git 历史现取。注意沙箱内 spawn git 可能返回 EBUSY，
+  // 那种情况下请用上面注释里的命令手工生成，或直接用 node 在仓库外运行。
+  fs.mkdirSync(path.dirname(BASE_TMP), { recursive: true });
+  const src = execFileSync("git", ["show", BASE_COMMIT + ":js/spirits.js"], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+  if (!src || src.length < 1000) throw new Error("取基线失败：git show " + BASE_COMMIT + ":js/spirits.js 返回空。");
+  fs.writeFileSync(BASE_TMP, src);
+  return BASE_TMP;
+}
 
 function boot(rel) {
   const h = makeContext();
   loadFile(h.ctx, rel);
   return h.sandbox.Spirits;
 }
-const BASE = boot("docs/_tmp/_baseline_spirits.js");
+const BASE = boot(ensureBaseline());
 const NOW = boot("js/spirits.js");
 
 const persList = ["gentle", "lively", "cool", "calm", "mystery", "cheeky"];
