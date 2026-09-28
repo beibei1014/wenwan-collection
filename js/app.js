@@ -3177,6 +3177,13 @@
     const s = Spirits.load();
     return spiritItems().map((it) => Object.assign({}, it, { roomId: (s[it.id] && s[it.id].roomId) || "" }));
   }
+  // v163：主线 room 门槛（房间同住 ≥2）在 app 层算好传给引擎，别把 Rooms 依赖写进 spirits.js。
+  //   没进房间 = 1（一个人住也算 1，room≥2 永远为假）；进了房间 = 实际同住只数。
+  function roomCountOf(rec) {
+    const rid = rec && rec.roomId;
+    if (!rid) return 1;
+    return Math.max(1, Rooms.membersOf(rid, roomItems()).length);
+  }
   function nameOf(it, store) {
     const rec = (store || Spirits.load())[it.id] || {};
     return rec.name || (rec.persona && rec.persona.name) || it.name || "沁灵";   // v113：用户改过的名字优先
@@ -3906,7 +3913,7 @@
     h += "</div>";
 
     // v161：📖 主线 · 串与我 —— 改成「聊天」形式：点一章进去跟它聊，每章 2 个结尾（全本地 0 成本）
-    const chapList = Spirits.chapterState(rec, cpCtx);
+    const chapList = Spirits.chapterState(rec, cpCtx, roomCountOf(rec));
     const chapTalk = Spirits.chapTalkBrief(rec);
     const chapRead = chapList.filter((ch) => ch.read).length;
     const chapUnread = chapList.filter((ch) => ch.unlocked && !ch.read).length;
@@ -5000,7 +5007,7 @@
     if (!act) { location.hash = "#/spirit/" + encodeURIComponent(it.id); return; }
     const st0 = Spirits.load();
     const rc0 = Spirits.ensureIn(st0, it.id);
-    const ch = Spirits.chapterState(rc0, diaryCtx(it, rc0))[i];
+    const ch = Spirits.chapterState(rc0, diaryCtx(it, rc0), roomCountOf(rc0))[i];
     if (!ch || !ch.unlocked) { location.hash = "#/spirit/" + encodeURIComponent(it.id); return; }
     const nm = nameOf(it, st0);
     const back = "#/spirit/" + encodeURIComponent(it.id);

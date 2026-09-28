@@ -2032,14 +2032,20 @@
    * 全本地：不出图、不调模型、不花一分钱，只写 localStorage（跨手机同步会自动带上）
    * ============================================================ */
 
-  /* ---------- 公共：模板变量替换 ---------- */
+  /* ---------- 公共：模板变量替换 ----------
+     v163：老 9 个键保留原链**逐字不动**（保证老台词一字不变）；
+           新增占位符（{bondlv}{bond}{species}{room}{tixing}{胎性}…）走通用替换。 */
   function fmt(tpl, v) {
-    return String(tpl == null ? "" : tpl)
+    const s = String(tpl == null ? "" : tpl)
       .replace(/\{days\}/g, v.days).replace(/\{idle\}/g, v.idle).replace(/\{plays\}/g, v.plays)
       .replace(/\{color\}/g, v.color).replace(/\{stage\}/g, v.stage).replace(/\{bead\}/g, v.bead)
       .replace(/\{call\}/g, v.call).replace(/\{name\}/g, v.name).replace(/\{year\}/g, v.year || "");
+    return s.replace(/\{([^{}]+)\}/g, (m, k) => (v[k] != null && v[k] !== "") ? String(v[k]) : m);
   }
   function greetVars(item, rec, ctx) {
+    const bond = bondOf(rec, ctx);
+    const bl = bondLevel(bond);
+    const tx = tiXingOf(item);
     return {
       days: Math.max(1, (ctx && ctx.dayNo) || 1),
       idle: (ctx && ctx.idleDays != null) ? ctx.idleDays : 0,
@@ -2050,8 +2056,15 @@
       call: callOf(rec),
       name: (rec && rec.persona && rec.persona.name) || (item && item.name) || "它",
       year: 0,
+      // v163 新增（全小写无分隔，不混驼峰；台词里 {tixing} 与 {胎性} 等价）
+      bond: bond, bondlv: bl.name, bondname: bl.name,
+      species: (item && (item.species || item.category)) || "",
+      room: (ctx && ctx.roomCount != null) ? String(ctx.roomCount) : "",
+      tixing: TIXING_ZH[tx] || "杂胎",
+      "胎性": TIXING_ZH[tx] || "杂胎",
     };
   }
+
 
   /* ---------- ① 每日问候（一天一句，按情境挑；纯本地） ---------- */
   const GREET = {
@@ -2558,9 +2571,16 @@
     { vol: 4, volName: "卷四 · 长成", stage: 4, days: 60, icon: "🪢", title: "以后也这样陪着你" },
   ];
   // 每一章的状态（解锁 / 已读 / 还差什么）
-  function chapterState(rec, ctx) {
+  // v163：新增 bond / plays / idle / room / anyOf 支持（**缺省 = 不限制**，老 8 章行为不变）
+  //   room 由 **app 层**用 rec.roomId + Rooms.membersOf() 算好传入 —— 不把 Rooms 依赖写进 spirits.js
+  function chapterState(rec, ctx, roomCount) {
     const days = Math.max(1, (ctx && ctx.dayNo) || 1);
     const stage = Math.max(1, Number(rec && rec.stage) || 1);
+    const bond = bondOf(rec, ctx);
+    const plays = Math.max(0, Number(ctx && ctx.plays) || 0);
+    const idle = Math.max(0, Number(ctx && ctx.idleDays) || 0);
+    const room = Math.max(0, Number(roomCount) || 0);
+    const env = { days: days, stage: stage, bond: bond, plays: plays, idle: idle, room: room, members: Number(ctx && ctx.members) || 1 };
     const read = (rec && rec.chapters && typeof rec.chapters === "object") ? rec.chapters : {};
     const out = [];
     let prevRead = true;
@@ -2568,18 +2588,29 @@
       const c = CHAPTERS[i];
       const stageOk = stage >= c.stage;
       const daysOk = days >= c.days;
-      const unlocked = prevRead && stageOk && daysOk;
+      const bondOk = (c.bond == null) || bond >= c.bond;
+      const playsOk = (c.plays == null) || plays >= c.plays;
+      const idleOk = (c.idle == null) || idle >= c.idle;
+      const roomOk = (c.room == null) || room >= c.room;
+      const anyOk = !c.anyOf || (Array.isArray(c.anyOf) ? c.anyOf : [c.anyOf]).some((w) => whenOK(w, env));
+      const unlocked = prevRead && stageOk && daysOk && bondOk && playsOk && idleOk && roomOk && anyOk;
       let need = "";
       if (!stageOk) need = "到「" + stageDef(c.stage).name + "」解锁";
       else if (!daysOk) need = "再陪 " + (c.days - days) + " 天解锁";
+      else if (!bondOk) need = whenNeed({ bond: c.bond }, env) || ("要跟它再熟一点（现在「" + bondLevel(bond).name + "」）");
+      else if (!playsOk) need = "再多盘它几回";
+      else if (!idleOk) need = "要冷落它 " + c.idle + " 天才会发生";
+      else if (!roomOk) need = "要给它找个同屋的伴";
+      else if (!anyOk) need = "还差一个条件没满足";
       else if (!prevRead) need = "先看完上一章";
       out.push({ i: i, vol: c.vol, volName: c.volName, icon: c.icon, title: c.title, unlocked: unlocked, read: !!read[i], need: need });
       prevRead = unlocked ? !!read[i] : false;
     }
     return out;
   }
-  function unreadChapterCount(rec, ctx) {
-    return chapterState(rec, ctx).filter((c) => c.unlocked && !c.read).length;
+
+  function unreadChapterCount(rec, ctx, roomCount) {
+    return chapterState(rec, ctx, roomCount).filter((c) => c.unlocked && !c.read).length;
   }
   function readChapter(rec, i) {
     rec.chapters = (rec.chapters && typeof rec.chapters === "object") ? rec.chapters : {};
@@ -3308,6 +3339,198 @@
     return null;
   }
 
+  /* ============================================================
+   * v163：条件求值 env / 胎性 / 亲密度兜底（主线与夜话共用）
+   * ------------------------------------------------------------
+   * 不做两套求值器。定义**一个 env 契约** + 两个 env 生产者：
+   *   soloEnv(item, rec, ctx)   → 单串（主线 12 章 / 单串事件）
+   *   thEnv(thread, ctx, now)    → 会话（夜话）
+   *   whenOK(when, env) / whenNeed(when, env) → 唯一求值器 / 唯一提示器
+   * 纪律：env 里**不存在**的键，whenOK 一律判「不满足」（绝不判 true，
+   *   否则老存档会一夜之间解锁全部章节）。
+   * ============================================================ */
+
+  /* ---------- 胎性：纯函数，零新存储（顺序敏感，不可调换） ---------- */
+  // 顺序：① 排除非文玩 → ② 脂 → ③ 木 → ④ 石 → ⑤ 金 → ⑥ 分类兜底 → ⑦ 杂
+  //   ⚠️ 脂胎必须排在石胎之前：蜜蜡/琥珀在 categories.js 里挂在「玉石」分类下，
+  //      走分类兜底会被误判成石胎。
+  //   🔴 「木」「石」都必须排在「金」之前（设计文档 §A.6 写的顺序是「金→木→石」，实测会误判）：
+  //      「金**刚菩提**」「紫**金**鼠」含「金」字但是木头，「青**金石**」含「金」字但是石头；
+  //      按文档顺序这三项会被判成金胎。已按实测改为「木 → 石 → 金」，
+  //      并用 categories.js 全量选项跑覆盖断言（docs/_test_v163.js §6）。
+  const TIXING_ZH = { 木: "木胎", 石: "石胎", 脂: "脂胎", 金: "金胎", 杂: "杂胎" };
+  function tiXingOf(item) {
+    if (!item) return "杂";
+    const cat = String(item.category || "");
+    const sp = String(item.species || "");
+    if (cat === "拼图" || cat === "动漫周边" || cat === "盲盒") return "杂";   // ① 先排除非文玩
+    if (/蜜|蜡|珀|琥珀/.test(sp)) return "脂";                                // ② 脂必须在石之前
+    if (/菩提|核|椰|木|果|橄榄|库克|紫金鼠|象牙果/.test(sp)) return "木";       // ③ 木先于金（金刚菩提/紫金鼠）
+    if (/晶|石|玉|翠|玛瑙|松|岫|青金|曜|玺/.test(sp)) return "石";             // ④ 石先于金（青金石）
+    if (/金|银|铜|钛|钢|锡/.test(sp)) return "金";                            // ⑤ 金最后（没有预设金属品种，供用户手填）
+    if (cat === "菩提") return "木";                                          // ⑥ 分类兜底
+    if (cat === "水晶" || cat === "玉石") return "石";
+    return "杂";
+  }
+  function tiXingLabel(item) { return TIXING_ZH[tiXingOf(item)] || "杂胎"; }
+  // when.tixing 允许写 ["木"] 或 ["木胎"]（统一剥掉尾部「胎」再比）
+  function normTiXing(v) {
+    const s = String(v == null ? "" : v).trim();
+    return s.charAt(s.length - 1) === "胎" ? s.slice(0, -1) : s;
+  }
+
+  /* ---------- 亲密度兜底（纯读、不写盘） ----------
+     rec.bond 在 settleBond() 从未跑过时是 undefined。直接判 bond >= 30 会让
+     **所有老用户的第 2/4/7/8/10/11/12 章全部锁死**。
+     规定：null → min(40, 陪伴天数)，与 settleBond 首启逻辑一致。 */
+  function bondOf(rec, ctx) {
+    if (rec && rec.bond != null) return Math.max(0, Number(rec.bond) || 0);
+    const d = Math.max(1, (ctx && ctx.dayNo) || 1);
+    return Math.min(40, d);
+  }
+
+  /* ---------- 全局主串（设计 §C.2：ww_story 全局一条，不进 rec） ---------- */
+  function storyMainId() {
+    try {
+      const raw = localStorage.getItem("ww_story");
+      const o = raw ? JSON.parse(raw) : null;
+      return (o && o.mainId) ? String(o.mainId) : "";
+    } catch (e) { return ""; }
+  }
+
+  /* ---------- soloEnv：单串 env（主线 12 章 / 单串事件） ---------- */
+  function soloEnv(item, rec, ctx) {
+    const now = Date.now();
+    const dayNo = Math.max(1, (ctx && ctx.dayNo) || 1);
+    const bond = bondOf(rec, ctx);
+    const bl = bondLevel(bond);
+    const st = stageInfo(item, (rec && rec.stage) || 1, dayNo);
+    const mainId = storyMainId();
+    return {
+      days: dayNo,
+      idle: (ctx && ctx.idleDays != null) ? Math.max(0, Number(ctx.idleDays) || 0) : 0,
+      plays: Math.max(0, (ctx && ctx.plays) || 0),
+      stage: Math.max(1, Number(rec && rec.stage) || 1),
+      growth: st.growth,
+      canBreak: !!st.canBreak,
+      bond: bond,
+      bondLv: bl.lv,
+      bondName: bl.name,
+      tixing: tiXingOf(item),
+      tiXingSet: (function () { const o = {}; o[tiXingOf(item)] = 1; return o; })(),
+      pers: ((rec && rec.look) || {}).pers || "",
+      room: (ctx && ctx.roomCount != null) ? Math.max(1, Number(ctx.roomCount) || 1) : 1,
+      members: (ctx && ctx.members != null) ? Math.max(0, Number(ctx.members) || 0) : 1,
+      gifted: (item && item.gifted) ? 1 : 0,
+      isMain: !!(item && mainId && String(item.id) === mainId),
+      occ: occasionOf(item, rec, now),
+    };
+  }
+
+  /* ---------- when 键规格表（唯一来源：whenOK 判定 + whenNeed 提示都走它） ----------
+     ok(e, v) / need(e, v) / has(w)
+     ⚠️ 顺序 = 报「还差什么」的优先序。老 8 键的顺序与文案**逐字保持原样**
+       （回归验证见 docs/_regress_baseline.js）。
+     聚合键约定：会话 env 带 Max/Min/N 后缀（bondMax…），when 里仍写基础名
+       （bond/stage/growth/gifted），求值器按 env 实际有的键取值 —— 同一份 when
+       喂 soloEnv 和 thEnv 都能判，文案写一次就够。 */
+  function envNum(e, base, aggKey) {
+    if (aggKey && e[aggKey] != null) return Number(e[aggKey]) || 0;
+    if (e[base] != null) return Number(e[base]) || 0;
+    return null;                                   // 不存在 → 保守判「不满足」
+  }
+  const WHEN_KEYS = [
+    /* ---- 老 8 键：顺序与提示文案逐字保持原样 ---- */
+    { k: "days", has: (w) => !!w.days, ok: (e, v) => e.days >= v, need: (e, v) => "再陪 " + (v - e.days) + " 天" },
+    { k: "members", has: (w) => !!w.members, ok: (e, v) => e.members >= v, need: (e, v) => "要群里满 " + v + " 位成员（现在 " + e.members + "）" },
+    { k: "idle", has: (w) => !!w.idle, ok: (e, v) => e.idle >= v, need: () => "你很久没冷落它们时才会发生" },
+    { k: "plays", has: (w) => !!w.plays, ok: (e, v) => e.plays >= v, need: () => "今天先去盘一盘才会发生" },
+    { k: "newFace", has: (w) => w.newFace != null, ok: (e, v) => e.newest <= v, need: () => "等有新成员进门" },
+    {
+      k: "occasion", has: (w) => !!w.occasion, need: () => "要等到谁的生日 / 满月 / 周年",
+      ok: (e, v) => {
+        const ks = Array.isArray(v) ? v : [v];
+        if (e.starOcc) return ks.some((x) => e.starOcc[x] && e.starOcc[x].length);
+        if (e.occ) return ks.indexOf(e.occ.kind) >= 0;     // soloEnv 只有单串的 occ
+        return false;
+      },
+    },
+    {
+      k: "fest", has: (w) => !!w.fest, need: () => "要在特定的日子里才会发生",
+      ok: (e, v) => { const fs = Array.isArray(v) ? v : [v]; return fs.indexOf(e.fest) >= 0; },
+    },
+    {
+      k: "pers", has: (w) => !!w.pers, need: () => "要群里刚好有这两种性格的串",
+      ok: (e, v) => { for (let i = 0; i < v.length; i++) if (!e.persSet || !e.persSet[v[i]]) return false; return true; },
+    },
+    /* ---- v163 新增键（只加键，不动顶层结构；老 13 条表达式不含这些键 → 行为 100% 不变）---- */
+    {
+      k: "bond", has: (w) => !!w.bond,
+      ok: (e, v) => { const n = envNum(e, "bond", "bondMax"); return n != null && n >= v; },
+      need: (e) => {
+        const n = envNum(e, "bond", "bondMax");
+        const nm = e.bondName || bondLevel(n || 0).name;
+        return "要跟它再熟一点（现在「" + nm + "」）";
+      },
+    },
+    {
+      k: "bondLv", has: (w) => !!w.bondLv,
+      ok: (e, v) => { const n = envNum(e, "bondLv", "bondLvMax"); return n != null && n >= v; },
+      need: (e, v) => {
+        const lv = Math.min(BOND_LEVELS.length - 1, Math.max(0, Number(v) || 0));
+        return "要到「" + BOND_LEVELS[lv].name + "」才算数";
+      },
+    },
+    {
+      k: "stage", has: (w) => !!w.stage,
+      ok: (e, v) => { const n = envNum(e, "stage", "stageMax"); return n != null && n >= v; },
+      need: (e, v) => "要等它「" + stageDef(v).name + "」",
+    },
+    {
+      k: "growth", has: (w) => !!w.growth,
+      ok: (e, v) => { const n = envNum(e, "growth", "growthMax"); return n != null && n >= v; },
+      need: () => "再多盘它几回",
+    },
+    {
+      k: "room", has: (w) => !!w.room,
+      ok: (e, v) => { const n = envNum(e, "room", "roomMax"); return n != null && n >= v; },
+      need: () => "要给它找个同屋的伴",
+    },
+    {
+      k: "gifted", has: (w) => !!w.gifted,
+      ok: (e, v) => { const n = envNum(e, "gifted", "giftedN"); return n != null && n >= v; },
+      need: () => "要有串被你送走过，才会有这件事",
+    },
+    {
+      k: "tixing", has: (w) => !!w.tixing,
+      ok: (e, v) => {
+        const ks = Array.isArray(v) ? v : [v];
+        const hit = (x) => {
+          const bare = normTiXing(x);
+          if (e.tiXingSet) return !!e.tiXingSet[bare];          // 会话 env（多个成员）
+          if (e.tixing != null) return bare === normTiXing(e.tixing); // 单串 env
+          return false;
+        };
+        for (let i = 0; i < ks.length; i++) if (!hit(ks[i])) return false;
+        return true;
+      },
+      need: (e, v) => {
+        const one = normTiXing(Array.isArray(v) ? v[0] : v);
+        return "要群里刚好有一只「" + (TIXING_ZH[one] || "杂胎") + "」";
+      },
+    },
+    {
+      k: "isMain", has: (w) => w.isMain != null,
+      ok: (e, v) => { const b = !!(e.isMainIn != null ? e.isMainIn : e.isMain); return b === !!v; },
+      need: () => "（主串专属，不显示给别的串）",
+    },
+    {
+      k: "canBreak", has: (w) => w.canBreak != null,
+      ok: (e, v) => !!e.canBreak === !!v,
+      need: () => "要等它攒够了、能深沁了",
+    },
+  ];
+
   /* ---------- 会话成员：按开沁时间稳定排序（新串永远排最后，不会导致主演漂移） ---------- */
   function threadRank(items, store) {
     return (items || []).slice().sort((a, b) => {
@@ -3320,15 +3543,25 @@
   }
   function thMember(id, item, store) {
     const r = (store && store[String(id)]) || {};
+    const born = Number(r.bornAt) || Number(item && item.createdAt) || 0;
+    const lp = (item && item.lastPlayedAt != null) ? Number(item.lastPlayedAt) : null;
+    const idle = (lp == null) ? -1 : Math.max(0, Math.floor((Date.now() - lp) / 86400000));   // -1 = 从未盘过（聚合时跳过）
+    const bond = Number(r.bond) || 0;
     return {
       id: String(id), item: item, name: (r.persona && r.persona.name) || (item && item.name) || "它",
       title: (r.persona && r.persona.title) || "", line: (r.persona && r.persona.line) || "",
       trait: (r.persona && Array.isArray(r.persona.traits) && r.persona.traits[0]) || "",
       pers: ((r.look || {}).pers) || "", persZh: persZhOf(((r.look || {}).pers) || ""),
-      roomId: (item && item.roomId) || "", born: Number(r.bornAt) || Number(item && item.createdAt) || 0,
+      roomId: (item && item.roomId) || "", born: born,
       occ: occasionOf(item, r, Date.now()),
+      // v163：让亲密度 / 形态 / 胎性 / 送没送走 能驱动剧情（全是现成字段，不新增存储）
+      bond: bond, bondLv: bondLevel(bond).lv, stage: Math.max(1, Number(r.stage) || 1),
+      growth: memberGrowth(item, born), plays: Number(item && item.playCount) || 0,
+      idle: idle, tixing: tiXingOf(item), gifted: (item && item.gifted) ? 1 : 0,
     };
   }
+  // 成员成长值：盘一次 +3、陪伴一天 +1（复用 growthOf，天数按开沁天数算）
+  function memberGrowth(item, born) { return growthOf(item, dayNoOf(born, Date.now())); }
 
   /* ---------- 会话列表（数量可控：全家 1 + 房间若干 + 命中事件的双人组若干） ---------- */
   function nightThreads(all, store, ctx, groups) {
@@ -3380,6 +3613,17 @@
       if (!A || !B || A.id === B.id) return null;
       return { a: A, b: B };
     }
+    // v163：按亲密度找主角 —— 挑第一个 bond ≥ N 的当 star，搭档仍走 pickMate（现成可复用）
+    if (w.starBond != null) {
+      const need = Number(w.starBond) || 0;
+      let star = null;
+      for (let i = 0; i < ranked.length; i++) {
+        if ((Number(ranked[i].bond) || 0) >= need) { star = ranked[i]; break; }
+      }
+      if (!star) return null;
+      const mate = pickMate(star, ranked);
+      return mate ? { a: star, b: mate } : null;
+    }
     return null;
   }
   // 搭档：同屋优先，没有就全库最早的那只（O(n)，稳定）
@@ -3407,15 +3651,47 @@
       starOcc: {},            // {"birthday":[成员...], "manyue":[...]}
       persSet: {},
       fest: festIdToday(now),
+      // v163 新增聚合键（全部塞进下面这一次 forEach，不新增遍历 → 100 只仍是 O(n)）
+      bondMax: 0, bondMin: -1, bondLvMax: 0,
+      stageMax: 1, stageMin: -1, growthMax: 0, playsMax: 0, idleMax: -1,
+      tiXingSet: {}, giftedN: 0, giftedAny: false, roomMax: 1, isMainIn: false,
+      _roomN: {},             // 临时量，出口前删掉（不进 env 契约）
     };
+    const mainId = storyMainId();
     ms.forEach((m) => {
+      /* ---- 老逻辑（一字不动） ---- */
       if (m.born) e.newest = Math.min(e.newest, dayNoOf(m.born, now));
       if (m.pers) e.persSet[m.pers] = 1;
       if (m.occ) (e.starOcc[m.occ.kind] = e.starOcc[m.occ.kind] || []).push(m);
+      /* ---- v163 聚合 ---- */
+      const b = Number(m.bond) || 0;
+      if (b > e.bondMax) e.bondMax = b;
+      if (e.bondMin < 0 || b < e.bondMin) e.bondMin = b;
+      const blv = (m.bondLv != null) ? Number(m.bondLv) : bondLevel(b).lv;
+      if (blv > e.bondLvMax) e.bondLvMax = blv;
+      const sg = Number(m.stage) || 1;
+      if (sg > e.stageMax) e.stageMax = sg;
+      if (e.stageMin < 0 || sg < e.stageMin) e.stageMin = sg;
+      const gr = Number(m.growth) || 0;
+      if (gr > e.growthMax) e.growthMax = gr;
+      const pl = Number(m.plays) || 0;
+      if (pl > e.playsMax) e.playsMax = pl;
+      const idd = Number(m.idle);
+      if (idd >= 0 && idd > e.idleMax) e.idleMax = idd;          // -1（从未盘过）跳过
+      e.tiXingSet[tiXingOf(m.item)] = 1;
+      if (m.gifted) { e.giftedN++; e.giftedAny = true; }
+      if (m.roomId) e._roomN[m.roomId] = (e._roomN[m.roomId] || 0) + 1;
+      if (mainId && String(m.id) === mainId) e.isMainIn = true;
     });
     if (!ms.length) e.newest = 0;
+    Object.keys(e._roomN).forEach((k) => { if (e._roomN[k] > e.roomMax) e.roomMax = e._roomN[k]; });
+    delete e._roomN;
+    if (e.bondMin < 0) e.bondMin = 0;
+    if (e.stageMin < 0) e.stageMin = 1;
+    if (e.idleMax < 0) e.idleMax = 0;
     return e;
   }
+
   function festIdToday(nowTs) {
     const d = new Date(Number(nowTs) || Date.now());
     const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
@@ -3424,39 +3700,45 @@
   }
   function whenOK(when, e) {
     if (!when) return true;
-    if (when.always) return true;
-    if (when.days && e.days < when.days) return false;
-    if (when.members && e.members < when.members) return false;
-    if (when.idle && e.idle < when.idle) return false;
-    if (when.plays && e.plays < when.plays) return false;
-    if (when.newFace != null && !(e.newest <= when.newFace)) return false;
-    if (when.occasion) {
-      const kinds = Array.isArray(when.occasion) ? when.occasion : [when.occasion];
-      const hit = kinds.some((k) => e.starOcc[k] && e.starOcc[k].length);
+    if (when.always) return true;                                        // 现有短路，保留
+    if (when.not && whenOK(when.not, e)) return false;                    // v163：NOT
+    if (when.anyOf) {                                                     // v163：OR（缺失视为 true）
+      const arr = Array.isArray(when.anyOf) ? when.anyOf : [when.anyOf];
+      let hit = false;
+      for (let i = 0; i < arr.length && !hit; i++) hit = whenOK(arr[i], e);
       if (!hit) return false;
     }
-    if (when.fest) {
-      const fs = Array.isArray(when.fest) ? when.fest : [when.fest];
-      if (fs.indexOf(e.fest) < 0) return false;
-    }
-    if (when.pers) {
-      for (let i = 0; i < when.pers.length; i++) if (!e.persSet[when.pers[i]]) return false;
+    for (let i = 0; i < WHEN_KEYS.length; i++) {
+      const spec = WHEN_KEYS[i];
+      if (!spec.has(when)) continue;
+      const v = when[spec.k];
+      if (v == null) continue;
+      if (!spec.ok(e, v)) return false;
     }
     return true;
   }
+  // 提示器：与 whenOK 共用 WHEN_KEYS 一张表（新增键 = 一处即可，不会漏改出空白提示）
   function whenNeed(when, e) {
+    if (!when) return "";
     if (when.always) return "";
-    if (when.days && e.days < when.days) return "再陪 " + (when.days - e.days) + " 天";
-    if (when.members && e.members < when.members) return "要群里满 " + when.members + " 位成员（现在 " + e.members + "）";
-    if (when.idle && e.idle < when.idle) return "你很久没冷落它们时才会发生";
-    if (when.plays && e.plays < when.plays) return "今天先去盘一盘才会发生";
-    if (when.newFace != null && e.newest > when.newFace) return "等有新成员进门";
-    if (when.fest) return "要在特定的日子里才会发生";
-    if (when.occasion) return "要等到谁的生日 / 满月 / 周年";
-    if (when.pers) return "要群里刚好有这两种性格的串";
+    if (when.not) return "（条件相反，不显示）";
+    if (when.anyOf) {
+      const arr = Array.isArray(when.anyOf) ? when.anyOf : [when.anyOf];
+      let hit = false;
+      for (let i = 0; i < arr.length && !hit; i++) hit = whenOK(arr[i], e);
+      if (!hit) {
+        for (let i = 0; i < arr.length; i++) { const s = whenNeed(arr[i], e); if (s) return s; }
+      }
+    }
+    for (let i = 0; i < WHEN_KEYS.length; i++) {
+      const spec = WHEN_KEYS[i];
+      if (!spec.has(when)) continue;
+      const v = when[spec.k];
+      if (v == null) continue;
+      if (!spec.ok(e, v)) return spec.need(e, v);
+    }
     return "";
   }
-
   /* ---------- 某个会话下所有事件的状态（列表页直接用） ---------- */
   function threadEvents(thread, ctx, rec) {
     threadMigrate(rec);
@@ -5378,6 +5660,7 @@
     cgStages: [3, 4], needCg: function (stage) { return (Number(stage) || 1) >= 3; },
     // v155：陪伴系统（每日问候 / 亲密度 / 每日一签 / 日记回信 / 回响）—— 全本地，0 成本
     BOND_LEVELS, BOND_CALL_AT, bondLevel, settleBond, addBond, callOf,
+    fmt, greetVars,
     GREET, greetingOf, ensureGreet,
     SIGNS, signOf, ensureSign,
     replyDiary, pendingReply,
@@ -5397,6 +5680,8 @@
     // v162：夜话 2.0 —— 多会话（全家群 / 房间群 / 双人组）+ 按条件触发的事件
     NIGHT_EVENTS, THREAD_FAMILY, THREAD_CAP, OCC_BANDS, eventOf, occasionOf,
     nightThreads, threadEvents, threadEnter, threadChoose, threadReplay, threadBrief, threadTalkBrief, threadMigrate,
+    // v163：条件系统（env 契约 / 胎性 / 亲密度兜底 / 主串）
+    soloEnv, tiXingOf, 胎性Of: tiXingOf, tiXingLabel, TIXING_ZH, normTiXing, bondOf, storyMainId, WHEN_KEYS, whenOK, whenNeed, thMember,
     pruneForQuota,
     // v163：CG 资产库（像素在 IndexedDB / 元数据在主 store；「已收集」只认元数据）
     CG_DB_NAME, CG_FALLBACK_KEY, CG_TOTAL, CG_THUMB_KEEP, cgsOf, cgMetaOf, cgCollectedIds, cgCollectedCount,
