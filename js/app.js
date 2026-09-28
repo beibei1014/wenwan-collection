@@ -3804,6 +3804,8 @@
       hairc: cur.hairc || "auto",
       customColor: cur.customColor || "",
       feats: (cur.feats || []).slice(0),
+      // v130：「自己填」的特征存成 "custom:描述"，重新打开时回填
+      customFeat: ((cur.feats || []).filter((x) => String(x).indexOf("custom:") === 0)[0] || "").slice(7),
       pers: cur.pers || "",
       base: cur.base || "",
       ai: cur.ai !== false,
@@ -3813,7 +3815,8 @@
       lookChipHtml("hairc", h.id, (h.sw ? '<span class="look-sw" style="background:' + h.sw + '"></span>' : "") + esc(h.zh),
         state.hairc === h.id)).join("") + lookChipHtml("hairc", "custom", "🎨 自己填", state.hairc === "custom");
     const featChips = Spirits.FEATURES.map((f) =>
-      lookChipHtml("feat", f.id, esc(f.zh), state.feats.indexOf(f.id) >= 0)).join("");
+      lookChipHtml("feat", f.id, esc(f.zh), state.feats.indexOf(f.id) >= 0)).join("") +
+      lookChipHtml("feat", "__custom", "✏️ 自己填", !!state.customFeat);
     const persChips = Spirits.PERSONAS_PICK.map((p) =>
       lookChipHtml("pers", p.id, esc(p.zh), state.pers === p.id)).join("");
 
@@ -3844,9 +3847,12 @@
       (beadHex ? '<label class="setup-check"><input type="checkbox" id="lkAlsoBead"> 顺便把珠子主色也改成我选的色（会同步到收藏列表）</label>' : "") +
       "</div>" +
       // ② 特征
-      '<div class="setup-sec"><div class="setup-t"><b>2</b> 有没有特殊特征？<small>最多 3 个</small></div>' +
-      '<div class="setup-desc">比如想要「猫猫头」，就选「猫耳 + 猫尾」—— 我会明确写进提示词，不会漏画。</div>' +
-      '<div class="setup-chips" id="lkFeat">' + featChips + "</div></div>" +
+      '<div class="setup-sec"><div class="setup-t"><b>2</b> 有没有特殊特征？<small>最多 3 个，自己填的也算</small></div>' +
+      '<div class="setup-desc">比如想要「猫猫头」，就选「猫耳 + 猫尾」—— 我会明确写进提示词，不会漏画。预设里没有的就用「✏️ 自己填」。</div>' +
+      '<div class="setup-chips" id="lkFeat">' + featChips + "</div>" +
+      '<div id="lkFeatCustomWrap" style="display:' + (state.customFeat ? "" : "none") + '">' +
+      '<input class="form-input" id="lkFeatCustom" maxlength="30" placeholder="用一句话写它的特征，例：戴一顶小草帽、背一把小木剑" value="' + esc(state.customFeat) + '"></div>' +
+      "</div>" +
       // ③ 性格
       '<div class="setup-sec"><div class="setup-t"><b>3</b> 性格</div>' +
       '<div class="setup-desc">会影响它的表情、姿态和日记口吻。</div>' +
@@ -3877,6 +3883,16 @@
       const w = document.getElementById("lkCustomWrap");
       if (w) w.style.display = state.hairc === "custom" ? "" : "none";
     };
+    // v130：自定义特征的 chip 亮灭 + 输入框显隐，统一在这里同步
+    const syncFeatUi = () => {
+      const inp = document.getElementById("lkFeatCustom");
+      const w = document.getElementById("lkFeatCustomWrap");
+      if (w) w.style.display = (state.customFeat || (inp && inp.value.trim())) ? "" : "none";
+      modal.querySelectorAll('.look-chip[data-g="feat"]').forEach((x) => x.classList.toggle("on",
+        state.feats.indexOf(x.dataset.v) >= 0 || (x.dataset.v === "__custom" && !!state.customFeat)));
+    };
+    const featInput = document.getElementById("lkFeatCustom");
+    if (featInput) featInput.oninput = () => { state.customFeat = featInput.value.trim(); syncFeatUi(); };
     modal.querySelectorAll(".look-chip").forEach((b) => {
       b.onclick = () => {
         const g = b.dataset.g, v = b.dataset.v;
@@ -3886,6 +3902,18 @@
           syncCustom();
           if (v === "custom") { const inp = $("#lkCustom"); if (inp) inp.focus(); }
         } else if (g === "feat") {
+          if (v === "__custom") {
+            // v130：「自己填」→ 已有内容再点一次=取消；没有就展开输入框
+            if (state.customFeat) {
+              state.customFeat = "";
+              if (featInput) featInput.value = "";
+            } else if (featInput) {
+              featInput.focus();
+              if (featInput.value.trim()) state.customFeat = featInput.value.trim();
+            }
+            syncFeatUi();
+            return;
+          }
           if (v === "none") {
             state.feats = state.feats.indexOf("none") >= 0 ? [] : ["none"];
           } else {
@@ -3893,7 +3921,7 @@
             if (i >= 0) state.feats.splice(i, 1);
             else {
               state.feats = state.feats.filter((x) => x !== "none");
-              if (state.feats.length >= 3) { toast("最多选 3 个特征"); return; }
+              if (state.feats.filter((x) => String(x).indexOf("custom:") !== 0).length >= 3) { toast("最多选 3 个特征"); return; }
               state.feats.push(v);
             }
           }
@@ -3929,11 +3957,19 @@
           state.ai = !aiEl || aiEl.checked;
           const alsoEl = $("#lkAlsoBead");
           state.alsoBead = !!(alsoEl && alsoEl.checked);
+          // v130：把「自己填」的特征并进 feats（存成 "custom:描述"，lookOf 会翻回可用的对象）
+          const featInput2 = document.getElementById("lkFeatCustom");
+          state.customFeat = (featInput2 && featInput2.value || "").trim();
+          let featsFinal = state.feats.filter((x) => String(x).indexOf("custom:") !== 0);
+          if (state.customFeat) {
+            if (featsFinal.filter((x) => x !== "none").length >= 3) { toast("特征最多 3 个，自己填的也算"); return; }
+            featsFinal.push("custom:" + state.customFeat);
+          }
           r2.look = {
             ver: 1,
             hairc: state.hairc,
             customColor: state.customColor,
-            feats: state.feats,
+            feats: featsFinal,
             pers: state.pers,
             base: state.base,
             ai: state.ai,

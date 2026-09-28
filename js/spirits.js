@@ -623,7 +623,11 @@
     // 特征
     const ids = Array.isArray(lk.feats) ? lk.feats : [];
     const noFeat = ids.indexOf("none") >= 0;
-    const feats = ids.map((x) => FEATURE_BY_ID[x]).filter((f) => f && f.id !== "none").slice(0, 3);
+    // v130：「自己填」的自定义特征存成 "custom:描述"，这里翻成和预置特征同构的对象
+    //      （原文直接进 prompt，绘图模型能看懂中文描述）
+    const feats = ids.map((x) => FEATURE_BY_ID[x] ||
+      (String(x).indexOf("custom:") === 0 ? { id: x, zh: String(x).slice(7), en: String(x).slice(7), custom: true } : null)
+    ).filter((f) => f && f.id !== "none").slice(0, 3);
     // 性格
     const pers = PERSONA_BY_ID[lk.pers] || null;
     // 服装色：默认跟珠子主色（用户没要求改），可被设定里的 customOutfit 覆盖
@@ -653,6 +657,10 @@
     if (lk.feats && lk.feats.length) hard.push(lk.feats.map((f) => f.en).join(", "));
     if (lk.noFeat) hard.push("strictly human look: no animal ears, no tail, no wings, no horns");
     if (lk.pers) hard.push(lk.pers.en + " personality, " + lk.pers.face);
+    // v130：主人写的一句话/融合后的设定 = 描述**精灵本人**的硬约束。
+    // 用户反馈：写「洒脱的江湖侠士」指的是珠子，结果 AI 安给了主人、立绘也不跟 —— 现在直接进 prompt 末尾硬约束。
+    const personaNote = lk.profile || lk.base;
+    if (personaNote) hard.push("character setting from owner (describes THIS spirit itself, never the owner): " + personaNote);
     return "IMPORTANT character features that must be clearly visible: " + hard.join("; ");
   }
   // 给人看的一行「设定摘要」（详情页 chips 用）
@@ -672,7 +680,8 @@
     const hairTxt = { bead: "跟本体珠子是一个色", auto: "是它自己长出来的颜色", pick: "是主人替它挑的", custom: "是主人给它定的" }[(lk && lk.hairSrc) || "bead"] || "";
     const featTxt = (lk && lk.feats && lk.feats.length) ? ("头上还带着" + lk.feats.map((f) => f.zh).join("、")) : (lk && lk.noFeat ? "看着就是普普通通的人形" : "");
     const persTxt = (lk && lk.pers) ? lk.pers.zh : "温和";
-    const baseTxt = (lk && lk.base) ? ("主人说过：「" + lk.base + "」——它一直记着这句话。") : "";
+    // v130：用户的一句话要**融进**设定（描述精灵本人），不再是"主人说过…"的引用体
+    const baseTxt = (lk && lk.base) ? ("它是" + lk.base + "——这是主人一眼就认出来的性子。") : "";
     return nm + "是从主人那串「" + ((item && item.name) || "手串") + "」里醒过来的小精灵。" +
       "它的头发是" + ((lk && lk.hairZh) ? String(lk.hairZh).replace(/^自动 · /, "") : beadZh) + "，" + hairTxt + "；" +
       (featTxt ? featTxt + "；" : "") +
@@ -683,16 +692,23 @@
   async function expandProfile(item, lk, persona) {
     const local = profileLocal(item, lk, persona);
     const base = (lk && lk.base) ? String(lk.base).trim() : "";
+    // v130：精灵性别要交代清楚（之前只交代主人代词，男精灵被写成「她」）
+    const r0 = (item && item.id) ? load()[item.id] || {} : {};
+    const ap0 = appearanceOf(item, r0.appearanceSeed || 0, r0.gender || "");
     const sys = "你是一个角色设定师。请根据用户给的选项，为主人的手串精灵写一小段中文人物设定，要求：" +
       "① 只写 90-150 字，一段话，不要标题、不要分点、不要引号；② 必须体现：外貌（发色 / 特殊特征）、性格、和主人以及这串珠子的关系；" +
-      "③ 口吻温柔、有画面感，像手账里的备注；④ 不要出现「AI」「提示词」「角色设定」这类词。";
+      "③ 口吻温柔、有画面感，像手账里的备注；④ 不要出现「AI」「提示词」「角色设定」这类词；" +
+      "⑤【最重要】主人写的那句话描述的是**精灵本人**的性格/身份/气质（例如「洒脱的江湖侠士」＝这只精灵是侠士，不是主人是侠士），" +
+      "必须把这句话的意思自然融进正文，让整段读起来是一份完整统一的设定，不要引用原话、不要说「主人说过」、不要写成两套人设；" +
+      "⑥ 精灵的性别以下方标注为准，指代精灵的代词绝不能用错。";
     const NL = String.fromCharCode(10);
     const user = "精灵名：" + ((persona && persona.name) || item.name || "小精灵") +
+      NL + spiritGenderLine(ap0) +
       NL + "来自手串：" + ((item && item.name) || "") + (item && item.craft ? "（" + item.craft + "）" : "") +
       NL + "发色：" + ((lk && lk.hairZh) || "跟珠子主色") +
       NL + "特殊特征：" + ((lk && lk.feats && lk.feats.length) ? lk.feats.map((f) => f.zh).join("、") : ((lk && lk.noFeat) ? "普通人形" : "未指定")) +
       NL + "性格：" + ((lk && lk.pers) ? lk.pers.zh : "未指定") +
-      (base ? (NL + "主人给的一句话设定：" + base) : "") +
+      (base ? (NL + "主人给的一句话设定（描述的是精灵本人，融进正文）：" + base) : "") +
       NL + ownerLine() + NL + "请写这一小段设定。";
     try {
       const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 400) || "").trim();
@@ -1138,6 +1154,13 @@
       "性别：" + (o.gender === "boy" ? "男" : "女") + "，请用「" + (o.gender === "boy" ? "他" : "她") + "」称呼主人，" +
       "不要写成「" + (o.gender === "boy" ? "她" : "他") + "」，也不要把主人写成男性化的形象。";
   }
+  // v130：精灵**自己**的性别也要写明（用户反馈：男精灵芭蕉叶被写成「她」——之前只交代了主人的代词，
+  //      AI 就把「她」顺手安给了精灵）。ap 里有 gender（boy/girl）。
+  function spiritGenderLine(ap) {
+    const boy = !ap || ap.gender !== "girl";
+    return "【精灵性别】这只精灵本身是" + (boy ? "男孩子" : "女孩子") + "，指代精灵必须用「" + (boy ? "他" : "她") + "」；" +
+      "「" + (boy ? "她" : "他") + "」只能用来指主人，不要搞混。";
+  }
 
   /* ---------- 手串真实主色（让立绘颜色贴近实物） ---------- */
   const BEAD_KEY = "ww_beadcolor";          // { [itemId]: { hex, word, at } }
@@ -1353,7 +1376,11 @@
   async function personaZh(item, ap, persona, stage, days, plays, force) {
     const store = load();
     const rec = ensureIn(store, item.id);
-    const key = (ap.gender || "") + "|" + ap.hair + "|" + ap.eyes + "|" + ap.acc + "|" + (item.color || "") + "|" + (persona && persona.name || "");
+    const lk0 = rec.look || {};
+    // 缓存键带上用户的一句话/融合设定：改了设定 → 人设卡跟着重写（否则立绘换了设定卡还是旧的）
+    // v130 前缀 = 规则升级（补了精灵性别/归属约束），旧的人设卡全部作废重写一遍，修掉已写错代词的存档
+    const key = "v130|" + (ap.gender || "") + "|" + ap.hair + "|" + ap.eyes + "|" + ap.acc + "|" + (item.color || "") + "|" + (persona && persona.name || "") +
+      "|" + (lk0.base || "") + "|" + (lk0.profile || "");
     if (!force && rec.personaZh && rec.personaZhKey === key) return rec.personaZh;
     let txt = "";
     if (getAiKey()) {
@@ -1362,13 +1389,18 @@
           + "请写一段连贯的中文人物设定，200-300 字，用第三人称旁观介绍（不要用「你」称呼精灵），"
           + "必须包含：① 外形（性别、发型、瞳色、配饰、衣服/头发颜色要说明取自古珠的颜色）"
           + "② 性格（含 2-3 个具体小习惯）③ 与主人的关系与日常。"
+          + "【最重要】主人给的设定原话描述的都是**精灵本人**的性格/身份/气质，必须原样体现在精灵身上；"
+          + "绝对禁止把设定安到主人头上（例如主人说「洒脱的江湖侠士」＝精灵是侠士，不是主人是侠士），也不许另编一套和原话冲突的人设。"
           + "语气温和好读，不要 Markdown、不要标题、不要分点、不要解释，直接输出正文。";
         const user = "原型手串：" + (item.name || "未命名") + "；精灵的名字：" + ((persona && persona.name) || item.name || "未命名") +
           "；颜色：" + (COLOR_ZH[item.color] || "素色") +
           "；软糯：" + (item.softness === "soft" ? "软糯" : item.softness === "slight" ? "微糯" : "未标注") +
           "；形态：" + stageDef(stage).name + "；陪伴 " + (days || 0) + " 天；盘玩 " + (plays || 0) + " 次；" +
-          "固定人设：" + appearanceText(ap) + "；性格基调：" + (VIBE_ZH[ap.vibe] || ap.vibe) +
+          "固定人设：" + appearanceText(ap) + "；" + spiritGenderLine(ap) +
+          "；性格基调：" + (VIBE_ZH[ap.vibe] || ap.vibe) +
           ((persona && persona.traits && persona.traits.length) ? "（" + persona.traits.join("、") + "）" : "") +
+          ((lk0.base) ? "。\n主人给它的设定原话（描述的是精灵自己，必须原样体现）：" + lk0.base : "") +
+          ((lk0.profile && lk0.profile !== lk0.base) ? "\n已有的融合设定（保持一致，不要矛盾）：" + lk0.profile : "") +
           "。\n" + ownerLine() + "\n请写它的中文人物设定。";
         txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 700) || "").trim();
         txt = txt.replace(/^["「]|["」]$/g, "").trim();
