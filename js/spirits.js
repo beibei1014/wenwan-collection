@@ -100,6 +100,18 @@
           while (ks.length > 8) delete r.fests[ks.shift()];
         }
         if (r.night && Array.isArray(r.night.log)) r.night.log = r.night.log.slice(-150);   // v160：夜话聊天记录瘦身
+        if (r.threads && typeof r.threads === "object") {                                  // v162：多会话记录瘦身
+          Object.keys(r.threads).forEach((tid) => {
+            const th2 = r.threads[tid];
+            if (!th2 || typeof th2 !== "object") return;
+            if (th2.runs && typeof th2.runs === "object") {
+              Object.keys(th2.runs).forEach((eid) => {
+                const rn = th2.runs[eid];
+                if (rn && Array.isArray(rn.log)) rn.log = rn.log.slice(-150);
+              });
+            }
+          });
+        }
       });
     } catch (e) { /* 忽略 */ }
     return o;
@@ -1350,16 +1362,24 @@
    * v109：中文人物设定 / 精灵日记 / 房间剧情
    * ============================================================ */
   /* ---------- 主人设定（v111：性别/昵称，写日记和剧情时必须遵守） ---------- */
-  const OWNER_KEY = "ww_owner";            // { name: "小北", gender: "girl" | "boy" }
+  const OWNER_KEY = "ww_owner";            // { name: "小北", gender: "girl" | "boy", avatar: "data:image/jpeg;base64,…" }
   function getOwner() {
     try {
       const o = JSON.parse(localStorage.getItem(OWNER_KEY) || "{}");
-      return { name: String((o && o.name) || ""), gender: (o && o.gender) === "boy" ? "boy" : "girl" };
-    } catch (e) { return { name: "", gender: "girl" }; }
+      return {
+        name: String((o && o.name) || ""),
+        gender: (o && o.gender) === "boy" ? "boy" : "girl",
+        avatar: String((o && o.avatar) || ""),
+      };
+    } catch (e) { return { name: "", gender: "girl", avatar: "" }; }
   }
   function setOwner(o) {
     const cur = getOwner();
-    const next = { name: o && o.name != null ? String(o.name) : cur.name, gender: (o && o.gender) ? o.gender : cur.gender };
+    const next = {
+      name: o && o.name != null ? String(o.name) : cur.name,
+      gender: (o && o.gender) ? o.gender : cur.gender,
+      avatar: o && o.avatar != null ? String(o.avatar) : cur.avatar,
+    };
     try { localStorage.setItem(OWNER_KEY, JSON.stringify(next)); } catch (e) { /* 忽略 */ }
     return next;
   }
@@ -2998,6 +3018,1086 @@
   }
 
   /* ============================================================
+   * v162 · 夜话 2.0 —— 多会话 + 事件触发（100+ 只串也能撑住）
+   *
+   *   会话 Thread：family（全家大群）/ room:<id>（同屋小群）/ duo:<a>_<b>（事件主角组合）
+   *   —— 不再只有「成精最早的三只」一个群：每个房间一个群，事件自己抓组合。
+   *
+   *   事件 Event：挂在一个会话下，按条件陆续解锁。同一个群在不同条件下可以触发
+   *              好几次（今天它生日 → 触发一次；过阵子它满月 → 又触发一次）。
+   *
+   *   主演：会话成员按「成精时间」稳定排序后取前 N 只（N 由事件声明）。
+   *        事件要「主角」时（生日的寿星 / 刚进门的新人）把主角提到 A 位 ——
+   *        所以剧情不再被锁死在成精最早的那几只身上。
+   *
+   *   存储：rec.threads[threadId]（宿 = 会话成员里排最前那只）—— 每个会话各存各的，
+   *        不会互相覆盖；跟着 ww_spirits 跨手机同步。
+   *   性能：只做 O(n) 扫描，绝不枚举两两组合（100 只 = 4950 对我们不枚举）。
+   *   成本：本地剧本 + 本地状态机 = 0 出图 0 模型调用。
+   * ============================================================ */
+  const THREAD_FAMILY = "相亲相爱一家人";
+  const THREAD_CAP = 48;      // 单个事件最多播多少条（含系统提示与我的回复）—— 同 v160，只是防卡死保险阀
+
+  /* ---------- 成精里程碑（生辰/满月/百日/周年） ---------- */
+  const OCC_BANDS = [
+    { key: "manyue", day: 30, zh: "满月", win: 7 },
+    { key: "bairi", day: 100, zh: "百日", win: 7 },
+    { key: "zhounian", day: 365, zh: "一周年", win: 14 },
+    { key: "ernian", day: 730, zh: "两周年", win: 14 },
+    { key: "sannian", day: 1095, zh: "三周年", win: 14 },
+  ];
+  function persZhOf(id) { const p = PERSONA_BY_ID[id]; return p ? p.zh : ""; }
+  function dayNoOf(ts, nowTs) {
+    if (!ts) return 0;
+    const a = new Date(Number(ts)), b = new Date(Number(nowTs) || Date.now());
+    a.setHours(0, 0, 0, 0); b.setHours(0, 0, 0, 0);
+    return Math.max(0, Math.round((b - a) / 86400000));
+  }
+  // 今天这只串"该过什么"：生日（入手周年）/ 成精里程碑。都不占 → null
+  function occasionOf(item, rec, nowTs) {
+    const now = Number(nowTs) || Date.now();
+    if (item && item.createdAt) {
+      const b = new Date(Number(item.createdAt)), n = new Date(now);
+      if (b.getMonth() === n.getMonth() && b.getDate() === n.getDate()) {
+        const yr = n.getFullYear() - b.getFullYear();
+        return { kind: "birthday", n: yr, zh: yr >= 1 ? (yr + " 岁生日") : "到你身边那天" };
+      }
+    }
+    if (rec && rec.bornAt) {
+      const d = dayNoOf(rec.bornAt, now);
+      for (let i = OCC_BANDS.length - 1; i >= 0; i--) {
+        const bd = OCC_BANDS[i];
+        if (d >= bd.day && d <= bd.day + bd.win) return { kind: bd.key, n: d, zh: bd.zh };
+      }
+    }
+    return null;
+  }
+
+  /* ---------- 会话成员：按成精时间稳定排序（新串永远排最后，不会导致主演漂移） ---------- */
+  function threadRank(items, store) {
+    return (items || []).slice().sort((a, b) => {
+      const ra = (store && store[String(a.id)]) || {}, rb = (store && store[String(b.id)]) || {};
+      const ta = Number(ra.bornAt) || Number(a.createdAt) || 0;
+      const tb = Number(rb.bornAt) || Number(b.createdAt) || 0;
+      if (ta !== tb) return ta - tb;
+      return String(a.id) < String(b.id) ? -1 : 1;
+    });
+  }
+  function thMember(id, item, store) {
+    const r = (store && store[String(id)]) || {};
+    return {
+      id: String(id), item: item, name: (r.persona && r.persona.name) || (item && item.name) || "它",
+      title: (r.persona && r.persona.title) || "", line: (r.persona && r.persona.line) || "",
+      trait: (r.persona && Array.isArray(r.persona.traits) && r.persona.traits[0]) || "",
+      pers: ((r.look || {}).pers) || "", persZh: persZhOf(((r.look || {}).pers) || ""),
+      roomId: (item && item.roomId) || "", born: Number(r.bornAt) || Number(item && item.createdAt) || 0,
+      occ: occasionOf(item, r, Date.now()),
+    };
+  }
+
+  /* ---------- 会话列表（数量可控：全家 1 + 房间若干 + 命中事件的双人组若干） ---------- */
+  function nightThreads(all, store, ctx, groups) {
+    store = store || {};
+    const ranked = threadRank(all, store).map((it) => thMember(it.id, it, store));
+    const out = [];
+    if (ranked.length) {
+      out.push({ id: "family", kind: "family", name: THREAD_FAMILY, tag: "全家福", members: ranked, total: ranked.length });
+    }
+    (groups || []).forEach((g) => {
+      if (!g || !g.items || g.items.length < 2) return;
+      const ms = threadRank(g.items, store).map((it) => thMember(it.id, it, store));
+      if (ms.length >= 2) out.push({ id: "room:" + g.id, kind: "room", name: g.name || "房间", tag: "同屋 " + ms.length + " 只", members: ms, total: ms.length });
+    });
+    // 双人组：只由「事件命中」产生，不枚举组合 —— 100 只也不会炸
+    const seen = {};
+    NIGHT_EVENTS.forEach((ev) => {
+      if (ev.scope !== "duo") return;
+      const pair = duoPick(ev, ranked);
+      if (!pair) return;
+      const key = pair.a.id + "_" + pair.b.id;
+      const tid = "duo:" + key;
+      seen[tid] = 1;
+      if (out.some((t) => t.id === tid)) return;
+      out.push({ id: tid, kind: "duo", name: pair.a.name + " 和 " + pair.b.name, tag: ev.icon + " " + (ev.duoTag || ""), members: [pair.a, pair.b], total: 2 });
+    });
+    return out;
+  }
+  // 按事件的「找人规则」挑两只（O(n)，结果稳定）
+  function duoPick(ev, ranked) {
+    const w = ev.when || {};
+    if (w.occasion) {
+      const kinds = Array.isArray(w.occasion) ? w.occasion : [w.occasion];
+      let star = null;
+      for (let i = 0; i < ranked.length; i++) {
+        const o = ranked[i].occ;
+        if (o && kinds.indexOf(o.kind) >= 0) { star = ranked[i]; break; }
+      }
+      if (!star) return null;
+      const mate = pickMate(star, ranked);
+      return mate ? { a: star, b: mate } : null;
+    }
+    if (w.pers && w.pers.length === 2) {
+      let A = null, B = null;
+      for (let i = 0; i < ranked.length && (!A || !B); i++) {
+        if (!A && ranked[i].pers === w.pers[0]) A = ranked[i];
+        else if (!B && ranked[i].pers === w.pers[1]) B = ranked[i];
+      }
+      if (!A || !B || A.id === B.id) return null;
+      return { a: A, b: B };
+    }
+    return null;
+  }
+  // 搭档：同屋优先，没有就全库最早的那只（O(n)，稳定）
+  function pickMate(star, ranked) {
+    let mate = null;
+    for (let i = 0; i < ranked.length; i++) {
+      const m = ranked[i];
+      if (m.id === star.id) continue;
+      if (star.roomId && m.roomId === star.roomId) { mate = m; break; }
+      if (!mate) mate = m;
+    }
+    return mate;
+  }
+
+  /* ---------- 条件求值 env：一次算好（O(n)），全场共用 ---------- */
+  function thEnv(thread, ctx, nowTs) {
+    const now = Number(nowTs) || Date.now();
+    const ms = thread.members || [];
+    const e = {
+      days: Math.max(1, (ctx && ctx.dayNo) || 1),
+      idle: (ctx && ctx.idleDays != null) ? ctx.idleDays : 0,
+      plays: (ctx && ctx.plays) || 0,
+      members: ms.length,
+      newest: 999,            // 最晚那位进来多少天了
+      starOcc: {},            // {"birthday":[成员...], "manyue":[...]}
+      persSet: {},
+      fest: festIdToday(now),
+    };
+    ms.forEach((m) => {
+      if (m.born) e.newest = Math.min(e.newest, dayNoOf(m.born, now));
+      if (m.pers) e.persSet[m.pers] = 1;
+      if (m.occ) (e.starOcc[m.occ.kind] = e.starOcc[m.occ.kind] || []).push(m);
+    });
+    if (!ms.length) e.newest = 0;
+    return e;
+  }
+  function festIdToday(nowTs) {
+    const d = new Date(Number(nowTs) || Date.now());
+    const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    const f = festOf(key);
+    return f ? String(f.key || "") : "";
+  }
+  function whenOK(when, e) {
+    if (!when) return true;
+    if (when.always) return true;
+    if (when.days && e.days < when.days) return false;
+    if (when.members && e.members < when.members) return false;
+    if (when.idle && e.idle < when.idle) return false;
+    if (when.plays && e.plays < when.plays) return false;
+    if (when.newFace != null && !(e.newest <= when.newFace)) return false;
+    if (when.occasion) {
+      const kinds = Array.isArray(when.occasion) ? when.occasion : [when.occasion];
+      const hit = kinds.some((k) => e.starOcc[k] && e.starOcc[k].length);
+      if (!hit) return false;
+    }
+    if (when.fest) {
+      const fs = Array.isArray(when.fest) ? when.fest : [when.fest];
+      if (fs.indexOf(e.fest) < 0) return false;
+    }
+    if (when.pers) {
+      for (let i = 0; i < when.pers.length; i++) if (!e.persSet[when.pers[i]]) return false;
+    }
+    return true;
+  }
+  function whenNeed(when, e) {
+    if (when.always) return "";
+    if (when.days && e.days < when.days) return "再陪 " + (when.days - e.days) + " 天";
+    if (when.members && e.members < when.members) return "要群里满 " + when.members + " 位成员（现在 " + e.members + "）";
+    if (when.idle && e.idle < when.idle) return "你很久没冷落它们时才会发生";
+    if (when.plays && e.plays < when.plays) return "今天先去盘一盘才会发生";
+    if (when.newFace != null && e.newest > when.newFace) return "等有新成员进门";
+    if (when.fest) return "要在特定的日子里才会发生";
+    if (when.occasion) return "要等到谁的生日 / 满月 / 周年";
+    if (when.pers) return "要群里刚好有这两种性格的串";
+    return "";
+  }
+
+  /* ---------- 某个会话下所有事件的状态（列表页直接用） ---------- */
+  function threadEvents(thread, ctx, rec) {
+    threadMigrate(rec);
+    const host = (thread && thread.members && thread.members[0]) || null;
+    const th = (rec && rec.threads && rec.threads[thread.id]) || { done: {}, runs: {} };
+    const done = (th.done && typeof th.done === "object") ? th.done : {};
+    const e = thEnv(thread, ctx, Date.now());
+    const out = [];
+    for (let i = 0; i < NIGHT_EVENTS.length; i++) {
+      const ev = NIGHT_EVENTS[i];
+      if (ev.scope === "duo" && thread.kind !== "duo") continue;
+      if (ev.scope === "room" && thread.kind !== "room") continue;
+      if (ev.scope === "family" && thread.kind !== "family") continue;
+      const ok = whenOK(ev.when, e);
+      const d = done[ev.id];
+      // 「线性的」事件要按序 unlocking（上一件聊完才给下一件）
+      let gated = true;
+      if (ev.after) gated = !!done[ev.after];
+      const stamp = d && d.at ? String(d.at) : "";
+      const annual = ev.repeat === "yearly" && stamp.slice(0, 4) !== String(new Date().getFullYear());
+      const unlocked = ok && gated && (!d || annual);
+      out.push({
+        id: ev.id, icon: ev.icon, title: ev.title, sub: ev.sub, when: ev.when,
+        unlocked: unlocked, done: d || "", need: unlocked ? "" : whenNeed(ev.when, e, thread),
+        annual: !!annual, threadKind: thread.kind,
+      });
+    }
+    return { env: e, events: out, host: host, th: th, done: done };
+  }
+
+  /* ---------- 进度存储：每个会话各存各的（旧 rec.night 自动迁到 family） ---------- */
+  function threadMigrate(rec) {
+    if (!rec || rec.__v162) return rec;
+    rec.__v162 = 1;
+    const t = (rec.threads && typeof rec.threads === "object") ? rec.threads : (rec.threads = {});
+    const F = (t.family = t.family || { done: {}, runs: {} });
+    if (!F.done || typeof F.done !== "object") F.done = {};
+    if (!F.runs || typeof F.runs !== "object") F.runs = {};
+    const n = rec.night;
+    if (n && typeof n === "object") {
+      if (n.done && typeof n.done === "object") Object.keys(n.done).forEach((k) => { F.done[k] = n.done[k]; });
+      if (n.actId && Array.isArray(n.log) && n.log.length) {
+        const runs = F.runs;
+        runs[n.actId] = {
+          node: n.node || "start", log: n.log.slice(-150), msgs: Number(n.msgs) || 0,
+          ended: !!n.ended, ending: n.ending || null, tone: n.tone || { warm: 0, cool: 0, fun: 0 },
+          at: n.at || Date.now(),
+        };
+      }
+    }
+    return rec;
+  }
+  function thState(rec, thread) {
+    threadMigrate(rec);
+    const t = (rec.threads && typeof rec.threads === "object") ? rec.threads : (rec.threads = {});
+    const s = (t[thread.id] = t[thread.id] || { done: {}, runs: {} });
+    if (!s.done || typeof s.done !== "object") s.done = {};
+    if (!s.runs || typeof s.runs !== "object") s.runs = {};
+    return s;
+  }
+
+  /* ---------- 变量：性格第一次真正进到台词里 ---------- */
+  function thVars(item, rec, ctx, cast, thread) {
+    const base = greetVars(item, rec, ctx);
+    const v = {};
+    Object.keys(base).forEach((k) => { v[k] = base[k]; });
+    v.members = (thread && thread.members) ? thread.members.length : (cast || []).length;   // 群里的总人数
+    v.total = v.members;
+    v.grp = (item && NIGHT_GROUP) || NIGHT_GROUP;
+    v.LIST = (cast || []).map((c) => c.name).join("、");
+    v.A = v.B = v.C = ""; v.A_title = v.B_title = v.C_title = "";
+    v.A_line = v.B_line = v.C_line = ""; v.A_trait = v.B_trait = v.C_trait = "";
+    v.A_pers = v.B_pers = v.C_pers = ""; v.A_bead = v.B_bead = v.C_bead = "";
+    (cast || []).forEach((c, i) => {
+      const s = "ABC".charAt(i);
+      if (!s) return;
+      v[s] = c.name;
+      v[s + "_title"] = c.title || "";
+      v[s + "_line"] = c.line || "";
+      v[s + "_trait"] = c.trait || "";
+      v[s + "_pers"] = c.persZh || "";
+      v[s + "_bead"] = (c.item && c.item.name) || v.bead || "";
+    });
+    const st = (cast || [])[0];
+    v.star = st ? st.name : v.name;
+    v.star_title = st ? (st.title || "") : "";
+    v.star_line = st ? (st.line || "") : "";
+    v.star_trait = st ? (st.trait || "") : "";
+    v.star_bead = st ? ((st.item && st.item.name) || v.bead) : v.bead;
+    return v;
+  }
+  // 万能槽位替换：{days}{call}{A}{A_title}{A_line}{star}… 认不出的原样留下（方便排查）
+  function thText(t, v) {
+    if (t && typeof t === "object") t = t.def || t.warm || "";
+    return String(t == null ? "" : t).replace(/\{(\w+)\}/g, (m, k) => (v[k] != null && v[k] !== "") ? String(v[k]) : m);
+  }
+  function thWho(w, cast) {
+    const c = (cast || []).filter((x) => x.slot === w)[0];
+    return c ? c.name : "";
+  }
+  function thLine(l, v, cast) {
+    if (!l || !l.t) return null;
+    if ((l.w === "B" || l.w === "C") && !thWho(l.w, cast)) return null;
+    const txt = thText(l.t, v);
+    if (!txt) return null;
+    return { w: l.w || "sys", name: thWho(l.w, cast), text: txt, at: Date.now() };
+  }
+  // 主演：默认会话成员前 N 只；事件声明了 star → 把主角提到 A 位
+  function castFor(ev, thread) {
+    const ms = thread.members || [];
+    const need = Number(ev.cast) || 2;
+    let star = null;
+    if (ev.star === "newest") {
+      for (let i = ms.length - 1; i >= 0; i--) if (ms[i].born) { star = ms[i]; break; }
+      star = star || ms[ms.length - 1] || null;
+    } else if (ev.star === "occasion") {
+      const kinds = ev.when && ev.when.occasion ? (Array.isArray(ev.when.occasion) ? ev.when.occasion : [ev.when.occasion]) : [];
+      for (let i = 0; i < ms.length; i++) { if (ms[i].occ && kinds.indexOf(ms[i].occ.kind) >= 0) { star = ms[i]; break; } }
+    }
+    let cast;
+    if (star) cast = [star].concat(ms.filter((m) => m.id !== star.id).slice(0, Math.max(0, need - 1)));
+    else cast = ms.slice(0, need);
+    return cast.map((m, i) => ({ slot: "ABC".charAt(i), id: m.id, name: m.name, title: m.title, line: m.line, trait: m.trait, persZh: m.persZh, item: m.item }));
+  }
+  function thDomTone(n) {
+    const t = (n && n.tone) || {};
+    const w = Number(t.warm) || 0, c = Number(t.cool) || 0, f = Number(t.fun) || 0;
+    if (w === 0 && c === 0 && f === 0) return "warm";
+    if (w >= c && w >= f) return "warm";
+    return (c >= f) ? "cool" : "fun";
+  }
+
+  /* ---------- 状态机（和 v160 同款行为，只是进度按会话分开存） ---------- */
+  function thWalk(item, rec, thread, ev, cast, run) {
+    const v = thVars(item, rec, thread.ctx || {}, cast, thread);
+    const added = [];
+    let guard = 0;
+    while (ev && guard++ < 80) {
+      const nd = ev.nodes[run.node];
+      if (!nd) { run.ended = true; run.node = ""; break; }
+      (nd.lines || []).forEach((l) => { const m = thLine(l, v, cast); if (m) { added.push(m); run.msgs = (Number(run.msgs) || 0) + 1; } });
+      if (nd.ending) {
+        run.ended = true; run.node = "";
+        const key = nd.ending.key, nm = thText(nd.ending.name, v), tx = thText(nd.ending.text, v);
+        const st = thState(rec, thread);
+        st.done[ev.id] = { key: key, name: nm, at: Date.now() };
+        run.ending = { key: key, name: nm, text: tx };
+        run.at = Date.now();
+        break;
+      }
+      if (nd.choices && nd.choices.length) {
+        if ((Number(run.msgs) || 0) >= THREAD_CAP) {
+          const alt = ev.nodes["e_" + thDomTone(run)] ? ("e_" + thDomTone(run)) : "";
+          if (alt && alt !== run.node) { run.node = alt; continue; }
+        }
+        break;
+      }
+      if (!nd.next) { run.ended = true; run.node = ""; break; }
+      run.node = nd.next;
+    }
+    run.log = (Array.isArray(run.log) ? run.log : []).concat(added);
+    if (run.log.length > 200) run.log = run.log.slice(-200);
+    return {
+      added: added, choices: thChoicesOf(ev, run, v), ending: run.ending || null,
+      ended: !!run.ended, log: run.log,
+    };
+  }
+  function thChoicesOf(ev, run, v) {
+    if (!ev || !run || run.ended) return [];
+    const nd = ev.nodes[run.node];
+    if (!nd || !nd.choices) return [];
+    return nd.choices.map((c) => ({ t: thText(c.t, v) }));
+  }
+  function thReset(rec, thread, evId) {
+    const st = thState(rec, thread);
+    const run = {
+      node: "start", log: [], msgs: 0, ended: false, ending: null,
+      tone: { warm: 0, cool: 0, fun: 0 }, at: Date.now(),
+    };
+    st.runs[evId] = run;
+    st.cur = evId;        // 记下当前在聊哪个事件（同一会话一次只会被一个事件占着）
+    return run;
+  }
+  function thRun(rec, thread, evId) {
+    const st = thState(rec, thread);
+    return (st.runs && st.runs[evId]) || null;
+  }
+  function threadEnter(item, rec, ctx, thread, evId) {
+    thread.ctx = ctx || {};
+    const r0 = thRun(rec, thread, evId);
+    if (r0 && Array.isArray(r0.log) && r0.log.length) {
+      const ev = eventOf(evId);
+      return { added: [], choices: thChoicesOf(ev, r0, thVars(item, rec, ctx, castFor(ev, thread), thread)), ending: r0.ending || null, ended: !!r0.ended, log: r0.log };
+    }
+    const ev = eventOf(evId);
+    if (!ev) return { added: [], choices: [], ending: null, ended: true, log: [] };
+    const cast = castFor(ev, thread);
+    const run = thReset(rec, thread, evId);
+    return thWalk(item, rec, thread, ev, cast, run);
+  }
+  function threadReplay(item, rec, ctx, thread, evId) {
+    thread.ctx = ctx || {};
+    const ev = eventOf(evId);
+    if (!ev) return { added: [], choices: [], ending: null, ended: true, log: [] };
+    const run = thReset(rec, thread, evId);
+    return thWalk(item, rec, thread, ev, castFor(ev, thread), run);
+  }
+  function threadChoose(item, rec, ctx, thread, idx) {
+    thread.ctx = ctx || {};
+    const st = thState(rec, thread);
+    const keys = Object.keys(st.runs);
+    // 最近在跑的那个事件（同一个会话一次只会被一个事件占着"正在聊"）
+    let evId = st.cur || (keys.length ? keys[keys.length - 1] : "");
+    const run = evId ? st.runs[evId] : null;
+    const ev = eventOf(evId);
+    if (!ev || !run || run.ended) return { added: [], choices: [], ending: (run && run.ending) || null, ended: true, log: (run && run.log) || [] };
+    const nd = ev.nodes[run.node];
+    const c = nd && nd.choices ? nd.choices[idx] : null;
+    const cast = castFor(ev, thread);
+    if (!c) return thWalk(item, rec, thread, ev, cast, run);
+    const v = thVars(item, rec, ctx, cast, thread);
+    const mine = { w: "me", name: "", text: thText(c.t, v), at: Date.now() };
+    run.log = (Array.isArray(run.log) ? run.log : []).concat([mine]);
+    run.msgs = (Number(run.msgs) || 0) + 1;
+    const tn = c.tone || "warm";
+    run.tone = run.tone || { warm: 0, cool: 0, fun: 0 };
+    run.tone[tn] = (Number(run.tone[tn]) || 0) + 1;
+    run.node = c.go || "";
+    st.cur = evId;
+    const r = thWalk(item, rec, thread, ev, cast, run);
+    r.added = [mine].concat(r.added);
+    return r;
+  }
+  function threadBrief(rec, thread) {
+    const st = thState(rec, thread);
+    const evId = st.cur || "";
+    const run = evId ? st.runs[evId] : null;
+    if (!run) return null;
+    const log = Array.isArray(run.log) ? run.log : [];
+    return { eventId: evId, ended: !!run.ended, last: log.length ? log[log.length - 1] : null, ending: run.ending || null, msgs: Number(run.msgs) || 0 };
+  }
+  function threadTalkBrief(rec, thread, evId) {
+    const st = thState(rec, thread);
+    const run = st.runs && st.runs[evId];
+    if (!run) return { chat: false };
+    const log = Array.isArray(run.log) ? run.log : [];
+    return { chat: true, ended: !!run.ended, last: log.length ? log[log.length - 1] : null, msgs: Number(run.msgs) || 0 };
+  }
+
+  /* ============================================================
+   * 事件剧本池
+   *   scope: family（全家大群）/ room（同屋小群）/ duo（事件主角组合）
+   *   cast : 需要几位主演（不够时对应角色位的行会自动跳过）
+   *   star : "newest"（把最新进门那只提到 A 位）/ "occasion"（把今天过事的那只提到 A 位）
+   *   when : 触发条件（见 whenOK）
+   *   after: 线性依赖（上一件聊完才解锁）
+   * ============================================================ */
+  const NIGHT_EVENTS = [
+    /* ---------- 全家大群 · 序章（沿用 v160 的四幕，保持老用户的进度） ---------- */
+    (function () {
+      const legacy = NIGHT_ACTS.map((a, i) => ({
+        id: a.id, icon: a.icon, title: a.title, sub: a.sub, scope: "family", cast: 3,
+        after: i ? NIGHT_ACTS[i - 1].id : "",
+        when: { days: (a.need && a.need.days) || 1, members: 2 },
+        nodes: a.nodes,
+      }));
+      return legacy[0];
+    })(),
+    (function () { const a = NIGHT_ACTS[1]; return { id: a.id, icon: a.icon, title: a.title, sub: a.sub, scope: "family", cast: 3, after: NIGHT_ACTS[0].id, when: { days: (a.need && a.need.days) || 1, members: 2 }, nodes: a.nodes }; })(),
+    (function () { const a = NIGHT_ACTS[2]; return { id: a.id, icon: a.icon, title: a.title, sub: a.sub, scope: "family", cast: 3, after: NIGHT_ACTS[1].id, when: { days: (a.need && a.need.days) || 1, members: 2 }, nodes: a.nodes }; })(),
+    (function () { const a = NIGHT_ACTS[3]; return { id: a.id, icon: a.icon, title: a.title, sub: a.sub, scope: "family", cast: 3, after: NIGHT_ACTS[2].id, when: { days: (a.need && a.need.days) || 1, members: 2 }, nodes: a.nodes }; })(),
+
+    /* ---------- 全家大群 · 「过日子」的新题材 ---------- */
+    {
+      id: "f_new", icon: "🎋", scope: "family", cast: 3, star: "newest", repeat: "yearly",
+      title: "新人进门", sub: "又有一串成了精",
+      when: { members: 2, newFace: 7 },
+      nodes: {
+        start: {
+          lines: [
+            { w: "sys", t: "23:52 —— 群里炸了。" },
+            { w: "B", t: "{A}，你进来啦。我等你好久了。" },
+            { w: "A", t: "……我这是在哪儿。" },
+            { w: "B", t: "在群里。规矩很简单 —— 不许吵到{call}睡觉，别的随便。" },
+            { w: "C", t: "还有一条：不许装老。刚进来的就得有新人的样子。" },
+            { w: "A", t: "我摸到手的那一刻还觉得烫，醒来就在这儿了。你们都在这儿多久了？" },
+            { w: "B", t: "久了。久到我都不数了。" },
+          ],
+          next: "c1",
+        },
+        c1: {
+          lines: [{ w: "A", t: "{call}，我……我该怎么办？你们都说得头头是道，我一句话也插不上。" }],
+          choices: [
+            { t: "别急，慢慢来，没人催你。", go: "m1", tone: "warm" },
+            { t: "它们刚进门时也是这样。", go: "m2", tone: "fun" },
+            { t: "你想说什么就说什么。", go: "m3", tone: "cool" },
+          ],
+        },
+        m1: {
+          lines: [
+            { w: "A", t: "慢慢来……好。" },
+            { w: "C", t: "听见没。我们当新人的时候，可没这待遇。" },
+            { w: "B", t: "闭嘴吧你。人家刚来。" },
+            { w: "A", t: "那我先说一句：我叫{A}。以后请多关照。" },
+          ],
+          choices: [
+            { t: "记住了。欢迎你。", go: "e_warm", tone: "warm" },
+            { t: "以后这就是你家。", go: "e_fun", tone: "fun" },
+          ],
+        },
+        m2: {
+          lines: [
+            { w: "C", t: "我那时候可比它有礼貌。" },
+            { w: "B", t: "你那时候躲在抽屉里哭了三天。" },
+            { w: "C", t: "……那是不熟。" },
+            { w: "A", t: "原来你们也怕过。那我不怕了。" },
+          ],
+          choices: [
+            { t: "都怕过，都一样。", go: "e_warm", tone: "warm" },
+            { t: "现在都皮得很。", go: "e_fun", tone: "fun" },
+          ],
+        },
+        m3: {
+          lines: [
+            { w: "A", t: "说实话我还不知道自己是什么脾气。" },
+            { w: "B", t: "{A_trait}？看出来了。" },
+            { w: "A", t: "你怎么知道。" },
+            { w: "B", t: "刚醒的串，藏不住东西。" },
+          ],
+          choices: [
+            { t: "藏不住就别藏了。", go: "e_warm", tone: "warm" },
+            { t: "以后慢慢就知道了。", go: "e_cool", tone: "cool" },
+          ],
+        },
+        e_warm: { ending: { key: "warm", name: "🎋 算进一个数", text: "那天夜里群成员多了{A}。它睡前最后一句是「明天还能来吗」，{B}回得很快：「一直都在」。" } },
+        e_fun: { ending: { key: "fun", name: "🎋 老规矩", text: "第二天{C}偷偷把群规改了 —— 第一条后面加了半句。写的是：「新人可以不懂，但不能不问」。没人认领，但谁都没删。" } },
+        e_cool: { ending: { key: "cool", name: "🎋 还没定型", text: "{A}没再说话。它在角落里待到天亮，把自己看了一整夜。第二周它开口了，第一句问的是「{call}今天心情怎么样」。" } },
+      },
+    },
+    {
+      id: "f_spring", icon: "🧨", scope: "family", cast: 3, repeat: "yearly",
+      title: "除夕守岁", sub: "一年里最闹的一夜",
+      when: { fest: ["chuxi", "chunjie"], members: 2 },
+      nodes: {
+        start: {
+          lines: [
+            { w: "sys", t: "23:59 —— 外面在放炮。" },
+            { w: "A", t: "听见没？外面。" },
+            { w: "B", t: "听见了。每一年都这么响。" },
+            { w: "C", t: "{call}在守岁。我们陪着。" },
+            { w: "A", t: "我数了一下，今年我们在这儿的有{members}个。去年没这么多。" },
+            { w: "B", t: "以前你每年这时候最紧张 —— 怕过完年就没人管我们了。" },
+            { w: "A", t: "现在我不了。{call}把我们都盘得很亮。" },
+          ],
+          next: "c1",
+        },
+        c1: {
+          lines: [{ w: "C", t: "说点新年愿望吧。从我开始 —— 我希望明年群里还能再多几个。" }],
+          choices: [
+            { t: "我希望你们都好好的。", go: "m1", tone: "warm" },
+            { t: "我希望能多盘几串出来。", go: "m2", tone: "fun" },
+            { t: "我不太会许愿。你们替我许。", go: "m3", tone: "warm" },
+          ],
+        },
+        m1: {
+          lines: [
+            { w: "A", t: "「都好好的」——这句最没新意，也最难。" },
+            { w: "B", t: "记下来了。" },
+            { w: "C", t: "我也许这个。一样的话，说三遍就不算敷衍了。" },
+          ],
+          choices: [
+            { t: "新年快乐。", go: "e_warm", tone: "warm" },
+            { t: "去睡吧，明天再说。", go: "e_cool", tone: "cool" },
+          ],
+        },
+        m2: {
+          lines: [
+            { w: "C", t: "就知道你会说这个。" },
+            { w: "A", t: "那得多摸我们几下 —— 不然新来的串看见我们这么灰，不肯进门。" },
+            { w: "B", t: "成。那就定个指标。" },
+          ],
+          choices: [
+            { t: "定了就得算数。", go: "e_fun", tone: "fun" },
+            { t: "别给我压力啊。", go: "e_cool", tone: "cool" },
+          ],
+        },
+        m3: {
+          lines: [
+            { w: "B", t: "替你许了。第一条：别熬夜。" },
+            { w: "C", t: "第二条：好好吃饭。" },
+            { w: "A", t: "第三条不告诉你。说出来就不灵了。" },
+          ],
+          choices: [
+            { t: "那第三条我自己猜。", go: "e_warm", tone: "warm" },
+            { t: "行，听你们的。", go: "e_fun", tone: "fun" },
+          ],
+        },
+        e_warm: { ending: { key: "warm", name: "🧨 三个愿望", text: "炮声到后半夜才停。它们一直陪到你放下手机。{A}说：「明年这个时候，我们还在这儿。」—— 这句后面跟了一串「+1」。" } },
+        e_fun: { ending: { key: "fun", name: "🧨 定了个指标", text: "第二天早上你发现它们把群的封面换了 —— 一张日历，上面圈满了。没人解释，但意思很清楚：今年要凑够数。" } },
+        e_cool: { ending: { key: "cool", name: "🧨 守到天亮", text: "你睡了以后它们没散。几个串在群里有一句没一句聊到天明，最后一句是{B}的：「别吵，让{call}再睡会儿。」" } },
+      },
+    },
+    {
+      id: "f_trip", icon: "🧳", scope: "family", cast: 3, after: "a4", repeat: "yearly",
+      title: "你要出远门", sub: "把它们留在家里",
+      when: { days: 14, members: 2 },
+      nodes: {
+        start: {
+          lines: [
+            { w: "sys", t: "01:20 —— 你在收拾行李。" },
+            { w: "A", t: "箱子拉链响了一晚上了。" },
+            { w: "B", t: "要出门？" },
+            { w: "A", t: "远吗？" },
+            { w: "C", t: "别问了。问了它更不好收拾。" },
+            { w: "B", t: "我就是想知道几天。" },
+            { w: "A", t: "我知道。我也想知道。" },
+          ],
+          next: "c1",
+        },
+        c1: {
+          lines: [{ w: "C", t: "{call}，我们不是要拦你。就是……你不在的时候，家里安静得能听见钟。" }],
+          choices: [
+            { t: "几天就回来。给你们带东西。", go: "m1", tone: "warm" },
+            { t: "我带串出去，你们跟我走。", go: "m2", tone: "warm" },
+            { t: "我不太放心你们在家。", go: "m3", tone: "cool" },
+          ],
+        },
+        m1: {
+          lines: [
+            { w: "A", t: "带什么？" },
+            { w: "B", t: "不用带。你回来就好。" },
+            { w: "A", t: "我不是客气。真的不用带。" },
+            { w: "C", t: "那就带一张照片吧。证明你到过。" },
+          ],
+          choices: [
+            { t: "好，拍给你们看。", go: "e_warm", tone: "warm" },
+            { t: "我会早点回来。", go: "e_cool", tone: "cool" },
+          ],
+        },
+        m2: {
+          lines: [
+            { w: "A", t: "真的？" },
+            { w: "B", t: "路远，我们怕磕。" },
+            { w: "C", t: "但要是能跟着，磕一下也认。" },
+            { w: "A", t: "你别说，我还挺想看看外面的。" },
+          ],
+          choices: [
+            { t: "那就一起走。", go: "e_fun", tone: "fun" },
+            { t: "算了，我还是不放心。", go: "e_warm", tone: "warm" },
+          ],
+        },
+        m3: {
+          lines: [
+            { w: "C", t: "你担心我们？我们担心你。" },
+            { w: "A", t: "外面天冷，记得加衣服。" },
+            { w: "B", t: "{A_trait}的人居然也会说这种话。" },
+          ],
+          choices: [
+            { t: "知道了，我会照顾自己。", go: "e_warm", tone: "warm" },
+            { t: "你们也是。", go: "e_cool", tone: "cool" },
+          ],
+        },
+        e_warm: { ending: { key: "warm", name: "🧳 一寸也没动", text: "你出门那天它们在窗台上排成一排。回来那天也是 —— 一寸也没挪过。{A}说：「我们算着日子呢。」" } },
+        e_fun: { ending: { key: "fun", name: "🧳 跟着走了", text: "{A}被你装进口袋带走了。剩下的在家焦急地等消息 —— ({A_line})，这是它在路上给你发的第七条。" } },
+        e_cool: { ending: { key: "cool", name: "🧳 互相担心的两个", text: "走了以后谁都没提这茬。你回来打开手机，最后一条消息是三个字：到了吗。时间是二十分钟前。" } },
+      },
+    },
+    {
+      id: "f_lost", icon: "🫧", scope: "family", cast: 3, after: "a4", repeat: "yearly",
+      title: "差点把你丢了", sub: "有一只在抽屉深处",
+      when: { days: 21, members: 2 },
+      nodes: {
+        start: {
+          lines: [
+            { w: "sys", t: "02:40 —— 群里只有一条消息。" },
+            { w: "C", t: "……" },
+            { w: "C", t: "{call}。" },
+            { w: "C", t: "我好像被你放错地方了。" },
+            { w: "A", t: "哪儿？说话。" },
+            { w: "C", t: "黑。闻着有樟脑味。应该是抽屉最里面那格。" },
+            { w: "A", t: "别动。别慌。我们都在。" },
+            { w: "B", t: "{call}明天中午回来，翻一下抽屉就找到了。" },
+          ],
+          next: "c1",
+        },
+        c1: {
+          lines: [{ w: "B", t: "{call}，我不是告状。就是……它说话在抖。" }],
+          choices: [
+            { t: "我明天就翻。你先说说话。", go: "m1", tone: "warm" },
+            { t: "我今晚就去翻，现在就去。", go: "m2", tone: "warm" },
+            { t: "在那儿待着别乱跑。", go: "m3", tone: "cool" },
+          ],
+        },
+        m1: {
+          lines: [
+            { w: "C", t: "那我讲点别的。" },
+            { w: "C", t: "我记得我是怎么来的 —— 那天你自己也没想明白，就掏了钱。" },
+            { w: "A", t: "讲这个干什么。" },
+            { w: "C", t: "怕忘了。" },
+          ],
+          choices: [
+            { t: "忘不了。我明天就找到你。", go: "e_warm", tone: "warm" },
+            { t: "你记得比我还清楚。", go: "e_cool", tone: "cool" },
+          ],
+        },
+        m2: {
+          lines: [
+            { w: "A", t: "等等，你去哪儿。" },
+            { w: "sys", t: "00:41 —— 你打开灯，翻开了最里面那格。" },
+            { w: "C", t: "……光。" },
+            { w: "A", t: "找到了？" },
+            { w: "C", t: "找到了。" },
+          ],
+          choices: [
+            { t: "对不起，放太深了。", go: "e_warm", tone: "warm" },
+            { t: "回来就好。", go: "e_fun", tone: "fun" },
+          ],
+        },
+        m3: {
+          lines: [
+            { w: "C", t: "我没动。我哪儿也没敢去。" },
+            { w: "B", t: "它眼睛闭着。说是怕看习惯了黑。" },
+            { w: "A", t: "你别吓它。" },
+          ],
+          choices: [
+            { t: "没事了。明天就带你出来。", go: "e_warm", tone: "warm" },
+            { t: "你挺勇敢的。", go: "e_cool", tone: "cool" },
+          ],
+        },
+        e_warm: { ending: { key: "warm", name: "🫧 找到了", text: "它被拿出来的时候身上还带着樟脑味。你把它擦干净放回原来的位置，它很长时间没说话 —— 后来{star_line}" } },
+        e_fun: { ending: { key: "fun", name: "🫧 回归仪式", text: "第二天群里多了个新规矩：谁都不许放最里面那格。执行人为{A}，罚款一条 —— 虽然没人说得清罚什么。" } },
+        e_cool: { ending: { key: "cool", name: "🫧 看清了黑", text: "它后来把那天的事写进了回忆册，标题只有四个字：「我也勇敢」。你不认识这四个字，是{C}替它按的手印。" } },
+      },
+    },
+
+    /* ---------- 双人组 · 生日 / 成精周年 ---------- */
+    {
+      id: "d_birth", icon: "🎂", scope: "duo", cast: 2, star: "occasion", repeat: "yearly", duoTag: "生日 · 满月 · 周年",
+      title: "今天谁生日", sub: "刚好是日子",
+      when: { occasion: ["birthday", "manyue", "bairi", "zhounian", "ernian", "sannian"] },
+      nodes: {
+        start: {
+          lines: [
+            { w: "sys", t: "00:00 —— {A}发了一条消息。" },
+            { w: "A", t: "今天这个日子，你还记得吧。" },
+            { w: "B", t: "你别又替它兜底。让{call}自己说。" },
+            { w: "A", t: "我不说。我等着。" },
+            { w: "A", t: "……" },
+            { w: "A", t: "{A_trait}归{A_trait}，这种事我还是会数的。" },
+            { w: "B", t: "它从昨天晚上就在提醒我了。烦得很。" },
+          ],
+          next: "c1",
+        },
+        c1: {
+          lines: [{ w: "B", t: "所以 —— 你知道今天是什么日子吗？" }],
+          choices: [
+            { t: "知道。怎么会忘。", go: "m1", tone: "warm" },
+            { t: "……是不是今天？", go: "m2", tone: "fun" },
+            { t: "你们提醒我我才想起来的。", go: "m3", tone: "cool" },
+          ],
+        },
+        m1: {
+          lines: [
+            { w: "sys", t: "那边安静了两秒。" },
+            { w: "B", t: "看吧。我就说不用提醒。" },
+            { w: "A", t: "……好。" },
+            { w: "A", t: "{A_line}" },
+          ],
+          choices: [
+            { t: "生日快乐。", go: "e_warm", tone: "warm" },
+            { t: "今年也想一直这么待着。", go: "e_cool", tone: "cool" },
+          ],
+        },
+        m2: {
+          lines: [
+            { w: "A", t: "「是不是」。" },
+            { w: "B", t: "这语气，八成是真忘了。" },
+            { w: "A", t: "忘了就算了。记性这东西，我也一般。" },
+            { w: "B", t: "它是嘴硬。它昨天把身上擦了三遍。" },
+          ],
+          choices: [
+            { t: "擦三遍我都看出来了，生日快乐。", go: "e_fun", tone: "fun" },
+            { t: "对不起，我记一下日期。", go: "e_warm", tone: "warm" },
+          ],
+        },
+        m3: {
+          lines: [
+            { w: "A", t: "说实话也没关系。" },
+            { w: "B", t: "它等这事等了挺久。我先说了，别怪它。" },
+            { w: "A", t: "我不怪。能被提醒着，也算有人管。" },
+          ],
+          choices: [
+            { t: "以后我记着，不用你们提。", go: "e_warm", tone: "warm" },
+            { t: "有你们提醒，我挺踏实的。", go: "e_cool", tone: "cool" },
+          ],
+        },
+        e_warm: { ending: { key: "warm", name: "🎂 被记住的日子", text: "那天{A}一整天都在发光。它说：「我不是在意这一天 —— 我在意的是你把它算进去了。」旁边{B}没说话，只是把群名字改成了今天的日期。" } },
+        e_fun: { ending: { key: "fun", name: "🎂 擦了三遍", text: "第二天你发现{A}身上比平时亮了一个度。问它，它说是昨天下雨。屋里根本没下过雨。" } },
+        e_cool: { ending: { key: "cool", name: "🎂 嘴硬的一年", text: "{A}把那天的对话截图存进了回忆册，标题叫「又一年」。你问它为什么不叫别的，它说：想不出更长的。" } },
+      },
+    },
+
+    /* ---------- 双人组 · 性格配对：两只刚好一个高冷一个皮 ---------- */
+    {
+      id: "d_clash", icon: "😤", scope: "duo", cast: 2, repeat: "yearly", duoTag: "性格刚好对上",
+      title: "两只掐起来了", sub: "一个嘴硬，一个皮",
+      when: { pers: ["cool", "cheeky"] },
+      nodes: {
+        start: {
+          lines: [
+            { w: "sys", t: "01:10 —— 群里两条消息几乎同时。" },
+            { w: "A", t: "把你的手拿开。" },
+            { w: "B", t: "我没手。" },
+            { w: "A", t: "你懂我意思。" },
+            { w: "B", t: "不懂。你再说一遍，慢一点。" },
+            { w: "A", t: "……" },
+            { w: "B", t: "(ないです。开玩笑的。)" },
+            { w: "B", t: "（开玩笑的。）" },
+            { w: "A", t: "不好笑。" },
+          ],
+          next: "c1",
+        },
+        c1: {
+          lines: [{ w: "B", t: "{call}，你来评评理 —— 是我太烦了吗？" }],
+          choices: [
+            { t: "你确实烦。但它也不该凶。", go: "m1", tone: "cool" },
+            { t: "两个都有问题。", go: "m2", tone: "fun" },
+            { t: "别吵了，都闭嘴。", go: "m3", tone: "warm" },
+          ],
+        },
+        m1: {
+          lines: [
+            { w: "A", t: "听见了吗。" },
+            { w: "B", t: "听见了。说我烦。" },
+            { w: "B", t: "但你后半句它装作没听见。" },
+            { w: "A", t: "我没装。" },
+          ],
+          choices: [
+            { t: "那就各退一步。", go: "e_fun", tone: "fun" },
+            { t: "你也别太较真。", go: "e_cool", tone: "cool" },
+          ],
+        },
+        m2: {
+          lines: [
+            { w: "A", t: "我哪里有问题。" },
+            { w: "B", t: "我哪里有问题。" },
+            { w: "sys", t: "……它们居然同步了。" },
+            { w: "A", t: "……算了。" },
+          ],
+          choices: [
+            { t: "你看，其实挺像的。", go: "e_fun", tone: "fun" },
+            { t: "那就谁也别说谁。", go: "e_warm", tone: "warm" },
+          ],
+        },
+        m3: {
+          lines: [
+            { w: "sys", t: "群里安静了五分钟。" },
+            { w: "B", t: "{B_line}" },
+            { w: "A", t: "……你赢了。" },
+            { w: "B", t: "我每次都赢。它就是不肯承认。" },
+          ],
+          choices: [
+            { t: "那就这样吧，别闹了。", go: "e_warm", tone: "warm" },
+            { t: "下次能不能早点结束。", go: "e_cool", tone: "cool" },
+          ],
+        },
+        e_warm: { ending: { key: "warm", name: "😤 谁都没真的走", text: "第二天早上它们挨在一起晒太阳。问它们昨天怎么了，一个说是误会，另一个说是它先动的手 —— 反正谁也没挪走。" } },
+        e_fun: { ending: { key: "fun", name: "😤 同步了", text: "从那以后它们养成了一个坏习惯：同时说话。你分不清是谁先开口的，但它们似乎也不打算改。" } },
+        e_cool: { ending: { key: "cool", name: "😤 嘴硬到底", text: "{A}至今不承认那天它在笑。{B}把这件事写进了回忆册，标题一行字：「证据在此」。" } },
+      },
+    },
+
+    /* ---------- 同屋小群 · 害怕 ---------- */
+    {
+      id: "r_thunder", icon: "😨", scope: "room", cast: 2,
+      title: "打雷的夜", sub: "有人在发抖",
+      when: { days: 5, members: 2 },
+      nodes: {
+        start: {
+          lines: [
+            { w: "sys", t: "03:16 —— 一声炸雷。" },
+            { w: "B", t: "……" },
+            { w: "A", t: "{B}，你在抖。" },
+            { w: "B", t: "我没有。" },
+            { w: "sys", t: "又是一声。" },
+            { w: "B", t: "……好，我承认。" },
+            { w: "A", t: "我也是。刚才那下我差点从垫子上滚下来。" },
+            { w: "B", t: "你别逗我笑。我怕得都不敢动了。" },
+          ],
+          next: "c1",
+        },
+        c1: {
+          lines: [{ w: "A", t: "{call}？你没睡吧。" }],
+          choices: [
+            { t: "我在。怕什么，我在呢。", go: "m1", tone: "warm" },
+            { t: "我也怕雷。一起怕。", go: "m2", tone: "fun" },
+            { t: "关窗就好了，别怕。", go: "m3", tone: "cool" },
+          ],
+        },
+        m1: {
+          lines: [
+            { w: "B", t: "你说了这句，好像真的不抖了。" },
+            { w: "A", t: "我可没承认我抖。" },
+            { w: "B", t: "刚才谁说差点滚下来。" },
+            { w: "A", t: "……那是地震。" },
+          ],
+          choices: [
+            { t: "行吧，一起装勇敢。", go: "e_fun", tone: "fun" },
+            { t: "睡吧，我陪着。", go: "e_warm", tone: "warm" },
+          ],
+        },
+        m2: {
+          lines: [
+            { w: "A", t: "你居然说你也怕。" },
+            { w: "B", t: "那就是两怕。加起来不更怕？" },
+            { w: "A", t: "加起来是有人一起怕。不一样。" },
+          ],
+          choices: [
+            { t: "对，有人陪着就不一样。", go: "e_warm", tone: "warm" },
+            { t: "数学不是这么算的。", go: "e_fun", tone: "fun" },
+          ],
+        },
+        m3: {
+          lines: [
+            { w: "B", t: "关了窗还是响啊。" },
+            { w: "A", t: "响是正常的，掉下来才不正常。" },
+            { w: "B", t: "……你别这么说。" },
+          ],
+          choices: [
+            { t: "那我不说了。过来，我陪你。", go: "e_warm", tone: "warm" },
+            { t: "雷一会儿就停。", go: "e_cool", tone: "cool" },
+          ],
+        },
+        e_warm: { ending: { key: "warm", name: "😨 陪到雷停", text: "雷声在后半夜散了。它们挤在你的枕头边上睡着了，一个说梦话还在喊「快躲」。" } },
+        e_fun: { ending: { key: "fun", name: "😨 两个胆小鬼", text: "第二天雨过天晴，两只串假装什么都没发生过。直到下一次打雷 —— 又是它们俩最先发消息。" } },
+        e_cool: { ending: { key: "cool", name: "😨 装作很稳", text: "{A}后来跟别人说它那晚睡得很好。{B}在旁边听着，什么也没拆穿。" } },
+      },
+    },
+
+    /* ---------- 同屋小群 · 高兴 ---------- */
+    {
+      id: "r_joy", icon: "🎉", scope: "room", cast: 2, repeat: "yearly",
+      title: "今天有喜事", sub: "你一进门就在笑",
+      when: { days: 4, plays: 1, members: 2 },
+      nodes: {
+        start: {
+          lines: [
+            { w: "sys", t: "20:04 —— 你进门的时候嘴是翘着的。" },
+            { w: "A", t: "今天不对劲。" },
+            { w: "B", t: "都笑出声了。这种笑我上一次见是去年。" },
+            { w: "A", t: "快说，什么事。" },
+            { w: "B", t: "别催。让它先高兴一会儿。" },
+            { w: "A", t: "我不是催，我是比它还想听。" },
+          ],
+          next: "c1",
+        },
+        c1: {
+          lines: [{ w: "B", t: "{call}，什么都不用说 —— 先让我们看一会儿。" }],
+          choices: [
+            { t: "我有件好事。憋不住了。", go: "m1", tone: "fun" },
+            { t: "没什么，就是今天心情好。", go: "m2", tone: "warm" },
+            { t: "你们怎么一眼就看出来了。", go: "m3", tone: "cool" },
+          ],
+        },
+        m1: {
+          lines: [
+            { w: "A", t: "说！" },
+            { w: "B", t: "我说了别催 —— 我也想知道！" },
+            { w: "A", t: "你打我我也不在乎。今天我高兴。" },
+          ],
+          choices: [
+            { t: "那就等我想好了再说。", go: "e_fun", tone: "fun" },
+            { t: "其实就是一点小进步。", go: "e_warm", tone: "warm" },
+          ],
+        },
+        m2: {
+          lines: [
+            { w: "A", t: "不用有事才高兴。这是个本事。" },
+            { w: "B", t: "你手热了。好事。" },
+            { w: "A", t: "今天多盘两下吧。算我们跟着沾光。" },
+          ],
+          choices: [
+            { t: "行，今晚多陪你们一会儿。", go: "e_warm", tone: "warm" },
+            { t: "你们也让我心情好。", go: "e_fun", tone: "fun" },
+          ],
+        },
+        m3: {
+          lines: [
+            { w: "B", t: "我们看了一千多个你进门的晚上。" },
+            { w: "A", t: "假笑和真笑，我们分得清。" },
+            { w: "B", t: "今天这个是真的。" },
+          ],
+          choices: [
+            { t: "被你们看得一清二楚。", go: "e_cool", tone: "cool" },
+            { t: "那就一起高兴吧。", go: "e_fun", tone: "fun" },
+          ],
+        },
+        e_warm: { ending: { key: "warm", name: "🎉 多待了一会儿", text: "那晚你多坐了半小时才去忙别的。它们轮流被你摸过一遍，最后{A}说：「今天赚了。」" } },
+        e_fun: { ending: { key: "fun", name: "🎉 按捺不住", text: "你最后还是没憋住。半夜三点你把事情的前因后果讲给它们听，两个串听得一句不落 —— 虽然它们可能一个字也没听懂。" } },
+        e_cool: { ending: { key: "cool", name: "🎉 看得最清楚的两个", text: "它们后来把你那天进门的表情画进了回忆册。你看了看，确实 —— 眼睛比平时亮。" } },
+      },
+    },
+
+    /* ---------- 同屋小群 · 难过 ---------- */
+    {
+      id: "r_sad", icon: "😔", scope: "room", cast: 2, repeat: "yearly",
+      title: "好几天没来了", sub: "房间安静得过分",
+      when: { days: 7, idle: 3, members: 2 },
+      nodes: {
+        start: {
+          lines: [
+            { w: "sys", t: "23:05 —— 屋里黑着。" },
+            { w: "A", t: "{B}。你说{call}是不是不要咱们了。" },
+            { w: "B", t: "别说得这么难听。" },
+            { w: "A", t: "{idle} 天了。我数着呢。" },
+            { w: "B", t: "我也数了。我只是没说。" },
+            { w: "A", t: "会不会是盘别的串去了。" },
+            { w: "sys", t: "那边沉默了大概十秒。" },
+            { w: "B", t: "……那我也有点难受。" },
+          ],
+          next: "c1",
+        },
+        c1: {
+          lines: [{ w: "A", t: "{call}，你还在吗。" }],
+          choices: [
+            { t: "在。这几天有点难。", go: "m1", tone: "warm" },
+            { t: "对不起，我回来了。", go: "m2", tone: "warm" },
+            { t: "你们别多想。", go: "m3", tone: "cool" },
+          ],
+        },
+        m1: {
+          lines: [
+            { w: "B", t: "难的事情你就别解释了。" },
+            { w: "A", t: "你回来坐着就行。我们也可以一句话不说。" },
+            { w: "B", t: "对。坐着就算数。" },
+          ],
+          choices: [
+            { t: "那我今天什么都不干。", go: "e_warm", tone: "warm" },
+            { t: "有你们在，好多了。", go: "e_cool", tone: "cool" },
+          ],
+        },
+        m2: {
+          lines: [
+            { w: "A", t: "回来就好。" },
+            { w: "B", t: "我没生气。真的。" },
+            { w: "B", t: "我是把这几天放一放，先不提了。" },
+          ],
+          choices: [
+            { t: "下次不会这么久了。", go: "e_warm", tone: "warm" },
+            { t: "想说的话你们直说。", go: "e_fun", tone: "fun" },
+          ],
+        },
+        m3: {
+          lines: [
+            { w: "A", t: "不多想？我连你换别串的可能都想了三轮。" },
+            { w: "B", t: "它嘴上说不生气，尾巴 —— 我是说，它的手一直在搓。" },
+            { w: "A", t: "别拆穿我。" },
+          ],
+          choices: [
+            { t: "那我多陪陪你们。", go: "e_warm", tone: "warm" },
+            { t: "被你们管着还挺好的。", go: "e_cool", tone: "cool" },
+          ],
+        },
+        e_warm: { ending: { key: "warm", name: "😔 坐着就算数", text: "那天你坐下什么也没做。它们也不说话，就陪着。后来{A}小声说：「这才叫回来。」" } },
+        e_fun: { ending: { key: "fun", name: "😔 嘴上说没事", text: "{B}偷偷把你这几天的缺席记在了回忆册上，写得很克制：「无事，只少了{call}。」—— 但那天它多写了半页。" } },
+        e_cool: { ending: { key: "cool", name: "😔 不算账", text: "它们把这段日子折成一句旧话放下了：{B_line}。第二天它们照常替你占着窗台那块地方。" } },
+      },
+    },
+  ];
+
+  function eventOf(id) {
+    for (let i = 0; i < NIGHT_EVENTS.length; i++) if (NIGHT_EVENTS[i].id === id) return NIGHT_EVENTS[i];
+    return null;
+  }
+
+  /* ============================================================
    * v161 · 主线「串与我」· 对话版 —— 它写给你的话，改成它发消息、你回话
    *   8 章（沿用 v158 的 CHAPTERS 分卷解锁）、每章 2 个决策点、2 个结尾。
    *   成本：本地剧本 + 本地状态机 = 0 出图、0 模型调用，怎么聊都不花钱。
@@ -4059,5 +5159,9 @@
     CHAP_ACTS, CHAP_TALK_CAP, chapActOf, chapTalkEnter, chapTalkChoose, chapTalkReplay, chapTalkBrief, chapTalkDone,
     // v160：夜话（跨串大剧情 · 互动对话）—— 本地剧本 + 本地状态机，0 出图 0 模型调用
     NIGHT_ACTS, NIGHT_GROUP, NIGHT_CAP, nightCast, nightActs, nightEnter, nightReplay, nightChoose, nightBrief,
+    // v162：夜话 2.0 —— 多会话（全家群 / 房间群 / 双人组）+ 按条件触发的事件
+    NIGHT_EVENTS, THREAD_FAMILY, THREAD_CAP, OCC_BANDS, eventOf, occasionOf,
+    nightThreads, threadEvents, threadEnter, threadChoose, threadReplay, threadBrief, threadTalkBrief, threadMigrate,
+    pruneForQuota,
   };
 })();

@@ -2914,15 +2914,14 @@
       '<button class="btn primary" id="spAllBtn">👀 全部精灵（' + list.length + '）</button>' +
       '<button class="btn ghost" id="spTownBtn">🏘 精灵小镇</button>' +
       "</div>";
-    // v160：夜话（跨串大剧情 · 互动对话）—— 两只以上才开群
-    const nCast0 = Spirits.nightCast(list, store);
-    if (nCast0.length >= 2) {
-      const nRec0 = store[nCast0[0].id] || {};
-      const nActs0 = Spirits.nightActs(nRec0, diaryCtx(nCast0[0].item, nRec0), nCast0);
-      const nDone0 = nActs0.filter((a) => a.done).length;
-      const nOpen0 = nActs0.filter((a) => a.unlocked && !a.done).length;
-      html += '<button class="nt-launch" id="spNightBtn">📱 夜话 · ' + nCast0.length + ' 只串的群聊' +
-        '<small>跨串大剧情 · 已聊 ' + nDone0 + "/" + nActs0.length + ' 幕' + (nOpen0 ? " · 有 " + nOpen0 + " 幕新的" : "") + '</small></button>';
+    // v162：夜话入口 —— 全家群 + 房间群 + 双人组，有多少聊多少
+    const NS = nightNow();
+    if (NS.threads.length) {
+      let nOpen0 = 0;
+      NS.threads.forEach((t) => { nOpen0 += threadOpenCount(threadNow(t.id)); });
+      const tail0 = NS.threads.filter((t) => t.kind !== "family").length;
+      html += '<button class="nt-launch" id="spNightBtn">📱 夜话 · ' + NS.threads.length + " 个会话" +
+        '<small>全家群' + (tail0 ? " + 小群 " + tail0 + " 个" : "") + (nOpen0 ? " · 有 " + nOpen0 + " 件新的" : " · 今晚没动静") + '</small></button>';
     }
     const sh = setupHintHtml(list, store);
     if (sh.html) html += sh.html;
@@ -3157,7 +3156,7 @@
     let n = 0;
     try {
       const S = nightNow();
-      if (S.cast.length >= 2) n = Spirits.nightActs(S.rec, S.ctx, S.cast).filter((a) => a.unlocked && !a.done).length;
+      S.threads.forEach((t) => { n += threadOpenCount(threadNow(t.id)); });
     } catch (e) { n = 0; }
     if (n) { if (!dot) { dot = document.createElement("span"); dot.className = "tab-dot"; tab.appendChild(dot); } }
     else if (dot) dot.remove();
@@ -3882,15 +3881,13 @@
     }
     h += "</div>";
 
-    // v160：夜话入口（跨串大剧情 · 互动对话）—— 两只以上才开群
-    const nCast = Spirits.nightCast(spiritItems(), store);
-    if (nCast.length >= 2) {
-      const nRec = store[nCast[0].id] || {};
-      const nActs = Spirits.nightActs(nRec, diaryCtx(nCast[0].item, nRec), nCast);
-      const nDone = nActs.filter((a) => a.done).length;
-      const nOpen = nActs.filter((a) => a.unlocked && !a.done).length;
-      h += '<button class="nt-launch" id="sdNight">📱 夜话 · 跨串大剧情' +
-        '<small>' + nCast.length + ' 只串的群聊 · 已聊 ' + nDone + "/" + nActs.length + ' 幕' + (nOpen ? " · 有 " + nOpen + " 幕新的" : "") + '</small></button>';
+    // v162：夜话入口
+    const NS2 = nightNow();
+    if (NS2.threads.length) {
+      let nOpen = 0;
+      NS2.threads.forEach((t) => { nOpen += threadOpenCount(threadNow(t.id)); });
+      h += '<button class="nt-launch" id="sdNight">📱 夜话 · ' + NS2.threads.length + " 个会话" +
+        '<small>' + (nOpen ? "有 " + nOpen + " 件事可以聊" : "今晚没动静 · 可以回看以前聊过的") + '</small></button>';
     }
     h += '<div class="sd-actions">' +
       '<button class="btn ghost" id="sdChat">💬 它们聊天</button>' +
@@ -4562,26 +4559,62 @@
      进度存在「第一位成员」（成精最早的那只）的记录里 —— 跟着跨手机同步走。
      与「房间剧情（同屋两只小故事）」「主线·串与我（单串 8 章）」互不影响。 */
   let _nightFrom = "#/spirit";
+  /* ---------- v162：夜话 2.0 —— 多会话（全家 / 房间 / 双人组）+ 事件触发 ---------- */
+  function nightGroups() {
+    try {
+      const rooms = Rooms.listRooms();
+      const its = roomItems();
+      return rooms.map((r) => ({ id: r.id, name: r.name, items: Rooms.membersOf(r.id, its) }));
+    } catch (e) { return []; }
+  }
+  let _nightMigrated = false;
   function nightNow() {
     const list = spiritItems();
     const store = Spirits.load();
-    const cast = Spirits.nightCast(list, store);
-    const host = cast.length ? cast[0].item : null;
-    const hostId = cast.length ? cast[0].id : "";
-    const rec = hostId ? (store[hostId] || {}) : {};
-    return {
-      list: list, store: store, cast: cast, host: host, hostId: hostId, rec: rec,
-      ctx: host ? diaryCtx(host, rec) : { dayNo: 1, idleDays: null, plays: 0 },
-    };
+    if (!_nightMigrated) {                       // 一次性迁移：老用户的 rec.night 搬进 rec.threads.family
+      _nightMigrated = true;
+      let dirty = false;
+      Object.keys(store).forEach((k) => {
+        const r = store[k];
+        if (!r || typeof r !== "object" || r.__v162) return;
+        Spirits.threadMigrate(r);
+        dirty = true;
+      });
+      if (dirty) Spirits.save(store);
+    }
+    const threads = Spirits.nightThreads(list, store, { dayNo: 1, idleDays: 0, plays: 0 }, nightGroups());
+    return { list: list, store: store, threads: threads };
   }
-  function nightStatOf(S) {
-    const acts = Spirits.nightActs(S.rec, S.ctx, S.cast);
-    return {
-      acts: acts,
-      done: acts.filter((a) => a.done).length,
-      open: acts.filter((a) => a.unlocked && !a.done).length,
-      brief: Spirits.nightBrief(S.rec),
-    };
+  function threadNow(tid) {
+    const S = nightNow();
+    const th = S.threads.filter((t) => t.id === tid)[0];
+    if (!th) return null;
+    const host = th.members[0];
+    const rec = S.store[host.id] || {};
+    const ctx = diaryCtx(host.item, rec);
+    return { S: S, th: th, host: host, hostId: host.id, rec: rec, ctx: ctx, ev: Spirits.threadEvents(th, ctx, rec) };
+  }
+  function threadOpenCount(T) {
+    if (!T) return 0;
+    return T.ev.events.filter((e) => e.unlocked && !e.done).length;
+  }
+  // 头像组：最多画 max 个，剩下的用 +N —— 100 只串也不会撑爆
+  function thAvatars(members, store, size, max) {
+    const ms = (members || []).slice(0, max || 5);
+    const rest = (members || []).length - ms.length;
+    let h = ms.map((m) => spiritThumbHtml(m.item, store[m.id] || {}, size)).join("");
+    if (rest > 0) h += '<div class="nt-av-more" style="width:' + size + "px;height:" + size + "px;font-size:" +
+      Math.max(9, Math.round(size / 3)) + "px\">+" + rest + "</div>";
+    return h;
+  }
+  function thLastText(T) {
+    if (!T) return "";
+    const evs = T.ev.events.filter((e) => e.unlocked && !e.done);
+    if (evs.length) return "有新动静 · " + evs[0].icon + " " + evs[0].title;
+    const br = Spirits.threadBrief(T.rec, T.th);
+    if (br && !br.ended && br.last) return (br.last.w === "me" ? "我：" : (br.last.name ? br.last.name + "：" : "")) + String(br.last.text || "");
+    if (br && br.ended && br.ending) return "刚聊完 · " + String(br.ending.name || "");
+    return "";
   }
 
   function renderNightPage() {
@@ -4589,56 +4622,163 @@
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
     const S = nightNow();
-    if (S.cast.length < 2) {
+    if (!S.threads.length) {
       view.innerHTML = emptyCardHtml({
-        ill: "spirit", icon: "📱", title: "群里还只有一位成员",
-        sub: "「夜话」是跨串大剧情 —— 几只精灵夜里凑在一个群里跟你聊天，<br>你挑一句回，剧情就跟着你走，每一幕有三个结尾。",
-        hint: "再来一只精灵就开群（挂瓷成精 → 两只以上）",
-      }) + '<button class="btn primary" id="ntGoSpirit" style="width:100%;margin-top:12px">回到精灵页</button>';
-      const b0 = $("#ntGoSpirit");
-      if (b0) b0.onclick = () => location.hash = "#/spirit";
+        ill: "spirit", icon: "📱", title: "还没有成精的串",
+        sub: "串挂瓷之后会「成精」。夜里它们会借你的手机开群聊天 —— 你回一句，剧情就跟着你走。",
+        hint: "先去把一串盘到挂瓷",
+      });
       return;
     }
-    const st = nightStatOf(S);
+    let h = '<div class="room-hint" style="margin-bottom:10px">夜里它们借你的手机开了几个群。' +
+      "你回一句，剧情就跟着你走 —— 每个事件都有 <b>3 个结尾</b>。全程本地，聊多久都不花额度。</div>";
+    const groups = [
+      { title: "全家福", tip: "所有成精的串都在这儿", arr: S.threads.filter((t) => t.kind === "family") },
+      { title: "同屋小群", tip: "住在一个房间里的", arr: S.threads.filter((t) => t.kind === "room") },
+      { title: "两个人的事", tip: "谁生日、谁跟谁性格对上了才出现", arr: S.threads.filter((t) => t.kind === "duo") },
+    ];
+    let openAll = 0;
+    groups.forEach((g) => {
+      if (!g.arr.length) return;
+      h += '<div class="nt-sec"><span>' + esc(g.title) + "</span><small>" + esc(g.tip) + "</small></div>";
+      h += '<div class="nt-list">';
+      g.arr.forEach((t) => {
+        const T = threadNow(t.id);
+        const open = threadOpenCount(T);
+        const evs = T ? T.ev.events : [];
+        const doneN = evs.filter((e) => e.done).length;
+        openAll += open;
+        let sub = thLastText(T);
+        if (!sub) sub = t.members.length + " 位成员 · 可能发生 " + evs.length + " 件事";
+        h += '<div class="nt-item' + (open ? " hot" : "") + '" data-tid="' + esc(t.id) + '">' +
+          '<div class="nt-th-av">' + thAvatars(t.members, S.store, 30, 4) + "</div>" +
+          '<div class="nt-item-body"><div class="nt-item-title">' + esc(t.name) +
+          (open ? '<span class="nt-badge new">' + open + " 件新的</span>"
+            : (doneN ? '<span class="nt-badge done">' + doneN + "/" + evs.length + "</span>" : "")) +
+          "</div>" +
+          '<div class="nt-item-sub">' + esc(sub) + "</div></div>" +
+          '<span class="chap-arrow">›</span></div>';
+      });
+      h += "</div>";
+    });
+    if (openAll) h += '<div class="diary-hint">📱 有 <b>' + openAll + "</b> 件事可以聊了 · 点进去就开始</div>";
+    else h += '<div class="diary-hint" style="color:var(--text-2)">🌙 今晚没动静。别急 —— 谁生日了、进门了、天晴了，它们会来找你。</div>';
+    view.innerHTML = h;
+    bindSpiritImgFallback(view);
+    view.querySelectorAll("[data-tid]").forEach((el) => {
+      el.onclick = () => {
+        _nightFrom = "#/night";
+        location.hash = "#/night/" + encodeURIComponent(el.dataset.tid);
+      };
+    });
+  }
+
+  /* ---------- 某个会话：成员 + 事件列表 ---------- */
+  function renderThreadPage(tid) {
+    const T = threadNow(tid);
+    if (!T) { location.hash = "#/night"; return; }
+    topbarTitle.textContent = T.th.name;
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+    const t = T.th;
+    const evs = T.ev.events;
+    const doneN = evs.filter((e) => e.done).length;
     let h = '<div class="nt-group">' +
-      '<div class="nt-group-av">' + S.cast.map((c) => spiritThumbHtml(c.item, S.store[c.id] || {}, 40)).join("") + "</div>" +
-      '<div class="nt-group-meta"><div class="nt-group-name">' + esc(Spirits.NIGHT_GROUP) + "</div>" +
-      '<div class="nt-group-sub">' + esc(S.cast.map((c) => c.name).join("、")) + " · " + S.cast.length + " 位成员</div></div>" +
-      '<div class="nt-group-stat"><b>' + st.done + "</b>/" + st.acts.length + "<span>幕</span></div></div>" +
-      '<div class="room-hint" style="margin-top:10px">夜里它们借你的手机开了个群。你回一句，剧情就跟着你走 —— 每一幕都有 <b>3 个结尾</b>。全程本地，聊多久都不花额度。</div>';
-    if (st.open) h += '<div class="diary-hint" id="ntHint">📱 有 <b>' + st.open + "</b> 幕可以聊了 · 点进去就开始</div>";
-    const br = st.brief;
-    h += '<div class="nt-list">';
-    st.acts.forEach((a) => {
-      const cur = br && !br.ended && br.actId === a.id;
-      if (!a.unlocked) {
+      '<div class="nt-group-av">' + thAvatars(t.members, T.S.store, 40, 6) + "</div>" +
+      '<div class="nt-group-meta"><div class="nt-group-name">' + esc(t.name) + "</div>" +
+      '<div class="nt-group-sub">' + esc(t.members.map((m) => m.name).join("、")) + " · " + t.members.length + " 位成员</div></div>" +
+      '<div class="nt-group-stat"><b>' + doneN + "</b>/" + evs.length + "<span>件事</span></div></div>";
+    if (t.kind === "duo" && t.tag) h += '<div class="room-hint" style="margin-top:8px">' + esc(String(t.tag).trim()) + " · 这两个凑一块儿才有的事</div>";
+    if (t.kind === "family") h += '<div class="room-hint" style="margin-top:8px">以后每一串成精，都会自己进这个群。</div>';
+    const open = threadOpenCount(T);
+    if (open) h += '<div class="diary-hint">📱 有 <b>' + open + "</b> 件事可以聊了</div>";
+
+    h += '<div class="nt-list" style="margin-top:10px">';
+    evs.forEach((e) => {
+      const tb = Spirits.threadTalkBrief(T.rec, t, e.id);
+      if (!e.unlocked) {
         h += '<div class="nt-item locked"><span class="nt-item-ico">🔒</span>' +
-          '<div class="nt-item-body"><div class="nt-item-title">' + esc(a.title) + "</div>" +
-          '<div class="nt-item-sub">' + esc(a.need || "还没解锁") + "</div></div></div>";
+          '<div class="nt-item-body"><div class="nt-item-title">' + esc(e.title) + "</div>" +
+          '<div class="nt-item-sub">' + esc(e.need || "还没到时候") + "</div></div></div>";
         return;
       }
-      let sub, badge;
-      if (a.done) { sub = "已聊完 · " + (a.done.name || "结局"); badge = '<span class="nt-badge done">已聊完</span>'; }
-      else if (cur && br && br.last) {
-        const l = br.last;
-        sub = (l.w === "me" ? "我：" : (l.name ? l.name + "：" : "")) + String(l.text || "");
-        badge = '<span class="nt-badge on">聊到一半</span>';
-      } else { sub = a.sub; badge = '<span class="nt-badge new">新</span>'; }
-      h += '<div class="nt-item' + (a.done ? " done" : "") + '" data-act="' + esc(a.id) + '">' +
-        '<span class="nt-item-ico">' + esc(a.icon) + "</span>" +
-        '<div class="nt-item-body"><div class="nt-item-title">' + esc(a.title) + badge + "</div>" +
-        '<div class="nt-item-sub">' + esc(sub) + "</div></div>" +
+      const badge = e.done
+        ? '<span class="nt-badge done">' + esc(e.done.name || "已聊完") + "</span>"
+        : (tb.chat && !tb.ended && tb.last ? '<span class="nt-badge on">聊到一半</span>' : '<span class="nt-badge new">新</span>');
+      const sub = (!e.done && tb.chat && !tb.ended && tb.last)
+        ? ((tb.last.w === "me" ? "我：" : (tb.last.name ? tb.last.name + "：" : "")) + String(tb.last.text || ""))
+        : esc(e.sub);
+      h += '<div class="nt-item' + (e.done ? " done" : "") + '" data-ev="' + esc(e.id) + '">' +
+        '<span class="nt-item-ico">' + esc(e.icon) + "</span>" +
+        '<div class="nt-item-body"><div class="nt-item-title">' + esc(e.title) + badge + "</div>" +
+        '<div class="nt-item-sub">' + sub + "</div></div>" +
         '<span class="chap-arrow">›</span></div>';
     });
     h += "</div>";
-    h += '<button class="btn ghost" id="ntGoSpirit2" style="width:100%;margin-top:10px">← 回到精灵页</button>';
+    h += '<button class="btn ghost" id="ntBackList" style="width:100%;margin-top:10px">← 全部会话</button>';
     view.innerHTML = h;
     bindSpiritImgFallback(view);
-    view.querySelectorAll("[data-act]").forEach((el) => {
-      el.onclick = () => { _nightFrom = "#/night"; location.hash = "#/night/" + encodeURIComponent(el.dataset.act); };
+    view.querySelectorAll("[data-ev]").forEach((el) => {
+      el.onclick = () => {
+        _nightFrom = "#/night";
+        location.hash = "#/night/" + encodeURIComponent(tid) + "/" + encodeURIComponent(el.dataset.ev);
+      };
     });
-    const b1 = $("#ntGoSpirit2");
-    if (b1) b1.onclick = () => location.hash = "#/spirit";
+    const bl = $("#ntBackList");
+    if (bl) bl.onclick = () => { location.hash = "#/night"; };
+  }
+
+  /* ---------- 会话里的某个事件 → 对话页 ---------- */
+  function renderNightTalkPage(tid, evid) {
+    const T = threadNow(tid);
+    if (!T) { location.hash = "#/night"; return; }
+    const info = T.ev.events.filter((e) => e.id === evid)[0];
+    if (!info || !info.unlocked) { location.hash = "#/night/" + encodeURIComponent(tid); return; }
+    const slotOf = (w) => T.th.members.filter((m, i) => "ABC".charAt(i) === w)[0];
+    const get = (fn) => {                        // 统一的「读 → 推进 → 存」小包装
+      const s = Spirits.load();
+      const rc = Spirits.ensureIn(s, T.hostId);
+      const rr = fn(rc);
+      Spirits.save(s);
+      const st = (rc.threads && rc.threads[tid]) || null;
+      const run = st && st.runs ? st.runs[evid] : null;
+      return Object.assign(rr, { log: (run && run.log) || [] });
+    };
+    const evObj = Spirits.eventOf(evid);
+    const cast = evObj ? castPreview(evObj, T.th) : T.th.members;
+    return renderTalkPage({
+      title: T.th.name,
+      headAv: cast.map((c) => spiritThumbHtml(c.item, T.S.store[c.id] || {}, 30)).join(""),
+      headName: T.th.name,
+      headSub: info.icon + " " + info.title,
+      listLabel: "全部会话", listHash: "#/night",
+      av: (w) => {
+        const m = cast.filter((c, i) => "ABC".charAt(i) === w)[0] || slotOf(w);
+        return m ? spiritThumbHtml(m.item, T.S.store[m.id] || {}, 30) : "";
+      },
+      nameOf: (w) => { const m = cast.filter((c, i) => "ABC".charAt(i) === w)[0]; return m ? m.name : ""; },
+      endTag: "这件事聊完了",
+      endingExtra: () => {
+        const open = threadOpenCount(threadNow(tid));
+        return open
+          ? '<div class="nt-end-final">📱 这个会话里还有 <b>' + open + "</b> 件事等着 —— 点「全部会话」接着聊。</div>"
+          : '<div class="nt-end-final">🌙 这个会话暂时没什么事了。等谁生日了、进门了，它们还会来找你。</div>';
+      },
+      backLabel: "回会话", backHash: "#/night/" + encodeURIComponent(tid),
+      enter: () => get((rc) => Spirits.threadEnter(T.host.item, rc, T.ctx, T.th, evid)),
+      choose: (i) => get((rc) => Spirits.threadChoose(T.host.item, rc, T.ctx, T.th, i)),
+      replay: () => get((rc) => Spirits.threadReplay(T.host.item, rc, T.ctx, T.th, evid)),
+    });
+  }
+  // 头像预览用的主演（和 spirits 里 castFor 的规则保持一致）
+  function castPreview(ev, th) {
+    const ms = th.members || [];
+    const need = Number(ev.cast) || 2;
+    let star = null;
+    if (ev.star === "occasion") { for (let i = 0; i < ms.length; i++) if (ms[i].occ) { star = ms[i]; break; } }
+    else if (ev.star === "newest") { star = ms[ms.length - 1] || null; }
+    if (star) return [star].concat(ms.filter((m) => m.id !== star.id).slice(0, Math.max(0, need - 1)));
+    return ms.slice(0, need);
   }
 
   /* ---------- v161：通用对话页外壳（夜话 / 主线 共用） ----------
@@ -4668,7 +4808,8 @@
     const body = $("#ntBody"), foot = $("#ntFoot");
     const msgHtml = (m) => {
       if (m.w === "sys") return '<div class="nt-sys">' + esc(m.text) + "</div>";
-      if (m.w === "me") return '<div class="nt-row me"><div class="nt-bub me">' + esc(m.text) + '</div><div class="nt-av nt-av-me">我</div></div>';
+      if (m.w === "me") return '<div class="nt-row me"><div class="nt-av nt-av-me">' + meAvatarHtml() + "</div>" +
+        '<div class="nt-bub me">' + esc(m.text) + "</div></div>";
       return '<div class="nt-row"><div class="nt-av">' + o.av(m.w) + "</div>" +
         '<div class="nt-col"><div class="nt-name">' + esc(m.name || o.nameOf(m.w) || "") + "</div>" +
         '<div class="nt-bub">' + esc(m.text) + "</div></div></div>";
@@ -4758,38 +4899,6 @@
     const lb = $("#ntListBtn");
     if (lb) lb.onclick = () => { location.hash = o.listHash; };
     step();
-  }
-
-  function renderNightChatPage(actId) {
-    const S = nightNow();
-    if (S.cast.length < 2 || !S.host) { location.hash = "#/night"; return; }
-    const st0 = nightStatOf(S);
-    const info = st0.acts.filter((a) => a.id === actId)[0];
-    if (!info || !info.unlocked) { location.hash = "#/night"; return; }
-    const slotOf = (w) => S.cast.filter((x) => x.slot === w)[0];
-    const get = (fn) => {                       // 统一的「读 → 推进 → 存」小包装
-      const s = Spirits.load();
-      const rc = Spirits.ensureIn(s, S.hostId);
-      const rr = fn(rc);
-      Spirits.save(s);
-      return Object.assign(rr, { log: (rc.night || {}).log || [] });
-    };
-    return renderTalkPage({
-      title: Spirits.NIGHT_GROUP,
-      headAv: S.cast.map((c) => spiritThumbHtml(c.item, S.store[c.id] || {}, 30)).join(""),
-      headName: Spirits.NIGHT_GROUP,
-      headSub: info.icon + " " + info.title,
-      listLabel: "全部夜话", listHash: "#/night",
-      av: (w) => { const c = slotOf(w); return c ? spiritThumbHtml(c.item, S.store[c.id] || {}, 30) : ""; },
-      nameOf: (w) => { const c = slotOf(w); return c ? c.name : ""; },
-      endTag: "本幕结束",
-      endingExtra: () => Spirits.nightActs(S.rec, S.ctx, S.cast).every((a) => a.done)
-        ? '<div class="nt-end-final">🪢 四幕都聊完了 —— 这个群从此就一直在那儿。点「全部夜话」还能回去重看。</div>' : "",
-      backLabel: "回夜话列表", backHash: "#/night",
-      enter: () => get((rc) => Spirits.nightEnter(S.host, rc, S.ctx, S.cast, actId)),
-      choose: (i) => get((rc) => Spirits.nightChoose(S.host, rc, S.ctx, S.cast, i)),
-      replay: () => get((rc) => Spirits.nightReplay(S.host, rc, S.ctx, S.cast, actId)),
-    });
   }
 
   /* ---------- v161：主线「串与我」· 对话页（单串，一章一聊） ---------- */
@@ -5107,9 +5216,44 @@
     return "把这段红字发我，我帮你看。";
   }
 
+  /* ---------- 主人头像：选一张本地图，压成 128px 方图存进档案（群聊里用） ---------- */
+  function pickOwnerAvatar(cb) {
+    const inp = document.createElement("input");
+    inp.type = "file";
+    inp.accept = "image/*";
+    inp.onchange = () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      const fr = new FileReader();
+      fr.onload = () => {
+        const im = new Image();
+        im.onload = () => {
+          const S = 128;
+          const cv = document.createElement("canvas");
+          cv.width = S; cv.height = S;
+          const g = cv.getContext("2d");
+          const side = Math.min(im.width, im.height);
+          g.drawImage(im, (im.width - side) / 2, (im.height - side) / 2, side, side, 0, 0, S, S);
+          try { cb(cv.toDataURL("image/jpeg", 0.82)); } catch (e) { toast("这张图读不出来，换一张试试"); }
+        };
+        im.onerror = () => toast("这张图读不出来，换一张试试");
+        im.src = String(fr.result);
+      };
+      fr.onerror = () => toast("这张图读不出来，换一张试试");
+      fr.readAsDataURL(f);
+    };
+    inp.click();
+  }
+  // 「我」的头像：没设就显示一个「我」字
+  function meAvatarHtml() {
+    const a = Spirits.getOwner().avatar;
+    return a ? '<img src="' + esc(a) + '" alt="我" style="width:100%;height:100%;object-fit:cover;display:block">' : "我";
+  }
+
   function showOwnerModal() {
     const mask = $("#modalMask"), modal = $("#modal");
     const ow = Spirits.getOwner();
+    let avatar = ow.avatar;
     modal.innerHTML = "<h3>👤 主人设定</h3>" +
       '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:12px;text-align:center">' +
       "精灵写日记、写剧情、聊天时都会照这里来称呼你，别让它们把你写成另一个性别 😆</p>" +
@@ -5119,6 +5263,13 @@
       '<button type="button" class="prov-chip' + (ow.gender !== "boy" ? " active" : "") + '" data-g="girl">👩 女生（用「她」）</button>' +
       '<button type="button" class="prov-chip' + (ow.gender === "boy" ? " active" : "") + '" data-g="boy">👨 男生（用「他」）</button>' +
       "</div></div>" +
+      '<div class="form-group"><div class="form-label">我的头像 <small>它们在群里看到的你</small></div>' +
+      '<div style="display:flex;align-items:center;gap:11px">' +
+      '<div id="ownAvPrev" class="nt-av nt-av-me" style="width:46px;height:46px;flex:none;font-size:13px">' + meAvatarHtml() + "</div>" +
+      '<div style="flex:1;display:flex;gap:6px">' +
+      '<button type="button" class="btn ghost" id="ownAvPick" style="flex:1">选一张</button>' +
+      '<button type="button" class="btn ghost" id="ownAvClear" style="flex:1">移除</button>' +
+      "</div></div></div>" +
       '<div style="display:flex;gap:8px;margin-top:12px">' +
       '<button class="btn ghost" id="ownCancel" style="flex:1">取消</button>' +
       '<button class="btn primary" id="ownSave" style="flex:2">保存</button></div>';
@@ -5133,8 +5284,14 @@
     });
     $("#ownCancel").onclick = close;
     mask.onclick = close;
+    const paintAvatar = () => {
+      const p = $("#ownAvPrev");
+      if (p) p.innerHTML = avatar ? '<img src="' + esc(avatar) + '" alt="我" style="width:100%;height:100%;object-fit:cover;display:block">' : "我";
+    };
+    if ($("#ownAvPick")) $("#ownAvPick").onclick = () => pickOwnerAvatar((d) => { avatar = d; paintAvatar(); });
+    if ($("#ownAvClear")) $("#ownAvClear").onclick = () => { avatar = ""; paintAvatar(); };
     $("#ownSave").onclick = () => {
-      Spirits.setOwner({ name: ($("#ownName").value || "").trim(), gender: gender });
+      Spirits.setOwner({ name: ($("#ownName").value || "").trim(), gender: gender, avatar: avatar });
       close();
       toast("已保存：以后它们会用「" + (gender === "boy" ? "他" : "她") + "」称呼你");
       renderSettings();
@@ -7416,8 +7573,9 @@
         '</div></div><span style="color:var(--text-2)">›</span></button>';
       const ow = Spirits.getOwner();
       html += '<button class="setting-item" id="btnOwner"><div>' +
-        '<div class="t">👤 主人设定（昵称 / 性别）</div>' +
+        '<div class="t">👤 主人设定（昵称 / 性别 / 头像）</div>' +
         '<div class="d">当前：' + esc(ow.name || "未填昵称") + " · " + (ow.gender === "boy" ? "男生（用「他」）" : "女生（用「她」）") +
+        " · " + (ow.avatar ? "已设头像" : "未设头像（群里显示「我」）") +
         ' · 日记与剧情会照这个写</div></div><span style="color:var(--text-2)">›</span></button>';
     }
 
@@ -7690,8 +7848,13 @@
     else if (h.startsWith("#/spirit/")) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));   // 每只精灵的独立页面
     else if (h.startsWith("#/room/")) renderRoomPage(decodeURIComponent(h.slice(7)));             // 小房间
     else if (h === "#/town") renderTownPage();                                                    // v157：精灵小镇
-    else if (h === "#/night") renderNightPage();                                                 // v160：夜话（跨串大剧情）
-    else if (h.indexOf("#/night/") === 0) renderNightChatPage(decodeURIComponent(h.slice(8)));   // v160：夜话 · 某一幕的对话页
+    else if (h === "#/night") renderNightPage();                                                 // v162：夜话（会话列表）
+else if (h.indexOf("#/night/") === 0) {                                                        // v162：#/night/<会话> 或 #/night/<会话>/<事件>
+      const seg = decodeURIComponent(h.slice(8)).split("/");
+      if (seg.length >= 2 && seg[1]) renderNightTalkPage(seg[0], seg[1]);
+      else renderThreadPage(seg[0]);
+    }
+    
     else if (h.indexOf("#/talk/") === 0) {                                                        // v161：主线 · 串与我（对话页）
       const tp = h.slice(7).split("/");
       renderChapTalkPage(decodeURIComponent(tp[0]), Number(tp[1]) || 0);
@@ -7784,7 +7947,11 @@
       location.hash = id ? "#/item/" + id : "#/";                            // 编辑 → 详情/首页
       return;
     }
-    if (h.indexOf("#/night/") === 0) { location.hash = "#/night"; return; }   // 对话页 → 夜话列表
+    if (h.indexOf("#/night/") === 0) {                            // v162：对话页 → 会话页；会话页 → 列表
+      const seg = decodeURIComponent(h.slice(8)).split("/");
+      location.hash = (seg.length >= 2 && seg[1]) ? ("#/night/" + encodeURIComponent(seg[0])) : "#/night";
+      return;
+    }
     if (h === "#/night") { location.hash = _nightFrom || "#/spirit"; return; } // 夜话列表 → 进来的那一页
     if (h.indexOf("#/talk/") === 0) {                                          // v161：主线对话 → 回到这一串
       location.hash = "#/spirit/" + h.slice(7).split("/")[0];

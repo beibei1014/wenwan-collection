@@ -1114,3 +1114,17 @@ details.ft-item > .ft-text { padding: 0 10px 10px; }
   border: 1px dashed color-mix(in srgb, var(--gold) 45%, var(--line) 55%); }
 .nt-end-btns { display: flex; gap: 9px; margin-top: 14px; }
 .nt-end-btns .btn { flex: 1; font-size: 13px; }
+
+/* ============================================================
+   v162 · 夜话 2.0 —— 会话列表（全家 / 房间 / 双人组）
+   ============================================================ */
+.nt-sec { display: flex; align-items: baseline; gap: 8px; margin: 14px 2px 6px; }
+.nt-sec > span { font-size: 13px; font-weight: 600; color: var(--wood); letter-spacing: 1px; }
+.nt-sec > small { font-size: 11px; color: var(--text-2); }
+.nt-th-av { display: flex; flex: none; align-items: center; }
+.nt-th-av > * { margin-left: -8px; border: 1.5px solid var(--card); box-sizing: content-box; }
+.nt-th-av > *:first-child { margin-left: 0; }
+.nt-av-more { flex: none; border-radius: 50%; display: grid; place-items: center;
+  color: #7a5518; background: #f0e2c6; font-weight: 600; }
+.nt-item.hot { border-color: color-mix(in srgb, var(--gold) 55%, var(--line) 45%);
+  background: linear-gradient(180deg, #fffdf5, #fbf1dd); }
