@@ -3553,6 +3553,7 @@
     const rec = store[id] || {};
     const p = rec.persona || Spirits.localPersona(it);
     const ap = Spirits.appearanceOf(it, rec.appearanceSeed || 0, rec.gender || "");
+    const lkNow = Spirits.lookOf(it, rec);   // v140：提前取到，合并到「人物设定」单卡
     const si = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
     const idle = it.lastPlayedAt ? Math.floor((Date.now() - it.lastPlayedAt) / 86400000) : null;
     const colorName = Spirits.COLOR_ZH[it.color] || "素色";
@@ -3581,8 +3582,17 @@
       '<div class="spirit-tags" style="justify-content:center">' + ((p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
       '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div></div>";
 
-    h += '<div class="sd-card"><div class="sd-card-title">📝 人物设定</div>' +
-      '<div class="sd-persona">' + (rec.personaZh ? esc(rec.personaZh) : '<span style="color:var(--text-2)">正在为它写设定…（第一次会调用一次文字模型，稍等几秒）</span>') + "</div>" +
+    h += '<div class="sd-card"><div class="sd-card-title">📝 人物设定' +
+      '<button type="button" class="link-btn" id="sdSetup" style="float:right;font-size:11px">' +
+      (lkNow.chosen ? "改设定" : "✨ 4 步定设定") + "</button></div>" +
+      '<div class="sd-persona" id="sdPersonaText">' + (rec.personaZh ? esc(rec.personaZh) : '<span style="color:var(--text-2)">正在为它写设定…（第一次会调用一次文字模型，稍等几秒）</span>') + "</div>" +
+      '<div class="look-sum" style="margin-top:8px">' +
+        '<span class="look-sw big" style="background:' + esc(lkNow.hairHex || "#ddd") + '"></span>' +
+        "<span>" + esc(lkNow.hairZh || "跟珠子主色") + "</span>" +
+        (lkNow.pers ? '<span class="look-tag">' + esc(lkNow.pers.zh) + "</span>" : "") +
+        lkNow.feats.map((f) => '<span class="look-tag">' + esc(f.zh) + "</span>").join("") +
+        (lkNow.noFeat ? '<span class="look-tag">普通人形</span>' : "") +
+      "</div>" +
       '<div class="sd-look">🔒 ' + esc(Spirits.appearanceText(ap)) + "</div>" +
       '<div class="sd-look-sub">🧵 ' + esc(Spirits.appearanceDetail(ap)) + "</div>" +
       '<div class="sd-look-sub">🎂 ' + (rec.bornAt
@@ -3644,27 +3654,6 @@
     }
     h += '<button class="btn ghost" id="sdRoomPick" style="width:100%;margin-top:10px;font-size:13px">' +
       (room ? "🏠 换房间 / 搬出去" : "🏠 安排入住") + "</button></div>";
-
-    // ===== v127：它的设定（用户确认过的发色/特征/性格 + 一段详细设定）=====
-    const lkNow = Spirits.lookOf(it, rec);
-    h += '<div class="sd-card"><div class="sd-card-title">🎨 它的设定' +
-      '<button type="button" class="link-btn" id="sdSetup" style="float:right;font-size:11px">' +
-      (lkNow.chosen ? "改设定" : "✨ 4 步定设定") + "</button></div>";
-    h += '<div class="look-sum">' +
-      '<span class="look-sw big" style="background:' + esc(lkNow.hairHex || "#ddd") + '"></span>' +
-      "<span>" + esc(lkNow.hairZh || "跟珠子主色") + "</span>" +
-      (lkNow.pers ? '<span class="look-tag">' + esc(lkNow.pers.zh) + "</span>" : "") +
-      lkNow.feats.map((f) => '<span class="look-tag">' + esc(f.zh) + "</span>").join("") +
-      (lkNow.noFeat ? '<span class="look-tag">普通人形</span>' : "") +
-      "</div>";
-    if (lkNow.profile) {
-      h += '<div class="sd-persona" style="margin-top:8px">' + esc(lkNow.profile) + "</div>" +
-        '<div class="sd-gen-hint">' + (rec.look && rec.look.profileAi ? "AI 按你的那句话写的" : "按你的选择拼的") + " · 点右上角可以改</div>";
-    } else {
-      h += '<div class="room-none">还没定过设定。进「✨ 4 步定设定」选一下发色 / 特征 / 性格，' +
-        "再写一句它是什么样的（例：像一只爱睡觉的白猫），我就按这个画它 —— 不满意随时能改。</div>";
-    }
-    h += "</div>";
 
     h += '<div class="sd-card"><div class="sd-card-title">📔 日记本（' + diary.length + "）</div>";
     if (!diary.length) {
@@ -3745,6 +3734,21 @@
         updateStoryDot();
       }
     }
+    // v140：打开详情即按需重写「人物设定」——旧档（写错代词 / 没融合设定）一次性作废重写
+    (async () => {
+      try {
+        const before = (Spirits.load()[id] || {}).personaZh;
+        const pOverride = Object.assign({}, rec.persona || Spirits.localPersona(it), { name: spiritName(it, Spirits.load()) });
+        await Spirits.personaZh(it, ap, pOverride, rec.stage || 1, DB.daysWith(it), it.playCount || 0);
+        const after = (Spirits.load()[id] || {}).personaZh;
+        if (after && after !== before) {
+          // 同步刷新「形象细节关键词」，让立绘/ CG 照新设定画
+          try { await Spirits.buildLookTags(it, ap, after, rec.persona || Spirits.localPersona(it)); } catch (e) {}
+          const el = document.getElementById("sdPersonaText");
+          if (el) el.textContent = after;
+        }
+      } catch (e) { /* 无 key / 生成失败不影响查看 */ }
+    })();
     ensureSpiritExtras([it]);
   }
 

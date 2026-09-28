@@ -1158,8 +1158,12 @@
   //      AI 就把「她」顺手安给了精灵）。ap 里有 gender（boy/girl）。
   function spiritGenderLine(ap) {
     const boy = !ap || ap.gender !== "girl";
-    return "【精灵性别】这只精灵本身是" + (boy ? "男孩子" : "女孩子") + "，指代精灵必须用「" + (boy ? "他" : "她") + "」；" +
-      "「" + (boy ? "她" : "他") + "」只能用来指主人，不要搞混。";
+    const g = boy ? "男孩子" : "女孩子";
+    const sp = boy ? "他" : "她";      // 精灵代词
+    const op = boy ? "她" : "他";      // 主人代词
+    return "【精灵性别】这只精灵本身是" + g + "，全文指代这只精灵时必须且只能用「" + sp + "」；" +
+      "「" + op + "」只能用来指主人（杯杯），绝不能用来指这只精灵。" +
+      "严重规则：若把男孩子写成「她」、或把女孩子写成「他」，视为写错，必须避免。";
   }
 
   /* ---------- 手串真实主色（让立绘颜色贴近实物） ---------- */
@@ -1378,8 +1382,8 @@
     const rec = ensureIn(store, item.id);
     const lk0 = rec.look || {};
     // 缓存键带上用户的一句话/融合设定：改了设定 → 人设卡跟着重写（否则立绘换了设定卡还是旧的）
-    // v130 前缀 = 规则升级（补了精灵性别/归属约束），旧的人设卡全部作废重写一遍，修掉已写错代词的存档
-    const key = "v130|" + (ap.gender || "") + "|" + ap.hair + "|" + ap.eyes + "|" + ap.acc + "|" + (item.color || "") + "|" + (persona && persona.name || "") +
+    // v140 前缀 = 规则再次升级（性别/归属约束加严），旧的写错代词的人设卡全部作废重写一遍
+    const key = "v140|" + (ap.gender || "") + "|" + ap.hair + "|" + ap.eyes + "|" + ap.acc + "|" + (item.color || "") + "|" + (persona && persona.name || "") +
       "|" + (lk0.base || "") + "|" + (lk0.profile || "");
     if (!force && rec.personaZh && rec.personaZhKey === key) return rec.personaZh;
     let txt = "";
