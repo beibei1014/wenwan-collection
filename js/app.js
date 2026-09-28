@@ -3820,9 +3820,16 @@
       ai: cur.ai !== false,
       alsoBead: false,
     };
-    const hairChips = Spirits.HAIR_COLORS.map((h) =>
-      lookChipHtml("hairc", h.id, (h.sw ? '<span class="look-sw" style="background:' + h.sw + '"></span>' : "") + esc(h.zh),
-        state.hairc === h.id)).join("") + lookChipHtml("hairc", "custom", "🎨 自己填", state.hairc === "custom");
+    // v153：发色 = 两种模式（跟珠子 / 自动）+ 一大片颜色格子（只给色块，不给中文色名）
+    const hairModes = Spirits.HAIR_COLORS.filter((h) => h.id === "bead" || h.id === "auto").map((h) =>
+      lookChipHtml("hairc", h.id, esc(h.zh), state.hairc === h.id)).join("");
+    const curHex = (state.hairc === "custom") ? String(state.customColor || "").toLowerCase() : "";
+    const paletteSwatches = (Spirits.HAIR_PALETTE || []).map((c) =>
+      '<button type="button" class="hair-sw' + (c.toLowerCase() === curHex ? " on" : "") +
+      '" data-c="' + c + '" title="' + c + '" style="background:' + c + '"></button>').join("");
+    const hairNowText = state.hairc === "custom"
+      ? ("已选色 " + (state.customColor || ""))
+      : (state.hairc === "bead" ? "跟随珠子主色（推荐）" : "自动换个色");
     const featChips = Spirits.FEATURES.map((f) =>
       lookChipHtml("feat", f.id, esc(f.zh), state.feats.indexOf(f.id) >= 0)).join("") +
       lookChipHtml("feat", "__custom", "✏️ 自己填", !!state.customFeat);
@@ -3850,9 +3857,9 @@
       '<span class="look-sw big" style="background:' + (beadHex || "#ddd") + '"></span> <b>' + esc(beadZh) + '</b>' +
       (beadHex ? ' <code>' + esc(beadHex) + '</code>' : "") + ' —— 读得不对就直接在这儿改。' +
       '<button type="button" class="link-btn" id="lkRedetect" style="margin-left:6px">🧪 重新识别</button></div>' +
-      '<div class="setup-chips" id="lkHair">' + hairChips + "</div>" +
-      '<div id="lkCustomWrap" style="display:' + (state.hairc === "custom" ? "" : "none") + '">' +
-      '<input class="form-input" id="lkCustom" maxlength="24" placeholder="填色名或色号，例：薄荷绿 / mint green / #7ac0a0" value="' + esc(state.customColor) + '"></div>' +
+      '<div class="setup-chips" id="lkHair">' + hairModes + "</div>" +
+      '<div class="hair-palette" id="lkPalette">' + paletteSwatches + "</div>" +
+      '<div class="look-hint" id="lkHairNow">' + esc(hairNowText) + "</div>" +
       (beadHex ? '<label class="setup-check"><input type="checkbox" id="lkAlsoBead"> 顺便把珠子主色也改成我选的色（会同步到收藏列表）</label>' : "") +
       "</div>" +
       // ② 特征
@@ -3888,10 +3895,27 @@
       mask.hidden = true; modal.hidden = true; modal.style.display = "";
     };
 
-    const syncCustom = () => {
-      const w = document.getElementById("lkCustomWrap");
-      if (w) w.style.display = state.hairc === "custom" ? "" : "none";
+    // v153：色板选中态 + 当前发色提示（点色块 = 选自定义色，复用 customColor 链路）
+    const syncHairSel = () => {
+      const wrap = document.getElementById("lkPalette");
+      const cur = (state.hairc === "custom") ? String(state.customColor || "").toLowerCase() : "";
+      if (wrap) wrap.querySelectorAll(".hair-sw").forEach((b) =>
+        b.classList.toggle("on", !!cur && String(b.dataset.c).toLowerCase() === cur));
+      const hint = document.getElementById("lkHairNow");
+      if (hint) hint.textContent = state.hairc === "custom"
+        ? ("已选色 " + (state.customColor || ""))
+        : (state.hairc === "bead" ? "跟随珠子主色（推荐）" : "自动换个色");
     };
+    const palWrap = document.getElementById("lkPalette");
+    if (palWrap) palWrap.onclick = (e) => {
+      const b = (e.target && e.target.closest) ? e.target.closest(".hair-sw") : null;
+      if (!b) return;
+      state.hairc = "custom";
+      state.customColor = b.dataset.c || "";
+      modal.querySelectorAll('.look-chip[data-g="hairc"]').forEach((x) => x.classList.remove("on"));
+      syncHairSel();
+    };
+    syncHairSel();
     // v130：自定义特征的 chip 亮灭 + 输入框显隐，统一在这里同步
     const syncFeatUi = () => {
       const inp = document.getElementById("lkFeatCustom");
@@ -3908,8 +3932,7 @@
         if (g === "hairc") {
           state.hairc = v;
           modal.querySelectorAll('.look-chip[data-g="hairc"]').forEach((x) => x.classList.toggle("on", x.dataset.v === v));
-          syncCustom();
-          if (v === "custom") { const inp = $("#lkCustom"); if (inp) inp.focus(); }
+          syncHairSel();
         } else if (g === "feat") {
           if (v === "__custom") {
             // v130：「自己填」→ 已有内容再点一次=取消；没有就展开输入框
@@ -3959,8 +3982,7 @@
         const s2 = Spirits.load();
         const r2 = Spirits.ensureIn(s2, item.id);
         if (!skip) {
-          const inp = $("#lkCustom");
-          if (state.hairc === "custom") state.customColor = (inp && inp.value || "").trim();
+          // v153：发色改由色板决定（点色块时已写入 state.customColor），不再有文本输入框
           const baseEl = $("#lkBase"), aiEl = $("#lkAi");
           state.base = (baseEl && baseEl.value || "").trim();
           state.ai = !aiEl || aiEl.checked;

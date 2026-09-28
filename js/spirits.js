@@ -563,6 +563,36 @@
   ];
   const HAIR_BY_ID = {};
   HAIR_COLORS.forEach((h) => { HAIR_BY_ID[h.id] = h; });
+  // v153 发色色板：**只给色块、不给中文色名**（用户要求：不要色彩的中文名字，要很多颜色的格子）
+  //   点格子 → 存成 hairc:"custom" + customColor:"#rrggbb"，直接复用已有的「自定义色」链路：
+  //   hairWordFromInput() 会把 hex 翻成英文色词，hairHex 也会作为精确色值进 prompt。
+  //   按色系分行、每行由浅到深，共 12 行 × 10 色 = 120 色。
+  const HAIR_PALETTE = [
+    // 黑 · 白 · 灰
+    "#ffffff", "#f2f0ec", "#ddd9d2", "#c2beb6", "#a5a19a", "#8a8781", "#6f6c66", "#55534e", "#38352f", "#1c1a19",
+    // 棕 · 咖
+    "#e8d5bf", "#d6bb9c", "#c2a074", "#ad8654", "#96683c", "#7b4b2a", "#64391f", "#4a3324", "#33241a", "#211710",
+    // 金 · 亚麻
+    "#fdf0c8", "#f5e3a8", "#e0c489", "#d0b06a", "#c9a86a", "#bf9a3f", "#a8862c", "#8f6f1f", "#6f5616", "#4f3d0f",
+    // 黄 · 橙
+    "#fff0c0", "#ffe08a", "#f7c65a", "#e8b56a", "#e8a13c", "#d98a3c", "#c26f22", "#a5571b", "#7f4013", "#5a2c0c",
+    // 红
+    "#ffe0dc", "#ffc4bd", "#f0a49b", "#e0827a", "#c9544f", "#b34440", "#a83a3f", "#932f35", "#7d2b33", "#54181e",
+    // 粉
+    "#fff0f4", "#ffe0ea", "#f7d3dc", "#f0b3c6", "#e8a0b4", "#dd8ba4", "#d9748f", "#c96a8f", "#b5486a", "#8d2b4d",
+    // 绿
+    "#eaf7dc", "#cfeeba", "#a8c05a", "#8fae48", "#6f9a4a", "#4a7a3d", "#3a6335", "#2f5440", "#1f3b30", "#12261d",
+    // 青 · 茶
+    "#d8f0ee", "#b0e0dc", "#8fd0cf", "#4aa8b0", "#2a98a0", "#2a7f8a", "#1f6a76", "#17565f", "#12444c", "#0a262b",
+    // 蓝
+    "#e2eefc", "#c4dcf5", "#a9c0dd", "#8aa8d0", "#6d8fc0", "#5478b0", "#3a5a8c", "#2b4a78", "#243b63", "#121d33",
+    // 紫
+    "#efe6fb", "#ded0f2", "#c9b2e0", "#b39ddb", "#a288cf", "#8f7bc0", "#7a63ad", "#6a4f9e", "#4f3880", "#33244f",
+    // 藕 · 玫
+    "#f7e6ef", "#eccfe2", "#ddb8d0", "#d9b8c8", "#c99fb4", "#b9899f", "#a86b8f", "#96607d", "#7a4a6a", "#4d2c42",
+    // 米 · 茶 · 奶
+    "#fffaf0", "#f7efdf", "#efe2cc", "#e5d4b8", "#d9c4a4", "#c9b18c", "#b89e78", "#a88b64", "#8f7452", "#755d40",
+  ];
   // 中文色名 → 英文（用户自己填色时用；查不到就原样交给模型，再兜底 #hex 换算）
   const COLOR_WORD_ZH = {
     "黑": "jet black", "乌黑": "jet black", "深棕": "dark brown", "棕": "brown", "栗": "chestnut brown",
@@ -714,8 +744,11 @@
     const persTxt = (lk && lk.pers) ? lk.pers.zh : "温和";
     // v130：用户的一句话要**融进**设定（描述精灵本人），不再是"主人说过…"的引用体
     const baseTxt = (lk && lk.base) ? ("它是" + lk.base + "——这是主人一眼就认出来的性子。") : "";
+    // v153：色板选出来的色存的是 #hex（用户要求不要中文色名）→ 中文小作文里换成人话
+    const hairZhRaw = (lk && lk.hairZh) ? String(lk.hairZh).replace(/^自动 · /, "") : "";
+    const hairZhText = /^#/.test(hairZhRaw) ? "主人亲手挑的一种颜色" : (hairZhRaw || beadZh);
     return nm + "是从主人那串「" + ((item && item.name) || "手串") + "」里醒过来的小精灵。" +
-      "它的头发是" + ((lk && lk.hairZh) ? String(lk.hairZh).replace(/^自动 · /, "") : beadZh) + "，" + hairTxt + "；" +
+      "它的头发是" + hairZhText + "，" + hairTxt + "；" +
       (featTxt ? featTxt + "；" : "") +
       "衣服的色调跟着珠子的" + beadZh + "走，看久了很安稳。" +
       "性子偏「" + persTxt + "」，平时话不多，但主人一伸手它就会靠过来。" + baseTxt;
@@ -741,7 +774,7 @@
     const user = "精灵名：" + ((persona && persona.name) || item.name || "小精灵") +
       NL + spiritGenderLine(ap0) +
       NL + "来自手串：" + ((item && item.name) || "") + (item && item.craft ? "（" + item.craft + "）" : "") +
-      NL + "发色：" + ((lk && lk.hairZh) || "跟珠子主色") +
+      NL + "发色：" + ((lk && (lk.hairEn || lk.hairZh)) || "跟珠子主色") +
       NL + "服装（必须是中式传统古风样式）：" + (ap0.outfitZh || ap0.outfit) +
       NL + "特殊特征：" + ((lk && lk.feats && lk.feats.length) ? lk.feats.map((f) => f.zh).join("、") : ((lk && lk.noFeat) ? "普通人形" : "未指定")) +
       NL + "性格：" + ((lk && lk.pers) ? lk.pers.zh : "未指定") +
@@ -1427,7 +1460,7 @@
     // 缓存键带上用户的一句话/融合设定：改了设定 → 人设卡跟着重写（否则立绘换了设定卡还是旧的）
     // v152 前缀 = 规则再升级（人设里加入「标志性仪态」+ 姿态不再被系统锁死），旧人设卡作废重写一遍
     const key = "v152|" + (ap.gender || "") + "|" + ap.hair + "|" + ap.eyes + "|" + ap.acc + "|" + (item.color || "") + "|" + (persona && persona.name || "") +
-      "|" + (lk0.base || "") + "|" + (lk0.profile || "");
+      "|" + (lk0.base || "") + "|" + (lk0.profile || "") + "|" + (lk0.hairc || "") + ":" + (lk0.customColor || "");
     if (!force && rec.personaZh && rec.personaZhKey === key) return rec.personaZh;
     let txt = "";
     if (getAiKey()) {
@@ -1446,8 +1479,10 @@
           + "【最重要】主人给的设定原话描述的都是**精灵本人**的性格/身份/气质，必须原样体现在精灵身上；"
           + "绝对禁止把设定安到主人头上（例如主人说「洒脱的江湖侠士」＝精灵是侠士，不是主人是侠士），也不许另编一套和原话冲突的人设。"
           + "语气温和好读，不要 Markdown、不要标题、不要分点、不要解释，直接输出正文。";
+        const lkP = lookOf(item, rec);      // v153：用户从色板选的发色也要交代给模型
         const user = "原型手串：" + (item.name || "未命名") + "；精灵的名字：" + ((persona && persona.name) || item.name || "未命名") +
-          "；颜色：" + (COLOR_ZH[item.color] || "素色") +
+          "；珠子颜色：" + (COLOR_ZH[item.color] || "素色") +
+          "；它的发色：" + ((lkP.hairEn || lkP.hairZh) || (COLOR_ZH[item.color] || "素色")) +
           "；软糯：" + (item.softness === "soft" ? "软糯" : item.softness === "slight" ? "微糯" : "未标注") +
           "；形态：" + stageDef(stage).name + "；陪伴 " + (days || 0) + " 天；盘玩 " + (plays || 0) + " 次；" +
           "固定人设（瞳色/服装/配饰照写；发型自由发挥，下方不含发型限制）：" + appearanceText(ap) + "；" + spiritGenderLine(ap) +
@@ -1816,7 +1851,7 @@
     STAGES, stageDef, stageInfo, growthOf,
     appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
     // v127：设定向导（发色/特征/性格可确认可修改；一句基础设定 → 扩写成详细设定）
-    HAIR_COLORS, FEATURES, PERSONAS_PICK, lookOf, lookText, lookExtra, hairWordFromInput, expandProfile, profileLocal,
+    HAIR_COLORS, HAIR_PALETTE, FEATURES, PERSONAS_PICK, lookOf, lookText, lookExtra, hairWordFromInput, expandProfile, profileLocal,
     COLOR_ZH, HAIR_ZH, EYES_ZH, ACC_ZH, VIBE_ZH,
     TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText, listModels,
     promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
