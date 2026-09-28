@@ -3824,11 +3824,13 @@
     const hairModes = Spirits.HAIR_COLORS.filter((h) => h.id === "bead" || h.id === "auto").map((h) =>
       lookChipHtml("hairc", h.id, esc(h.zh), state.hairc === h.id)).join("");
     const curHex = (state.hairc === "custom") ? String(state.customColor || "").toLowerCase() : "";
-    const paletteSwatches = (Spirits.HAIR_PALETTE || []).map((c) =>
-      '<button type="button" class="hair-sw' + (c.toLowerCase() === curHex ? " on" : "") +
-      '" data-c="' + c + '" title="' + c + '" style="background:' + c + '"></button>').join("");
+    const paletteSwatches = (Spirits.HAIR_PALETTE || []).map((c) => {
+      const nm = Spirits.hexToCnTrad(c) || c;     // v153：色块名用中国传统色
+      return '<button type="button" class="hair-sw' + (c.toLowerCase() === curHex ? " on" : "") +
+        '" data-c="' + c + '" title="' + esc(nm) + '" style="background:' + c + '"></button>';
+    }).join("");
     const hairNowText = state.hairc === "custom"
-      ? ("已选色 " + (state.customColor || ""))
+      ? ("已选色：" + (Spirits.hexToCnTrad(state.customColor) || state.customColor || ""))
       : (state.hairc === "bead" ? "跟随珠子主色（推荐）" : "自动换个色");
     const featChips = Spirits.FEATURES.map((f) =>
       lookChipHtml("feat", f.id, esc(f.zh), state.feats.indexOf(f.id) >= 0)).join("") +
@@ -3903,7 +3905,7 @@
         b.classList.toggle("on", !!cur && String(b.dataset.c).toLowerCase() === cur));
       const hint = document.getElementById("lkHairNow");
       if (hint) hint.textContent = state.hairc === "custom"
-        ? ("已选色 " + (state.customColor || ""))
+        ? ("已选色：" + (Spirits.hexToCnTrad(state.customColor) || state.customColor || ""))
         : (state.hairc === "bead" ? "跟随珠子主色（推荐）" : "自动换个色");
     };
     const palWrap = document.getElementById("lkPalette");

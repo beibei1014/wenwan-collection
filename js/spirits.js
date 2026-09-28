@@ -593,6 +593,69 @@
     // 米 · 茶 · 奶
     "#fffaf0", "#f7efdf", "#efe2cc", "#e5d4b8", "#d9c4a4", "#c9b18c", "#b89e78", "#a88b64", "#8f7452", "#755d40",
   ];
+  // v153 中国传统色表：色板色在**详情页里要写中国传统色名**（用户要求），
+  //   这里的 hex 取常见传统色值；点色块后按加权 RGB 距离找最近的传统色名。
+  const CN_TRAD_COLORS = [
+    // 白 · 灰 · 黑 · 墨
+    ["雪白", "#ffffff"], ["象牙白", "#fffbf0"], ["鱼肚白", "#fcefe8"], ["月白", "#d6ecf0"],
+    ["霜色", "#e9f1f6"], ["铅白", "#f0f0f4"], ["缟色", "#e8e3e3"], ["银白", "#e9e7ef"],
+    ["鸭卵青", "#e0eee8"], ["苍色", "#75878a"], ["玄青", "#3d3b4f"], ["黛色", "#4a4266"],
+    ["墨绿", "#50616d"], ["漆黑", "#161823"], ["玄色", "#622a1d"], ["煤黑", "#312520"],
+    ["乌黑", "#1c1a19"], ["灰色", "#8a8781"],
+    // 红 · 粉 · 紫
+    ["妃色", "#ed5736"], ["石榴红", "#f20c00"], ["樱桃色", "#c93756"], ["银红", "#f05654"],
+    ["朱红", "#ff4c00"], ["朱砂", "#e23a2c"], ["丹色", "#ff4e20"], ["彤色", "#f35336"],
+    ["胭脂", "#9d2933"], ["绯红", "#c83c23"], ["赤色", "#c3272b"], ["茜色", "#cb3a56"],
+    ["玫瑰红", "#e9475b"], ["海棠红", "#db5a6b"], ["桃红", "#f47983"], ["绛紫", "#8c4356"],
+    ["藕荷色", "#e4c6d0"], ["藕色", "#edd1d8"], ["丁香色", "#cca4e3"], ["雪青", "#b0a4e3"],
+    ["青莲", "#8d4bbb"], ["紫棠", "#56004f"], ["酱紫", "#815476"], ["黛紫", "#574266"],
+    ["紫罗兰", "#a25eb5"], ["葡萄紫", "#4c1951"], ["殷红", "#be002f"],
+    // 黄 · 金 · 棕 · 褐
+    ["藤黄", "#ffb61e"], ["杏黄", "#ffa631"], ["姜黄", "#ffc773"], ["缃色", "#f0c239"],
+    ["橘黄", "#ff8936"], ["橙黄", "#ffa400"], ["杏红", "#ff8c31"], ["琥珀", "#ca6924"],
+    ["秋香色", "#d9b611"], ["鹅黄", "#fff143"], ["鸭黄", "#faff72"], ["樱草色", "#eaff56"],
+    ["黄栌", "#e29c45"], ["赭石", "#955539"], ["驼色", "#a88462"], ["栗色", "#60281e"],
+    ["檀色", "#b36d61"], ["茶色", "#b35c44"], ["酱色", "#a78e44"], ["咖色", "#a88a65"],
+    ["棕色", "#b25d25"], ["褐色", "#6c4c3f"], ["黎色", "#75664d"], ["土黄", "#d2b48c"],
+    ["蜜色", "#e8b49a"],
+    // 绿 · 青
+    ["竹青", "#789262"], ["松花色", "#bce672"], ["豆绿", "#9ed900"], ["葱青", "#0eb83a"],
+    ["碧色", "#1bd1a5"], ["青碧", "#48c0a3"], ["翡翠色", "#3de1ad"], ["铜绿", "#549688"],
+    ["石绿", "#16a951"], ["松柏绿", "#21a675"], ["艾绿", "#a4e2c6"], ["橄榄绿", "#5b8930"],
+    ["松绿", "#2f5440"], ["青绿", "#2a98a0"],
+    // 蓝 · 靛 · 天
+    ["靛青", "#177cb0"], ["靛蓝", "#065279"], ["群青", "#4c8dae"], ["宝蓝", "#4b5cc4"],
+    ["藏青", "#3b2e7e"], ["天蓝", "#44cef6"], ["湖蓝", "#30dff3"], ["石青", "#1685a9"],
+    ["花青", "#003472"], ["鸦青", "#424c50"], ["黛蓝", "#425066"], ["天青", "#8ec5cf"],
+    ["缥色", "#7fecff"],
+  ];
+  // sRGB → Lab(D65)：用 CIE76 色差找"人眼最接近"的传统色（比裸 RGB 距离准得多，
+  //   裸 RGB 会把灰调色错配成「土黄 / 咖色」）
+  function _hexToLab(hex) {
+    const n = parseInt(String(hex).slice(1), 16);
+    const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    const r = f((n >> 16) & 255), g = f((n >> 8) & 255), b = f(n & 255);
+    let x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
+    let y = r * 0.2126 + g * 0.7152 + b * 0.0722;
+    let z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+    const q = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    x = q(x); y = q(y); z = q(z);
+    return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+  }
+  const CN_TRAD_LAB = CN_TRAD_COLORS.map((c) => _hexToLab(c[1]));
+  // hex → 最近的中国传统色名
+  function hexToCnTrad(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+    if (!m) return "";
+    const q = _hexToLab("#" + m[1].toLowerCase());
+    let best = "", bd = Infinity;
+    for (let i = 0; i < CN_TRAD_LAB.length; i++) {
+      const p = CN_TRAD_LAB[i];
+      const d = (q[0] - p[0]) * (q[0] - p[0]) + (q[1] - p[1]) * (q[1] - p[1]) + (q[2] - p[2]) * (q[2] - p[2]);
+      if (d < bd) { bd = d; best = CN_TRAD_COLORS[i][0]; }
+    }
+    return best;
+  }
   // 中文色名 → 英文（用户自己填色时用；查不到就原样交给模型，再兜底 #hex 换算）
   const COLOR_WORD_ZH = {
     "黑": "jet black", "乌黑": "jet black", "深棕": "dark brown", "棕": "brown", "栗": "chestnut brown",
@@ -670,9 +733,13 @@
       hairEn = beadWord; hairHex = beadHex; hairSrc = "bead"; hairZh = "跟珠子主色";
     } else if (pick === "custom") {
       const w = hairWordFromInput(lk.customColor);
+      const rawC = String(lk.customColor || "").trim();
+      const isHex = /^#/.test(rawC);
       hairEn = w || beadWord;
-      hairHex = /^#/.test(String(lk.customColor || "").trim()) ? String(lk.customColor).trim() : "";
-      hairSrc = "custom"; hairZh = lk.customColor || "自定色";
+      hairHex = isHex ? rawC : "";
+      hairSrc = "custom";
+      // v153：色板点出来的色是 #hex → 详情页里显示成**中国传统色名**（用户要求）
+      hairZh = isHex ? (hexToCnTrad(rawC) || "自定色") : (rawC || "自定色");
     } else if (pick === "auto") {
       const pool = HAIR_COLORS.filter((x) => x.id !== "bead" && x.id !== "auto");
       const h = hashStr(String((item && item.id) || "") + "#hair" + (r.appearanceSeed || 0));
@@ -767,6 +834,7 @@
       "必须把这句话的意思自然融进正文，让整段读起来是一份完整统一的设定，不要引用原话、不要说「主人说过」、不要写成两套人设；" +
       "⑥ 精灵的性别以下方标注为准，指代精灵的代词绝不能用错；" +
       "⑦【发色、瞳色、特殊特征照下方给定内容写；但**发型自由发挥**】中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），按精灵的性别/性格/主人写的设定来定，不要生硬套短发；" +
+      "发色若给的是中国传统色名（胭脂、天青、月白、秋香、藕荷、黛色等），正文里就用这个名称来写，不要改成现代色号；" +
       "⑧【整段基调是中国古风】衣服一律写中式传统样式（汉服、长衫、褂子、襦裙、道袍等），禁止出现现代服装（夹克、运动服、卫衣、T恤、牛仔裤、西装等）；" +
       "⑨【姿态自由发挥、不要摆拍】可写一个自然的中式仪态（作揖、拱手、拂袖、团扇半遮面、低眸捻珠、执笔、捧盏、展卷等），" +
       "双手位置要简单清楚、不要遮叠手臂或复杂手势（否则出图容易画成三只手 / 多指），不要现代随意手势或 wink。";
@@ -774,7 +842,7 @@
     const user = "精灵名：" + ((persona && persona.name) || item.name || "小精灵") +
       NL + spiritGenderLine(ap0) +
       NL + "来自手串：" + ((item && item.name) || "") + (item && item.craft ? "（" + item.craft + "）" : "") +
-      NL + "发色：" + ((lk && (lk.hairEn || lk.hairZh)) || "跟珠子主色") +
+      NL + "发色（中国传统色名）：" + (((lk && lk.hairZh) ? String(lk.hairZh).replace(/^自动 · /, "") : "") || "跟珠子主色") +
       NL + "服装（必须是中式传统古风样式）：" + (ap0.outfitZh || ap0.outfit) +
       NL + "特殊特征：" + ((lk && lk.feats && lk.feats.length) ? lk.feats.map((f) => f.zh).join("、") : ((lk && lk.noFeat) ? "普通人形" : "未指定")) +
       NL + "性格：" + ((lk && lk.pers) ? lk.pers.zh : "未指定") +
@@ -1474,15 +1542,18 @@
           + "【瞳色/服装/配饰照下方给出的「固定人设」写；但**发型不受限制、自由发挥**】"
           + "中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），按精灵的性别、性格和主人写的设定来定，"
           + "绝不要因为固定人设里没写发型、就生硬地套一个短发。"
+          + "【发色用中国传统色名写】下方若给出「它的发色」（如胭脂、天青、月白、秋香、藕荷、黛色），正文里就用这个中国色名来写头发颜色。"
           + "【整段基调是中国古风】服装一律写中式传统样式（汉服、长衫、褂子、襦裙、道袍、褙子等），"
           + "绝对禁止出现任何现代服装（夹克、运动服、卫衣、T恤、牛仔裤、西装、风衣等）。"
           + "【最重要】主人给的设定原话描述的都是**精灵本人**的性格/身份/气质，必须原样体现在精灵身上；"
           + "绝对禁止把设定安到主人头上（例如主人说「洒脱的江湖侠士」＝精灵是侠士，不是主人是侠士），也不许另编一套和原话冲突的人设。"
           + "语气温和好读，不要 Markdown、不要标题、不要分点、不要解释，直接输出正文。";
         const lkP = lookOf(item, rec);      // v153：用户从色板选的发色也要交代给模型
+        const hairCn = String(lkP.hairZh || "").replace(/^自动 · /, "");
+        const hairEnW = lkP.hairEn || "";
         const user = "原型手串：" + (item.name || "未命名") + "；精灵的名字：" + ((persona && persona.name) || item.name || "未命名") +
           "；珠子颜色：" + (COLOR_ZH[item.color] || "素色") +
-          "；它的发色：" + ((lkP.hairEn || lkP.hairZh) || (COLOR_ZH[item.color] || "素色")) +
+          "；它的发色：" + (hairCn ? (hairCn + (hairEnW ? "（" + hairEnW + "）" : "")) : (hairEnW || (COLOR_ZH[item.color] || "素色"))) +
           "；软糯：" + (item.softness === "soft" ? "软糯" : item.softness === "slight" ? "微糯" : "未标注") +
           "；形态：" + stageDef(stage).name + "；陪伴 " + (days || 0) + " 天；盘玩 " + (plays || 0) + " 次；" +
           "固定人设（瞳色/服装/配饰照写；发型自由发挥，下方不含发型限制）：" + appearanceText(ap) + "；" + spiritGenderLine(ap) +
@@ -1851,7 +1922,7 @@
     STAGES, stageDef, stageInfo, growthOf,
     appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
     // v127：设定向导（发色/特征/性格可确认可修改；一句基础设定 → 扩写成详细设定）
-    HAIR_COLORS, HAIR_PALETTE, FEATURES, PERSONAS_PICK, lookOf, lookText, lookExtra, hairWordFromInput, expandProfile, profileLocal,
+    HAIR_COLORS, HAIR_PALETTE, hexToCnTrad, FEATURES, PERSONAS_PICK, lookOf, lookText, lookExtra, hairWordFromInput, expandProfile, profileLocal,
     COLOR_ZH, HAIR_ZH, EYES_ZH, ACC_ZH, VIBE_ZH,
     TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText, listModels,
     promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
