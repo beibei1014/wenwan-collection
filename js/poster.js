@@ -509,7 +509,7 @@
     return canvas;
   }
 
-  /* ---------- v157：精灵回忆册（竖版长图，纯本地 Canvas 合成，0 出图） ---------- */
+  /* ---------- v157：沁灵回忆册（竖版长图，纯本地 Canvas 合成，0 出图） ---------- */
   function ymd(ts) {
     const d = new Date(Number(ts) || Date.now());
     return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0");
@@ -605,7 +605,7 @@
     ctx.textAlign = "center";
     ctx.fillStyle = "rgba(61,43,31,.45)";
     ctx.font = "26px 'PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText("· 文玩手串收藏馆 · 精灵回忆册 ·", W / 2, H - 90);
+    ctx.fillText("· 文玩手串收藏馆 · 沁灵回忆册 ·", W / 2, H - 90);
     ctx.fillStyle = "rgba(184,134,11,.75)";
     ctx.font = "24px 'PingFang SC','Microsoft YaHei',sans-serif";
     ctx.fillText((o.owner ? o.owner + " @ " : "") + ymd(Date.now()), W / 2, H - 50);

@@ -478,7 +478,7 @@ img { display:block; }
 }
 .tab-item.active { color:var(--wood); }
 .tab-item.active .tab-icon { transform:scale(1.1); }
-/* 有新剧情时精灵 tab 上的小红点 */
+/* 有新剧情时沁灵 tab 上的小红点 */
 .tab-item { position:relative; }
 .tab-dot {
   position:absolute; top:5px; right:50%; margin-right:-22px;
@@ -1134,7 +1134,7 @@ img { display:block; }
 .net-bar-btn:active { transform:scale(.96); }
 @media (min-width:560px) { .net-bar { left:auto; right:100px; max-width:420px; } }
 
-/* ============ 🍡 挂瓷精灵（v94） ============ */
+/* ============ 🍡 沁灵（v94） ============ */
 .spirit-letter-box {
   background:linear-gradient(180deg,#fff9ec,#fff3d6); border:1px solid #f0dfae; border-radius:14px;
   padding:12px 14px; margin-top:10px;
@@ -1193,7 +1193,7 @@ img { display:block; }
 .spirit-row .spirit-bubble { flex:1; min-width:0; }
 .spirit-row.alt .spirit-bubble { background:#fdf6e9; }
 
-/* ============ 精灵进阶（v103） ============ */
+/* ============ 沁灵进阶（v103） ============ */
 .spirit-stage {
   font-size:10px; font-weight:700; padding:1px 7px; border-radius:9px; margin-left:6px;
   background:#eef4ea; color:#3f6b46; border:1px solid #d6e4d6; white-space:nowrap;
@@ -1240,7 +1240,7 @@ img { display:block; }
 .spirit-look .link-btn { font-size:11px; margin-left:6px; }
 .spirit-gen-note { display:block; font-size:10px; color:var(--text-2); margin-top:3px; }
 
-/* 突破演出 */
+/* 深沁演出 */
 .spirit-evolve { text-align:center; }
 .spirit-evolve-burst { font-size:32px; animation:breakPulse 1.2s ease-in-out infinite; }
 .spirit-evolve img { width:auto; max-width:100%; max-height:42vh; object-fit:contain; border-radius:16px; margin:6px 0; }
@@ -1262,9 +1262,9 @@ img { display:block; }
 .prov-chip.active { background:var(--wood); color:#f5f0e8; border-color:var(--wood); }
 
 /* ============================================================
-   v109：小房间 / 契合度 / 剧情 / 精灵详情页 / 日记
+   v109：小房间 / 契合度 / 剧情 / 沁灵详情页 / 日记
    ============================================================ */
-/* 房间区（精灵列表页） */
+/* 房间区（沁灵列表页） */
 .room-grid { display:grid; grid-template-columns:1fr; gap:10px; }
 .room-card {
   background:var(--card); border:1px solid var(--line); border-radius:14px; padding:10px 12px;
@@ -1284,7 +1284,7 @@ img { display:block; }
 .room-none { font-size:12px; color:var(--text-2); line-height:1.7; }
 .room-foot { font-size:11px; color:var(--text-2); margin-top:8px; }
 .room-hint { font-size:11px; color:var(--text-2); margin-top:8px; line-height:1.7; }
-/* 日记提示（v113：只提示"有精灵写了日记"，正文进详情页看） */
+/* 日记提示（v113：只提示"有沁灵写了日记"，正文进详情页看） */
 .diary-hint {
   font-size:12px; line-height:1.7; color:#7a5a12; background:#fff7e6; border:1px solid #f0dcae;
   border-radius:12px; padding:9px 11px; margin-top:12px; cursor:pointer;
@@ -1323,7 +1323,7 @@ img { display:block; }
 .story-title { font-size:13px; font-weight:700; color:var(--wood); }
 .story-sub { font-size:11px; color:var(--text-2); margin-top:3px; }
 .story-text { font-size:13.5px; line-height:1.95; color:var(--text); max-height:52vh; overflow:auto; }
-/* v125：CG（精灵专属插画 / 剧情事件插画）—— 一律**横版**（用户要求：CG 要横构图） */
+/* v125：CG（沁灵专属插画 / 剧情事件插画）—— 一律**横版**（用户要求：CG 要横构图） */
 .cg-thumb {
   width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:14px; display:block; cursor:zoom-in;
   box-shadow:var(--shadow-1); background:var(--ph-bg, #efe9dd);
@@ -1344,7 +1344,7 @@ img { display:block; }
 .pick-sub { font-size:11px; color:var(--text-2); margin-top:2px; }
 .pick-go { font-size:12px; color:var(--gold); font-weight:700; }
 
-/* 精灵详情页 */
+/* 沁灵详情页 */
 .sd-top { text-align:center; margin-bottom:12px; }
 .sd-art { display:flex; justify-content:center; cursor:zoom-in; }
 .sd-art .spirit-img.big { max-height:34vh; border-radius:18px; }
@@ -1385,7 +1385,7 @@ img { display:block; }
 .sd-actions2 .btn { flex:1; min-width:120px; }
 .sd-gen { font-size:11px; color:var(--text-2); margin-top:9px; line-height:1.7; }
 .sd-gen-hint { display:block; color:var(--text-2); opacity:.85; }
-/* v120：成长说明（现在几头身 → 突破后几头身） */
+/* v120：成长说明（现在几头身 → 深沁后几头身） */
 .sd-growth-line { font-size:11.5px; color:var(--wood-2); margin-top:8px; line-height:1.75; }
 .sd-stale {
   font-size:11.5px; line-height:1.8; color:#7a5a12; background:#fff7e6; border:1px solid #f0dcae;

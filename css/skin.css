@@ -216,7 +216,7 @@
 @keyframes sheen { from { transform: translateX(-110%) } to { transform: translateX(110%) } }
 .spirit-prog-track { border-radius: 999px; overflow: hidden; }
 
-/* 可突破的卡片：金色呼吸边（"它想变强了"） */
+/* 可深沁的卡片：金色呼吸边（"它想变强了"） */
 .spirit-card.can-break { position: relative; }
 .spirit-card.can-break::after {
   content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
@@ -245,7 +245,7 @@
 .aff-row { border-top-style: dashed; }
 .aff-num { font-variant-numeric: tabular-nums; }
 
-/* ---------- 12. 精灵详情：立绘入场 + 人设像信纸 ---------- */
+/* ---------- 12. 沁灵详情：立绘入场 + 人设像信纸 ---------- */
 .sd-art img { animation: artIn .5s var(--ease-spring) both; }
 @keyframes artIn { from { opacity: 0; transform: scale(.94) translateY(10px) } to { opacity: 1; transform: none } }
 .sd-name { font-family: var(--font-hand); letter-spacing: 1.5px; }
@@ -326,13 +326,13 @@
 }
 
 /* ============================================================
- * 第 2 期（v114）：精灵与房间的专属动效
+ * 第 2 期（v114）：沁灵与房间的专属动效
  * ------------------------------------------------------------
  * 原则同上：只动 transform / opacity / background-position，
  * 且每个"从透明开始"的动效都有落定兜底（见 .anim-settled）。
  * ============================================================ */
 
-/* ---------- 1. 小精灵在呼吸（缩略图轻微上下浮动，错开相位） ---------- */
+/* ---------- 1. 小沁灵在呼吸（缩略图轻微上下浮动，错开相位） ---------- */
 @keyframes idleBob { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-3px) } }
 .spirit-thumb { animation: idleBob 6.5s ease-in-out infinite; }
 .spirit-grid > *:nth-child(2n) .spirit-thumb { animation-delay: -1.8s; }
@@ -391,7 +391,7 @@
     animation: breath 3s ease-in-out infinite;
   }
 }
-/* 可突破小标轻轻跳 */
+/* 可深沁小标轻轻跳 */
 @keyframes tagPulse { 0%, 100% { transform: rotate(-2deg) scale(1) } 50% { transform: rotate(-2deg) scale(1.07) } }
 .spirit-card.can-break .spirit-break-tag { animation: tagPulse 2.6s ease-in-out infinite; }
 
@@ -487,7 +487,7 @@
 
 /* ============================================================
  * v126 · 第 3-4 期：动效打磨 + 版面统一
- *   第 3 期：突破演出重做（光晕/粒子/逐字）、日记打字机、骨架屏、空状态插画
+ *   第 3 期：深沁演出重做（光晕/粒子/逐字）、日记打字机、骨架屏、空状态插画
  *   第 4 期：统一「纸感组件」——卡片 / 列表 / 进度条 / 分区标题 / 页头统计
  * 全部是"外观层"，不影响任何逻辑；动画一律**由 JS 触发**（.evolve-play / .typing），
  * 且都带落定兜底（.evolve-settled / else 分支直接写全文），不会出现"卡在透明看不见"。
@@ -540,7 +540,7 @@
 }
 .page-stat .ps-n { font-size: 17px; font-weight: 800; color: var(--wood); font-variant-numeric: tabular-nums; }
 .page-stat .ps-l { font-size: 10.5px; color: var(--text-2); margin-top: 2px; }
-/* 统一纸感组件的入场：与精灵/房间网格同一套"逐条浮现"节奏 */
+/* 统一纸感组件的入场：与沁灵/房间网格同一套"逐条浮现"节奏 */
 .paper-card, .ach-card, .coll-card, .bkc-row { animation: riseIn .5s var(--ease-out) backwards; }
 .paper-row { animation: riseIn .42s var(--ease-out) backwards; }
 .paper-list .paper-row:nth-child(2) { animation-delay: .05s; }
@@ -604,7 +604,7 @@
   border-radius: 999px;
 }
 
-/* ---------- 16. 突破演出重做（第 3 期） ---------- */
+/* ---------- 16. 深沁演出重做（第 3 期） ---------- */
 .spirit-evolve { position: relative; overflow: hidden; padding: 6px 0 2px; }
 .evolve-stage { position: relative; display: flex; align-items: center; justify-content: center; min-height: 210px; }
 .evolve-art {
@@ -677,7 +677,7 @@
 .sd-diary-text { white-space: pre-wrap; transition: none; }
 @media (prefers-reduced-motion: reduce) { .sd-diary-text.typing::after { animation: none; } }
 
-/* ---------- 18. 精灵设定向导（v127） ----------
+/* ---------- 18. 沁灵设定向导（v127） ----------
    用户要求：生成之前让他确认发色/特征/性格，3-4 个选项就能成，不想写大段提示词。 */
 .setup-wrap { max-height: 74vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 /* v129：向导最上面「这是给谁做设定」（头像 + 名字 + 来自哪串 + 形态） */
@@ -765,7 +765,7 @@
   border: 1px solid color-mix(in srgb, var(--tape) 70%, var(--line) 30%);
   color: #6b5320;
 }
-/* 「✨ 定设定」小标签（图鉴卡片上，点它直接开这一只的向导） */
+/* 「✨ 定设定」小标签（图鉴卡片上，点它直接开这一尊的向导） */
 .look-setup-tag {
   font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; cursor: pointer;
   background: linear-gradient(180deg, #fdf3dc, #f6e2b8);
@@ -928,7 +928,7 @@
 .memo-sub { margin-top: 2px; font-size: 11.5px; line-height: 1.6; color: var(--text-2); }
 
 /* ============================================================
-   v157 · 精灵小镇（概览 + 本地动态 feed）
+   v157 · 沁灵巷（概览 + 本地动态 feed）
    ============================================================ */
 .sp-2col { display: flex; gap: 8px; margin-top: 14px; }
 .sp-2col .btn { flex: 1; width: auto; margin: 0; }

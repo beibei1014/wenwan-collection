@@ -1273,11 +1273,11 @@
         if (!saved || saved.playStatus !== st) { item.playStatus = prev; toast("⚠️ 状态未保存：缺少 play_status 字段"); }
         else {
           done();
-          // 🎉 挂瓷成精：就在这一刻掷性别（男女 3:1），之后不可更改
+          // 🎉 挂瓷开沁：就在这一刻掷性别（男女 3:1），之后不可更改
           if (st === "done" && prev !== "done") {
             const b = Spirits.born(item);
             if (b.isNew) {
-              toast("🎉 它成精了！是只" + (b.gender === "boy" ? "👦 男孩子" : "👧 女孩子") + "精灵（性别出生即定，不能改哦）");
+              toast("🎉 它开沁了！是只" + (b.gender === "boy" ? "👦 男孩子" : "👧 女孩子") + "沁灵（性别出生即定，不能改哦）");
             } else {
               toast("已切换为「" + beadStatusLabel(st) + "」");
             }
@@ -2528,12 +2528,12 @@
     sync();
   }
 
-  /* ---------- 🍡 精灵（v94，v114 起标题就叫「精灵」） ---------- */
-  // 只有「已挂瓷 + 在库 + 文玩类」的串会成精
+  /* ---------- 🍡 沁灵（v94，v114 起标题就叫「沁灵」） ---------- */
+  // 只有「已挂瓷 + 在库 + 文玩类」的串会开沁
   function spiritItems() {
     return focusVisible(allItems).filter((i) => !i.gifted && i.playStatus === "done");
   }
-  // 精灵形象：优先 AI 绘图（带缓存），失败/断网自动换成本地程序化小精灵
+  // 沁灵形象：优先 AI 绘图（带缓存），失败/断网自动换成本地程序化小沁灵
   // extraStyle：缩略图的取景参数（见 analyzeFaceBox / spiritThumbHtml）
   // face：还没算出取景时用 CSS 固定比例先顶着（本地兜底脸贴图本身是方形，不能裁，所以只在有 AI 图时才加）
   function spiritImgHtml(item, rec, size, cls, extraStyle, face) {
@@ -2546,7 +2546,7 @@
     const src = url || fallback;
     const klass = (cls || "spirit-img") + (face && url ? " face" : "");
     return '<img class="' + klass + '" src="' + esc(src) + '" data-fallback="' + esc(fallback) + '"' +
-      ' data-item="' + esc(item.id) + '" data-size="' + size + '" alt="' + esc((rec && rec.persona && rec.persona.name) || item.name || "精灵") + '"' +
+      ' data-item="' + esc(item.id) + '" data-size="' + size + '" alt="' + esc((rec && rec.persona && rec.persona.name) || item.name || "沁灵") + '"' +
       ' loading="lazy" style="width:' + size + "px;height:" + size + 'px' + (extraStyle ? ";" + extraStyle : "") + '">';
   }
 
@@ -2656,7 +2656,7 @@
     return '<span class="spirit-thumb" style="width:' + size + "px;height:" + size + 'px">' +
       spiritImgHtml(item, rec, size, "spirit-img", extra, !ok) + "</span>";
   }
-  // 老图（取景算法升级前算的）没有取景数据或版本旧 → 进精灵页时补算一次并存起来，不用重新出图
+  // 老图（取景算法升级前算的）没有取景数据或版本旧 → 进沁灵页时补算一次并存起来，不用重新出图
   let _faceBusy = false;
   async function ensureSpiritFaces(list) {
     if (_faceBusy) return;
@@ -2694,7 +2694,7 @@
   }
 
   /* ---------- v97：走 API 通道真正出图（POST 拿图） ---------- */
-  // 统一的存档尺寸：**所有路径都用同一档**（首出/换形象/换设定/突破），避免"缩略图与立绘清晰度不一致"
+  // 统一的存档尺寸：**所有路径都用同一档**（首出/换形象/换设定/深沁），避免"缩略图与立绘清晰度不一致"
   const SPIRIT_IMG_SIZE = 512;
   // v125：CG 是横版插画，存大一点（长边 768）才看得清细节；一张 ≈ 60-90KB，本地存得下
   const CG_IMG_SIZE = 768;
@@ -2719,7 +2719,7 @@
     });
   }
   // v116：有些服务商（智谱/硅基流动/魔搭等）只返回一个**会过期的图片链接**，
-  // 存下来 20 小时后会被判为"过期" → 又把所有精灵重出一遍（白烧额度）。
+  // 存下来 20 小时后会被判为"过期" → 又把所有沁灵重出一遍（白烧额度）。
   // 所以拿到 http 链接后先尝试下载并按同样规格压成本地 data URI；下载不到（对方没给跨域头）就保持原样。
   async function urlToDataUri(url, max, quality) {
     if (!url || !/^https?:/i.test(url)) return "";
@@ -2740,7 +2740,7 @@
       return (await shrinkToDataUri(dataUri, max, quality)) || dataUri;
     } catch (e) { return ""; }
   }
-  // 出图计数（帮用户盯住免费额度）：单只精灵 rec.genCount + 本机累计
+  // 出图计数（帮用户盯住免费额度）：单只沁灵 rec.genCount + 本机累计
   function bumpGenCount(rec) {
     try {
       rec.genCount = (Number(rec.genCount) || 0) + 1;
@@ -2749,7 +2749,7 @@
     } catch (e) { /* 忽略 */ }
   }
   function genTotal() { try { return Number(localStorage.getItem("ww_gen_total") || "0"); } catch (e) { return 0; } }
-  // 把一次出图结果落地到精灵记录（含进化史 + 计数），所有路径共用，保证"卡片/弹层/突破"看到的是同一张
+  // 把一次出图结果落地到沁灵记录（含进化史 + 计数），所有路径共用，保证"卡片/弹层/深沁"看到的是同一张
   async function saveSpiritImage(item, rec, res, stage) {
     let url = res.url || "";
     if (res.b64) {
@@ -2781,19 +2781,19 @@
     if (/^data:/.test(u)) return false;                    // 本地存好的图 → 永久有效
     return (Date.now() - (rec.imgAt || 0)) > 20 * 3600 * 1000;   // 外链 → 20 小时后续期
   }
-  // 逐个补形象：API 通道需要 POST 出图 → 缓存到本地精灵记录里
+  // 逐个补形象：API 通道需要 POST 出图 → 缓存到本地沁灵记录里
   let _imgBusy = false;
   let _lastImgErrShown = "";
-  // 按精灵 id 记录「正在出图」，防止手动重画与自动补图、或多次点击同时打同一只（反复出图 = 反复烧钱）
+  // 按沁灵 id 记录「正在出图」，防止手动重画与自动补图、或多次点击同时打同一尊（反复出图 = 反复烧钱）
   const _genInFlight = {};
-  // v127：这只精灵在等用户先确认设定（发色/特征/性格）→ 先别出图，免得画完又得重画
+  // v127：这只沁灵在等用户先确认设定（发色/特征/性格）→ 先别出图，免得画完又得重画
   function spiritNeedsSetup(rec) {
     const r = rec || {};
     if (r.look) return false;
     if (r.lookAsked === 1) return false;
     return r.setupPending === true || (!r.imgUrl && !r.imgAt);
   }
-  // 进精灵页/图鉴页时，若第一只还没定设定就自动弹一次向导（每只每次开会话只弹一次）
+  // 进沁灵页/图鉴页时，若第一尊还没定设定就自动弹一次向导（每只每次开会话只弹一次）
   const _setupShown = {};
   function maybeOpenSpiritSetup(list) {
     try {
@@ -2859,7 +2859,7 @@
     _imgBusy = false;
   }
 
-  // v127：还没定设定（发色/特征/性格）的精灵提示条（精灵页 + 图鉴页共用）
+  // v127：还没定设定（发色/特征/性格）的沁灵提示条（沁灵页 + 图鉴页共用）
   function setupHintHtml(list, store) {
     const pend = (list || []).filter((it) => spiritNeedsSetup((store || {})[it.id] || {}));
     if (!pend.length) return { html: "", first: null };
@@ -2874,7 +2874,7 @@
   }
 
   function renderSpiritPage() {
-    topbarTitle.textContent = "精灵";
+    topbarTitle.textContent = "沁灵";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
     const list = spiritItems();
@@ -2882,9 +2882,9 @@
 
     if (!list.length) {
       view.innerHTML = emptyCardHtml({
-        ill: "spirit", icon: "🍡", title: "还没有精灵诞生",
-        sub: "把一串盘到「已挂瓷」，它就会成精<br>（顺便去给它们标一下软糯程度，形象会跟着变）",
-        hint: "盘玩 → 已挂瓷 → 自动成精",
+        ill: "spirit", icon: "🍡", title: "还没有沁灵醒过来",
+        sub: "把一串盘到「已挂瓷」，它就会开沁<br>（顺便去给它们标一下软糯程度，形象会跟着变）",
+        hint: "盘玩 → 已挂瓷 → 自动开沁",
       }) + '<button class="btn primary" id="spiritGoHome" style="width:100%;margin-top:12px">去盘串</button>';
       const g = $("#spiritGoHome");
       if (g) g.onclick = () => location.hash = "#/";
@@ -2892,17 +2892,17 @@
     }
 
     let html = "";
-    // v113：这个页面只留「小房间」；全部精灵挪到单独页面（#/spirits），顶部按钮进入
+    // v113：这个页面只留「小房间」；全部沁灵挪到单独页面（#/spirits），顶部按钮进入
     html += renderRoomsSection(list, store);
 
-    // 日记提示（正文不在这里显示：精灵是"随机写的"，有写就提示一下，进去看才有惊喜）
+    // 日记提示（正文不在这里显示：沁灵是"随机写的"，有写就提示一下，进去看才有惊喜）
     const diaryToday = list.filter((it) => {
       const rec = store[it.id] || {};
       const d = (rec.diary || []).filter((e) => e && e.date === Spirits.todayKey());
       return d.length && (rec.diarySeenAt || 0) < d[d.length - 1].at;
     }).length;
     if (diaryToday) {
-      html += '<div class="diary-hint" id="diaryHint">📔 今天有 <b>' + diaryToday + '</b> 只精灵写了日记 · 点它的头像进去看</div>';
+      html += '<div class="diary-hint" id="diaryHint">📔 今天有 <b>' + diaryToday + '</b> 只沁灵写了日记 · 点它的头像进去看</div>';
     }
     // v155：有新回响（纪念日信）—— 一年就那么几次，值得提醒一下
     const echoN = list.reduce((s, it) => s + Spirits.unreadMail(store[it.id] || {}), 0);
@@ -2911,8 +2911,8 @@
     }
 
     html += '<div class="sp-2col">' +
-      '<button class="btn primary" id="spAllBtn">👀 全部精灵（' + list.length + '）</button>' +
-      '<button class="btn ghost" id="spTownBtn">🏘 精灵小镇</button>' +
+      '<button class="btn primary" id="spAllBtn">👀 全部沁灵（' + list.length + '）</button>' +
+      '<button class="btn ghost" id="spTownBtn">🏘 沁灵巷</button>' +
       "</div>";
     // v162：夜话入口 —— 全家群 + 房间群 + 双人组，有多少聊多少
     const NS = nightNow();
@@ -2934,7 +2934,7 @@
     bindRoomSection();
     const allBtn = $("#spAllBtn");
     if (allBtn) allBtn.onclick = () => location.hash = "#/spirits";
-    const twBtn = $("#spTownBtn");      // v157：精灵小镇
+    const twBtn = $("#spTownBtn");      // v157：沁灵巷
     if (twBtn) twBtn.onclick = () => location.hash = "#/town";
     const ntBtn = $("#spNightBtn");     // v160：夜话
     if (ntBtn) ntBtn.onclick = () => { _nightFrom = "#/spirit"; location.hash = "#/night"; };
@@ -2952,17 +2952,17 @@
     maybeOpenSpiritSetup(list);      // v127：还没定设定的，先弹一次向导（生成前让用户确认）
   }
 
-  /* ---------- 全部精灵（#/spirits，v113 从精灵页拆出来） ---------- */
+  /* ---------- 全部沁灵（#/spirits，v113 从沁灵页拆出来） ---------- */
   function renderAllSpiritsPage() {
-    topbarTitle.textContent = "全部精灵";
+    topbarTitle.textContent = "全部沁灵";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
     const list = spiritItems();
     const store = Spirits.load();
     if (!list.length) {
       view.innerHTML = emptyCardHtml({
-        ill: "spirit", icon: "🍡", title: "还没有精灵诞生",
-        sub: "把一串盘到「已挂瓷」，它就会成精", hint: "盘玩 → 已挂瓷 → 自动成精",
+        ill: "spirit", icon: "🍡", title: "还没有沁灵醒过来",
+        sub: "把一串盘到「已挂瓷」，它就会开沁", hint: "盘玩 → 已挂瓷 → 自动开沁",
       });
       return;
     }
@@ -2978,12 +2978,12 @@
       diaryCount += (r.diary || []).length;
     });
     let html = pageStatsHtml([
-      { n: list.length, l: "精灵总数" },
-      { n: stageCount[3] + stageCount[2], l: "觉醒 / 完成体" },
+      { n: list.length, l: "沁灵总数" },
+      { n: stageCount[3] + stageCount[2], l: "觉醒 / 化形" },
       { n: cgCount, l: "已有 CG" },
       { n: diaryCount, l: "日记总篇数" },
     ]);
-    html += '<div class="section-title">🍡 我的精灵（' + list.length + '）' +
+    html += '<div class="section-title">🍡 我的沁灵（' + list.length + '）' +
       '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点它进详情页</small>' +
       '<button type="button" class="link-btn" id="spRedrawAll" style="float:right;font-size:11px">🖌 全部重画</button></div>';
     // 形态收集进度（图鉴感）：四个形态各多少只
@@ -3008,12 +3008,12 @@
         '<div class="spirit-name">' + esc(spiritName(it, store)) +
         '<span class="spirit-stage">' + si.icon + " " + esc(si.name) + "</span>" +
         (needSetup ? '<span class="look-setup-tag" data-setup="' + esc(it.id) + '">✨ 定设定</span>' : "") +
-        (si.canBreak ? '<span class="spirit-break-tag">✨ 可突破</span>' : "") +
+        (si.canBreak ? '<span class="spirit-break-tag">✨ 可深沁</span>' : "") +
         (wroteToday ? '<span class="spirit-break-tag" style="background:#e8f0ff;color:#3b5b9a">📔 写日记了</span>' : "") + "</div>" +
         '<div class="spirit-title">' + esc((p && p.title) || "正在酝酿性格…") +
         (room ? ' · <span style="color:var(--text-2)">' + esc((room.emoji || "🏠") + room.name) + "</span>" : "") + "</div>" +
         '<div class="spirit-line">' + esc((p && p.line) || "") + "</div>" +
-        (si.isMax ? '<div class="spirit-prog max">已是完成体 · 巅峰形态 👑</div>'
+        (si.isMax ? '<div class="spirit-prog max">已是化形 · 巅峰形态 👑</div>'
           : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
             '<span class="spirit-prog-txt">' + si.growth + " / " + si.need + " → " + esc(si.next) + "</span></div>") +
         '<div class="spirit-tags">' + ((p && p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
@@ -3031,7 +3031,7 @@
       const id = c.dataset.spirit;
       if (id) location.hash = "#/spirit/" + encodeURIComponent(id);
     }));
-    // v127：卡片上的「✨ 定设定」→ 直接开这一只的向导（不跳详情页）
+    // v127：卡片上的「✨ 定设定」→ 直接开这一尊的向导（不跳详情页）
     view.querySelectorAll("[data-setup]").forEach((el) => el.onclick = (e) => {
       e.stopPropagation();
       const it = list.filter((x) => x.id === el.dataset.setup)[0];
@@ -3044,11 +3044,11 @@
     ensureSpiritLook(list).then(() => ensureSpiritImages(list)).then(() => ensureSpiritCg(list));
     ensureSpiritFaces(list);
     ensureSpiritExtras(list);
-    tickRooms();          // 进这一页也推进契合度/补写剧情（v114：之前只有精灵页会推）
+    tickRooms();          // 进这一页也推进契合度/补写剧情（v114：之前只有沁灵页会推）
     maybeOpenSpiritSetup(list);      // v127
   }
 
-  // 🖌 全部重画（精灵页与全部精灵页共用）
+  // 🖌 全部重画（沁灵页与全部沁灵页共用）
   function bindRedrawAll(list, rerender) {
     const redrawAll = $("#spRedrawAll");
     if (!redrawAll) return;
@@ -3056,8 +3056,8 @@
       const st0 = Spirits.load();
       const n = list.filter((it) => st0[it.id] && st0[it.id].imgUrl).length;
       if (!n) { toast("还没有立绘可重画"); return; }
-      const yes = await confirmModal("要重画全部 " + n + " 只精灵吗？",
-        "已有的立绘（含进化史里的旧图）都会作废、按最新形象设定重画，消耗 " + n + " 次出图额度（每只 1 张）。想只重画某一只，进它的详情页点「🔁 换形象」。",
+      const yes = await confirmModal("要重画全部 " + n + " 只沁灵吗？",
+        "已有的立绘（含进化史里的旧图）都会作废、按最新形象设定重画，消耗 " + n + " 次出图额度（每只 1 张）。想只重画某一尊，进它的详情页点「🔁 换形象」。",
         "重画 " + n + " 张", true);
       if (!yes) return;
       const st = Spirits.load();
@@ -3066,13 +3066,13 @@
         r.imgUrl = ""; r.imgAt = 0; r.face = null; r._imgErr = ""; r._imgErrAt = 0; r.imgHistory = []; r.lookStale = false;
       });
       Spirits.save(st);
-      toast("开始重画 " + n + " 只精灵…");
+      toast("开始重画 " + n + " 只沁灵…");
       rerender();
     };
   }
 
   /* ============================================================
-   * v109：小房间 / 契合度 / 剧情 / 精灵独立详情页 / 日记
+   * v109：小房间 / 契合度 / 剧情 / 沁灵独立详情页 / 日记
    * ============================================================ */
   function spiritItemById(id) { return allItems.find((x) => x.id === id) || null; }
   function spiritRecOf(id) { return Spirits.load()[id] || {}; }
@@ -3082,14 +3082,14 @@
     r.roomId = roomId || "";
     Spirits.save(s);
   }
-  // 带 roomId 的精灵列表（房间模块需要）
+  // 带 roomId 的沁灵列表（房间模块需要）
   function roomItems() {
     const s = Spirits.load();
     return spiritItems().map((it) => Object.assign({}, it, { roomId: (s[it.id] && s[it.id].roomId) || "" }));
   }
   function nameOf(it, store) {
     const rec = (store || Spirits.load())[it.id] || {};
-    return rec.name || (rec.persona && rec.persona.name) || it.name || "精灵";   // v113：用户改过的名字优先
+    return rec.name || (rec.persona && rec.persona.name) || it.name || "沁灵";   // v113：用户改过的名字优先
   }
   function spiritName(it, store) { return nameOf(it, store); }
   function spiritSp(it) {
@@ -3128,7 +3128,7 @@
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   }
   function unreadStoryCount() { return Rooms.unreadStories(roomItems()).length; }
-  // 今天写了日记、并且还没去看过的精灵数
+  // 今天写了日记、并且还没去看过的沁灵数
   function newDiaryCount() {
     const tk = Spirits.todayKey();
     const s = Spirits.load();
@@ -3139,7 +3139,7 @@
       return (rec.diarySeenAt || 0) < (list[list.length - 1].at || 0);
     }).length;
   }
-  // 精灵 tab 上的小红点（有新剧情或新日记时）
+  // 沁灵 tab 上的小红点（有新剧情或新日记时）
   function updateStoryDot() {
     const tab = document.getElementById("tabSpirit");
     if (!tab) return;
@@ -3162,16 +3162,16 @@
     else if (dot) dot.remove();
   }
 
-  /* ---------- 房间区（精灵列表页顶部） ---------- */
+  /* ---------- 房间区（沁灵列表页顶部） ---------- */
   function renderRoomsSection(list, store) {
     const rooms = Rooms.listRooms();
     const items = roomItems();
     const unreadByRoom = {};
     Rooms.unreadStories(items).forEach((u) => { if (u.roomId) unreadByRoom[u.roomId] = (unreadByRoom[u.roomId] || 0) + 1; });
-    let h = '<div class="section-title" style="margin-top:14px">🏠 精灵的小房间（' + rooms.length + "）" +
+    let h = '<div class="section-title" style="margin-top:14px">🏠 沁灵的小房间（' + rooms.length + "）" +
       '<button type="button" class="link-btn" id="spNewRoom" style="float:right;font-size:11px">＋ 新建房间</button></div>';
     if (!rooms.length) {
-      h += '<div class="room-empty">还没有房间。建一间小屋把精灵放进去，住在一起的精灵会慢慢攒「契合度」，' +
+      h += '<div class="room-empty">还没有房间。建一间小屋把沁灵放进去，住在一起的沁灵会慢慢攒「契合度」，' +
         "攒够了就会发生属于它们的故事 ✨</div>";
     } else {
       h += '<div class="room-grid">';
@@ -3185,7 +3185,7 @@
           (un ? '<span class="room-dot">📖 ' + un + "</span>" : "") + "</div>" +
           '<div class="room-members">' +
           (mem.length ? mem.slice(0, 5).map((it) => spiritThumbHtml(it, store[it.id] || {}, 42)).join("")
-            : '<span class="room-none">还没有精灵入住</span>') +
+            : '<span class="room-none">还没有沁灵入住</span>') +
           (mem.length > 5 ? '<span class="room-more">+' + (mem.length - 5) + "</span>" : "") + "</div>" +
           '<div class="room-foot">' + (mem.length < 2 ? "住满 2 只才会攒契合度"
             : (aff.best ? "💞 最合拍：" + esc(nameOf(aff.best.a, store)) + " × " + esc(nameOf(aff.best.b, store)) + " · " + aff.best.aff : "")) + "</div>" +
@@ -3194,7 +3194,7 @@
       h += "</div>";
     }
     const homeless = list.filter((it) => !(store[it.id] || {}).roomId).length;
-    if (homeless) h += '<div class="room-hint">🛏 还没入住的精灵：' + homeless + " 只 —— 进房间点「＋ 放入精灵」安排入住</div>";
+    if (homeless) h += '<div class="room-hint">🛏 还没入住的沁灵：' + homeless + " 只 —— 进房间点「＋ 请沁灵入住」安排入住</div>";
     return h;
   }
   function bindRoomSection() {
@@ -3274,7 +3274,7 @@
     _lookBusy = false;
   }
 
-  /* ---------- 补齐：精灵日记 ---------- */
+  /* ---------- 补齐：沁灵日记 ---------- */
   let _extraBusy = false;
   async function ensureSpiritExtras(list) {
     if (_extraBusy) return;
@@ -3308,8 +3308,8 @@
     _extraBusy = false;
   }
 
-  /* ---------- 精灵相关页面的"原地刷新"统一入口（v114） ----------
-     原来四处各写各的分支：`#/spirits`（全部精灵）会被当成房间页刷掉，
+  /* ---------- 沁灵相关页面的"原地刷新"统一入口（v114） ----------
+     原来四处各写各的分支：`#/spirits`（全部沁灵）会被当成房间页刷掉，
      甚至被 tickRooms 里 "房间找不到 → location.hash = #/spirit" 弹回房间页。
      现在统一走这里，四个页面各刷各的。 */
   function rerenderSpiritView() {
@@ -3327,8 +3327,8 @@
     } catch (e) { /* 静默 */ }
   }
 
-  /* ---------- v125：CG（觉醒期 / 完成体额外一张场景插画） ----------
-     规则：幼生期 / 成长期**只有立绘**；觉醒期 / 完成体**立绘 + CG 都有**。
+  /* ---------- v125：CG（蜕形 / 化形额外一张场景插画） ----------
+     规则：凝形 / 开窍**只有立绘**；蜕形 / 化形**立绘 + CG 都有**。
      CG 跟着"阶段 + 外观设定 + 换形象次数"缓存，变了才重画（每张 ≈ 一次出图额度）。 */
   let _cgBusy = false;
   // CG 的缓存 key：阶段 / 人设种子 / 性别 / 换形象次数 / 服务商 —— 任一变了才重画
@@ -3336,7 +3336,7 @@
     return (Number(rec.stage) || 1) + "|" + (rec.appearanceSeed || 0) + "|" + (rec.gender || "") +
       "|" + (rec.variant || 0) + "|" + (Spirits.getImageCfg().provider || "");
   }
-  // 单只精灵：形象变了（换外观/换形象）或刚突破 → 撤掉不匹配的旧 CG，并把新的补上
+  // 单只沁灵：形象变了（换外观/换形象）或刚深沁 → 撤掉不匹配的旧 CG，并把新的补上
   function refreshCgAfter(item) {
     try {
       const s = Spirits.load();
@@ -3403,7 +3403,7 @@
     _cgBusy = false;
   }
 
-  /* ---------- 精灵形象 / 进阶动作（v111：详情页直接调，不再依赖弹层） ----------
+  /* ---------- 沁灵形象 / 进阶动作（v111：详情页直接调，不再依赖弹层） ----------
      host = { refresh(), refreshTop(), busy(on, text) } —— 由页面提供，用于原地刷新与按钮状态 */
   async function spiritReRoll(item, host) {
     const h = host || {};
@@ -3434,7 +3434,7 @@
     } finally {
       if (h.busy) h.busy(false);
       if (h.refreshTop) h.refreshTop(); else if (h.refresh) h.refresh();
-      refreshCgAfter(item);      // v125：换了人设 → 觉醒期/完成体的 CG 也跟着换
+      refreshCgAfter(item);      // v125：换了人设 → 蜕形/化形的 CG 也跟着换
       _imgBusy = false; delete _genInFlight[item.id];
     }
   }
@@ -3494,15 +3494,15 @@
     const p = r0.persona || Spirits.localPersona(item);
     if (_imgBusy || _genInFlight[item.id]) { toast("正在出图，稍等一下～"); return; }
     _imgBusy = true; _genInFlight[item.id] = true;
-    if (h.busy) h.busy(true, "突破中…");
+    if (h.busy) h.busy(true, "深沁中…");
     try {
-      // 突破：把"突破前那张图"当参考图传过去 → 保证是同一个人长大，不会变性/换人
+      // 深沁：把"深沁前那张图"当参考图传过去 → 保证是同一个人长大，不会变性/换人
       const res = await Spirits.generateImage(item, 0, null, nextStage, { appearanceSeed: r0.appearanceSeed || 0, gender: r0.gender || "", ref: r0.imgUrl || "" });
       const s1 = Spirits.load();
       const r1 = Spirits.ensureIn(s1, item.id);
       const hist = Array.isArray(r1.imgHistory) ? r1.imgHistory : [];
       const lastH = hist[hist.length - 1];
-      // 记下"突破前"的旧形态（若还没记过才补）
+      // 记下"深沁前"的旧形态（若还没记过才补）
       if (r1.imgUrl && !(lastH && lastH.url === r1.imgUrl)) hist.push({ stage: r1.stage || 1, url: r1.imgUrl, at: Date.now() });
       r1.stage = nextStage;
       r1.imgHistory = hist.slice(-8);
@@ -3511,10 +3511,10 @@
       if (res.autoFixed) toast("已自动修正：" + res.autoFixed);
       if (h.busy) h.busy(false);
       if (h.refresh) h.refresh();
-      // v125：突破到觉醒期/完成体之后，顺手把 CG 也画了（后台进行，不挡突破演出）
+      // v125：深沁到蜕形/化形之后，顺手把 CG 也画了（后台进行，不挡深沁演出）
       refreshCgAfter(item);
       _imgBusy = false; delete _genInFlight[item.id];
-      // 突破演出（v126 重做：光晕 + 扩散光环 + 粒子飞散 + 立绘弹入 + 标题逐字）
+      // 深沁演出（v126 重做：光晕 + 扩散光环 + 粒子飞散 + 立绘弹入 + 标题逐字）
       // 关键：**默认状态就是最终状态**（都可见），动画由 JS 加 .evolve-play 触发、
       // 1.6 秒后加 .evolve-settled 显式写死最终状态 —— 动画没跑起来也不会缺东西。
       const mask2 = $("#modalMask"), modal2 = $("#modal");
@@ -3539,7 +3539,7 @@
         '<div class="evolve-title">' + titleHtml + "</div>" +
         '<div class="evolve-sub">' + esc(p.name || item.name) + " · " + stageFrom.icon + " " + esc(stageFrom.name) +
         " → <b>" + nextDef.icon + " " + esc(nextDef.name) + "</b></div>" +
-        '<div class="evolve-desc">' + (nextStage >= Spirits.STAGES.length ? "它已经长成了完成体，帅/美到发光 👑" : "它长大了一点（约 " + (nextDef.sizeZh || "") + "），继续盘它会更强 💪") + "</div>" +
+        '<div class="evolve-desc">' + (nextStage >= Spirits.STAGES.length ? "它已经走到「化形」了，帅/美到发光 👑" : "它长大了一点（约 " + (nextDef.sizeZh || "") + "），继续盘它会更强 💪") + "</div>" +
         '<div class="evolve-tap">点任意处继续</div>' +
         '<button class="btn primary" id="spEvoOk" style="width:100%;margin-top:10px">好耶！看看新形象</button></div>';
       mask2.hidden = false; modal2.hidden = false; modal2.style.display = "";
@@ -3556,12 +3556,12 @@
       mask2.onclick = fin;
     } catch (e) {
       if (h.busy) h.busy(false);
-      toast("突破失败：" + ((e && e.message) || "出图失败"));
+      toast("深沁失败：" + ((e && e.message) || "出图失败"));
       _imgBusy = false; delete _genInFlight[item.id];
     }
   }
 
-  /* ---------- v126：日记打字机（只对最新一篇、每只精灵每次开会话只打一次） ---------- */
+  /* ---------- v126：日记打字机（只对最新一篇、每只沁灵每次开会话只打一次） ---------- */
   const _typedDiary = {};
   function typewriteSpiritDiary(id) {
     try {
@@ -3599,11 +3599,11 @@
     } catch (e) { /* 静默：任何异常都不该让日记消失 */ }
   }
 
-  /* ---------- 精灵独立详情页 ---------- */
+  /* ---------- 沁灵独立详情页 ---------- */
   function renderSpiritDetailPage(id) {
     const it = spiritItemById(id);
     if (!it) { location.hash = "#/spirit"; return; }
-    topbarTitle.textContent = "精灵详情";
+    topbarTitle.textContent = "沁灵详情";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
     const store = Spirits.load();
@@ -3633,7 +3633,7 @@
     const diary = (rec.diary || []).slice().reverse();
     const hist = (rec.imgHistory || []).filter((x) => x && x.url);
 
-    // v126：还没出图时给一个立绘骨架屏（比空白/兜底小精灵更像"正在画"）
+    // v126：还没出图时给一个立绘骨架屏（比空白/兜底小沁灵更像"正在画"）
     const artInner = rec.imgUrl
       ? spiritImgHtml(it, rec, 240, "spirit-img big")
       : '<div class="sk sk-art"></div><div class="sd-gen-hint" style="margin-top:8px">正在画它的立绘…（约 15-20 秒）</div>';
@@ -3725,8 +3725,8 @@
       '<div class="sd-look">🔒 ' + esc(Spirits.appearanceText(ap)) + "</div>" +
       '<div class="sd-look-sub">🧵 ' + esc(Spirits.appearanceDetail(ap)) + "</div>" +
       '<div class="sd-look-sub">🎂 ' + (rec.bornAt
-        ? "出生于 " + Math.max(1, Math.round((Date.now() - rec.bornAt) / 86400000)) + " 天前 —— 性别在挂瓷成精那一刻随机定下（男 3 : 女 1），之后就固定了，不能改～"
-        : "性别在挂瓷成精那一刻随机定下（男 3 : 女 1），之后固定不变") + "</div>" +
+        ? "出生于 " + Math.max(1, Math.round((Date.now() - rec.bornAt) / 86400000)) + " 天前 —— 性别在挂瓷开沁那一刻随机定下（男 3 : 女 1），之后就固定了，不能改～"
+        : "性别在挂瓷开沁那一刻随机定下（男 3 : 女 1），之后固定不变") + "</div>" +
       '<div class="sd-look-sub">🎨 ' + (bead ? "立绘主色取自原串照片：" + esc(bead.hex) + "（" + esc(bead.word) + "）" : "立绘主色按颜色分类生成") + "</div></div>";
 
     h += '<div class="sd-card"><div class="sd-card-title">📿 原型手串</div><div class="sd-bead">' +
@@ -3737,22 +3737,22 @@
       '<button class="btn ghost" id="sdGoBead" style="margin-top:8px;font-size:12px">查看手串详情</button></div></div></div>';
 
     h += '<div class="sd-card"><div class="sd-card-title">🌱 成长</div>' +
-      (si.isMax ? '<div class="spirit-prog max">已是完成体 · 巅峰形态 👑</div>'
+      (si.isMax ? '<div class="spirit-prog max">已是化形 · 巅峰形态 👑</div>'
         : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
-          '<span class="spirit-prog-txt">' + si.growth + " / " + si.need + " → " + esc(si.next) + "（再 " + si.toNext + " 点可突破）</span></div>") +
+          '<span class="spirit-prog-txt">' + si.growth + " / " + si.need + " → " + esc(si.next) + "（再 " + si.toNext + " 点可深沁）</span></div>") +
       // v120：把"会长大"写在界面上（用户问过"不会一直都是 Q 版吧"）
       '<div class="sd-growth-line">📏 现在：' + esc(Spirits.stageDef(si.stage).sizeZh || "") +
-      (si.isMax ? " · 已经是最成熟的形态了" : " → 突破后：" + esc(Spirits.stageDef(si.stage + 1).sizeZh || "")) + "</div>" +
-      // v111：突破/换形象/换外观设定直接放在详情页 —— 生成完就在上面看到新立绘（不用再钻弹层）
+      (si.isMax ? " · 已经是最成熟的形态了" : " → 深沁后：" + esc(Spirits.stageDef(si.stage + 1).sizeZh || "")) + "</div>" +
+      // v111：深沁/换形象/换外观设定直接放在详情页 —— 生成完就在上面看到新立绘（不用再钻弹层）
       // v112：形象细节升级后（照人物设定画的），这里会提示"按新设定重画"
       '<div class="sd-actions2">' +
-      (si.canBreak ? '<button class="btn primary" id="sdBreak">✨ 突破 → ' + esc(si.next) + "</button>" : "") +
+      (si.canBreak ? '<button class="btn primary" id="sdBreak">✨ 深沁 → ' + esc(si.next) + "</button>" : "") +
       (rec.lookStale
         ? '<button class="btn primary" id="sdNewLook">✨ 按新设定重画</button>'
         : '<button class="btn ghost" id="sdNewLook">🔁 换形象</button>') +
       '<button class="btn ghost" id="sdReRoll">🎲 换外观设定</button>' +
       "</div>" +
-      (rec.lookStale ? '<div class="sd-stale">🆕 形象系统升级了：现在会照着「人物设定」画服装、纹样、布料、配饰、姿态和道具。点「✨ 按新设定重画」把这只精灵换成细致版（消耗 1 次出图额度）。</div>' : "") +
+      (rec.lookStale ? '<div class="sd-stale">🆕 形象系统升级了：现在会照着「人物设定」画服装、纹样、布料、配饰、姿态和道具。点「✨ 按新设定重画」把这只沁灵换成细致版（消耗 1 次出图额度）。</div>' : "") +
       '<div class="sd-gen">已为它出图 ' + (Number(rec.genCount) || 1) + " 张 · 本机累计 " + genTotal() + " 张" +
       '<span class="sd-gen-hint">（换形象/换设定各消耗 1 次出图额度；性别不会变）</span></div>' +
       (hist.length > 1 ? '<div class="spirit-hist">' + hist.map((x) => {
@@ -3776,10 +3776,10 @@
             '<div class="room-track"><i style="width:' + li.pct + '%"></i></div></div></div>';
         }).join("") + "</div>";
       } else {
-        h += '<div class="room-none" style="margin-top:8px">目前自己住一间。再放一只进去，它们就会开始攒契合度～</div>';
+        h += '<div class="room-none" style="margin-top:8px">目前自己住一间。再放一尊进去，它们就会开始攒契合度～</div>';
       }
     } else {
-      h += '<div class="room-none">还没入住。给它安排一间小屋，同住的精灵会慢慢攒契合度 ✨</div>';
+      h += '<div class="room-none">还没入住。给它安排一间小屋，同住的沁灵会慢慢攒契合度 ✨</div>';
     }
     h += '<button class="btn ghost" id="sdRoomPick" style="width:100%;margin-top:10px;font-size:13px">' +
       (room ? "🏠 换房间 / 搬出去" : "🏠 安排入住") + "</button></div>";
@@ -3868,16 +3868,16 @@
     }
     h += "</div>";
 
-    // v125：CG 插画（觉醒期 / 完成体才有）
+    // v125：CG 插画（蜕形 / 化形才有）
     h += '<div class="sd-card"><div class="sd-card-title">🎬 CG 插画' +
-      (Spirits.needCg(si.stage) ? "" : '<small style="font-weight:400;color:var(--text-2)"> · 觉醒期 / 完成体才有</small>') + "</div>";
+      (Spirits.needCg(si.stage) ? "" : '<small style="font-weight:400;color:var(--text-2)"> · 蜕形 / 化形才有</small>') + "</div>";
     if (rec.cgUrl) {
       h += '<img class="cg-thumb" id="sdCg" src="' + esc(rec.cgUrl) + '" alt="CG">' +
-        '<div class="sd-gen-hint">点图看大图 · 觉醒期 / 完成体的专属场景插画</div>';
+        '<div class="sd-gen-hint">点图看大图 · 蜕形 / 化形的专属场景插画</div>';
     } else if (Spirits.needCg(si.stage)) {
       h += '<div class="room-none">' + (rec._cgErr ? ("CG 出图失败：" + esc(rec._cgErr)) : "正在画它的专属 CG…（每张 ≈ 一次出图额度）") + "</div>";
     } else {
-      h += '<div class="room-none">它现在还是' + esc(si.name) + '，只有立绘；突破到「觉醒期」就会解锁一张专属 CG 🎬</div>';
+      h += '<div class="room-none">它现在还是' + esc(si.name) + '，只有立绘；深沁到「蜕形」就会解锁一张专属 CG 🎬</div>';
     }
     h += "</div>";
 
@@ -3891,7 +3891,7 @@
     }
     h += '<div class="sd-actions">' +
       '<button class="btn ghost" id="sdChat">💬 它们聊天</button>' +
-      '<button class="btn ghost" id="sdSpiritList">🍡 所有精灵</button></div>';
+      '<button class="btn ghost" id="sdSpiritList">🍡 所有沁灵</button></div>';
 
     view.innerHTML = h;
     bindSpiritImgFallback(view);
@@ -3988,7 +3988,7 @@
       if (!fx0) return;
       if (fx0.cgUrl) { openSpiritViewer(fx0.cgUrl); return; }
       const yes = await confirmModal("画一张「" + fx0.name + "」限定插画？",
-        "按它现在的形象 + " + fx0.name + " 的节令场景，画一张横版插画，消耗 1 次出图额度。每只精灵每个节令只画一次，画好后就一直留着。",
+        "按它现在的形象 + " + fx0.name + " 的节令场景，画一张横版插画，消耗 1 次出图额度。每只沁灵每个节令只画一次，画好后就一直留着。",
         "画这张（1 次额度）", true);
       if (!yes) return;
       festCgBtn.disabled = true;
@@ -4098,7 +4098,7 @@
       toast("💌 回它了，它下一篇日记会回应你");
       refresh();
     };
-    // v155：改口（羁绊到「交心」后它会想叫你的名字）
+    // v155：改口（羁绊到「通意」后它会想叫你的名字）
     const callYes = $("#sdCallYes");
     if (callYes) callYes.onclick = () => {
       const s6 = Spirits.load();
@@ -4146,7 +4146,7 @@
     ensureSpiritExtras([it]);
   }
 
-  /* ---------- 改名（每个精灵只能改一次） ---------- */
+  /* ---------- 改名（每个沁灵只能改一次） ---------- */
   function showRenameModal(item) {
     const mask = $("#modalMask"), modal = $("#modal");
     const cur = spiritName(item, Spirits.load());
@@ -4182,7 +4182,7 @@
   }
 
   /* ============================================================
-   * v127：精灵「设定向导」——生成前先让用户 4 步确认（用户要求）
+   * v127：沁灵「设定向导」——生成前先让用户 4 步确认（用户要求）
    *   ① 发色/色调：显示识别到的珠子主色，可一键改（预设 12 色 / 自己填色名或 #hex）
    *   ② 特殊特征：猫耳+猫尾 / 兔耳 / 小龙角…（最多 3，可明确"普通人形"）
    *   ③ 性格：6 选 1
@@ -4233,7 +4233,7 @@
       lookChipHtml("pers", p.id, esc(p.zh), state.pers === p.id)).join("");
 
     modal.innerHTML = '<div class="setup-wrap">' +
-      // v129：先把"这是给谁做设定"写在最上面（用户反馈：不知道在给哪一只做设定）
+      // v129：先把"这是给谁做设定"写在最上面（用户反馈：不知道在给哪一尊做设定）
       (function () {
         const nm = spiritName(item, Spirits.load());
         const si = Spirits.stageInfo(item, rec.stage, DB.daysWith(item));
@@ -4279,7 +4279,7 @@
       '<button class="btn ghost" id="lkSkip">先跳过（按自动的来）</button>' +
       '<button class="btn primary" id="lkSave">保存并重画</button>' +
       "</div>" +
-      '<div class="setup-note">保存后按新设定重画它的立绘（消耗 1 次出图额度）；觉醒期/完成体的 CG 也会跟着重画。</div>' +
+      '<div class="setup-note">保存后按新设定重画它的立绘（消耗 1 次出图额度）；蜕形/化形的 CG 也会跟着重画。</div>' +
       "</div>";
     mask.hidden = false;
     modal.hidden = false;
@@ -4458,9 +4458,9 @@
   }
 
   /* ---------- 房间页 ---------- */
-  /* ---------- v157：精灵小镇（本地动态 + 全镇概览；0 出图 0 模型调用） ---------- */
+  /* ---------- v157：沁灵巷（本地动态 + 全镇概览；0 出图 0 模型调用） ---------- */
   function renderTownPage() {
-    topbarTitle.textContent = "精灵小镇";
+    topbarTitle.textContent = "沁灵巷";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
     const list = spiritItems();
@@ -4471,9 +4471,9 @@
     if (list.length < 2) {
       view.innerHTML = emptyCardHtml({
         ill: "spirit", icon: "🏘", title: "小镇还只有一位居民",
-        sub: "再来一只精灵，小镇才会热闹起来<br>（住进同一间屋子的会慢慢熟络）",
-        hint: "挂瓷成精 → 把两只放进同一间屋子",
-      }) + '<button class="btn primary" id="townBack" style="width:100%;margin-top:12px">回到精灵页</button>';
+        sub: "再来一尊沁灵，小镇才会热闹起来<br>（住进同一间屋子的会慢慢熟络）",
+        hint: "挂瓷开沁 → 把两只放进同一间屋子",
+      }) + '<button class="btn primary" id="townBack" style="width:100%;margin-top:12px">回到沁灵页</button>';
       const b0 = $("#townBack");
       if (b0) b0.onclick = () => location.hash = "#/spirit";
       return;
@@ -4516,14 +4516,14 @@
           '<div class="town-ev-body"><div class="town-ev-text"><span class="town-ev-ico">' + esc(e.icon) + "</span>" + esc(e.text) + "</div>" +
           '<div class="town-ev-sub">' + (e.sameRoom ? "同一间屋子 · 住在一起" : "在院子里碰上") + "</div></div></div>";
       }).join("") + "</div>" +
-        '<div class="room-hint">同住的精灵每天 +1 契合度；两只最近都在盘，当天 +2。攒够就有它们自己的故事。</div>';
+        '<div class="room-hint">同住的沁灵每天 +1 契合度；两只最近都在盘，当天 +2。攒够就有它们自己的故事。</div>';
     }
     h += "</div>";
 
     // 屋子
     h += '<div class="sd-card"><div class="sd-card-title">🏠 小镇的屋子（' + rooms.length + "）</div>";
     if (!rooms.length) {
-      h += '<div class="room-none">还没有屋子。回精灵页建一间，把精灵放进去它们就会开始熟络。</div>';
+      h += '<div class="room-none">还没有屋子。回沁灵页建一间，把沁灵放进去它们就会开始熟络。</div>';
     } else {
       h += '<div class="room-grid">';
       rooms.forEach((r) => {
@@ -4544,7 +4544,7 @@
     }
     h += "</div>";
 
-    h += '<button class="btn ghost" id="townBack" style="width:100%;margin-top:10px">← 回到精灵页</button>';
+    h += '<button class="btn ghost" id="townBack" style="width:100%;margin-top:10px">← 回到沁灵页</button>';
     view.innerHTML = h;
     bindSpiritImgFallback(view);
     const b1 = $("#townBack");
@@ -4556,7 +4556,7 @@
 
   /* ---------- v160：夜话（跨串大剧情 · 互动对话） ----------
      全本地剧本 + 本地状态机：0 出图、0 模型调用，怎么聊都不花额度。
-     进度存在「第一位成员」（成精最早的那只）的记录里 —— 跟着跨手机同步走。
+     进度存在「第一位成员」（开沁最早的那只）的记录里 —— 跟着跨手机同步走。
      与「房间剧情（同屋两只小故事）」「主线·串与我（单串 8 章）」互不影响。 */
   let _nightFrom = "#/spirit";
   /* ---------- v162：夜话 2.0 —— 多会话（全家 / 房间 / 双人组）+ 事件触发 ---------- */
@@ -4624,8 +4624,8 @@
     const S = nightNow();
     if (!S.threads.length) {
       view.innerHTML = emptyCardHtml({
-        ill: "spirit", icon: "📱", title: "还没有成精的串",
-        sub: "串挂瓷之后会「成精」。夜里它们会借你的手机开群聊天 —— 你回一句，剧情就跟着你走。",
+        ill: "spirit", icon: "📱", title: "还没有开沁的串",
+        sub: "串挂瓷之后会「开沁」。夜里它们会借你的手机开群聊天 —— 你回一句，剧情就跟着你走。",
         hint: "先去把一串盘到挂瓷",
       });
       return;
@@ -4633,7 +4633,7 @@
     let h = '<div class="room-hint" style="margin-bottom:10px">夜里它们借你的手机开了几个群。' +
       "你回一句，剧情就跟着你走 —— 每个事件都有 <b>3 个结尾</b>。全程本地，聊多久都不花额度。</div>";
     const groups = [
-      { title: "全家福", tip: "所有成精的串都在这儿", arr: S.threads.filter((t) => t.kind === "family") },
+      { title: "全家福", tip: "所有开沁的串都在这儿", arr: S.threads.filter((t) => t.kind === "family") },
       { title: "同屋小群", tip: "住在一个房间里的", arr: S.threads.filter((t) => t.kind === "room") },
       { title: "两个人的事", tip: "谁生日、谁跟谁性格对上了才出现", arr: S.threads.filter((t) => t.kind === "duo") },
     ];
@@ -4689,7 +4689,7 @@
       '<div class="nt-group-sub">' + esc(t.members.map((m) => m.name).join("、")) + " · " + t.members.length + " 位成员</div></div>" +
       '<div class="nt-group-stat"><b>' + doneN + "</b>/" + evs.length + "<span>件事</span></div></div>";
     if (t.kind === "duo" && t.tag) h += '<div class="room-hint" style="margin-top:8px">' + esc(String(t.tag).trim()) + " · 这两个凑一块儿才有的事</div>";
-    if (t.kind === "family") h += '<div class="room-hint" style="margin-top:8px">以后每一串成精，都会自己进这个群。</div>';
+    if (t.kind === "family") h += '<div class="room-hint" style="margin-top:8px">以后每一串开沁，都会自己进这个群。</div>';
     const open = threadOpenCount(T);
     if (open) h += '<div class="diary-hint">📱 有 <b>' + open + "</b> 件事可以聊了</div>";
 
@@ -4952,12 +4952,12 @@
 
     let h = '<div class="room-page-head"><span class="room-emoji big">' + esc(room.emoji || "🏠") + "</span>" +
       '<div class="room-page-meta"><div class="room-page-name">' + esc(room.name) + "</div>" +
-      '<div class="room-page-sub">' + mem.length + " 只精灵住在里面 · 共 " + stories.length + " 段剧情</div></div>" +
+      '<div class="room-page-sub">' + mem.length + " 只沁灵住在里面 · 共 " + stories.length + " 段剧情</div></div>" +
       '<button class="link-btn" id="rmEdit">✏️ 设置</button></div>';
 
-    h += '<div class="sd-card"><div class="sd-card-title">🛏 住在这里的精灵（' + mem.length + "）" +
-      '<button class="link-btn" id="rmAdd" style="float:right">＋ 放入精灵</button></div>';
-    if (!mem.length) h += '<div class="room-none">房间还空着，点右上角「＋ 放入精灵」安排入住。</div>';
+    h += '<div class="sd-card"><div class="sd-card-title">🛏 住在这里的沁灵（' + mem.length + "）" +
+      '<button class="link-btn" id="rmAdd" style="float:right">＋ 请沁灵入住</button></div>';
+    if (!mem.length) h += '<div class="room-none">房间还空着，点右上角「＋ 请沁灵入住」安排入住。</div>';
     else h += '<div class="room-mem-grid">' + mem.map((it) => {
       const rec = store[it.id] || {};
       const si = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
@@ -4979,7 +4979,7 @@
       }
       h += '<div class="room-hint">每天同住 +1 契合度；如果两只最近都在盘，当天 +2。</div></div>';
     } else {
-      h += '<div class="sd-card"><div class="room-none">至少要有 2 只精灵，才会开始攒契合度。</div></div>';
+      h += '<div class="sd-card"><div class="room-none">至少要有 2 只沁灵，才会开始攒契合度。</div></div>';
     }
 
     h += '<div class="sd-card"><div class="sd-card-title">📖 剧情（' + stories.length + "）</div>";
@@ -4995,7 +4995,7 @@
     if (stories.some((s) => s.story.text && !s.story.read)) h += '<div class="room-hint">🔴 有新剧情，点开才算看过哦</div>';
     h += "</div>";
 
-    h += '<button class="btn ghost" id="rmBack" style="width:100%;margin-top:10px">← 回到精灵列表</button>';
+    h += '<button class="btn ghost" id="rmBack" style="width:100%;margin-top:10px">← 回到沁灵列表</button>';
     view.innerHTML = h;
     bindSpiritImgFallback(view);
     const eb = $("#rmEdit"); if (eb) eb.onclick = () => showRoomEditModal(room);
@@ -5053,7 +5053,7 @@
         '" data-emoji="' + e + '">' + e + "</button>").join("") + "</div></div>" +
       (isNew ? "" : '<div class="form-group"><div class="form-label">住在这里（' + mem.length + '）<small>点名字可以搬出去</small></div>' +
         '<div class="prov-row">' + (mem.length ? mem.map((it) => '<button type="button" class="prov-chip" data-out="' + esc(it.id) + '">' +
-          esc(nameOf(it, Spirits.load())) + " ✕</button>").join("") : '<span style="font-size:12px;color:var(--text-2)">还没有精灵入住</span>') + "</div></div>") +
+          esc(nameOf(it, Spirits.load())) + " ✕</button>").join("") : '<span style="font-size:12px;color:var(--text-2)">还没有沁灵入住</span>') + "</div></div>") +
       '<div style="display:flex;gap:8px;margin-top:12px">' +
       '<button class="btn ghost" id="rmCancel" style="flex:1">取消</button>' +
       (isNew ? "" : '<button class="btn danger" id="rmDel" style="flex:1">删除房间</button>') +
@@ -5076,7 +5076,7 @@
     $("#rmCancel").onclick = close;
     mask.onclick = close;
     if (!isNew) $("#rmDel").onclick = async () => {
-      const yes = await confirmModal("删除「" + room.name + "」？", "房间里的精灵会变成「未入住」，精灵本身和立绘都不受影响。", "删除", true);
+      const yes = await confirmModal("删除「" + room.name + "」？", "房间里的沁灵会变成「未入住」，沁灵本身和立绘都不受影响。", "删除", true);
       if (!yes) { showRoomEditModal(room); return; }
       const ids = Rooms.membersOf(room.id, roomItems()).map((x) => x.id);
       ids.forEach((id) => setSpiritRoom(id, ""));
@@ -5100,15 +5100,15 @@
     };
   }
 
-  /* ---------- 选精灵放进房间 ---------- */
+  /* ---------- 选沁灵放进房间 ---------- */
   function showSpiritPicker(roomId) {
     const mask = $("#modalMask"), modal = $("#modal");
     const items = roomItems();
     const store = Spirits.load();
     const inRoom = items.filter((x) => x.roomId === roomId);
     const others = items.filter((x) => x.roomId !== roomId);
-    modal.innerHTML = "<h3>＋ 放入精灵</h3>" +
-      '<p style="font-size:12px;color:var(--text-2);text-align:center;margin-bottom:10px">点一下放进这间房（一只精灵同时只住一间）</p>' +
+    modal.innerHTML = "<h3>＋ 请沁灵入住</h3>" +
+      '<p style="font-size:12px;color:var(--text-2);text-align:center;margin-bottom:10px">点一下放进这间房（一尊沁灵同时只住一间）</p>' +
       '<div class="pick-list">' + (others.length ? others.map((it) => {
         const rec = store[it.id] || {};
         const si = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
@@ -5117,7 +5117,7 @@
           '<div class="pick-meta"><div class="pick-name">' + esc(nameOf(it, store)) + " " + si.icon + "</div>" +
           '<div class="pick-sub">现在在：' + esc(where || "未入住") + "</div></div>" +
           '<span class="pick-go">放入 ›</span></div>';
-      }).join("") : '<div class="room-none">所有精灵都在这间房里了</div>') + "</div>" +
+      }).join("") : '<div class="room-none">所有沁灵都在这间房里了</div>') + "</div>" +
       '<button class="btn ghost" id="pickCancel" style="width:100%;margin-top:12px">关闭</button>';
     mask.hidden = false;
     modal.hidden = false;
@@ -5133,24 +5133,24 @@
     $("#pickCancel").onclick = close;
     mask.onclick = close;
   }
-  // 从精灵详情页选房间
+  // 从沁灵详情页选房间
   function showSpiritRoomPicker(it) {
     const mask = $("#modalMask"), modal = $("#modal");
     const rooms = Rooms.listRooms();
     const cur = (spiritRecOf(it.id) || {}).roomId || "";
     modal.innerHTML = "<h3>🏠 安排房间</h3>" +
-      '<p style="font-size:12px;color:var(--text-2);text-align:center;margin-bottom:10px">和同屋的精灵会慢慢攒契合度</p>' +
+      '<p style="font-size:12px;color:var(--text-2);text-align:center;margin-bottom:10px">和同屋的沁灵会慢慢攒契合度</p>' +
       '<div class="pick-list">' +
       rooms.map((r) => {
         const n = Rooms.membersOf(r.id, roomItems()).length;
         return '<div class="pick-row" data-room-pick="' + esc(r.id) + '">' +
           '<span class="room-emoji">' + esc(r.emoji || "🏠") + "</span>" +
           '<div class="pick-meta"><div class="pick-name">' + esc(r.name) + "</div>" +
-          '<div class="pick-sub">' + n + " 只精灵" + (cur === r.id ? " · 现在住这里" : "") + "</div></div>" +
+          '<div class="pick-sub">' + n + " 只沁灵" + (cur === r.id ? " · 现在住这里" : "") + "</div></div>" +
           '<span class="pick-go">' + (cur === r.id ? "已在此 ›" : "入住 ›") + "</span></div>";
       }).join("") +
       '<div class="pick-row" data-room-pick=""><span class="room-emoji">🚪</span>' +
-      '<div class="pick-meta"><div class="pick-name">搬出去（不入住）</div><div class="pick-sub">仍是你的精灵，只是不攒契合度</div></div>' +
+      '<div class="pick-meta"><div class="pick-name">搬出去（不入住）</div><div class="pick-sub">仍是你的沁灵，只是不攒契合度</div></div>' +
       '<span class="pick-go">›</span></div>' +
       '<div class="pick-row" data-new-room="1"><span class="room-emoji">＋</span>' +
       '<div class="pick-meta"><div class="pick-name">新建一间房</div><div class="pick-sub">给它们一个新地方</div></div><span class="pick-go">›</span></div>' +
@@ -5256,7 +5256,7 @@
     let avatar = ow.avatar;
     modal.innerHTML = "<h3>👤 主人设定</h3>" +
       '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:12px;text-align:center">' +
-      "精灵写日记、写剧情、聊天时都会照这里来称呼你，别让它们把你写成另一个性别 😆</p>" +
+      "沁灵写日记、写剧情、聊天时都会照这里来称呼你，别让它们把你写成另一个性别 😆</p>" +
       '<div class="form-group"><div class="form-label">昵称 <small>它们会这么叫你</small></div>' +
       '<input class="form-input" id="ownName" maxlength="12" placeholder="如：小北" value="' + esc(ow.name || "") + '"></div>' +
       '<div class="form-group"><div class="form-label">我是</div><div class="prov-row" id="ownGenderRow">' +
@@ -5298,10 +5298,10 @@
     };
   }
 
-  /* ---------- 精灵聊天（独立弹层，详情页用） ---------- */
+  /* ---------- 沁灵聊天（独立弹层，详情页用） ---------- */
   function showSpiritChatModal(item) {
     const mask = $("#modalMask"), modal = $("#modal");
-    modal.innerHTML = "<h3>💬 它们聊天</h3><div id=" + '"spChatOut"' + '><div class="spirit-loading">精灵们正在凑到一起…</div></div>' +
+    modal.innerHTML = "<h3>💬 它们聊天</h3><div id=" + '"spChatOut"' + '><div class="spirit-loading">沁灵们正在凑到一起…</div></div>' +
       '<button class="btn ghost" id="chatClose" style="width:100%;margin-top:12px">关闭</button>';
     mask.hidden = false;
     modal.hidden = false;
@@ -5355,17 +5355,17 @@
     if (_spiritBusy) return;
     _spiritBusy = true;
     try {
-      // 1) 补齐所有缺性格的精灵（无 key 时是本地模板，很快）
+      // 1) 补齐所有缺性格的沁灵（无 key 时是本地模板，很快）
       let changed = false;
       for (const it of list) {
         const s = Spirits.load();
-        // 老精灵补记「出生」（性别由 born/ensureIn 定档，不会在这里被改）
+        // 老沁灵补记「出生」（性别由 born/ensureIn 定档，不会在这里被改）
         if (!s[it.id] || !s[it.id].bornAt) Spirits.born(it);
         if (!s[it.id] || !s[it.id].persona) {
           await Spirits.persona(it);
           changed = true;
         }
-        // v127：刚成精（还没有立绘、也还没定过设定）→ 先等用户在「设定向导」里确认再出图
+        // v127：刚开沁（还没有立绘、也还没定过设定）→ 先等用户在「设定向导」里确认再出图
         const st1 = Spirits.load();
         const r0 = Spirits.ensureIn(st1, it.id);
         if (!r0.imgUrl && !r0.look && r0.lookAsked !== 1 && !r0.setupPending) {
@@ -5377,13 +5377,13 @@
       if (changed && location.hash === "#/spirit") renderSpiritPage();
 
       // 2) v155：**取消"每天自动来信"**（用户要求：日记已经取代了每日来信）
-      //    每天要有的内容是：精灵详情页的「今日问候 + 今日一签」，以及纪念日才发的「回响」信。
+      //    每天要有的内容是：沁灵详情页的「今日问候 + 今日一签」，以及纪念日才发的「回响」信。
       //    回响在 ensureSpiritExtras 里本地结算，不花任何额度。
     } catch (e) { /* 静默：本地模板兜底已在 Spirits 内部处理 */ }
     _spiritBusy = false;
   }
 
-  // 精灵详情弹层
+  // 沁灵详情弹层
 
   // 绘图通道配置弹层（默认免密钥；填国内 API key 就切过去）
   function showImageCfgModal() {
@@ -5393,7 +5393,7 @@
     const opts = Object.keys(Spirits.PROVIDERS).map((k) =>
       '<button type="button" class="prov-chip' + (cfg.provider === k ? " active" : "") + '" data-prov="' + k + '">' +
       esc(Spirits.PROVIDERS[k].label) + "</button>").join("");
-    modal.innerHTML = "<h3>🎨 精灵形象 · 绘图通道</h3>" +
+    modal.innerHTML = "<h3>🎨 沁灵形象 · 绘图通道</h3>" +
       '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:12px">' +
       "默认用<b>免密钥</b>通道（Pollinations，国内可直连，出图偶尔不稳）。<br>" +
       "想更稳更漂亮，可填国内 API key（智谱 / 硅基流动 / 火山方舟），<b>key 只存本机、不入开源仓库</b>。</p>" +
@@ -5401,13 +5401,13 @@
       "· <b>智谱</b>：GLM-Image 约 <b>¥0.1/张</b>（新旗舰）· CogView-4 约 <b>¥0.06/张</b> · <b>CogView-3-Flash 免费</b><br>" +
       "· <b>火山方舟</b>：Seedream 5.0 flash 约 <b>¥0.13/张</b> · lite ¥0.22<br>" +
       "· <b>魔搭 / 硅基流动</b>：有免费额度，适合先试<br>" +
-      "🖼 <b>图生图（突破/换形象时带参考图）</b>：<b>方舟支持</b>；<b>智谱不支持</b>（官方 API 没有参考图字段）→ 自动退回「文字锚点」保证同一个角色，不会变性换人。<br>" +
+      "🖼 <b>图生图（深沁/换形象时带参考图）</b>：<b>方舟支持</b>；<b>智谱不支持</b>（官方 API 没有参考图字段）→ 自动退回「文字锚点」保证同一个角色，不会变性换人。<br>" +
       "⚠️ 智谱的「拉取模型」只会列出语言模型（glm-*），<b>图像模型要手填或用上面的常用模型按钮</b>。<br>" +
       "⚠️ <b>水印</b>：方舟 flash 默认带「AI generated」，已自动传 <code>watermark:false</code> 关掉；智谱默认也带水印，已自动传 <code>watermark_enabled:false</code>（去 个人中心→安全管理→去水印管理 签个免责声明才生效）。<br>" +
       "⚠️ 别买「私有实例 / 专属部署」那种<b>按天计价</b>的（图像模型约 100 元/算力单元/天，一个月就是几千块）。</div>" +
       '<div class="prov-row" id="provRow">' + opts + "</div>" +
       '<div class="cfg-hint" id="refHint" style="margin-top:6px"></div>' +
-      '<div class="form-group" style="margin-top:14px"><div class="form-label">形象风格 <small>换完记得点保存，再看精灵页</small></div>' +
+      '<div class="form-group" style="margin-top:14px"><div class="form-label">形象风格 <small>换完记得点保存，再看沁灵页</small></div>' +
       '<div class="prov-row" id="styleRow">' +
       Object.keys(Spirits.STYLE_PRESETS).map((k) =>
         '<button type="button" class="prov-chip' + ((cfg.style || Spirits.DEFAULT_STYLE) === k ? " active" : "") + '" data-style="' + k + '">' +
@@ -5435,7 +5435,7 @@
       '<button class="btn ghost" id="imgCfgCancel" style="flex:1">取消</button>' +
       '<button class="btn primary" id="imgCfgSave" style="flex:2">保存</button></div>' +
       '<div style="display:flex;gap:8px;margin-top:10px;align-items:center">' +
-      '<button class="btn ghost" id="imgSyncBtn" style="flex:1">☁ 同步精灵到云端</button>' +
+      '<button class="btn ghost" id="imgSyncBtn" style="flex:1">☁ 同步沁灵到云端</button>' +
       '<span id="imgSyncStatus" style="font-size:12px;color:var(--text-2)"></span></div>' +
       '<div id="imgCfgMsg" style="font-size:12px;line-height:1.7;margin-top:10px;color:var(--text-2);word-break:break-all"></div>';
     mask.hidden = false;
@@ -5488,7 +5488,7 @@
     // 图生图支持情况（跟着服务商显示，省得用户以为"没接上"）
     function bindRefHint(provider) {
       const el = $("#refHint");
-      if (el) el.innerHTML = "🖼 <b>图生图（突破/换形象时带参考图）</b>：" + esc(Spirits.refSupportText(provider));
+      if (el) el.innerHTML = "🖼 <b>图生图（深沁/换形象时带参考图）</b>：" + esc(Spirits.refSupportText(provider));
       const kh = $("#keyUiHint");
       if (kh) kh.innerHTML = "🔑 " + Spirits.keyUiHint(provider);
     }
@@ -5513,7 +5513,7 @@
     });
     $("#imgCfgCancel").onclick = done;
     mask.onclick = done;
-    // 跨手机同步：把本地精灵推到云端，并拉回云端最新（换手机/换浏览器即可拿回全部精灵）
+    // 跨手机同步：把本地沁灵推到云端，并拉回云端最新（换手机/换浏览器即可拿回全部沁灵）
     const syncBtn = $("#imgSyncBtn"), syncStatus = $("#imgSyncStatus");
     if (syncBtn) syncBtn.onclick = async () => {
       syncStatus.textContent = "同步中…";
@@ -5604,7 +5604,7 @@
         return r && r.imgUrl;
       }).length : 0;
       if (n > 0) {
-        const yes = await confirmModal("要重画 " + n + " 只精灵吗？", "改了通道 / 画风 / 尺寸后，已有立绘需要重新生成，会消耗 " + n + " 次出图额度（每只 1 张）。", "重画 " + n + " 张", true);
+        const yes = await confirmModal("要重画 " + n + " 只沁灵吗？", "改了通道 / 画风 / 尺寸后，已有立绘需要重新生成，会消耗 " + n + " 次出图额度（每只 1 张）。", "重画 " + n + " 张", true);
         if (!yes) { showImageCfgModal(); return; }   // 取消：把配置弹层还回来，别让用户白点一次
         done();
         Spirits.setImageCfg(next);
@@ -5622,7 +5622,7 @@
     };
   }
 
-  // 文字通道配置弹层（AI 助手 + 精灵性格/来历；可切火山方舟白嫖免费额度）
+  // 文字通道配置弹层（AI 助手 + 沁灵性格/来历；可切火山方舟白嫖免费额度）
   function showTextCfgModal() {
     const mask = $("#modalMask");
     const modal = $("#modal");
@@ -5632,7 +5632,7 @@
       esc(Spirits.TEXT_PROVIDERS[k].label) + "</button>").join("");
     modal.innerHTML = "<h3>🤖 AI 文字模型</h3>" +
       '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:12px">' +
-      "这里管的是<b>文字</b>：收藏喵助手的回答、精灵的性格 / 小剧场 / 每日来信。<br>" +
+      "这里管的是<b>文字</b>：收藏喵助手的回答、沁灵的性格 / 小剧场 / 每日来信。<br>" +
       "火山方舟里 <b>deepseek-v4-1-flash / glm-5-3-flash / doubao-seed-2-1-lite</b> 等都送免费额度（50 万 tokens），够用很久。<br>" +
       "⚠️ 需要先在方舟控制台<b>点「开通」</b>，否则会报 ModelNotOpen。</p>" +
       '<div class="prov-row" id="tprovRow">' + opts + "</div>" +
@@ -5754,7 +5754,7 @@
     router();
     refreshNetBar();
     checkLevelUp();
-    pullSpirits().catch(() => {});   // 跨手机同步：登录后先把云端精灵拉回本地
+    pullSpirits().catch(() => {});   // 跨手机同步：登录后先把云端沁灵拉回本地
     return true;
   }
 
@@ -7555,21 +7555,21 @@
         ? '<div style="font-size:11px;color:var(--gold);margin-top:8px">当前已隐藏 ' + hiddenByFocusCount() + " 件非文玩宝贝</div>"
         : ""));
 
-    // ===== 2.5 精灵 · 绘图通道 / 文字通道 =====
+    // ===== 2.5 沁灵 · 绘图通道 / 文字通道 =====
     {
       const cfg = Spirits.getImageCfg();
       const info = Spirits.providerInfo(cfg);
       const tin = Spirits.textInfo();
       const spiritCount = spiritItems().length;
-      html += '<div class="section-title">🍡 精灵</div>';
+      html += '<div class="section-title">🍡 沁灵</div>';
       html += '<button class="setting-item" id="btnImgCfg"><div>' +
-        '<div class="t">🎨 精灵形象 · 绘图通道</div>' +
+        '<div class="t">🎨 沁灵形象 · 绘图通道</div>' +
         '<div class="d">当前：' + esc(info.label) + ' · ' + esc((Spirits.STYLE_PRESETS[cfg.style] || Spirits.STYLE_PRESETS[Spirits.DEFAULT_STYLE]).label) +
-        " · " + spiritCount + " 只精灵 · 本机累计出图 " + genTotal() + " 张</div>" +
+        " · " + spiritCount + " 只沁灵 · 本机累计出图 " + genTotal() + " 张</div>" +
         '</div><span style="color:var(--text-2)">›</span></button>';
       html += '<button class="setting-item" id="btnTextCfg"><div>' +
         '<div class="t">🤖 AI 文字模型（助手 + 人设/日记/剧情）</div>' +
-        '<div class="d">当前：' + esc(tin.label) + (tin.model ? " · " + esc(tin.model) : "") + (tin.key ? " · 已填 key" : " · 未填 key（精灵走本地模板）") +
+        '<div class="d">当前：' + esc(tin.label) + (tin.model ? " · " + esc(tin.model) : "") + (tin.key ? " · 已填 key" : " · 未填 key（沁灵走本地模板）") +
         '</div></div><span style="color:var(--text-2)">›</span></button>';
       const ow = Spirits.getOwner();
       html += '<button class="setting-item" id="btnOwner"><div>' +
@@ -7676,7 +7676,7 @@
     renderMyBadges();
     renderBadgeLibrary();
 
-    // 精灵 · 绘图通道配置
+    // 沁灵 · 绘图通道配置
     const imgBtn = $("#btnImgCfg");
     if (imgBtn) imgBtn.onclick = () => showImageCfgModal();
     const txtBtn = $("#btnTextCfg");
@@ -7843,11 +7843,11 @@
     }
     else if (h === "#/stats") renderStatsPage();
     else if (h === "#/quest") renderQuestPage();
-    else if (h === "#/spirit") renderSpiritPage();   // 🍡 精灵（占原「分类」的导航位）
-    else if (h === "#/spirits") renderAllSpiritsPage();                                            // 全部精灵
-    else if (h.startsWith("#/spirit/")) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));   // 每只精灵的独立页面
+    else if (h === "#/spirit") renderSpiritPage();   // 🍡 沁灵（占原「分类」的导航位）
+    else if (h === "#/spirits") renderAllSpiritsPage();                                            // 全部沁灵
+    else if (h.startsWith("#/spirit/")) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));   // 每只沁灵的独立页面
     else if (h.startsWith("#/room/")) renderRoomPage(decodeURIComponent(h.slice(7)));             // 小房间
-    else if (h === "#/town") renderTownPage();                                                    // v157：精灵小镇
+    else if (h === "#/town") renderTownPage();                                                    // v157：沁灵巷
     else if (h === "#/night") renderNightPage();                                                 // v162：夜话（会话列表）
 else if (h.indexOf("#/night/") === 0) {                                                        // v162：#/night/<会话> 或 #/night/<会话>/<事件>
       const seg = decodeURIComponent(h.slice(8)).split("/");
@@ -7957,7 +7957,7 @@ else if (h.indexOf("#/night/") === 0) {                                         
       location.hash = "#/spirit/" + h.slice(7).split("/")[0];
       return;
     }
-    if (h === "#/spirits") { location.hash = "#/spirit"; return; }        // 全部精灵 → 回到小房间
+    if (h === "#/spirits") { location.hash = "#/spirit"; return; }        // 全部沁灵 → 回到小房间
     if (h === "#/settings" || h === "#/profile" || h === "#/new" || h === "#/cat" || h === "#/stats" || h === "#/quest" || h === "#/spirit") { location.hash = "#/"; return; }
     if (h.startsWith("#/box/")) { location.hash = "#/cat"; return; }
     if (h === "#/") { return; }
@@ -7966,12 +7966,12 @@ else if (h.indexOf("#/night/") === 0) {                                         
   btnBack.onclick = goBack;
   btnSettings.onclick = () => location.hash = "#/settings";
   window.addEventListener("hashchange", router);
-  // 精灵数据存满本地存储时（立绘/CG 占空间），给用户一个提示，而不是静默丢图后无限重出烧额度
+  // 沁灵数据存满本地存储时（立绘/CG 占空间），给用户一个提示，而不是静默丢图后无限重出烧额度
   window.addEventListener("ww:storage-full", () => {
-    try { toast("精灵数据存满了本地空间，已自动清理部分历史；大图建议尽早同步到云端"); } catch (e) { /* 忽略 */ }
+    try { toast("沁灵数据存满了本地空间，已自动清理部分历史；大图建议尽早同步到云端"); } catch (e) { /* 忽略 */ }
   });
 
-  /* ---------- 精灵跨手机同步（localStorage 为主，云端为辅；换手机登录同一账号即可拉回） ---------- */
+  /* ---------- 沁灵跨手机同步（localStorage 为主，云端为辅；换手机登录同一账号即可拉回） ---------- */
   let _spiritsDirty = false;          // 本地有没有改动还没推到云端
   let _spiritSyncTimer = null;
   window.addEventListener("ww:spirits-changed", () => { _spiritsDirty = true; scheduleSpiritPush(); });
@@ -7989,7 +7989,7 @@ else if (h.indexOf("#/night/") === 0) {                                         
     try {
       const remote = await DB.getSpiritStore();
       if (remote && remote.data && Object.keys(remote.data).length) {
-        Spirits.save(remote.data);                       // 云端覆盖本地（换手机拿回全部精灵）
+        Spirits.save(remote.data);                       // 云端覆盖本地（换手机拿回全部沁灵）
         if (location.hash === "#/spirit" || location.hash === "#/spirits" || location.hash.indexOf("#/spirit/") === 0) rerenderSpiritView();
       }
     } catch (e) { /* 未配置/离线：静默 */ }
@@ -8044,11 +8044,11 @@ else if (h.indexOf("#/night/") === 0) {                                         
 
   /* ---------- 一次性迁移：形象（+设定）全部推倒重来 ----------
      v124：用户要求「把之前生成的清理了，全部重新生成一次，日记也是」（那时还清了日记）。
-     v127：加了「设定向导」后，用户要求「**删除所有精灵的图片**，我全部重新根据升级的来重新做设定，
+     v127：加了「设定向导」后，用户要求「**删除所有沁灵的图片**，我全部重新根据升级的来重新做设定，
            更新后我进系统一个一个来出图」→ 这次：
              · 清掉 立绘 / 进化史 / 取景 / CG（**不动日记**：用户这次只说图片）
-             · 清掉旧的 look 设定 + lookAsked，并标 setupPending → **进系统后一只一只弹向导**
-             · 不自动出图！定完一只才画一只（`spiritNeedsSetup` 会让出图跳过它们）
+             · 清掉旧的 look 设定 + lookAsked，并标 setupPending → **进系统后一尊一尊弹向导**
+             · 不自动出图！定完一尊才画一尊（`spiritNeedsSetup` 会让出图跳过它们）
      用 ww_imgver 记录版本，只在版本变化时执行一次。 */
   const ART_VER = "v127c";
   function migrateSpiritArtOnce() {
@@ -8068,7 +8068,7 @@ else if (h.indexOf("#/night/") === 0) {                                         
         r._imgErr = "";
         r._imgErrAt = 0;
         r.lookStale = false;
-        // CG 也清掉（觉醒期/完成体的专属插画，按新设定重画）
+        // CG 也清掉（蜕形/化形的专属插画，按新设定重画）
         r.cgUrl = "";
         r.cgKey = "";
         r.cgStage = 0;
@@ -8113,13 +8113,13 @@ else if (h.indexOf("#/night/") === 0) {                                         
       try { view.innerHTML = bootSkeletonHtml(); } catch (e) { /* 忽略 */ }
       const ok = await enterApp();
       if (ok) {
-        // 一次性迁移（v127c）：清掉所有精灵的立绘 / 进化史 / 取景 / CG 与旧设定
-        // 用户要求「删除所有精灵的图片，我全部重新根据升级的来重新做设定，进系统一个一个来出图」
-        // → 这里**不出图**，只把设定清空标记 setupPending；进精灵页会一只一只弹「设定向导」，定完才画
+        // 一次性迁移（v127c）：清掉所有沁灵的立绘 / 进化史 / 取景 / CG 与旧设定
+        // 用户要求「删除所有沁灵的图片，我全部重新根据升级的来重新做设定，进系统一个一个来出图」
+        // → 这里**不出图**，只把设定清空标记 setupPending；进沁灵页会一尊一尊弹「设定向导」，定完才画
         if (migrateSpiritArtOnce()) {
           const list = spiritItems();
           toast(list.length
-            ? ("已清空 " + list.length + " 只精灵的形象，进「精灵」页一只一只定设定吧 ✨（定完才会出图）")
+            ? ("已清空 " + list.length + " 只沁灵的形象，进「沁灵」页一尊一尊定设定吧 ✨（定完才会出图）")
             : "形象已重置");
         }
         if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {

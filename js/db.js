@@ -438,7 +438,7 @@
     return y + " 年" + (d ? " " + Math.floor(d / 30) + " 个月" : "");
   }
 
-  /* ---------- 精灵跨设备同步（整库 store 一行/user_id，last-write-wins） ----------
+  /* ---------- 沁灵跨设备同步（整库 store 一行/user_id，last-write-wins） ----------
      本地 localStorage 为主；云端只做「换手机不丢」。任何异常都静默，绝不影响主流程。 */
   async function getSpiritStore() {
     const sb = getSupabase();

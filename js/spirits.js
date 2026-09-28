@@ -1,6 +1,6 @@
 /* =========================================================
- * spirits.js — 🍡 精灵（挂瓷成精的手串伙伴）
- * 已挂瓷的串 "成精"：卡通形象（AI 绘图 / 本地程序化兜底）+ 性格 + 互相聊天 + 给你送信
+ * spirits.js — 🍡 沁灵（挂瓷开沁的手串伙伴）
+ * 已挂瓷的串 "开沁"：卡通形象（AI 绘图 / 本地程序化兜底）+ 性格 + 互相聊天 + 给你送信
  * · 绘图默认走免密钥通道（Pollinations，浏览器直连出图）；也可切到国内 API（OpenAI 兼容）
  * · 文字（性格/聊天/信件）用 DeepSeek（复用「设置 → AI 助手密钥」的 key）；没 key 用本地模板
  * · 所有数据先存 localStorage（不新增数据库字段也能跨天保留；以后想跨手机同步再加列）
@@ -66,7 +66,7 @@
   //   背景：hashStr 是 FNV-1a，最后一步只异或一个字符 → 差异几乎全落在最低位。
   //   于是「固定前缀 + 单字符递增后缀 + 小池取模」会退化成固定模式：
   //   "#chap#0"~"#chap#7" 的 h%2 恒为 10101010 或 01010101，导致 8 章只有 2 套组合。
-  //   ⚠️ 不要改 hashStr 本身 —— 它同时决定所有精灵的外观/性别，
+  //   ⚠️ 不要改 hashStr 本身 —— 它同时决定所有沁灵的外观/性别，
   //      改动会让已出立绘与新外观对不上。只在「小池 + 短后缀」处套 mixSeed。
   function mixSeed(h) {
     h = (h ^ (h >>> 16)) >>> 0;
@@ -119,7 +119,7 @@
   function save(o) {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify(o));
-      // 通知同步层：本地精灵数据变了，稍后推到云端（跨手机同步用）
+      // 通知同步层：本地沁灵数据变了，稍后推到云端（跨手机同步用）
       try { window.__spiritsDirty = true; window.dispatchEvent(new CustomEvent("ww:spirits-changed")); } catch (e2) { /* 忽略 */ }
     } catch (e) {
       const quota = e && (e.name === "QuotaExceededError" || e.code === 22 || e.code === 1014);
@@ -132,15 +132,15 @@
   }
   function ensureIn(store, id) {
     if (!store[id]) {
-      // 新生：性别留空，等「挂瓷成精」那一刻由 born() 掷一次（男女 3:1）
+      // 新生：性别留空，等「挂瓷开沁」那一刻由 born() 掷一次（男女 3:1）
       store[id] = { persona: null, variant: 0, imgUrl: "", letters: [], chats: [], lastLetterDay: "", stage: 1, imgHistory: [], gender: "", bornAt: 0 };
       return store[id];
     }
     const rec = store[id];
-    if (rec.stage == null) rec.stage = 1;              // 老数据兼容：默认幼生期
+    if (rec.stage == null) rec.stage = 1;              // 老数据兼容：默认凝形
     if (!Array.isArray(rec.imgHistory)) rec.imgHistory = [];
-    // 老记录（v110 之前成精的）没有 gender：按**旧规则**（hash(串id+外观种子)）定下来，
-    // 这样它已经画好的立绘和界面显示的人设不会打架；新精灵一律走 born() 的 3:1 随机
+    // 老记录（v110 之前开沁的）没有 gender：按**旧规则**（hash(串id+外观种子)）定下来，
+    // 这样它已经画好的立绘和界面显示的人设不会打架；新沁灵一律走 born() 的 3:1 随机
     if (rec.gender !== "boy" && rec.gender !== "girl") rec.gender = legacyGender(id, rec.appearanceSeed || 0);
     return rec;
   }
@@ -148,7 +148,7 @@
   function rollGender(seedStr) { return (hashStr(String(seedStr || "")) % 4 !== 0) ? "boy" : "girl"; }
   // v107~v109 的旧规则（2/3 男孩），只用于给老记录"定档"
   function legacyGender(id, seedN) { return (hashStr(String(id || "") + "#" + (seedN || 0)) % 3) !== 0 ? "boy" : "girl"; }
-  // 挂瓷成精：给这只精灵"定性别"，之后不可更改（重复调用不会改性别）
+  // 挂瓷开沁：给这只沁灵"定性别"，之后不可更改（重复调用不会改性别）
   function born(item) {
     const store = load();
     const rec = ensureIn(store, item.id);
@@ -168,7 +168,7 @@
     return { isNew: isNew, gender: gender, bornAt: rec.bornAt };
   }
 
-  /* ---------- 外观锚点（v104）：每只精灵有固定人设，所有形态共享，突破不会变性/变色 ---------- */
+  /* ---------- 外观锚点（v104）：每只沁灵有固定人设，所有形态共享，深沁不会变性/变色 ---------- */
   // 发型**按性别分池**（v108）：以前男女共用一张表，结果男孩抽到 "long straight" / "twin tails"
   // → 男孩顶着双马尾（用户实测吐槽）。现在男孩只有短发池，女孩只有长发/双马尾池。
   const BOY_HAIR = ["short spiky", "short neat and tidy", "messy short hair with bangs", "short hair with a side part",
@@ -298,7 +298,7 @@
   const ANATOMY = "strictly correct human anatomy, exactly two arms and two hands, five fingers per hand, " +
     "simple clear hand shapes, both hands resting naturally and unobstructed, " +
     "no extra limbs, no extra hands, no extra fingers, no hidden overlapping arms, no detached floating hand";
-  // v150 全局正面风格约束：所有精灵统一「中国古风」（用户要求：整个 App 是中国传统文玩调性）
+  // v150 全局正面风格约束：所有沁灵统一「中国古风」（用户要求：整个 App 是中国传统文玩调性）
   const GUOFENG = "traditional Chinese gufeng (ancient Chinese dynasty) aesthetic, hanfu-inspired classical costume and hairstyle " +
     "(long flowing hair, hair buns, hairpins, braids and ponytails are all traditional and fine), " +
     "elegant ancient Chinese atmosphere, silk and brocade textures, classical Chinese color palette, no modern elements";
@@ -326,12 +326,12 @@
     "playful and mischievous": "调皮爱闹", "gentle and caring": "温柔体贴", "cool and a little proud": "有点酷、有点傲娇",
   };
   // 由「串 id + 外观种子」决定；外观种子只在用户点「换外观设定」时变
-  // 性别**不参与**随机：它由「挂瓷成精」那一刻的 born() 定下来（男女 3:1），之后换外观/突破都不会变
+  // 性别**不参与**随机：它由「挂瓷开沁」那一刻的 born() 定下来（男女 3:1），之后换外观/深沁都不会变
   function appearanceOf(item, seedN, gender, lkHint) {
     const h = hashStr(String((item && item.id) || "") + "#" + (seedN || 0));
     const g = (gender === "boy" || gender === "girl") ? gender
       : (item && item.gender === "boy" || item && item.gender === "girl") ? item.gender
-      : rollGender((item && item.id) || "");        // 兜底：老记录/未成精时按 id 稳定掷一次
+      : rollGender((item && item.id) || "");        // 兜底：老记录/未开沁时按 id 稳定掷一次
     const hairs = g === "boy" ? BOY_HAIR : GIRL_HAIR;
     const vi = (h >> 12) % VIBES.length;
     const pi = (h >> 8) % POSES.length;       // v152：姿态与性格解耦（姿态池可独立扩充）
@@ -384,7 +384,7 @@
       "outfit: " + ap.outfit + ", trimmed with " + ap.pattern + ", " + ap.material + " fabric texture" +
       (ap.prop ? ", " + ap.prop : "") + ", " + ap.vibe + " personality";
   }
-  // 一致性硬约束：每次出图都带上，防止突破后"换人"
+  // 一致性硬约束：每次出图都带上，防止深沁后"换人"
   // ⚠️ 这里曾经写过 "character evolution sheet"（进化图鉴）→ 模型真的画成了**多格图鉴**：
   //    一张图里两只角色、还自己写上 NEWBORN / YOUNG BOY 标题字（用户实测截图）。所以现在反过来：
   //    明确"只画一个人、不许画分格、不许写字"，见 SINGLE。
@@ -398,33 +398,33 @@
     "no other characters, no clones, no panels, no collage, no multiple views, no background characters, " +
     "no text, no letters, no words, no numbers, no title, no labels, no captions, no watermark, no signature, no logo";
 
-  /* ---------- 进阶系统：四形态、三次突破（v103；v120 起"身形比例真的会长大"） ----------
-     幼生期 → 成长期 → 觉醒期 → 完成体；成长值 = 盘玩次数×3 + 陪伴天数×1
-     ⚠️ 用户反馈「突破过后不会一直都是那个 Q 版吧？」—— 查出来根因是**风格预设里写死了
+  /* ---------- 进阶系统：四形态、三次深沁（v103；v120 起"身形比例真的会长大"） ----------
+     凝形 → 开窍 → 蜕形 → 化形；成长值 = 盘玩次数×3 + 陪伴天数×1
+     ⚠️ 用户反馈「深沁过后不会一直都是那个 Q 版吧？」—— 查出来根因是**风格预设里写死了
         `cute chibi character / chibi proportion with slightly big head`，它对四个阶段都生效**，
         所以模型每次都画回 Q 版大头。现在把"肤色/线稿/上色"这类**画风**留在风格预设里，
-        把"身高与头身比"全部挪到阶段描述里，并且明确写「比上一形态更高」→ 突破会真的长大。 */
+        把"身高与头身比"全部挪到阶段描述里，并且明确写「比上一形态更高」→ 深沁会真的长大。 */
   const STAGES = [
     {
-      n: 1, name: "幼生期", icon: "🥚", need: 0, sizeZh: "约 2 头身（Q 版小宝宝）",
+      n: 1, name: "凝形", icon: "🥚", need: 0, sizeZh: "约 2 头身（Q 版小宝宝）",
       look: "a tiny newborn baby version of the character, chibi proportions about 2 heads tall, " +
         "very small chubby body, big round head and tiny limbs, simple minimal details, " +
         "sleepy innocent eyes, just awakened, extremely cute and soft",
     },
     {
-      n: 2, name: "成长期", icon: "🌱", need: 30, sizeZh: "约 4 头身（小孩子）",
+      n: 2, name: "开窍", icon: "🌱", need: 30, sizeZh: "约 4 头身（小孩子）",
       look: "a small child version of the character, noticeably taller than the newborn form, " +
         "child proportions about 4 heads tall, rounder face with bigger eyes, shorter limbs than an adult, " +
         "lively bright eyes, simple but neat outfit, energetic pose, still cute and round",
     },
     {
-      n: 3, name: "觉醒期", icon: "⚡", need: 90, sizeZh: "约 6 头身（少年，变高变帅）",
+      n: 3, name: "蜕形", icon: "⚡", need: 90, sizeZh: "约 6 头身（少年，变高变帅）",
       look: "a cool teenage version of the character, grown up and clearly taller with slim teenage proportions " +
         "about 6 heads tall, longer limbs, a more defined jawline, confident dynamic pose, " +
         "stylish detailed outfit, glowing aura and light particles, sharp determined eyes, cinematic lighting",
     },
     {
-      n: 4, name: "完成体", icon: "👑", need: 180, sizeZh: "约 8.5 头身（成年，又帅又美）",
+      n: 4, name: "化形", icon: "👑", need: 180, sizeZh: "约 8.5 头身（成年，又帅又美）",
       look: "a stunning fully grown-up version of the same character, tall elegant fashion-model proportions " +
         "about 8.5 heads tall, long slim legs, sharp refined facial features, strikingly handsome and beautiful, " +
         "cool and glamorous presence, confident charismatic aura, magnificent ornate outfit with elegant flowing details, " +
@@ -480,7 +480,7 @@
   const SIZE_DEFAULT_LADDER = ["1728x2304", "2048x2048", "1024x1024"];
   function sizeLadderFor(provider) { return SIZE_BY_PROVIDER[provider] || SIZE_DEFAULT_LADDER; }
   /* ---------- v125：CG 一律用**横版**（用户要求：CG 要横构图，像动画截图 / 电影感） ----------
-     立绘仍然是竖版（全身站姿），只有 CG（觉醒期/完成体专属插画、两只精灵的事件插画）走横版。
+     立绘仍然是竖版（全身站姿），只有 CG（蜕形/化形专属插画、两只沁灵的事件插画）走横版。
      注意：方舟 Seedream 要求 ≥ 3686400 像素，所以横版首选 2304x1728（4:3，398 万像素，稳过）。 */
   const CG_SIZE_BY_PROVIDER = {
     ark: ["2304x1728", "2560x1440", "2048x2048", "1024x1024"],
@@ -502,7 +502,7 @@
      注意：不支持不等于"换人"，性别/发型/瞳色/配饰/服装/阶段都写死在 prompt 里（文本锚点）。 */
   const REF_SUPPORT = { ark: "yes", zhipu: "no", pollinations: "no", siliconflow: "try", modelscope: "try", bailian: "try", custom: "try" };
   const REF_TEXT = {
-    yes: "✅ 支持（突破/换形象会带上一张立绘做参考，参考图不加钱）",
+    yes: "✅ 支持（深沁/换形象会带上一张立绘做参考，参考图不加钱）",
     no: "❌ 不支持（官方 API 没有参考图字段，会自动退回「文字锚点」，不会变性换人）",
     try: "🤔 官方没写明 → 会自动带上试一次，不支持就自动去掉（并按这家记住）",
   };
@@ -580,8 +580,8 @@
     anime: {
       label: "国风 · 2D 人物",
       // ⚠️ 这里**不能**写 chibi / big head：那是"身形比例"，必须交给阶段描述（STAGES.look），
-      //    否则突破到觉醒期/完成体也还是 Q 版大头（用户实测吐槽过）。
-      // v150：整体基调改为「中国古风」——用户要求所有精灵都画成古风（汉服/古装），不要现代/日式元素。
+      //    否则深沁到蜕形/化形也还是 Q 版大头（用户实测吐槽过）。
+      // v150：整体基调改为「中国古风」——用户要求所有沁灵都画成古风（汉服/古装），不要现代/日式元素。
       text: "2D hand-drawn illustration in traditional Chinese gufeng style, ancient Chinese hanfu costume and classical styling, " +
         "big expressive eyes with white highlights, cel shading, flat coloring, clean line art, " +
         "soft elegant Chinese classical color palette, soft blush, " +
@@ -629,11 +629,11 @@
   };
 
   /* ============================================================
-   * v127：精灵「设定向导」——让用户 3-4 步确认，而不是全靠自动猜
+   * v127：沁灵「设定向导」——让用户 3-4 步确认，而不是全靠自动猜
    * 用户反馈：「读取颜色不对，每个人都太像了；生成之前让我辅助确认更好，
    *           比如发色/色调、特征（猫猫头要有猫耳）、性格；最好 3-4 个选项就能成，
    *           或者颜色我自己填；也可以我给一句基础设定，你来拓展成详细设定」。
-   * 数据存在 rec.look 里（每只精灵一份），优先级：**用户确认过 > 自动推断**。
+   * 数据存在 rec.look 里（每只沁灵一份），优先级：**用户确认过 > 自动推断**。
    * ============================================================ */
   // 发色/色调（第一个 = 跟随珠子主色；"auto" = 按外观种子自动分散，避免"每只都同色"）
   const HAIR_COLORS = [
@@ -763,7 +763,7 @@
     { id: "fox", zh: "狐耳 + 大尾巴", en: "pointed fox ears on the head and a big fluffy fox tail", tail: true },
     { id: "rabbit", zh: "兔耳", en: "long fluffy rabbit ears standing up on the head", tail: false },
     { id: "horns", zh: "小龙角", en: "small elegant dragon horns on the head", tail: false },
-    { id: "elf", zh: "精灵耳", en: "long pointed elf ears", tail: false },
+    { id: "elf", zh: "灵耳", en: "long pointed elf ears", tail: false },
     { id: "wings", zh: "小天使翼", en: "small white feathered angel wings on the back", tail: false },
     { id: "devil", zh: "小恶魔角 + 尾", en: "small dark curved devil horns and a slim demon tail with a heart-shaped tip", tail: true },
     { id: "glasses", zh: "圆框眼镜", en: "round thin-frame glasses", tail: false },
@@ -807,8 +807,8 @@
     }
     return s;     // 英文直接用
   }
-  // 用户设定 + 自动推断 = 这一只**真正要用**的外形参数
-  // rec 可以不传：不传就自己去 localStorage 读这只精灵的记录（保证任何调用点都拿得到用户设定）
+  // 用户设定 + 自动推断 = 这一尊**真正要用**的外形参数
+  // rec 可以不传：不传就自己去 localStorage 读这只沁灵的记录（保证任何调用点都拿得到用户设定）
   function lookOf(item, rec) {
     const r = rec || ((item && item.id) ? (load()[item.id] || {}) : {});
     const lk = r.look || {};
@@ -817,7 +817,7 @@
     const beadWord = (bead && bead.word) ? bead.word : (COLOR_EN[(item && item.color) || ""] || "jade green");
     const beadHex = (bead && bead.hex) ? bead.hex : "";
     // 发色：用户选了就用用户的；"bead" = 跟珠子；不填 / "auto" = 按外观种子从 12 色里分散挑一个
-    // （★ 这一条直接解决"每只精灵都一个颜色、看起来太像"）
+    // （★ 这一条直接解决"每只沁灵都一个颜色、看起来太像"）
     let hairEn = beadWord, hairHex = beadHex, hairSrc = "bead", hairZh = (bead && bead.zh) || "跟珠子主色";
     const pick = lk.hairc || "auto";
     if (pick === "bead") {
@@ -877,7 +877,7 @@
     if (lk.feats && lk.feats.length) hard.push(lk.feats.map((f) => f.en).join(", "));
     if (lk.noFeat) hard.push("strictly human look: no animal ears, no tail, no wings, no horns");
     if (lk.pers) hard.push(lk.pers.en + " personality, " + lk.pers.face);
-    // v130：主人写的一句话/融合后的设定 = 描述**精灵本人**的硬约束。
+    // v130：主人写的一句话/融合后的设定 = 描述**沁灵本人**的硬约束。
     // 用户反馈：写「洒脱的江湖侠士」指的是珠子，结果 AI 安给了主人、立绘也不跟 —— 现在直接进 prompt 末尾硬约束。
     const personaNote = lk.profile || lk.base;
     if (personaNote) hard.push("character setting from owner (describes THIS spirit itself, never the owner): " + personaNote);
@@ -900,12 +900,12 @@
     const hairTxt = { bead: "跟本体珠子是一个色", auto: "是它自己长出来的颜色", pick: "是主人替它挑的", custom: "是主人给它定的" }[(lk && lk.hairSrc) || "bead"] || "";
     const featTxt = (lk && lk.feats && lk.feats.length) ? ("头上还带着" + lk.feats.map((f) => f.zh).join("、")) : (lk && lk.noFeat ? "看着就是普普通通的人形" : "");
     const persTxt = (lk && lk.pers) ? lk.pers.zh : "温和";
-    // v130：用户的一句话要**融进**设定（描述精灵本人），不再是"主人说过…"的引用体
+    // v130：用户的一句话要**融进**设定（描述沁灵本人），不再是"主人说过…"的引用体
     const baseTxt = (lk && lk.base) ? ("它是" + lk.base + "——这是主人一眼就认出来的性子。") : "";
     // v153：色板选出来的色存的是 #hex（用户要求不要中文色名）→ 中文小作文里换成人话
     const hairZhRaw = (lk && lk.hairZh) ? String(lk.hairZh).replace(/^自动 · /, "") : "";
     const hairZhText = /^#/.test(hairZhRaw) ? "主人亲手挑的一种颜色" : (hairZhRaw || beadZh);
-    return nm + "是从主人那串「" + ((item && item.name) || "手串") + "」里醒过来的小精灵。" +
+    return nm + "是从主人那串「" + ((item && item.name) || "手串") + "」里醒过来的小沁灵。" +
       "它的头发是" + hairZhText + "，" + hairTxt + "；" +
       (featTxt ? featTxt + "；" : "") +
       "衣服的色调跟着珠子的" + beadZh + "走，看久了很安稳。" +
@@ -915,29 +915,29 @@
   async function expandProfile(item, lk, persona) {
     const local = profileLocal(item, lk, persona);
     const base = (lk && lk.base) ? String(lk.base).trim() : "";
-    // v130：精灵性别要交代清楚（之前只交代主人代词，男精灵被写成「她」）
+    // v130：沁灵性别要交代清楚（之前只交代主人代词，男沁灵被写成「她」）
     const r0 = (item && item.id) ? load()[item.id] || {} : {};
     const ap0 = appearanceOf(item, r0.appearanceSeed || 0, r0.gender || "");
-    const sys = "你是一个角色设定师。请根据用户给的选项，为主人的手串精灵写一小段中文人物设定，要求：" +
+    const sys = "你是一个角色设定师。请根据用户给的选项，为主人的手串沁灵写一小段中文人物设定，要求：" +
       "① 只写 90-150 字，一段话，不要标题、不要分点、不要引号；② 必须体现：外貌（发色 / 特殊特征）、性格、和主人以及这串珠子的关系；" +
       "③ 口吻温柔、有画面感，像手账里的备注；④ 不要出现「AI」「提示词」「角色设定」这类词；" +
-      "⑤【最重要】主人写的那句话描述的是**精灵本人**的性格/身份/气质（例如「洒脱的江湖侠士」＝这只精灵是侠士，不是主人是侠士），" +
+      "⑤【最重要】主人写的那句话描述的是**沁灵本人**的性格/身份/气质（例如「洒脱的江湖侠士」＝这只沁灵是侠士，不是主人是侠士），" +
       "必须把这句话的意思自然融进正文，让整段读起来是一份完整统一的设定，不要引用原话、不要说「主人说过」、不要写成两套人设；" +
-      "⑥ 精灵的性别以下方标注为准，指代精灵的代词绝不能用错；" +
-      "⑦【发色、瞳色、特殊特征照下方给定内容写；但**发型自由发挥**】中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），按精灵的性别/性格/主人写的设定来定，不要生硬套短发；" +
+      "⑥ 沁灵的性别以下方标注为准，指代沁灵的代词绝不能用错；" +
+      "⑦【发色、瞳色、特殊特征照下方给定内容写；但**发型自由发挥**】中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），按沁灵的性别/性格/主人写的设定来定，不要生硬套短发；" +
       "发色若给的是中国传统色名（胭脂、天青、月白、秋香、藕荷、黛色等），正文里就用这个名称来写，不要改成现代色号；" +
       "⑧【整段基调是中国古风】衣服一律写中式传统样式（汉服、长衫、褂子、襦裙、道袍等），禁止出现现代服装（夹克、运动服、卫衣、T恤、牛仔裤、西装等）；" +
       "⑨【姿态自由发挥、不要摆拍】可写一个自然的中式仪态（作揖、拱手、拂袖、团扇半遮面、低眸捻珠、执笔、捧盏、展卷等），" +
       "双手位置要简单清楚、不要遮叠手臂或复杂手势（否则出图容易画成三只手 / 多指），不要现代随意手势或 wink。";
     const NL = String.fromCharCode(10);
-    const user = "精灵名：" + ((persona && persona.name) || item.name || "小精灵") +
+    const user = "沁灵名：" + ((persona && persona.name) || item.name || "小沁灵") +
       NL + spiritGenderLine(ap0) +
       NL + "来自手串：" + ((item && item.name) || "") + (item && item.craft ? "（" + item.craft + "）" : "") +
       NL + "发色（中国传统色名）：" + (((lk && lk.hairZh) ? String(lk.hairZh).replace(/^自动 · /, "") : "") || "跟珠子主色") +
       NL + "服装（必须是中式传统古风样式）：" + (ap0.outfitZh || ap0.outfit) +
       NL + "特殊特征：" + ((lk && lk.feats && lk.feats.length) ? lk.feats.map((f) => f.zh).join("、") : ((lk && lk.noFeat) ? "普通人形" : "未指定")) +
       NL + "性格：" + ((lk && lk.pers) ? lk.pers.zh : "未指定") +
-      (base ? (NL + "主人给的一句话设定（描述的是精灵本人，融进正文）：" + base) : "") +
+      (base ? (NL + "主人给的一句话设定（描述的是沁灵本人，融进正文）：" + base) : "") +
       NL + ownerLine() + NL + "请写这一小段设定。";
     try {
       const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 400) || "").trim();
@@ -962,9 +962,9 @@
     const ap = appearance || appearanceOf(item, 0);         // 固定人设（性别/发型/瞳色/配饰）
     let cmp;
     if (isChar) {
-      // 先写死"这个人是谁"（外观锚点），再写"他现在多大"（形态描述）→ 突破只会长大，不会换人
+      // 先写死"这个人是谁"（外观锚点），再写"他现在多大"（形态描述）→ 深沁只会长大，不会换人
       // 注意：这里始终是**立绘**（全身角色图、干净背景），四个阶段都有立绘；
-      //      觉醒期/完成体**额外**再出一张 CG（场景插画），见 promptForCg（v125）。
+      //      蜕形/化形**额外**再出一张 CG（场景插画），见 promptForCg（v125）。
       cmp = appearancePrompt(ap) + ", with " + color + " hair and " + outfitColor + " themed outfit" + colorHint +
         lookExtra(lk) + ", " + stageLook + ", " +
         "full body character illustration, standing pose, whole body visible from head to toe, " +
@@ -1007,7 +1007,7 @@
     if (!info.endpoint) throw new Error("还没填接口地址");
     const prompt = promptFor(item, styleKey || cfg.style || DEFAULT_STYLE, stage, ap);
     const size = cfg.size || DEFAULT_SIZE;
-    const seed = seedOf(item.id, 0);   // 同一只精灵用固定种子 → 各形态看起来是同一个"人"在长大
+    const seed = seedOf(item.id, 0);   // 同一尊沁灵用固定种子 → 各形态看起来是同一个"人"在长大
     // 图生图参考：拿上一形态的图当参考，是"同一个角色"最可靠的做法。
     // 方舟（Seedream）确实支持；别的家先带上试一次，不支持就自动去掉并**按这家**记住。
     const pk = info.provider;
@@ -1018,7 +1018,7 @@
     } catch (e) {
       const msg = (e && e.message) || "";
       // ① 尺寸被服务端拒（callWithSizeFallback 已经把能试的都试完了）→ 报告一句能看懂的提示
-      if (isSizeErr(msg)) throw new Error("尺寸不被这个模型接受（" + msg + "）。请到 设置 → 精灵形象 把「出图尺寸」换成「竖版立绘 3:4」再试。");
+      if (isSizeErr(msg)) throw new Error("尺寸不被这个模型接受（" + msg + "）。请到 设置 → 沁灵形象 把「出图尺寸」换成「竖版立绘 3:4」再试。");
       // ② 参考图不被支持（部分服务商/模型没有这个字段）→ 去掉 image 再试一次，并按这家记住
       //    （文本锚点仍在：性别/发型/瞳色/配饰/服装都写死在 prompt 里，不会变性换人）
       if (useRef && !fixedOf("noRef", pk) && /image|InvalidParameter|not support|参数/i.test(msg)) {
@@ -1125,7 +1125,7 @@
     throw new Error("不认识的返回格式");
   }
 
-  /* ---------- 本地兜底形象：程序化画一个 2D 小精灵（断网也有形象） ---------- */
+  /* ---------- 本地兜底形象：程序化画一个 2D 小沁灵（断网也有形象） ---------- */
   const COLOR_HEX = {
     white: "#f0e6d8", green: "#5aa469", yellowbrown: "#b98a4b", blackgray: "#5b5b5b",
     duo: "#c9803f", lightflower: "#e8b6c2", deepflower: "#b34a63",
@@ -1272,7 +1272,7 @@
     let p = null;
     if (getAiKey()) {
       try {
-        const sys = "你在为一个文玩收藏 App 写「挂瓷精灵」的设定。刚盘到挂瓷的手串会成精，变成一只 Q 版小生物。"
+        const sys = "你在为一个文玩收藏 App 写「沁灵」的设定。刚盘到挂瓷的手串会开沁，变成一尊 Q 版小生物。"
           + "请根据它的颜色和软糯程度，给它一个可爱、有梗、有人味的中文设定。"
           + "只输出 JSON，不要解释：{\"name\":\"2-3字昵称\",\"title\":\"6-12字称号\",\"traits\":[\"性格词1\",\"性格词2\",\"性格词3\"],\"line\":\"一句口头禅，15字以内\"}";
         const user = "颜色：" + (item.color || "未知") + "；软糯程度：" + (item.softness === "soft" ? "软糯" : item.softness === "slight" ? "微糯" : "未标注")
@@ -1299,7 +1299,7 @@
     return p;
   }
 
-  /* ---------- 小剧场：几个精灵互相聊 ---------- */
+  /* ---------- 小剧场：几个沁灵互相聊 ---------- */
   function localChat(spirits) {
     const lines = [];
     const seed = hashStr(spirits.map((s) => s.item.id).join("") + todayKey());
@@ -1314,10 +1314,10 @@
     if (!spirits.length) return [];
     if (!getAiKey() || spirits.length < 2) return localChat(spirits);
     try {
-      const sys = "你在写一个文玩 App 里的「挂瓷精灵小剧场」：主人的几串手串盘到挂瓷后变成了小生物，它们会背着你聊天。"
+      const sys = "你在写一个文玩 App 里的「沁灵小剧场」：主人的几串手串盘到挂瓷后变成了小生物，它们会背着你聊天。"
         + "请写一段 4-6 句的日常小对话，轻松、可爱、有生活感、带点小吐槽，不要煽情，不要解释。"
-        + "严格只输出 JSON：{\"lines\":[{\"who\":\"精灵名字\",\"text\":\"说的话\"}]}";
-      const user = "出场精灵：\n" + spirits.map((s) => spiritDesc(s.item, s.persona)).join("\n") + "\n" + ownerLine() + "\n请写它们今天的小剧场。";
+        + "严格只输出 JSON：{\"lines\":[{\"who\":\"沁灵名字\",\"text\":\"说的话\"}]}";
+      const user = "出场沁灵：\n" + spirits.map((s) => spiritDesc(s.item, s.persona)).join("\n") + "\n" + ownerLine() + "\n请写它们今天的小剧场。";
       const txt = await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 700);
       const m = txt.match(/\{[\s\S]*\}/);
       if (m) {
@@ -1330,7 +1330,7 @@
     return localChat(spirits);
   }
 
-  /* ---------- 来信：精灵给你写一封信 ---------- */
+  /* ---------- 来信：沁灵给你写一封信 ---------- */
   function localLetter(spirit, userName) {
     const p = spirit.persona;
     const t = p.title || "你的小宝贝";
@@ -1341,15 +1341,15 @@
       "刚才有一点点阳光从缝里漏进来，照在我身上。我忽然觉得自己亮得挺好看的，想让你也看看。",
       "我做了个梦，梦见自己变成了一颗星星，你把我别在衣领上出门了。醒来发现还在抽屉里，有点小失落，不过也还好。",
     ], seed);
-    return (userName ? userName + "：" : "") + "\n\n" + body + "\n\n—— 你的" + (p.name || "小精灵") + "（" + t + "）";
+    return (userName ? userName + "：" : "") + "\n\n" + body + "\n\n—— 你的" + (p.name || "小沁灵") + "（" + t + "）";
   }
   async function letter(spirit, userName) {
     if (!getAiKey()) return localLetter(spirit, userName);
     try {
-      const sys = "你在写一封「挂瓷精灵」写给主人的短信。精灵是主人收藏的一串手串盘到挂瓷后变成的小生物，"
+      const sys = "你在写一封「沁灵」写给主人的短信。沁灵是主人收藏的一串手串盘到挂瓷后变成的小生物，"
         + "性格可爱、有点小脾气、关心主人但不会说教。用第一人称，简体中文，80-140 字，口语化，"
-        + "落款写精灵名字。不要用 Markdown 标题，不要解释。";
-      const user = "精灵设定：" + spiritDesc(spirit.item, spirit.persona) +
+        + "落款写沁灵名字。不要用 Markdown 标题，不要解释。";
+      const user = "沁灵设定：" + spiritDesc(spirit.item, spirit.persona) +
         (spirit.idleDays != null ? ("\n它已经 " + spirit.idleDays + " 天没被盘了。") : "") +
         "\n" + ownerLine(userName) + "\n请写这封短信。";
       const txt = await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 500);
@@ -1359,7 +1359,7 @@
   }
 
   /* ============================================================
-   * v109：中文人物设定 / 精灵日记 / 房间剧情
+   * v109：中文人物设定 / 沁灵日记 / 房间剧情
    * ============================================================ */
   /* ---------- 主人设定（v111：性别/昵称，写日记和剧情时必须遵守） ---------- */
   const OWNER_KEY = "ww_owner";            // { name: "小北", gender: "girl" | "boy", avatar: "data:image/jpeg;base64,…" }
@@ -1391,15 +1391,15 @@
       "性别：" + (o.gender === "boy" ? "男" : "女") + "，请用「" + (o.gender === "boy" ? "他" : "她") + "」称呼主人，" +
       "不要写成「" + (o.gender === "boy" ? "她" : "他") + "」，也不要把主人写成男性化的形象。";
   }
-  // v130：精灵**自己**的性别也要写明（用户反馈：男精灵芭蕉叶被写成「她」——之前只交代了主人的代词，
-  //      AI 就把「她」顺手安给了精灵）。ap 里有 gender（boy/girl）。
+  // v130：沁灵**自己**的性别也要写明（用户反馈：男沁灵芭蕉叶被写成「她」——之前只交代了主人的代词，
+  //      AI 就把「她」顺手安给了沁灵）。ap 里有 gender（boy/girl）。
   function spiritGenderLine(ap) {
     const boy = !ap || ap.gender !== "girl";
     const g = boy ? "男孩子" : "女孩子";
-    const sp = boy ? "他" : "她";      // 精灵代词
+    const sp = boy ? "他" : "她";      // 沁灵代词
     const op = boy ? "她" : "他";      // 主人代词
-    return "【精灵性别】这只精灵本身是" + g + "，全文指代这只精灵时必须且只能用「" + sp + "」；" +
-      "「" + op + "」只能用来指主人（杯杯），绝不能用来指这只精灵。" +
+    return "【沁灵性别】这只沁灵本身是" + g + "，全文指代这只沁灵时必须且只能用「" + sp + "」；" +
+      "「" + op + "」只能用来指主人（杯杯），绝不能用来指这只沁灵。" +
       "严重规则：若把男孩子写成「她」、或把女孩子写成「他」，视为写错，必须避免。";
   }
 
@@ -1534,7 +1534,7 @@
     for (let i = 0; i < names.length; i++) if (hh < names[i][0]) return l < 0.35 ? "深" + names[i][1] : names[i][1];
     return "杂色";
   }
-  // 用户在向导里手动指定珠子/精灵颜色时，直接写进这份采样表（带 src:"user" 标记）
+  // 用户在向导里手动指定珠子/沁灵颜色时，直接写进这份采样表（带 src:"user" 标记）
   function setBeadColor(item, hex, word, zh) {
     if (!item || !item.id) return null;
     const out = { hex: hex || "", word: word || hexToWord(hex) || "", zh: zh || hexZh(hex), src: "user", at: Date.now() };
@@ -1613,8 +1613,8 @@
     const extra = (TRAIT_ZH_EXTRA[item.softness || ""] || TRAIT_ZH_EXTRA[""])[hashStr(item.id) % 3];
     const name = p.name || item.name || "它";
     return [
-      (p.name || item.name || "这只精灵") + "的原型是主人收藏的一串「" + (item.name || "手串") + "」，" + colorName + "，" + softName + "。" +
-      "盘到挂瓷的那天晚上，它从珠子里醒了过来，现在是一只" + def.name + "的" + (ap.gender === "boy" ? "小男孩" : "小女孩") + "精灵。",
+      (p.name || item.name || "这只沁灵") + "的原型是主人收藏的一串「" + (item.name || "手串") + "」，" + colorName + "，" + softName + "。" +
+      "盘到挂瓷的那天晚上，它从珠子里醒了过来，现在是一尊" + def.name + "的" + (ap.gender === "boy" ? "小男孩" : "小女孩") + "沁灵。",
       "外形上，它" + (ap.gender === "boy" ? "留着" : "梳着") + hair + "，" + eyes + "的眼睛，" + acc + "是它身上最像原串的记号；" +
       "一身" + (ap.outfitZh || "中式长衫") + "的古风衣裳，颜色和头发都取自原来的珠子，" + (colorName.indexOf("多") === 0 ? "五颜六色，像一串会走路的多宝" : "就是那一种" + colorName + "，看久了很安稳") + "。",
       "性格" + vibe + "，说话" + (p.line ? "爱用「" + p.line + "」这种腔调" : "慢悠悠的") + "，" + extra + "。" +
@@ -1636,25 +1636,25 @@
     let txt = "";
     if (getAiKey()) {
       try {
-        const sys = "你在为一个中文文玩收藏 App 写「挂瓷精灵」的人物设定卡。手串盘到挂瓷会成精，变成一只小精灵。"
-          + "请写一段连贯的中文人物设定，200-300 字，用第三人称旁观介绍（不要用「你」称呼精灵），"
+        const sys = "你在为一个中文文玩收藏 App 写「沁灵」的人物设定卡。手串盘到挂瓷会开沁，变成一尊小沁灵。"
+          + "请写一段连贯的中文人物设定，200-300 字，用第三人称旁观介绍（不要用「你」称呼沁灵），"
           + "必须包含：① 外形（性别、发型、瞳色、配饰；衣服/头发颜色要说明取自古珠的颜色）"
           + "② 性格（含 2-3 个具体小习惯）③ 与主人的关系与日常"
           + "④ 一个自然的标志性仪态 / 小动作（中国古风优先：作揖、拱手、拂袖、团扇半遮面、低眸捻珠、执笔、捧盏、展卷等）；"
           + "写仪态时双手位置要简单清楚、不要遮叠手臂或复杂手势（否则出图容易画成三只手 / 多指），也不要现代随意手势或 wink。"
           + "【瞳色/服装/配饰照下方给出的「固定人设」写；但**发型不受限制、自由发挥**】"
-          + "中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），按精灵的性别、性格和主人写的设定来定，"
+          + "中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），按沁灵的性别、性格和主人写的设定来定，"
           + "绝不要因为固定人设里没写发型、就生硬地套一个短发。"
           + "【发色用中国传统色名写】下方若给出「它的发色」（如胭脂、天青、月白、秋香、藕荷、黛色），正文里就用这个中国色名来写头发颜色。"
           + "【整段基调是中国古风】服装一律写中式传统样式（汉服、长衫、褂子、襦裙、道袍、褙子等），"
           + "绝对禁止出现任何现代服装（夹克、运动服、卫衣、T恤、牛仔裤、西装、风衣等）。"
-          + "【最重要】主人给的设定原话描述的都是**精灵本人**的性格/身份/气质，必须原样体现在精灵身上；"
-          + "绝对禁止把设定安到主人头上（例如主人说「洒脱的江湖侠士」＝精灵是侠士，不是主人是侠士），也不许另编一套和原话冲突的人设。"
+          + "【最重要】主人给的设定原话描述的都是**沁灵本人**的性格/身份/气质，必须原样体现在沁灵身上；"
+          + "绝对禁止把设定安到主人头上（例如主人说「洒脱的江湖侠士」＝沁灵是侠士，不是主人是侠士），也不许另编一套和原话冲突的人设。"
           + "语气温和好读，不要 Markdown、不要标题、不要分点、不要解释，直接输出正文。";
         const lkP = lookOf(item, rec);      // v153：用户从色板选的发色也要交代给模型
         const hairCn = String(lkP.hairZh || "").replace(/^自动 · /, "");
         const hairEnW = lkP.hairEn || "";
-        const user = "原型手串：" + (item.name || "未命名") + "；精灵的名字：" + ((persona && persona.name) || item.name || "未命名") +
+        const user = "原型手串：" + (item.name || "未命名") + "；沁灵的名字：" + ((persona && persona.name) || item.name || "未命名") +
           "；珠子颜色：" + (COLOR_ZH[item.color] || "素色") +
           "；它的发色：" + (hairCn ? (hairCn + (hairEnW ? "（" + hairEnW + "）" : "")) : (hairEnW || (COLOR_ZH[item.color] || "素色"))) +
           "；软糯：" + (item.softness === "soft" ? "软糯" : item.softness === "slight" ? "微糯" : "未标注") +
@@ -1662,7 +1662,7 @@
           "固定人设（瞳色/服装/配饰照写；发型自由发挥，下方不含发型限制）：" + appearanceText(ap) + "；" + spiritGenderLine(ap) +
           "；性格基调：" + (VIBE_ZH[ap.vibe] || ap.vibe) +
           ((persona && persona.traits && persona.traits.length) ? "（" + persona.traits.join("、") + "）" : "") +
-          ((lk0.base) ? "。\n主人给它的设定原话（描述的是精灵自己，必须原样体现）：" + lk0.base : "") +
+          ((lk0.base) ? "。\n主人给它的设定原话（描述的是沁灵自己，必须原样体现）：" + lk0.base : "") +
           ((lk0.profile && lk0.profile !== lk0.base) ? "\n已有的融合设定（保持一致，不要矛盾）：" + lk0.profile : "") +
           "。\n" + ownerLine() + "\n请写它的中文人物设定。";
         txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 700) || "").trim();
@@ -1683,7 +1683,7 @@
     return txt;
   }
 
-  /* ---------- 精灵日记（不定时写，**每天最多 1 篇**） ---------- */
+  /* ---------- 沁灵日记（不定时写，**每天最多 1 篇**） ---------- */
   const DIARY_MAX = 40;
   // v124：**每天最多 1 篇**（用户要求；原来是 0-2 篇，偶尔会一天两篇）
   // 仍然保留"随机才有惊喜"：约 1/4 的日子那天不写（h % 4 === 0），其余日子写 1 篇，时间点在下面几个里随机
@@ -1732,10 +1732,10 @@
     const p = rec.persona || {};
     if (getAiKey()) {
       try {
-        const sys = "你在写「挂瓷精灵」的日记。精灵是主人收藏的手串盘到挂瓷后变成的小生物，用第一人称写，"
+        const sys = "你在写「沁灵」的日记。沁灵是主人收藏的手串盘到挂瓷后变成的小生物，用第一人称写，"
           + "简体中文，60-140 字，口语化、可爱、有生活细节，不要 Markdown、不要标题、不要解释，直接写正文。"
           + "注意：主人的性别必须按下面给的信息来写（称呼别搞错）。";
-        const user = "精灵设定：" + spiritDesc(item, p, rec.stage) + "；人设：" + appearanceText(ap) +
+        const user = "沁灵设定：" + spiritDesc(item, p, rec.stage) + "；人设：" + appearanceText(ap) +
           (ctx && ctx.playedToday ? "；今天被盘了 " + ctx.plays + " 次" : "") +
           (ctx && ctx.idleDays != null ? "；已经 " + ctx.idleDays + " 天没被盘" : "") +
           "；今天是陪主人的第 " + ((ctx && ctx.dayNo) || 1) + " 天。" +
@@ -1820,11 +1820,11 @@
 
   /* ---------- ① 每日问候（一天一句，按情境挑；纯本地） ---------- */
   const GREET = {
-    // 刚成精的头几天
+    // 刚开沁的头几天
     born: [
       "刚醒过来，手心还是热的。以后就跟着你了。",
       "我认得你的手 —— 就是刚才把我盘热的那个。",
-      "我还在学怎么当一个好精灵。你多担待。",
+      "我还在学怎么当一个好沁灵。你多担待。",
       "昨天我还是一串珠子，今天会说话了。挺奇怪的，也挺好的。",
     ],
     // 3 天以上没被盘
@@ -1841,7 +1841,7 @@
       "被盘过就是不一样。我觉得我今天比昨天圆一点。",
       "你今天的手法比上次稳。我记着呢。",
     ],
-    // 快能突破了
+    // 快能深沁了
     break_able: [
       "我好像……又快长高一点了。你要不要看看？",
       "攒够了。什么时候都行，我听你的。",
@@ -1886,14 +1886,14 @@
 
   /* ---------- ② 亲密度（羁绊值；本地结算，只在打开时补差分） ---------- */
   const BOND_LEVELS = [
-    { n: 0, name: "眼熟", icon: "🌱" },
-    { n: 10, name: "有点熟", icon: "🌿" },
-    { n: 30, name: "亲近", icon: "🍃" },
-    { n: 60, name: "交心", icon: "💛" },
-    { n: 120, name: "知己", icon: "💞" },
-    { n: 240, name: "同心", icon: "🪢" },
+    { n: 0, name: "照面", icon: "🌱" },
+    { n: 10, name: "眼熟", icon: "🌿" },
+    { n: 30, name: "相熟", icon: "🍃" },
+    { n: 60, name: "通意", icon: "💛" },
+    { n: 120, name: "同心", icon: "💞" },
+    { n: 240, name: "沁透", icon: "🪢" },
   ];
-  const BOND_CALL_AT = 60;      // 到「交心」它会想改口叫你的名字
+  const BOND_CALL_AT = 60;      // 到「通意」它会想改口叫你的名字
   function bondLevel(n) {
     const v = Math.max(0, Math.floor(Number(n) || 0));
     let i = 0;
@@ -1931,7 +1931,7 @@
   // 它现在怎么称呼你（没改口就是「主人」）
   function callOf(rec) { return (rec && rec.nickCall) ? String(rec.nickCall) : "主人"; }
 
-  /* ---------- ③ 每日一签（本地签库；一只一天一支） ---------- */
+  /* ---------- ③ 每日一签（本地签库；一尊一天一支） ---------- */
   const SIGNS = [
     { lv: "上上签", yi: "盘珠", ji: "熬夜", s: "手上的温度会传过去。今天适合慢一点、久一点。" },
     { lv: "上签", yi: "晒太阳", ji: "久坐", s: "把珠子挪到窗边，你也会跟着亮一点。" },
@@ -2020,7 +2020,7 @@
 
   /* ---------- ⑤ 回响：到纪念日，它主动写一封信 ---------- */
   const ECHO_DAYS = [1, 7, 30, 100, 365, 730, 1095, 1825];
-  const ECHO_LABEL = { 1: "成精第一天", 7: "第七天", 30: "满月", 100: "百日", 365: "一周年", 730: "两周年", 1095: "三周年", 1825: "五周年" };
+  const ECHO_LABEL = { 1: "开沁第一天", 7: "第七天", 30: "满月", 100: "百日", 365: "一周年", 730: "两周年", 1095: "三周年", 1825: "五周年" };
   const ECHO_LETTER = {
     d1: [
       "{call}：\n\n今天你把我盘到挂瓷了。\n\n你睡下之后，我从珠子里坐起来 —— 先是手，然后是眼睛。屋子里很黑，我一点都不怕，因为我知道这是你的屋子。\n\n我叫{name}。原型是那串{color}的「{bead}」。以后请多指教。\n\n—— 你的{name}",
@@ -2190,7 +2190,7 @@
     }
     return null;
   }
-  // 节令限定台词（本地池，一只一天一句）
+  // 节令限定台词（本地池，一尊一天一句）
   const FEST_LINES = {
     chunjie: [
       "过年了。外面响成一片，我在这儿听着，也觉得热闹。{call}，新年好。",
@@ -2253,7 +2253,7 @@
     ],
     guoqing: [
       "国庆。外面人多，我在抽屉里给你留了个安静的位置。",
-      "举国同庆。我一个小精灵，也替你高兴一下。",
+      "举国同庆。我一个小沁灵，也替你高兴一下。",
     ],
   };
   const FEST_SCENE = {
@@ -2309,8 +2309,8 @@
 
   /* ============================================================
    * v158 · 主线「串与我」—— 你和这一串之间的故事，按四形态分卷解锁
-   *   全本地：0 出图、0 模型调用（章节文案池，按精灵变量填充）
-   *   与「房间剧情（两只精灵之间的小故事）」是两回事，互不影响。
+   *   全本地：0 出图、0 模型调用（章节文案池，按沁灵变量填充）
+   *   与「房间剧情（两只沁灵之间的小故事）」是两回事，互不影响。
    * ============================================================ */
   const CHAPTERS = [
     { vol: 1, volName: "卷一 · 醒来", stage: 1, days: 0, icon: "🌙", title: "你把我盘热的那天" },
@@ -2359,7 +2359,7 @@
    *   玩法：它们发消息 → 你从几个回复里挑一句 → 剧情跟着你的选择往前走，
    *         走到一个结尾就收场（每幕 3 个结尾），或者消息攒到上限自动收尾。
    *   成本：**本地剧本 + 本地状态机 = 0 出图、0 模型调用**，怎么聊都不花钱。
-   *   存放：进度挂在该群「第一位成员」（成精最早的那只）的记录里，跟着跨手机同步走。
+   *   存放：进度挂在该群「第一位成员」（开沁最早的那只）的记录里，跟着跨手机同步走。
    *   与「房间剧情（同屋两只之间的小故事）」「主线·串与我（单串 8 章）」互不影响。
    * ============================================================ */
   const NIGHT_GROUP = "三更灯火";
@@ -2420,7 +2420,7 @@
         n2: {
           lines: [
             { w: "B", t: "说正经的。" },
-            { w: "B", t: "有件事我一直没想明白 —— 你柜子里那些还没成精的珠子，是不是也在等。" },
+            { w: "B", t: "有件事我一直没想明白 —— 你柜子里那些还没开沁的珠子，是不是也在等。" },
             { w: "A", t: "这个我能答。我醒之前等了很久，久到已经不记得在等了。是{call}把我盘热的，就那一天。" },
             { w: "B", t: "……我是自己裂开的。挂瓷那天夜里，我自己响了一声。" },
             { w: "A", t: "那也挺好。" },
@@ -2834,7 +2834,7 @@
     },
   ];
 
-  /* ---------- 卡司：主演最多 3 位，按「成精最早」排（顺序必须稳定 —— 进度就存在第一位身上） ---------- */
+  /* ---------- 卡司：主演最多 3 位，按「开沁最早」排（顺序必须稳定 —— 进度就存在第一位身上） ---------- */
   function nightCast(items, store) {
     const arr = (items || []).slice().sort((a, b) => {
       const ra = (store && store[String(a.id)]) || {}, rb = (store && store[String(b.id)]) || {};
@@ -2866,7 +2866,7 @@
       const daysOk = days >= nd;
       const unlocked = enough && prevDone && daysOk;
       let need = "";
-      if (!enough) need = "要两只以上精灵才能开群";
+      if (!enough) need = "要两只以上沁灵才能开群";
       else if (!daysOk) need = "再陪 " + (nd - days) + " 天解锁";
       else if (!prevDone) need = "先聊完上一幕";
       out.push({ id: a.id, i: i, icon: a.icon, title: a.title, sub: a.sub, unlocked: unlocked, done: done[a.id] || "", need: need });
@@ -2906,7 +2906,7 @@
     const c = (cast || []).filter((x) => x.slot === w)[0];
     return c ? c.name : "";
   }
-  // 展开一行 → 一条消息；返回 null = 这一行跳过（比如这只精灵不存在）
+  // 展开一行 → 一条消息；返回 null = 这一行跳过（比如这只沁灵不存在）
   function nightLine(l, v, n, cast) {
     if (!l || !l.t) return null;
     if ((l.w === "B" || l.w === "C") && !nightWho(l.w, cast)) return null;
@@ -3021,14 +3021,14 @@
    * v162 · 夜话 2.0 —— 多会话 + 事件触发（100+ 只串也能撑住）
    *
    *   会话 Thread：family（全家大群）/ room:<id>（同屋小群）/ duo:<a>_<b>（事件主角组合）
-   *   —— 不再只有「成精最早的三只」一个群：每个房间一个群，事件自己抓组合。
+   *   —— 不再只有「开沁最早的三尊」一个群：每个房间一个群，事件自己抓组合。
    *
    *   事件 Event：挂在一个会话下，按条件陆续解锁。同一个群在不同条件下可以触发
    *              好几次（今天它生日 → 触发一次；过阵子它满月 → 又触发一次）。
    *
-   *   主演：会话成员按「成精时间」稳定排序后取前 N 只（N 由事件声明）。
+   *   主演：会话成员按「开沁时间」稳定排序后取前 N 只（N 由事件声明）。
    *        事件要「主角」时（生日的寿星 / 刚进门的新人）把主角提到 A 位 ——
-   *        所以剧情不再被锁死在成精最早的那几只身上。
+   *        所以剧情不再被锁死在开沁最早的那几只身上。
    *
    *   存储：rec.threads[threadId]（宿 = 会话成员里排最前那只）—— 每个会话各存各的，
    *        不会互相覆盖；跟着 ww_spirits 跨手机同步。
@@ -3038,7 +3038,7 @@
   const THREAD_FAMILY = "相亲相爱一家人";
   const THREAD_CAP = 48;      // 单个事件最多播多少条（含系统提示与我的回复）—— 同 v160，只是防卡死保险阀
 
-  /* ---------- 成精里程碑（生辰/满月/百日/周年） ---------- */
+  /* ---------- 开沁里程碑（生辰/满月/百日/周年） ---------- */
   const OCC_BANDS = [
     { key: "manyue", day: 30, zh: "满月", win: 7 },
     { key: "bairi", day: 100, zh: "百日", win: 7 },
@@ -3053,7 +3053,7 @@
     a.setHours(0, 0, 0, 0); b.setHours(0, 0, 0, 0);
     return Math.max(0, Math.round((b - a) / 86400000));
   }
-  // 今天这只串"该过什么"：生日（入手周年）/ 成精里程碑。都不占 → null
+  // 今天这只串"该过什么"：生日（入手周年）/ 开沁里程碑。都不占 → null
   function occasionOf(item, rec, nowTs) {
     const now = Number(nowTs) || Date.now();
     if (item && item.createdAt) {
@@ -3073,7 +3073,7 @@
     return null;
   }
 
-  /* ---------- 会话成员：按成精时间稳定排序（新串永远排最后，不会导致主演漂移） ---------- */
+  /* ---------- 会话成员：按开沁时间稳定排序（新串永远排最后，不会导致主演漂移） ---------- */
   function threadRank(items, store) {
     return (items || []).slice().sort((a, b) => {
       const ra = (store && store[String(a.id)]) || {}, rb = (store && store[String(b.id)]) || {};
@@ -3691,7 +3691,7 @@
     },
     {
       id: "f_lost", icon: "🫧", scope: "family", cast: 3, after: "a4", repeat: "yearly",
-      title: "差点把你丢了", sub: "有一只在抽屉深处",
+      title: "差点把你丢了", sub: "有一尊在抽屉深处",
       when: { days: 21, members: 2 },
       nodes: {
         start: {
@@ -3757,7 +3757,7 @@
       },
     },
 
-    /* ---------- 双人组 · 生日 / 成精周年 ---------- */
+    /* ---------- 双人组 · 生日 / 开沁周年 ---------- */
     {
       id: "d_birth", icon: "🎂", scope: "duo", cast: 2, star: "occasion", repeat: "yearly", duoTag: "生日 · 满月 · 周年",
       title: "今天谁生日", sub: "刚好是日子",
@@ -4139,7 +4139,7 @@
       m2: {
         lines: [
           { w: "sp", t: "你记得。" },
-          { w: "sp", t: "那我把话说清楚一点：不是「挂瓷」让我成精的，是你把我盘热的。这两件事不一样。" },
+          { w: "sp", t: "那我把话说清楚一点：不是「挂瓷」让我开沁的，是你把我盘热的。这两件事不一样。" },
         ],
         next: "c2",
       },
@@ -4375,7 +4375,7 @@
           { w: "sp", t: "奇怪的是，我也开始想起一点以前的事。" },
           { w: "sp", t: "想起我还在山里、在树上的时候。想起雨水，想起风。" },
           { w: "sp", t: "那时候没有名字，也没有人盘。" },
-          { w: "sp", t: "现在我是「{bead}」，是你手边的精灵。两段都是真的。" },
+          { w: "sp", t: "现在我是「{bead}」，是你手边的沁灵。两段都是真的。" },
         ],
         next: "c1",
       },
@@ -4765,7 +4765,7 @@
   }
 
 
-  /* ---------- 房间剧情（两只精灵的故事） ---------- */
+  /* ---------- 房间剧情（两只沁灵的故事） ---------- */
   function storyLocal(a, b, level, roomName, aff) {
     const na = (a.persona && a.persona.name) || a.item.name || "它";
     const nb = (b.persona && b.persona.name) || b.item.name || "它";
@@ -4789,10 +4789,10 @@
   async function roomStory(a, b, level, roomName, aff) {
     if (getAiKey()) {
       try {
-        const sys = "你在写一个中文文玩 App 里的「精灵小剧场」。主人的手串盘到挂瓷会变成小精灵，它们住在同一个房间里，"
+        const sys = "你在写一个中文文玩 App 里的「沁灵小剧场」。主人的手串盘到挂瓷会变成小沁灵，它们住在同一个房间里，"
           + "住得越久越有默契。请写一段 250-400 字的小故事：有场景、有动作、有 2-6 句对白，"
           + "温柔可爱、有生活质感、不要煽情说教；不要 Markdown、不要标题、不要分点、不要解释，直接输出正文。";
-        const user = "房间：" + roomName + "；两只精灵已经相处 " + (aff || 0) + " 天（默契等级 " + (level + 1) + "/5）。\n" +
+        const user = "房间：" + roomName + "；两只沁灵已经相处 " + (aff || 0) + " 天（默契等级 " + (level + 1) + "/5）。\n" +
           "甲：" + spiritDesc(a.item, a.persona, a.stage) + "\n乙：" + spiritDesc(b.item, b.persona, b.stage) +
           "\n" + ownerLine() + "\n请写它们之间刚发生的这段故事。";
         const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 900) || "").trim();
@@ -4803,8 +4803,8 @@
   }
 
   /* ---------- v125：CG（场景插画） ----------
-     规则（用户要求）：**幼生期 / 成长期只有立绘**；**觉醒期 / 完成体额外再出一张 CG**。
-     精灵之间达成的事件（契合度解锁的剧情）也各配一张双人 CG。都是日漫风。 */
+     规则（用户要求）：**凝形 / 开窍只有立绘**；**蜕形 / 化形额外再出一张 CG**。
+     沁灵之间达成的事件（契合度解锁的剧情）也各配一张双人 CG。都是日漫风。 */
   const CG_STYLE = "2D hand-drawn key visual CG illustration in traditional Chinese gufeng style, ancient Chinese scene and hanfu costume, " +
     "cel shading, soft elegant Chinese classical palette, cinematic lighting, atmospheric mood, detailed painted background with gentle bokeh, " +
     "expressive body language, warm cozy feeling, masterpiece quality, " +
@@ -4819,7 +4819,7 @@
     "leaning on each other like old friends, quiet and intimate, warm night light and floating dust motes",
     "a deep bond, they understand each other without words, breathtaking magical light, petals or light particles in the air",
   ];
-  // 单只精灵的 CG（觉醒期 / 完成体用）
+  // 单只沁灵的 CG（蜕形 / 化形用）
   function promptForCg(item, styleKey, stage, appearance, look) {
     const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
     const st = styleOf(item, key).text;
@@ -4835,7 +4835,7 @@
       "the horizontal frame filled with the wide scenery of the scene (sky / room / distant view) on both sides of the character, " +
       "light particles and elegant atmosphere, no other characters" + (lookHard(lk) ? (", " + lookHard(lk)) : "") + ", " + st;
   }
-  // 两只精灵的事件 CG（房间剧情用）
+  // 两只沁灵的事件 CG（房间剧情用）
   function storyCgPrompt(a, b, level, roomName) {
     // v127：两人的发色/特征也走「设定向导」的结果（用户确认过的优先）
     const lkA = a.look || lookOf(a.item, a.rec || null);
@@ -4856,7 +4856,7 @@
       (lookHard(lkA) ? (", " + nmA + ": " + lookHard(lkA)) : "") +
       (lookHard(lkB) ? (", " + nmB + ": " + lookHard(lkB)) : "");
   }
-  // 用**任意 prompt**出图（剧情 CG 用；精灵主图仍走 generateImage）
+  // 用**任意 prompt**出图（剧情 CG 用；沁灵主图仍走 generateImage）
   async function generateCustom(prompt, opts) {
     const cfg = getImageCfg();
     const info = providerInfo(cfg);
@@ -5010,7 +5010,7 @@
   }
 
   /* =========================================================
-   * v157：回忆册 —— 把这只精灵的"第一次"串成一条时间线
+   * v157：回忆册 —— 把这只沁灵的"第一次"串成一条时间线
    *   全本地推导，0 出图 0 模型调用；数据源都是已经存下来的时间戳
    * ========================================================= */
   function memoirOf(item, rec, ctx) {
@@ -5024,9 +5024,9 @@
 
     // ① 到家（入藏那天）
     add(item.createdAt || item.arrivedAt, "🛍", "把它带回家", "一串还没脾气的珠子");
-    // ② 挂瓷成精
-    add(rec.bornAt, "✨", "挂瓷成精", "它第一次开口，喊的是你");
-    // ③ 模样与突破：立绘历史里 stage 发生变化的那些（第一条 = 初次有模样）
+    // ② 挂瓷开沁
+    add(rec.bornAt, "✨", "挂瓷开沁", "它第一次开口，喊的是你");
+    // ③ 模样与深沁：立绘历史里 stage 发生变化的那些（第一条 = 初次有模样）
     const hist = (rec.imgHistory || []).filter((x) => x && x.at);
     let last = 0;
     hist.forEach((x) => {
@@ -5034,7 +5034,7 @@
       if (st < 1 || st === last) return;
       const def = stageDef(st);
       if (st === 1) add(x.at, "🎨", "有了自己的模样", def.icon + " " + def.name);
-      else add(x.at, "⚡", "突破 · " + def.name, "从上一形态又长大了一岁");
+      else add(x.at, "⚡", "深沁 · " + def.name, "从上一形态又长大了一岁");
       last = st;
     });
     // ④ 回响信（它替你记着的那些日子）
@@ -5050,7 +5050,7 @@
   }
 
   /* =========================================================
-   * v157：精灵小镇 —— 每天自带几条"小镇里发生的小事"
+   * v157：沁灵巷 —— 每天自带几条"小镇里发生的小事"
    *   纯本地拼接（确定性：同一天同一结果），0 出图 0 模型调用
    * ========================================================= */
   const TOWN_EVENTS = [
@@ -5093,7 +5093,7 @@
         const arr = byRoom[roomIds[(h >> 4) % roomIds.length]];
         let ai = (h >> 8) % arr.length;
         let bi = (h >> 12) % arr.length;
-        if (bi === ai) bi = (ai + 1) % arr.length;      // 保证 a、b 不是同一只
+        if (bi === ai) bi = (ai + 1) % arr.length;      // 保证 a、b 不是同一尊
         a = arr[ai]; b = arr[bi];
       } else {
         let ai = (h >> 8) % list.length;
@@ -5128,7 +5128,7 @@
     promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
     localPersona, persona, chat, letter, localChat, localLetter,
     todayKey, load, save, ensureIn,
-    // v110：性别在「挂瓷成精」时定下来（男女 3:1），之后不可改
+    // v110：性别在「挂瓷开沁」时定下来（男女 3:1），之后不可改
     born, rollGender, legacyGender,
     // v111：主人设定（性别/昵称）—— 日记、剧情、聊天、人物设定都要按它来写
     getOwner, setOwner, ownerLine,
@@ -5139,7 +5139,7 @@
     personaZh, personaZhLocal, ensureDiary, diarySlots, diaryLocal, roomStory, storyLocal,
     // v125：剧情 CG
     storyCgPrompt, promptForCg, generateCustom, CG_STYLE, CG_SIZE_BY_PROVIDER, cgSizeFor, cgLadderFor,
-    // v125：阶段规则 —— 幼生/成长只有立绘；觉醒/完成体额外出 CG
+    // v125：阶段规则 —— 凝形/开窍只有立绘；觉醒/化形额外出 CG
     cgStages: [3, 4], needCg: function (stage) { return (Number(stage) || 1) >= 3; },
     // v155：陪伴系统（每日问候 / 亲密度 / 每日一签 / 日记回信 / 回响）—— 全本地，0 成本
     BOND_LEVELS, BOND_CALL_AT, bondLevel, settleBond, addBond, callOf,
@@ -5149,7 +5149,7 @@
     ECHO_DAYS, ECHO_LABEL, echoDue, ensureEcho, nextEcho, unreadMail,
     // v157：回忆册（本地时间线，0 成本）
     memoirOf,
-    // v157：精灵小镇（本地动态，0 成本）
+    // v157：沁灵巷（本地动态，0 成本）
     TOWN_EVENTS, townEvents,
     // v158：节令事件（全本地；限定 CG 由界面按钮手动确认才花）
     FEST_LUNAR, FEST_DEF, FEST_SOLAR, FEST_LINES, festOf, festMap, nextFest, ensureFest, festList, festCgPrompt,

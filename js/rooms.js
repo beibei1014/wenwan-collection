@@ -1,13 +1,13 @@
 /* ============================================================
  * 房间 / 契合度 / 剧情（v109）
  * ------------------------------------------------------------
- * 玩法：精灵住进「小房间」→ 同一个房间里的精灵两两积累「契合度」
+ * 玩法：沁灵住进「小房间」→ 同一个房间里的沁灵两两积累「契合度」
  *       （每天同住 +1；两只最近都在盘 → 当天 +2）
  *       契合度跨过门槛就解锁一段剧情，栏目页出提示，点进去才看得到。
- * 数据都存本地（和精灵数据一样，不依赖 Supabase）：
+ * 数据都存本地（和沁灵数据一样，不依赖 Supabase）：
  *   ww_rooms = { [roomId]: { id, name, emoji, note, createdAt, order } }
  *   ww_bonds = { "idA|idB": { affinity, lastDay, best, stories: [ {level, at, title, text, read} ] } }
- *   成员关系存在精灵记录里（rec.roomId），一只精灵同时只住一间房。
+ *   成员关系存在沁灵记录里（rec.roomId），一尊沁灵同时只住一间房。
  * ============================================================ */
 (function () {
   "use strict";
@@ -78,7 +78,7 @@
     delete db.rooms[id];
     saveRooms(db);
   }
-  // 成员存在精灵记录里（rec.roomId）；item 需要 {id, roomId}
+  // 成员存在沁灵记录里（rec.roomId）；item 需要 {id, roomId}
   function membersOf(roomId, items) {
     return (items || []).filter((it) => it && it.roomId === roomId);
   }
@@ -125,7 +125,7 @@
       isMax: next == null,
     };
   }
-  // 每天涨契合度：同住一天 +1；两只精灵最近 3 天内都盘过 → 当天 +2
+  // 每天涨契合度：同住一天 +1；两只沁灵最近 3 天内都盘过 → 当天 +2
   function tick(items, opts) {
     const now = Date.now();
     const today = todayKey();
