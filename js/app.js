@@ -1293,7 +1293,7 @@
       try {
         await markPlayedToday(item);
         done();
-        toast("✅ 已记录今天盘过，开始放置");
+        toast(item.playStatus === "done" ? "✅ 已记录保养盘玩，保持已挂瓷" : "✅ 已记录今天盘过，开始放置");
         refreshAfterToggle();
       } catch (err) {
         toast("记录失败：" + err.message);
@@ -1343,8 +1343,12 @@
       const prevC = item.playCount;
       const prevF = item.firstPlayedAt;
       item.lastPlayedAt = dv ? new Date(dv + "T12:00:00").getTime() : null;
-      // 若设置了时间且当前是未盘玩，自动转为盘玩中
-      if (dv && (item.playStatus === "unplayed" || !item.playStatus)) item.playStatus = "playing";
+      // 已挂瓷：保持状态，仅更新盘玩时间；否则未盘玩的串设了时间自动转盘玩中
+      if (dv) {
+        if (item.playStatus !== "done") {
+          if (item.playStatus === "unplayed" || !item.playStatus) item.playStatus = "playing";
+        }
+      }
       // 设置了一次盘玩时间 → 记为一次盘玩次数，并补记首次盘玩时间
       if (dv) {
         item.playCount = (item.playCount || 0) + 1;
@@ -1565,7 +1569,8 @@
   async function markPlayedToday(item) {
     const prevT = item.lastPlayedAt, prevSt = item.playStatus, prevC = item.playCount, prevF = item.firstPlayedAt;
     item.lastPlayedAt = Date.now();
-    item.playStatus = "playing";       // 盘完 → 盘玩中（放置时长从今天算起）
+    // 已挂瓷：盘玩时间照常更新，但状态保持「已挂瓷」，不可退回「盘玩中」
+    if (item.playStatus !== "done") item.playStatus = "playing";
     item.playCount = (item.playCount || 0) + 1;
     if (!item.firstPlayedAt) item.firstPlayedAt = item.lastPlayedAt; // 记录「第一次盘玩时间」
     try {
@@ -1886,7 +1891,7 @@
           await applyToItems(items, async (it) => { it.lastPlayedAt = null; });
         } else {
           const t = new Date(dv + "T12:00:00").getTime();
-          await applyToItems(items, async (it) => { it.lastPlayedAt = t; if (!it.playStatus || it.playStatus === "unplayed") it.playStatus = "playing"; });
+          await applyToItems(items, async (it) => { it.lastPlayedAt = t; if (it.playStatus !== "done" && (!it.playStatus || it.playStatus === "unplayed")) it.playStatus = "playing"; });
         }
       };
       // 设置大小
