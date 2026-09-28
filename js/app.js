@@ -2910,7 +2910,10 @@
       html += '<div class="diary-hint echo" id="echoHint">✦ 有 <b>' + echoN + '</b> 封回响信 · 点它的头像进去看看</div>';
     }
 
-    html += '<button class="btn primary" id="spAllBtn" style="width:100%;margin-top:14px">👀 查看全部精灵（' + list.length + '）</button>';
+    html += '<div class="sp-2col">' +
+      '<button class="btn primary" id="spAllBtn">👀 全部精灵（' + list.length + '）</button>' +
+      '<button class="btn ghost" id="spTownBtn">🏘 精灵小镇</button>' +
+      "</div>";
     const sh = setupHintHtml(list, store);
     if (sh.html) html += sh.html;
     view.innerHTML = html;
@@ -2922,6 +2925,8 @@
     bindRoomSection();
     const allBtn = $("#spAllBtn");
     if (allBtn) allBtn.onclick = () => location.hash = "#/spirits";
+    const twBtn = $("#spTownBtn");      // v157：精灵小镇
+    if (twBtn) twBtn.onclick = () => location.hash = "#/town";
     const dh = $("#diaryHint");
     if (dh) dh.onclick = () => location.hash = "#/spirits";
     const eh = $("#echoHint");
@@ -3753,6 +3758,21 @@
     }
     h += "</div>";
 
+    // v157：🎞 回忆册 —— 它陪你的时间线（本地推导，0 出图；可一键合成竖版长图）
+    const memos = Spirits.memoirOf(it, rec);
+    h += '<div class="sd-card"><div class="sd-card-title">🎞 回忆册（' + memos.length + "）" +
+      '<small style="font-weight:400;color:var(--text-2);font-size:11px"> 它替你记着的那些"第一次"</small></div>';
+    if (!memos.length) {
+      h += '<div class="room-none">还没有可记的事。等它陪你久一点，这里会慢慢长出一条时间线。</div>';
+    } else {
+      h += '<div class="memo-line">' + memos.slice().reverse().map((m) =>
+        '<div class="memo-row"><span class="memo-dot">' + esc(m.icon) + "</span>" +
+        '<div class="memo-body"><div class="memo-head"><b>' + esc(m.title) + "</b><span>" + esc(fmtDay(m.at)) + "</span></div>" +
+        (m.sub ? '<div class="memo-sub">' + esc(m.sub) + "</div>" : "") + "</div></div>").join("") + "</div>" +
+        '<button class="btn ghost" id="sdMemoCard" style="width:100%;margin-top:10px;font-size:13px">🎞 做一张回忆卡（存图 / 分享）</button>';
+    }
+    h += "</div>";
+
     // v125：CG 插画（觉醒期 / 完成体才有）
     h += '<div class="sd-card"><div class="sd-card-title">🎬 CG 插画' +
       (Spirits.needCg(si.stage) ? "" : '<small style="font-weight:400;color:var(--text-2)"> · 觉醒期 / 完成体才有</small>') + "</div>";
@@ -3855,6 +3875,33 @@
     if (art) art.onclick = () => openSpiritViewer(rec.imgUrl || Spirits.localAvatarSvg(it));
     const cgEl = $("#sdCg");
     if (cgEl) cgEl.onclick = () => openSpiritViewer(rec.cgUrl || "");
+    // v157：回忆卡（本地 canvas 合成，0 出图 0 模型调用）
+    const memoBtn = $("#sdMemoCard");
+    if (memoBtn) memoBtn.onclick = async () => {
+      if (memoBtn.disabled) return;
+      const old = memoBtn.textContent;
+      memoBtn.disabled = true;
+      memoBtn.textContent = "正在拼回忆卡…";
+      try {
+        const bl = Spirits.bondLevel(rec.bond || 0);
+        const cv = await Poster.memoirPoster({
+          name: spiritName(it, store),
+          stage: si.icon + " " + si.name,
+          imgUrl: rec.imgUrl || "",
+          days: DB.daysWith(it),
+          bond: bl.icon + " " + bl.name,
+          milestones: Spirits.memoirOf(it, rec),
+          owner: Spirits.getOwner().name || "",
+          line: "从一串珠子，到有脾气的它。",
+        });
+        const r = await Poster.shareCanvas(cv, "回忆册-" + spiritName(it, store) + ".jpg");
+        toast(r === "shared" ? "🎞 回忆卡已分享" : "🎞 回忆卡已保存");
+      } catch (e) {
+        toast("生成失败：" + ((e && e.message) || "请重试"));
+      }
+      memoBtn.disabled = false;
+      memoBtn.textContent = old;
+    };
     const gb = $("#sdGoBead"); if (gb) gb.onclick = () => location.hash = "#/item/" + it.id;
     const ch = $("#sdChat"); if (ch) ch.onclick = () => showSpiritChatModal(it);
     const sl = $("#sdSpiritList"); if (sl) sl.onclick = () => location.hash = "#/spirit";
@@ -4258,6 +4305,102 @@
   }
 
   /* ---------- 房间页 ---------- */
+  /* ---------- v157：精灵小镇（本地动态 + 全镇概览；0 出图 0 模型调用） ---------- */
+  function renderTownPage() {
+    topbarTitle.textContent = "精灵小镇";
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+    const list = spiritItems();
+    const store = Spirits.load();
+    const items = roomItems();
+    const rooms = Rooms.listRooms();
+
+    if (list.length < 2) {
+      view.innerHTML = emptyCardHtml({
+        ill: "spirit", icon: "🏘", title: "小镇还只有一位居民",
+        sub: "再来一只精灵，小镇才会热闹起来<br>（住进同一间屋子的会慢慢熟络）",
+        hint: "挂瓷成精 → 把两只放进同一间屋子",
+      }) + '<button class="btn primary" id="townBack" style="width:100%;margin-top:12px">回到精灵页</button>';
+      const b0 = $("#townBack");
+      if (b0) b0.onclick = () => location.hash = "#/spirit";
+      return;
+    }
+
+    const cast = list.map((it) => ({ id: it.id, name: nameOf(it, store), roomId: (store[it.id] || {}).roomId || "" }));
+    const evs = Spirits.townEvents(cast, { n: 4 });
+
+    // 全镇统计
+    let pairs = 0, sum = 0, best = null;
+    for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+      const aff = Rooms.affinityOf(items[i].id, items[j].id);
+      pairs++; sum += aff;
+      if (!best || aff > best.aff) best = { aff: aff, a: items[i], b: items[j] };
+    }
+    const avg = pairs ? Math.round(sum / pairs) : 0;
+    const homeless = list.filter((it) => !(store[it.id] || {}).roomId);
+
+    let h = '<div class="town-head">' +
+      '<div class="town-stat"><b>' + list.length + "</b><span>位居民</span></div>" +
+      '<div class="town-stat"><b>' + rooms.length + "</b><span>间屋子</span></div>" +
+      '<div class="town-stat"><b>' + avg + "</b><span>平均契合</span></div>" +
+      "</div>";
+    if (best && best.aff > 0) {
+      h += '<div class="town-best">💞 全镇最合拍：<b>' + esc(nameOf(best.a, store)) + " × " + esc(nameOf(best.b, store)) +
+        "</b> · 契合度 " + best.aff + "</div>";
+    }
+
+    h += '<div class="sd-card"><div class="sd-card-title">📰 今天的小镇' +
+      '<small style="font-weight:400;color:var(--text-2);font-size:11px"> 每天换一批 · 不花额度</small></div>';
+    if (!evs.length) {
+      h += '<div class="room-none">今天小镇很安静。</div>';
+    } else {
+      h += '<div class="town-feed">' + evs.map((e) => {
+        const ia = items.find((x) => x.id === e.a), ib = items.find((x) => x.id === e.b);
+        return '<div class="town-ev"><div class="town-ev-face">' +
+          (ia ? spiritThumbHtml(ia, store[ia.id] || {}, 30) : "") +
+          (ib ? spiritThumbHtml(ib, store[ib.id] || {}, 30) : "") +
+          "</div>" +
+          '<div class="town-ev-body"><div class="town-ev-text"><span class="town-ev-ico">' + esc(e.icon) + "</span>" + esc(e.text) + "</div>" +
+          '<div class="town-ev-sub">' + (e.sameRoom ? "同一间屋子 · 住在一起" : "在院子里碰上") + "</div></div></div>";
+      }).join("") + "</div>" +
+        '<div class="room-hint">同住的精灵每天 +1 契合度；两只最近都在盘，当天 +2。攒够就有它们自己的故事。</div>';
+    }
+    h += "</div>";
+
+    // 屋子
+    h += '<div class="sd-card"><div class="sd-card-title">🏠 小镇的屋子（' + rooms.length + "）</div>";
+    if (!rooms.length) {
+      h += '<div class="room-none">还没有屋子。回精灵页建一间，把精灵放进去它们就会开始熟络。</div>';
+    } else {
+      h += '<div class="room-grid">';
+      rooms.forEach((r) => {
+        const mem = Rooms.membersOf(r.id, items);
+        const aff = Rooms.roomAffinity(r.id, items);
+        h += '<div class="room-card" data-room="' + esc(r.id) + '">' +
+          '<div class="room-head"><span class="room-emoji">' + esc(r.emoji || "🏠") + "</span>" +
+          '<span class="room-name">' + esc(r.name) + "</span></div>" +
+          '<div class="room-members">' +
+          (mem.length ? mem.slice(0, 5).map((it) => spiritThumbHtml(it, store[it.id] || {}, 42)).join("")
+            : '<span class="room-none">空着</span>') + "</div>" +
+          '<div class="room-foot">' + (mem.length < 2 ? "住满 2 只才会攒契合度" : "💞 平均契合 " + aff.avg) + "</div></div>";
+      });
+      h += "</div>";
+    }
+    if (homeless.length) {
+      h += '<div class="room-hint">🛏 还在屋檐下的：' + homeless.map((it) => esc(nameOf(it, store))).join("、") + " —— 点进屋子安排入住</div>";
+    }
+    h += "</div>";
+
+    h += '<button class="btn ghost" id="townBack" style="width:100%;margin-top:10px">← 回到精灵页</button>';
+    view.innerHTML = h;
+    bindSpiritImgFallback(view);
+    const b1 = $("#townBack");
+    if (b1) b1.onclick = () => location.hash = "#/spirit";
+    view.querySelectorAll("[data-room]").forEach((c) => c.addEventListener("click", () => {
+      location.hash = "#/room/" + encodeURIComponent(c.dataset.room);
+    }));
+  }
+
   function renderRoomPage(roomId) {
     const room = Rooms.getRoom(roomId);
     if (!room) { location.hash = "#/spirit"; return; }
@@ -7118,6 +7261,7 @@
     else if (h === "#/spirits") renderAllSpiritsPage();                                            // 全部精灵
     else if (h.startsWith("#/spirit/")) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));   // 每只精灵的独立页面
     else if (h.startsWith("#/room/")) renderRoomPage(decodeURIComponent(h.slice(7)));             // 小房间
+    else if (h === "#/town") renderTownPage();                                                    // v157：精灵小镇
     else if (h === "#/fav") renderFavPage();
     else if (h.startsWith("#/box/")) renderBoxPage(decodeURIComponent(h.slice(6)));
     else if (h === "#/" || h === "#") renderHome();
@@ -7262,7 +7406,7 @@
     let active = "home";
     if (h === "#/settings") active = "settings";
     else if (h === "#/cat") active = "cat";
-    else if (h === "#/spirit" || h === "#/spirits" || h.indexOf("#/spirit/") === 0 || h.indexOf("#/room/") === 0) active = "spirit";
+    else if (h === "#/spirit" || h === "#/spirits" || h === "#/town" || h.indexOf("#/spirit/") === 0 || h.indexOf("#/room/") === 0) active = "spirit";
     else if (h === "#/stats") active = "stats";
     else if (h === "#/quest") active = "quest";
     else if (h === "#/fav") active = "fav";

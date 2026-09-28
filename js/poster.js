@@ -509,6 +509,110 @@
     return canvas;
   }
 
+  /* ---------- v157：精灵回忆册（竖版长图，纯本地 Canvas 合成，0 出图） ---------- */
+  function ymd(ts) {
+    const d = new Date(Number(ts) || Date.now());
+    return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0");
+  }
+  async function memoirPoster(opts) {
+    const o = opts || {};
+    const ms = (o.milestones || []).slice(-14);       // 条目太多只留最近的，别画到天上去
+    const W = 1080;
+    const headH = 900, rowH = 132, footH = 200;
+    const H = Math.max(1500, headH + ms.length * rowH + 120 + footH);
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+
+    // 纸底色
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#fbf6ec"); bg.addColorStop(.55, "#f4ead8"); bg.addColorStop(1, "#ecdfc7");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = "rgba(184,134,11,.35)"; ctx.lineWidth = 3;
+    roundRect(ctx, 34, 34, W - 68, H - 68, 24); ctx.stroke();
+
+    // 标题
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#3d2b1f";
+    ctx.font = "bold 56px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("回 忆 册", W / 2, 138);
+    ctx.fillStyle = "rgba(184,134,11,.85)";
+    ctx.font = "28px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("MEMOIR · " + escText(o.name || "它") + " 的故事", W / 2, 186);
+
+    // 立绘（外链图可能没带 CORS 头 → 加载失败也不影响出图，退化成占位）
+    const imgSize = 420, imgY = 240;
+    let drew = false;
+    if (o.imgUrl) {
+      try {
+        const img = await loadImg(o.imgUrl);
+        ctx.save();
+        ctx.shadowColor = "rgba(61,43,31,.24)"; ctx.shadowBlur = 30; ctx.shadowOffsetY = 12;
+        drawImageContain(ctx, img, (W - imgSize) / 2, imgY, imgSize, imgSize, 20);
+        ctx.restore();
+        drew = true;
+      } catch (e) { drew = false; }
+    }
+    if (!drew) {
+      ctx.fillStyle = "#e6dac4";
+      roundRect(ctx, (W - imgSize) / 2, imgY, imgSize, imgSize, 20); ctx.fill();
+      ctx.fillStyle = "#c9b89c"; ctx.font = "150px serif";
+      ctx.fillText("🍡", W / 2, imgY + imgSize / 2 + 52);
+    }
+
+    // 名字 / 形态 / 陪伴天数
+    ctx.fillStyle = "#3d2b1f";
+    ctx.font = "bold 50px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText(escText(o.name || "它").slice(0, 10), W / 2, imgY + imgSize + 88);
+    ctx.fillStyle = "rgba(184,134,11,.9)";
+    ctx.font = "30px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText([o.stage, (o.days != null ? "陪伴 " + o.days + " 天" : ""), o.bond].filter(Boolean).join(" · "),
+      W / 2, imgY + imgSize + 138);
+    if (o.line) {
+      ctx.fillStyle = "rgba(61,43,31,.72)";
+      ctx.font = "26px 'PingFang SC','Microsoft YaHei',sans-serif";
+      ctx.fillText(escText(o.line).slice(0, 26), W / 2, imgY + imgSize + 186);
+    }
+
+    // 时间线
+    const x0 = 150, top = headH;
+    if (ms.length) {
+      ctx.strokeStyle = "rgba(184,134,11,.42)"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x0, top); ctx.lineTo(x0, top + (ms.length - 1) * rowH); ctx.stroke();
+    }
+    ms.forEach((m, i) => {
+      const y = top + i * rowH;
+      ctx.beginPath(); ctx.arc(x0, y + 16, 10, 0, Math.PI * 2);
+      ctx.fillStyle = "#b8860b"; ctx.fill();
+      ctx.beginPath(); ctx.arc(x0, y + 16, 18, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(184,134,11,.35)"; ctx.lineWidth = 2; ctx.stroke();
+
+      ctx.textAlign = "left";
+      ctx.fillStyle = "rgba(61,43,31,.55)";
+      ctx.font = "24px 'PingFang SC','Microsoft YaHei',sans-serif";
+      ctx.fillText(ymd(m.at), x0 + 46, y + 10);
+      ctx.fillStyle = "#3d2b1f";
+      ctx.font = "bold 34px 'PingFang SC','Microsoft YaHei',sans-serif";
+      ctx.fillText((m.icon ? m.icon + " " : "") + escText(m.title).slice(0, 16), x0 + 46, y + 54);
+      if (m.sub) {
+        ctx.fillStyle = "rgba(61,43,31,.6)";
+        ctx.font = "25px 'PingFang SC','Microsoft YaHei',sans-serif";
+        ctx.fillText(escText(m.sub).slice(0, 22), x0 + 46, y + 94);
+      }
+    });
+
+    // 落款
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(61,43,31,.45)";
+    ctx.font = "26px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("· 文玩手串收藏馆 · 精灵回忆册 ·", W / 2, H - 90);
+    ctx.fillStyle = "rgba(184,134,11,.75)";
+    ctx.font = "24px 'PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText((o.owner ? o.owner + " @ " : "") + ymd(Date.now()), W / 2, H - 50);
+
+    return canvas;
+  }
+
   /* 分享海报（优先系统分享，否则下载） */
   async function shareCanvas(canvas, filename) {
     const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.92));
@@ -525,5 +629,5 @@
     return "downloaded";
   }
 
-  window.Poster = { singlePoster, galleryPoster, achievementPoster, favPoster, downloadCanvas, shareCanvas };
+  window.Poster = { singlePoster, galleryPoster, achievementPoster, favPoster, memoirPoster, downloadCanvas, shareCanvas };
 })();

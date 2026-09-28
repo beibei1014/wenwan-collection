@@ -2319,6 +2319,114 @@
     return { ok: true, msg: "文字模型回复：" + (txt || "(空)").slice(0, 40) };
   }
 
+  /* =========================================================
+   * v157：回忆册 —— 把这只精灵的"第一次"串成一条时间线
+   *   全本地推导，0 出图 0 模型调用；数据源都是已经存下来的时间戳
+   * ========================================================= */
+  function memoirOf(item, rec, ctx) {
+    item = item || {}; rec = rec || {};
+    const out = [];
+    const add = (at, icon, title, sub) => {
+      const t = Number(at) || 0;
+      if (!t || !title) return;
+      out.push({ at: t, icon: icon, title: String(title), sub: sub ? String(sub) : "" });
+    };
+
+    // ① 到家（入藏那天）
+    add(item.createdAt || item.arrivedAt, "🛍", "把它带回家", "一串还没脾气的珠子");
+    // ② 挂瓷成精
+    add(rec.bornAt, "✨", "挂瓷成精", "它第一次开口，喊的是你");
+    // ③ 模样与突破：立绘历史里 stage 发生变化的那些（第一条 = 初次有模样）
+    const hist = (rec.imgHistory || []).filter((x) => x && x.at);
+    let last = 0;
+    hist.forEach((x) => {
+      const st = Number(x.stage) || 0;
+      if (st < 1 || st === last) return;
+      const def = stageDef(st);
+      if (st === 1) add(x.at, "🎨", "有了自己的模样", def.icon + " " + def.name);
+      else add(x.at, "⚡", "突破 · " + def.name, "从上一形态又长大了一岁");
+      last = st;
+    });
+    // ④ 回响信（它替你记着的那些日子）
+    (rec.echoes || []).forEach((e) => add(e && e.at, "✦", (e && e.title) || "✦ 回响", "它替你记着的日子"));
+    // ⑤ 第一篇日记
+    const d0 = (rec.diary || [])[0];
+    add(d0 && d0.at, "📔", "写下第一篇日记", "从此有了自己的心事");
+    // ⑥ 第一张专属 CG
+    add(rec.cgAt, "🎬", "有了第一张专属插画", "你们的第一幕场景");
+
+    out.sort((a, b) => a.at - b.at);
+    return out;
+  }
+
+  /* =========================================================
+   * v157：精灵小镇 —— 每天自带几条"小镇里发生的小事"
+   *   纯本地拼接（确定性：同一天同一结果），0 出图 0 模型调用
+   * ========================================================= */
+  const TOWN_EVENTS = [
+    { icon: "🍵", t: "{a} 给 {b} 倒了盏茶，谁也没说话，坐了一炷香。" },
+    { icon: "🪡", t: "{b} 的线头散了，{a} 低头替它理顺，理了很久。" },
+    { icon: "🪷", t: "院子里那盆莲开了，{a} 把 {b} 叫出来看，两个人都没看出门道。" },
+    { icon: "🍊", t: "{a} 分了个橘子给 {b}，自己留了最小的一瓣。" },
+    { icon: "🌙", t: "半夜 {a} 醒了，发现 {b} 也睁着眼，就一起坐到天亮。" },
+    { icon: "🪑", t: "为了院里那把竹椅，{a} 和 {b} 客气了一整天，最后谁也没坐。" },
+    { icon: "📿", t: "{a} 教 {b} 数珠子，{b} 数到第三遍还是乱了。" },
+    { icon: "🕯", t: "{b} 喊冷，{a} 把自己的棉垫挪过去一半。" },
+    { icon: "🐈", t: "一只野猫翻墙进来，{a} 和 {b} 一起看着它，直到它走。" },
+    { icon: "🎋", t: "{a} 在墙上刻了一道，说这是它和 {b} 认识的头一个月。" },
+    { icon: "🍚", t: "灶上的饭糊了，{a} 说是 {b} 干的，{b} 没否认。" },
+    { icon: "🪁", t: "{a} 把风筝放断了线，{b} 说：断了就断了，明年再放。" },
+    { icon: "🧵", t: "{b} 的袖口磨破了，{a} 用同色的线补上，不细看看不出来。" },
+    { icon: "🌧", t: "下雨了，{b} 站在檐下不肯进去，{a} 就陪它站着。" },
+    { icon: "🍶", t: "{a} 把最后一盅让给了 {b}，说它今天高兴。" },
+    { icon: "🪶", t: "{a} 替 {b} 掸了掸肩上的灰，动作很轻。" },
+    { icon: "🧺", t: "{a} 和 {b} 一起晒了被子，收的时候抢着抱同一床。" },
+    { icon: "🪔", t: "灯芯烧短了，{a} 伸手挑亮，{b} 就着光看它。" },
+  ];
+  // cast: [{ id, name, roomId }] —— 由调用方组装（spirits 里不读 storage，方便单测）
+  function townEvents(cast, opts) {
+    opts = opts || {};
+    const list = (cast || []).filter((x) => x && x.id && x.name);
+    if (list.length < 2) return [];
+    const day = String(opts.day || todayKey());
+    const n = Math.max(1, Math.min(6, Number(opts.n) || 3));
+    const out = [];
+    const usedTpl = {};
+    for (let i = 0; i < n; i++) {
+      const h = hashStr(day + "#town#" + i);
+      // 2/3 概率优先挑"住同一间屋子"的一对，其余跨屋（在院子里碰上）
+      const byRoom = {};
+      list.forEach((x) => { if (x.roomId) (byRoom[x.roomId] = byRoom[x.roomId] || []).push(x); });
+      const roomIds = Object.keys(byRoom).filter((r) => byRoom[r].length >= 2);
+      let a = null, b = null;
+      if (roomIds.length && (h % 3 !== 0)) {
+        const arr = byRoom[roomIds[(h >> 4) % roomIds.length]];
+        let ai = (h >> 8) % arr.length;
+        let bi = (h >> 12) % arr.length;
+        if (bi === ai) bi = (ai + 1) % arr.length;      // 保证 a、b 不是同一只
+        a = arr[ai]; b = arr[bi];
+      } else {
+        let ai = (h >> 8) % list.length;
+        let bi = (h >> 12) % list.length;
+        if (bi === ai) bi = (ai + 1) % list.length;
+        a = list[ai]; b = list[bi];
+      }
+      if (!a || !b || a.id === b.id) continue;
+      // 几条动态尽量不撞同一句模板
+      let ti = (h >> 5) % TOWN_EVENTS.length;
+      for (let k = 0; k < TOWN_EVENTS.length && usedTpl[ti]; k++) ti = (ti + 1) % TOWN_EVENTS.length;
+      usedTpl[ti] = 1;
+      const tpl = TOWN_EVENTS[ti];
+      out.push({
+        icon: tpl.icon,
+        a: a.id, b: b.id, aName: a.name, bName: b.name,
+        sameRoom: !!a.roomId && a.roomId === b.roomId,
+        text: String(tpl.t).split("{a}").join(a.name).split("{b}").join(b.name),
+      });
+    }
+    return out;
+  }
+
   window.Spirits = {
     PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, SIZE_PRESETS_BY_PROVIDER, sizePresetsFor, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo, sizeLadderFor, MODEL_PICKS, refSupportOf, refSupportText, keyUiHint,
     STAGES, stageDef, stageInfo, growthOf,
@@ -2349,5 +2457,9 @@
     SIGNS, signOf, ensureSign,
     replyDiary, pendingReply,
     ECHO_DAYS, ECHO_LABEL, echoDue, ensureEcho, nextEcho, unreadMail,
+    // v157：回忆册（本地时间线，0 成本）
+    memoirOf,
+    // v157：精灵小镇（本地动态，0 成本）
+    TOWN_EVENTS, townEvents,
   };
 })();
