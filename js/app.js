@@ -3726,22 +3726,13 @@
     if (!diary.length) {
       h += '<div class="room-none">还没写过日记。它们一天最多写 1 篇（不定时），明天再来看看～</div>';
     } else {
-      // v126：最新一篇用"打字机"逐字亮相（下面前端会调 typewriteSpiritDiary；点击可立刻显示全文）
-      h += '<div class="sd-diary">' + diary.slice(0, 8).map((d, di) => {
-        const raw = String(d.text || "").replace(/^第[^\n]*\n/, "");
-        const isNew = di === 0;
-        // v155：这篇有没有被回过（回了它就等下一篇日记里回应）
-        const rep = (d.date && rec.replies && rec.replies[d.date]) ? rec.replies[d.date] : null;
-        return '<div class="sd-diary-item"><div class="sd-diary-date">' + esc(d.date || "") + "<span>" + fmtTime(d.at) + "</span></div>" +
-          (isNew
-            ? '<div class="sd-diary-text" id="sdDiaryNew" data-full="' + esc(raw) + '" data-at="' + (d.at || 0) + '" title="点一下立刻显示全文">' + esc(raw) + "</div>"
-            : '<div class="sd-diary-text">' + esc(raw).replace(/\n/g, "<br>") + "</div>") +
-          (rep ? '<div class="sd-diary-rep">你回了它：「' + esc(rep.text) + "」" +
-            (Number(rec.replyAcked) >= rep.at ? "" : '<span class="rep-wait">· 等它下一篇日记回应</span>') + "</div>" : "") +
-          (isNew ? '<button type="button" class="link-btn sd-rep-btn" id="sdRepBtn" data-date="' + esc(d.date || "") + '">↩️ 回它一句</button>' : "") +
-          "</div>";
-      }).join("") +
-        (diary.length > 8 ? '<div class="room-none">（只显示最近 8 篇，共 ' + diary.length + " 篇）</div>" : "") + "</div>" +
+      // v156：改成"翻页式日记本"——一次只摊开一篇，用 上一篇 / 下一篇 翻（内容由下面的 paintDiary 填）
+      h += '<div class="sd-diary-nav">' +
+        '<button type="button" class="dnb" id="sdDiaryPrev">‹ 上一篇</button>' +
+        '<span class="sd-diary-pos">第 <b id="sdDiaryNo">' + diary.length + "</b> / " + diary.length + " 篇</span>" +
+        '<button type="button" class="dnb" id="sdDiaryNext">下一篇 ›</button>' +
+        "</div>" +
+        '<div class="sd-diary-paper" id="sdDiaryBook"></div>' +
         // v155：回信输入（默认收起，点「↩️ 回它一句」才展开）
         '<div class="sd-rep-box" id="sdRepBox" hidden><textarea id="sdRepInput" maxlength="120" placeholder="写一句回它 —— 它下一篇日记会回应你"></textarea>' +
         '<button class="btn primary" id="sdRepSend">回它</button></div>';
@@ -3800,7 +3791,66 @@
     const nl = $("#sdNewLook"); if (nl) nl.onclick = () => spiritNewLook(it, host);
     const rr = $("#sdReRoll"); if (rr) rr.onclick = () => spiritReRoll(it, host);
     const su = $("#sdSetup"); if (su) su.onclick = () => showSpiritSetupModal(it);   // v127：设定向导
-    typewriteSpiritDiary(id);      // v126：最新一篇日记逐字亮相（带兜底，不会空白）
+    // v156：翻页式日记本 —— 一次摊开一篇，上一篇 / 下一篇（或左右滑动）翻
+    const dBook = $("#sdDiaryBook");
+    if (dBook && diary.length) {
+      const dPrev = $("#sdDiaryPrev"), dNext = $("#sdDiaryNext"), dNo = $("#sdDiaryNo");
+      // ⚠️ diary 是「最新在前」的倒序数组 → di=0 就是最新那篇
+      let di = 0;
+      // 单篇的 HTML（isNew = 是不是最新那篇：只有它能回信 + 打字机亮相）
+      const diaryPageHtml = (d, isNew) => {
+        const raw = String(d.text || "").replace(/^第[^\n]*\n/, "");
+        // v155：这篇有没有被回过（回了它就等下一篇日记里回应）
+        const rep = (d.date && rec.replies && rec.replies[d.date]) ? rec.replies[d.date] : null;
+        return '<div class="sd-page-item">' +
+          '<div class="sd-diary-date">' + esc(d.date || "") + "<span>" + fmtTime(d.at) + "</span></div>" +
+          (isNew
+            ? '<div class="sd-diary-text" id="sdDiaryNew" data-full="' + esc(raw) + '" data-at="' + (d.at || 0) + '" title="点一下立刻显示全文">' + esc(raw) + "</div>"
+            : '<div class="sd-diary-text">' + esc(raw).replace(/\n/g, "<br>") + "</div>") +
+          (rep ? '<div class="sd-diary-rep">你回了它：「' + esc(rep.text) + "」" +
+            (Number(rec.replyAcked) >= rep.at ? "" : '<span class="rep-wait">· 等它下一篇日记回应</span>') + "</div>" : "") +
+          (isNew ? '<button type="button" class="link-btn sd-rep-btn" id="sdRepBtn" data-date="' + esc(d.date || "") + '">↩️ 回它一句</button>' : "") +
+          "</div>";
+      };
+      const paintDiary = () => {
+        const isNew = di === 0;
+        const rbx = $("#sdRepBox");
+        if (rbx) rbx.hidden = true;                  // 翻页后收起回信框（它只跟着当前这篇）
+        dBook.innerHTML = diaryPageHtml(diary[di], isNew);
+        if (dNo) dNo.textContent = String(diary.length - di);   // 按时间顺序编号：最新那篇 = 第 N 篇
+        if (dPrev) dPrev.disabled = di >= diary.length - 1;     // 已经是第一篇了
+        if (dNext) dNext.disabled = isNew;                      // 已经是最新一篇了
+        const rb = $("#sdRepBtn");
+        if (rb && rbx) rb.onclick = () => {
+          rbx.hidden = false;
+          rbx.dataset.date = rb.dataset.date || Spirits.todayKey();
+          const ta = $("#sdRepInput");
+          if (ta) ta.focus();
+        };
+        if (isNew) typewriteSpiritDiary(id);         // v126：最新一篇逐字亮相（带兜底，不会空白）
+      };
+      // 上一篇 = 更早的一篇（数组往后走）；下一篇 = 更晚的一篇（往最新走）
+      const goEarlier = () => { if (di < diary.length - 1) { di += 1; paintDiary(); } };
+      const goLater = () => { if (di > 0) { di -= 1; paintDiary(); } };
+      if (dPrev) dPrev.onclick = goEarlier;
+      if (dNext) dNext.onclick = goLater;
+      // 手机上左右滑动也能翻（左滑 = 往更新的翻，右滑 = 往更早的翻）
+      let dSx = 0, dSy = 0, dSw = false;
+      dBook.addEventListener("touchstart", (e) => {
+        const t = e.touches && e.touches[0];
+        if (!t) return;
+        dSx = t.clientX; dSy = t.clientY; dSw = true;
+      }, { passive: true });
+      dBook.addEventListener("touchend", (e) => {
+        if (!dSw) return;
+        dSw = false;
+        const t = e.changedTouches && e.changedTouches[0];
+        if (!t) return;
+        const dx = t.clientX - dSx, dy = t.clientY - dSy;
+        if (Math.abs(dx) > 46 && Math.abs(dy) < 34) { if (dx < 0) goLater(); else goEarlier(); }
+      }, { passive: true });
+      paintDiary();
+    }
     const art = $("#sdArt");
     if (art) art.onclick = () => openSpiritViewer(rec.imgUrl || Spirits.localAvatarSvg(it));
     const cgEl = $("#sdCg");
@@ -3834,16 +3884,8 @@
       }
     }
     // v155：日记回信（你回它一句 → 它下一篇日记里回应）
-    const repBtn = $("#sdRepBtn");
+    //   v156：回信按钮现在跟着「当前摊开的那一篇」，绑定在 paintDiary 里了
     const repBox = $("#sdRepBox");
-    if (repBtn && repBox) {
-      repBtn.onclick = () => {
-        repBox.hidden = false;
-        repBox.dataset.date = repBtn.dataset.date || Spirits.todayKey();
-        const ta = $("#sdRepInput");
-        if (ta) ta.focus();
-      };
-    }
     const repSend = $("#sdRepSend");
     if (repSend) repSend.onclick = () => {
       const ta = $("#sdRepInput");
