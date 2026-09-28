@@ -153,7 +153,7 @@
     { en: "a scholar's crossed-collar robe with a wide sash", zh: "交领长衫 + 宽腰带" },
     { en: "a chunky knit vest over a collared shirt", zh: "粗针织毛背心 + 衬衫" },
     { en: "a hooded windbreaker with layered shorts", zh: "连帽风衣 + 层次短裤" },
-    { en: "a short-sleeved kimono-style yukata with a thin obi", zh: "和风浴衣 + 细腰带" },
+    { en: "a traditional Chinese tang-style jacket with frog buttons and a stand collar", zh: "中式对襟褂 + 盘扣立领" },
     { en: "a loose linen tunic with rolled sleeves and a rope belt", zh: "亚麻罩衫 + 绳结腰带" },
     { en: "an embroidered front-button jacket with cloud-patterned trim", zh: "绣花对襟褂 + 云纹滚边" },
     { en: "a camel cape over a high-neck base layer", zh: "驼色小斗篷 + 高领内搭" },
@@ -169,12 +169,12 @@
   const MATERIALS = ["matte linen", "soft brushed cotton", "sheeny silk", "cozy wool knit", "washed denim", "papery hemp"];
   const MATERIALS_ZH = { "matte linen": "哑光亚麻", "soft brushed cotton": "磨毛棉", "sheeny silk": "丝光", "cozy wool knit": "绒线针织", "washed denim": "水洗牛仔", "papery hemp": "麻质" };
   const PROPS = [
-    "holding a small tea cup", "carrying a tiny wooden tray", "holding a folding paper fan",
+    "holding a small tea cup", "carrying a tiny wooden tray", "holding a round Chinese silk fan painted with ink orchids",
     "holding a small paper lantern", "carrying a little woven basket", "holding a sprig of blossoms",
     "holding a slim wooden scroll", "holding a small cloth pouch",
   ];
   const PROPS_ZH = {
-    "holding a small tea cup": "捧着茶杯", "carrying a tiny wooden tray": "端着木托盘", "holding a folding paper fan": "拿着折扇",
+    "holding a small tea cup": "捧着茶杯", "carrying a tiny wooden tray": "端着木托盘", "holding a round Chinese silk fan painted with ink orchids": "拿着中式团扇（墨兰）",
     "holding a small paper lantern": "提着小灯", "carrying a little woven basket": "挎着小竹篮", "holding a sprig of blossoms": "拿着一枝花",
     "holding a slim wooden scroll": "握着卷轴", "holding a small cloth pouch": "拎着布囊",
   };
@@ -183,12 +183,15 @@
     "standing calmly with hands folded in front, gentle closed-lip smile",
     "mid-gesture with one hand raised as if explaining something, bright open smile",
     "head slightly tilted with hands behind the back, gaze a little off to the side, soft shy smile",
-    "one hand throwing a small peace sign, mischievous grin, weight shifted onto one leg",
+    "one hand waving hello, bright open smile, weight shifted onto one leg",
     "both hands cupped in front, warm soft expression, relaxed shoulders",
     "arms lightly crossed with the chin slightly raised, confident half-smile",
   ];
-  const POSES_ZH = ["双手交叠站得端正", "抬手比划着说话", "背手歪头、眼神偏一点", "比个小剪刀手、坏笑",
+  const POSES_ZH = ["双手交叠站得端正", "抬手比划着说话", "背手歪头、眼神偏一点", "挥着手打招呼、开朗地笑",
     "双手捧在身前、神情温柔", "抱臂微抬下巴、自信"];
+  // 全局负面约束：中国传统文玩调性——不要日式元素、不要剪刀手、不要坏笑
+  const NEG_STYLE = "strictly avoid any Japanese elements (Japanese flag, rising sun motif, kimono, yukata, torii gate, paper fan with red circle), " +
+    "no peace sign or V-sign hand gestures, no smirking or mischievous grin, use gentle neutral expressions and traditional Chinese styling only";
   // 中文说法（界面用；prompt 仍用英文原文）
   const HAIR_ZH = {
     "short spiky": "利落短发", "short neat and tidy": "清爽短发", "messy short hair with bangs": "蓬松碎短发",
@@ -460,7 +463,7 @@
       label: "日漫风 · 角色",
       // ⚠️ 这里**不能**写 chibi / big head：那是"身形比例"，必须交给阶段描述（STAGES.look），
       //    否则突破到觉醒期/完成体也还是 Q 版大头（用户实测吐槽过）。
-      text: "Japanese anime illustration, 2D anime character art, big expressive anime eyes with white highlights, " +
+      text: "anime illustration, 2D anime character art, big expressive anime eyes with white highlights, " +
         "cel shading, flat anime coloring, clean line art, soft pastel color palette, soft blush, " +
         "richly detailed outfit design with visible fabric folds and seams, small ornamental accessories, " +
         "expressive pose with personality, full body, centered composition, plain solid pastel background, " +
@@ -468,7 +471,7 @@
     },
     animepet: {
       label: "日漫风 · 小生物",
-      text: "Japanese anime style cute mascot creature, original pokemon-like creature design, cel shading, flat anime coloring, " +
+      text: "anime style cute mascot creature, original pokemon-like creature design, cel shading, flat anime coloring, " +
         "clean bold line art, big anime eyes with white highlight, tiny smile, small cute ears, round soft body, " +
         "full body, centered composition, plain solid pastel background, hand-drawn 2D anime, kawaii, " +
         "no 3D render, no realistic face, no human, no photo",
@@ -564,7 +567,7 @@
     { id: "cool", zh: "高冷傲娇", en: "cool and a little proud", face: "calm confident look with a tiny proud pout" },
     { id: "calm", zh: "沉稳可靠", en: "calm and dependable", face: "steady reassuring expression" },
     { id: "mystery", zh: "神秘慵懒", en: "mysterious and laid-back", face: "sleepy lidded eyes, lazy elegant mood" },
-    { id: "cheeky", zh: "古灵精怪", en: "playful and mischievous", face: "cheeky grin with a raised eyebrow" },
+    { id: "cheeky", zh: "古灵精怪", en: "playful and mischievous", face: "playful bright smile with sparkling eyes" },
   ];
   const PERSONA_BY_ID = {};
   PERSONAS_PICK.forEach((p) => { PERSONA_BY_ID[p.id] = p; });
@@ -746,7 +749,7 @@
         ", wearing " + ap.acc + ", " + ap.vibe + " personality, " + stageLook + ", " +
         "full body creature illustration, whole body visible, centered with comfortable margin";
     }
-    const bits = [cmp, soft, SINGLE, CONSISTENCY, GROWTH_LINE];
+    const bits = [cmp, soft, SINGLE, CONSISTENCY, GROWTH_LINE, NEG_STYLE];
     // v112：把「人物设定 → 形象细节关键词」也拼进去，立绘不再"只有颜色"
     const tags = getLookTags(item);
     if (tags) bits.push(lk.chosen
@@ -1557,13 +1560,13 @@
   /* ---------- v125：CG（场景插画） ----------
      规则（用户要求）：**幼生期 / 成长期只有立绘**；**觉醒期 / 完成体额外再出一张 CG**。
      精灵之间达成的事件（契合度解锁的剧情）也各配一张双人 CG。都是日漫风。 */
-  const CG_STYLE = "Japanese anime key visual CG illustration, 2D anime movie still, cel shading, " +
+  const CG_STYLE = "anime key visual CG illustration, 2D anime movie still, cel shading, " +
     "soft pastel palette, cinematic lighting, atmospheric mood, detailed painted background with gentle bokeh, " +
     "expressive body language, warm cozy feeling, masterpiece quality, " +
     "WIDE LANDSCAPE HORIZONTAL COMPOSITION, 16:9 cinematic framing like an anime film screenshot, " +
     "wide scenery on both sides, generous environment around the character, not a portrait, not a vertical poster, " +
     "no text, no letters, no words, no title, no labels, no watermark, no signature, no logo, " +
-    "single continuous scene, no split panels, no collage";
+    "single continuous scene, no split panels, no collage, " + NEG_STYLE;
   const CG_MOOD = [
     "just met and politely getting to know each other, a little shy, warm afternoon light",
     "comfortably chatting like friends, one of them laughing, golden sunset light through the window",
