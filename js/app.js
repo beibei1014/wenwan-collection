@@ -3275,6 +3275,8 @@
         if (Spirits.ensureGreet(it, r3, ctx)) dirty = true;
         if (Spirits.ensureSign(it, r3)) dirty = true;
         if (Spirits.ensureEcho(it, r3, ctx)) { dirty = true; changed = true; }   // 有新回响 → 要重渲染
+        // v158：节令事件（全本地；只有当天有节令才写，写一次就够）
+        if (Spirits.ensureFest(it, r3, ctx)) { dirty = true; changed = true; }
         if (dirty) Spirits.save(st2);
       }
       if (changed) rerenderSpiritView();
@@ -3590,6 +3592,7 @@
     if (Spirits.ensureGreet(it, rec, cpCtx)) cpDirty = true;
     if (Spirits.ensureSign(it, rec)) cpDirty = true;
     if (Spirits.ensureEcho(it, rec, cpCtx)) cpDirty = true;
+    if (Spirits.ensureFest(it, rec, cpCtx)) cpDirty = true;      // v158：节令（只有当天过节才写）
     if (cpDirty) Spirits.save(store);
     const p = rec.persona || Spirits.localPersona(it);
     const ap = Spirits.appearanceOf(it, rec.appearanceSeed || 0, rec.gender || "");
@@ -3653,6 +3656,36 @@
         ? '<div class="cp-echo">✦ 下一封回响：' + esc(nxEcho.label) + "（还有 " + nxEcho.days + " 天）</div>"
         : '<div class="cp-echo">✦ 回响都写完了 —— 每一枚纪念日它都留了信给你</div>') +
       "</div>";
+
+    // v158：🎋 节令 —— 传统节日当天它有一句专属的话；限定插画手动确认才画（点了才花额度）
+    const fests = Spirits.festList(rec);
+    const todayFest = Spirits.festOf(Spirits.todayKey());
+    const nxFest = Spirits.nextFest();
+    const festToday = (rec && rec.fests && rec.fests[Spirits.todayKey()]) || null;
+    h += '<div class="sd-card"><div class="sd-card-title">🎋 节令' +
+      (todayFest ? '<span class="cp-date">今天 · ' + esc(todayFest.name) + "</span>" : "") + "</div>";
+    if (festToday) {
+      h += '<div class="ft-item now">' +
+        '<div class="ft-head"><span>' + esc(festToday.emoji + " " + festToday.name) + "</span><span>" + esc(festToday.date) + "</span></div>" +
+        '<div class="ft-text">' + esc(festToday.text) + "</div>" +
+        (festToday.cgUrl
+          ? '<img class="cg-thumb ft-cgimg" data-cg="' + esc(festToday.cgUrl) + '" src="' + esc(festToday.cgUrl) + '" alt="节令插画">'
+          : '<button class="btn ghost" id="sdFestCg" data-date="' + esc(festToday.date) + '" style="width:100%;margin-top:8px;font-size:12px">🎬 画一张「' + esc(festToday.name) + '」限定插画（消耗 1 次出图额度）</button>') +
+        "</div>";
+    } else {
+      h += '<div class="room-none">今天不过节。' +
+        (nxFest ? "下一个是 " + esc(nxFest.emoji + " " + nxFest.name) + "（还有 " + nxFest.days + " 天）—— 到那天，它会说一句只属于这天的话。" : "") +
+        "</div>";
+    }
+    const festOld = fests.filter((fx) => fx.date !== Spirits.todayKey());
+    if (festOld.length) {
+      h += '<div class="ft-old">' + festOld.map((fx) =>
+        '<details class="ft-item"><summary><span>' + esc(fx.emoji + " " + fx.name) + "</span><span>" + esc(fx.date) + "</span></summary>" +
+        '<div class="ft-text">' + esc(fx.text) + "</div>" +
+        (fx.cgUrl ? '<img class="cg-thumb ft-cgimg" data-cg="' + esc(fx.cgUrl) + '" src="' + esc(fx.cgUrl) + '" alt="">' : "") +
+        "</details>").join("") + "</div>";
+    }
+    h += "</div>";
 
     h += '<div class="sd-card"><div class="sd-card-title">📝 人物设定' +
       '<button type="button" class="link-btn" id="sdSetup" style="float:right;font-size:11px">' +
@@ -3756,6 +3789,37 @@
         '<div class="sd-echo-head"><span>' + esc(e.title || "✦ 回响") + "</span><span>" + esc(fmtDay(e.at)) + "</span></div>" +
         '<div class="sd-echo-text">' + esc(e.text || "").replace(/\n/g, "<br>") + "</div></div>").join("") + "</div>";
     }
+    h += "</div>";
+
+    // v158：📖 主线 · 串与我 —— 你和它之间的故事（按四形态分卷解锁；全本地 0 成本）
+    const chapList = Spirits.chapterState(rec, cpCtx);
+    const chapRead = chapList.filter((ch) => ch.read).length;
+    const chapUnread = chapList.filter((ch) => ch.unlocked && !ch.read).length;
+    h += '<div class="sd-card"><div class="sd-card-title">📖 主线 · 串与我' +
+      '<small style="font-weight:400;color:var(--text-2);font-size:11px"> 你和它之间的故事 · 已看 ' + chapRead + "/" + chapList.length + "</small></div>" +
+      '<div class="chap-prog"><i style="width:' + Math.round((chapRead / Math.max(1, chapList.length)) * 100) + '%"></i></div>';
+    let lastVol = 0;
+    h += '<div class="chap-list">';
+    chapList.forEach((ch) => {
+      if (ch.vol !== lastVol) {
+        lastVol = ch.vol;
+        h += '<div class="chap-vol">' + esc(ch.volName) + "</div>";
+      }
+      if (!ch.unlocked) {
+        h += '<div class="chap-item locked"><span class="chap-ico">🔒</span>' +
+          '<div class="chap-body"><div class="chap-title">' + esc(ch.title) + "</div>" +
+          '<div class="chap-need">' + esc(ch.need || "还没解锁") + "</div></div></div>";
+        return;
+      }
+      h += '<div class="chap-item' + (ch.read ? "" : " unread") + '" data-chap="' + ch.i + '">' +
+        '<span class="chap-ico">' + esc(ch.icon) + "</span>" +
+        '<div class="chap-body"><div class="chap-title">' + esc(ch.title) +
+        (ch.read ? '<span class="chap-done">已读</span>' : '<span class="chap-new">新</span>') + "</div>" +
+        '<div class="chap-text" hidden>' + esc(Spirits.chapterText(it, rec, ch.i, cpCtx)).replace(/\n/g, "<br>") + "</div></div>" +
+        '<span class="chap-arrow">▾</span></div>';
+    });
+    h += "</div>";
+    if (chapUnread) h += '<div class="chap-hint">📖 有 ' + chapUnread + " 章新的 —— 点标题展开</div>";
     h += "</div>";
 
     // v157：🎞 回忆册 —— 它陪你的时间线（本地推导，0 出图；可一键合成竖版长图）
@@ -3875,6 +3939,80 @@
     if (art) art.onclick = () => openSpiritViewer(rec.imgUrl || Spirits.localAvatarSvg(it));
     const cgEl = $("#sdCg");
     if (cgEl) cgEl.onclick = () => openSpiritViewer(rec.cgUrl || "");
+    // v158：节令限定插画 —— 点了才确认、确认了才出图（一次确认 = 一次额度）
+    const festCgBtn = $("#sdFestCg");
+    if (festCgBtn) festCgBtn.onclick = async () => {
+      if (festCgBtn.disabled) return;
+      const dk = festCgBtn.dataset.date || Spirits.todayKey();
+      const r0 = Spirits.load()[id] || {};
+      const fx0 = (r0.fests && r0.fests[dk]) || null;
+      if (!fx0) return;
+      if (fx0.cgUrl) { openSpiritViewer(fx0.cgUrl); return; }
+      const yes = await confirmModal("画一张「" + fx0.name + "」限定插画？",
+        "按它现在的形象 + " + fx0.name + " 的节令场景，画一张横版插画，消耗 1 次出图额度。每只精灵每个节令只画一次，画好后就一直留着。",
+        "画这张（1 次额度）", true);
+      if (!yes) return;
+      festCgBtn.disabled = true;
+      festCgBtn.textContent = "正在画…（约 15-20 秒）";
+      try {
+        const r1 = Spirits.load()[id] || {};
+        const ap1 = Spirits.appearanceOf(it, r1.appearanceSeed || 0, r1.gender || "");
+        const lk1 = Spirits.lookOf(it, r1);
+        const prompt = Spirits.festCgPrompt(it, null, r1.stage || 1, ap1, lk1, fx0);
+        const cgRes = await Spirits.generateCustom(prompt, { landscape: true, ref: r1.imgUrl || "", seedKey: "festcg|" + id + "|" + dk, variant: 0 });
+        const cgUrl2 = cgRes.b64
+          ? await shrinkToDataUri("data:image/png;base64," + cgRes.b64, CG_IMG_SIZE, 0.86)
+          : ((await urlToDataUri(cgRes.url, CG_IMG_SIZE, 0.86)) || cgRes.url);
+        const st5 = Spirits.load();
+        const r5 = Spirits.ensureIn(st5, id);
+        r5.fests = r5.fests || {};
+        if (r5.fests[dk]) { r5.fests[dk].cgUrl = cgUrl2 || ""; r5.fests[dk].cgAt = Date.now(); }
+        r5.genCount = (Number(r5.genCount) || 0) + 1;
+        Spirits.save(st5);
+        try { localStorage.setItem("ww_gen_total", String(Number(localStorage.getItem("ww_gen_total") || "0") + 1)); } catch (e2) { /* 忽略 */ }
+        toast("🎋「" + fx0.name + "」限定插画画好了");
+        renderSpiritDetailPage(id);
+      } catch (e) {
+        festCgBtn.disabled = false;
+        festCgBtn.textContent = "🎬 重试（消耗 1 次出图额度）";
+        toast("出图失败：" + ((e && e.message) || "请稍后再试"));
+      }
+    };
+    // v158：主线章节 —— 点标题展开；首次展开即标记已读（就地更新计数，不整页重渲染，避免丢滚动位置）
+    view.querySelectorAll(".chap-item[data-chap]").forEach((el) => {
+      el.onclick = () => {
+        const ci = Number(el.dataset.chap);
+        const tx = el.querySelector(".chap-text");
+        if (!tx) return;
+        const wasOpen = !tx.hidden;
+        tx.hidden = wasOpen;
+        el.classList.toggle("open", !wasOpen);
+        if (wasOpen) return;
+        const st6 = Spirits.load();
+        const r6 = Spirits.ensureIn(st6, id);
+        if (!Spirits.readChapter(r6, ci)) return;
+        Spirits.save(st6);
+        el.classList.remove("unread");
+        const nw = el.querySelector(".chap-new");
+        if (nw) { nw.className = "chap-done"; nw.textContent = "已读"; }
+        const done = chapRead + 1;
+        const heads = view.querySelectorAll(".sd-card-title small");
+        for (let hi = 0; hi < heads.length; hi++) {
+          if ((heads[hi].textContent || "").indexOf("你和它之间的故事") >= 0) {
+            heads[hi].textContent = " 你和它之间的故事 · 已看 " + done + "/" + chapList.length;
+          }
+        }
+        const pr = view.querySelector(".chap-prog i");
+        if (pr) pr.style.width = Math.round((done / chapList.length) * 100) + "%";
+        const hint2 = view.querySelector(".chap-hint");
+        const left = chapUnread - 1;
+        if (hint2) { if (left > 0) hint2.textContent = "📖 有 " + left + " 章新的 —— 点标题展开"; else hint2.remove(); }
+      };
+    });
+    // v158：节令插画点开看大图
+    view.querySelectorAll(".ft-cgimg").forEach((el) => {
+      el.onclick = () => openSpiritViewer(el.dataset.cg || el.src || "");
+    });
     // v157：回忆卡（本地 canvas 合成，0 出图 0 模型调用）
     const memoBtn = $("#sdMemoCard");
     if (memoBtn) memoBtn.onclick = async () => {

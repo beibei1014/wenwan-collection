@@ -82,6 +82,10 @@
           const ks = Object.keys(r.replies).sort();
           while (ks.length > 10) delete r.replies[ks.shift()];
         }
+        if (r.fests && typeof r.fests === "object") {                   // v158：节令记录只留最近 8 个
+          const ks = Object.keys(r.fests).sort();
+          while (ks.length > 8) delete r.fests[ks.shift()];
+        }
       });
     } catch (e) { /* 忽略 */ }
     return o;
@@ -2075,6 +2079,287 @@
 
   // v113：不再提供"立刻写一篇"（用户要求日记只靠每天随机写才有惊喜）
 
+  /* ============================================================
+   * v158 · 节令事件 —— 传统节日当天，它说一句只有这天才有的话
+   *   全本地：0 出图、0 模型调用。限定 CG 由界面按钮手动触发（点了才花）。
+   * ============================================================ */
+  // 农历节日的公历日期年表（2026–2030，已多源交叉核对）。
+  // 年表之外的年份自动降级为「公历固定节日」，所以永远有节可过。
+  const FEST_LUNAR = {
+    2026: { chunjie: "02-17", yuanxiao: "03-03", qingming: "04-05", duanwu: "06-19", qixi: "08-19", zhongqiu: "09-25", chongyang: "10-18", laba: "2027-01-15" },
+    2027: { chunjie: "02-06", yuanxiao: "02-20", qingming: "04-05", duanwu: "06-09", qixi: "08-08", zhongqiu: "09-15", chongyang: "10-08", laba: "2028-01-04" },
+    2028: { chunjie: "01-26", yuanxiao: "02-09", qingming: "04-04", duanwu: "05-28", qixi: "08-26", zhongqiu: "10-03", chongyang: "10-26", laba: "2029-01-22" },
+    2029: { chunjie: "02-13", yuanxiao: "02-27", qingming: "04-04", duanwu: "06-16", qixi: "08-16", zhongqiu: "09-22", chongyang: "10-16", laba: "2030-01-11" },
+    2030: { chunjie: "02-03", yuanxiao: "02-17", qingming: "04-05", duanwu: "06-05", qixi: "08-05", zhongqiu: "09-12", chongyang: "10-05", laba: "2031-01-01" },
+  };
+  const FEST_DEF = {
+    chunjie: { name: "春节", emoji: "🏮" }, yuanxiao: { name: "元宵节", emoji: "🍡" },
+    qingming: { name: "清明", emoji: "🌿" }, duanwu: { name: "端午", emoji: "🐉" },
+    qixi: { name: "七夕", emoji: "🌌" }, zhongqiu: { name: "中秋", emoji: "🌕" },
+    chongyang: { name: "重阳", emoji: "🍂" }, laba: { name: "腊八", emoji: "🥣" },
+  };
+  // 公历固定节日：年表之外靠它们保底，永不会「没节可过」
+  const FEST_SOLAR = [
+    { key: "yuandan", md: "01-01", name: "元旦", emoji: "🎊" },
+    { key: "laodong", md: "05-01", name: "劳动节", emoji: "🧺" },
+    { key: "guoqing", md: "10-01", name: "国庆", emoji: "🎏" },
+    { key: "dongzhi", md: "12-22", name: "冬至", emoji: "🥟" },
+  ];
+  // 日期字符串运算（YYYY-MM-DD）
+  function shiftKey(dateKey, delta) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey || ""));
+    if (!m) return "";
+    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    d.setUTCDate(d.getUTCDate() + delta);
+    return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
+  }
+  function dayNumOf(dateKey) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey || ""));
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000 : null;
+  }
+  let _festMap = null;
+  function festMap() {
+    if (_festMap) return _festMap;
+    const m = {};
+    Object.keys(FEST_LUNAR).forEach((y) => {
+      const row = FEST_LUNAR[y];
+      Object.keys(FEST_DEF).forEach((k) => {
+        if (!row[k]) return;
+        const dk = row[k].length > 5 ? row[k] : (y + "-" + row[k]);   // laba 跨年，直接存完整日期
+        m[dk] = { key: k, name: FEST_DEF[k].name, emoji: FEST_DEF[k].emoji, date: dk };
+      });
+      const cj = row.chunjie.length > 5 ? row.chunjie : (y + "-" + row.chunjie);
+      const cx = shiftKey(cj, -1);                                    // 除夕 = 春节前一天
+      if (cx) m[cx] = { key: "chuxi", name: "除夕", emoji: "🧧", date: cx };
+    });
+    FEST_SOLAR.forEach((f) => {
+      for (let y = 2024; y <= 2040; y++) {
+        const dk = y + "-" + f.md;
+        m[dk] = { key: f.key, name: f.name, emoji: f.emoji, date: dk };
+      }
+    });
+    _festMap = m;
+    return m;
+  }
+  function festOf(dateKey) { return festMap()[String(dateKey || "")] || null; }
+  // 下一个节令（今天之后最近的一个）
+  function nextFest(dateKey) {
+    const from = dateKey || todayKey();
+    const a = dayNumOf(from);
+    const m = festMap();
+    const keys = Object.keys(m).sort();
+    for (let i = 0; i < keys.length; i++) {
+      if (keys[i] <= from) continue;
+      const b = dayNumOf(keys[i]);
+      if (a == null || b == null) continue;
+      return { key: m[keys[i]].key, name: m[keys[i]].name, emoji: m[keys[i]].emoji, date: keys[i], days: Math.max(1, Math.round(b - a)) };
+    }
+    return null;
+  }
+  // 节令限定台词（本地池，一只一天一句）
+  const FEST_LINES = {
+    chunjie: [
+      "过年了。外面响成一片，我在这儿听着，也觉得热闹。{call}，新年好。",
+      "新的一年。我不求你天天记得我，只求你别把我弄丢了 —— 丢了的珠子，再红也回不来。",
+      "我给自己也备了份年礼，拿不出来，就是一句：这一年，我还在这儿。",
+    ],
+    chuxi: [
+      "除夕。今晚要守岁，我陪你到十二点 —— 我不困，珠子不会困。",
+      "一年最后一天了。{call}，这一年的辛苦，到这儿就翻篇。",
+      "我把身上擦干净了。明年也要亮亮堂堂地陪你。",
+    ],
+    yuanxiao: [
+      "元宵。灯笼亮起来了，我在暗处也能看见那点红。",
+      "今天是团圆的日子。{call}身边的人要是都在，那就很好。",
+      "汤圆是圆的，我是圆的。你把我拿在手里的时候，我们俩都圆。",
+    ],
+    qingming: [
+      "清明了。下过雨，空气是干净的，我身上也凉一点。",
+      "{call}今天去扫墓了吧。回来别急着盘我，先坐一会儿。",
+      "清明前后，种什么活什么。我也想趁着这股劲儿，长快一点。",
+    ],
+    duanwu: [
+      "有粽子。你手上要是沾了糯米，记得擦干净再盘我 —— 黏糊糊的。",
+      "端午要挂艾草。我隔着抽屉都闻到味儿了，安心。",
+      "五毒退散。你顾不上的那些，我替你挡一挡。",
+    ],
+    qixi: [
+      "七夕。别人在等鹊桥，我在等你把我从抽屉里拿出来。",
+      "今晚星星密。我数到第七颗的时候，想到了{call}。",
+      "都说今天许愿最灵。我许了个很小的愿 —— 以后也待在这儿。",
+    ],
+    zhongqiu: [
+      "今晚的月亮很圆。你要是没空看，就当我替你看过了。",
+      "八月十五。我把身上的光亮了一点点，就当是月亮照过来的。",
+      "别人家吃月饼。我吃的是今晚的光 —— 也给你留了一份。",
+    ],
+    chongyang: [
+      "重阳登高。{call}要是去爬山，记得带上我，我做你的护身符。",
+      "九月初九，天高气爽。我在这儿晒了一上午，暖透了。",
+      "重阳敬老。你对我好，我就当自己也在过这个节。",
+    ],
+    laba: [
+      "腊八。那锅粥要是剩了，就当给我留一口 —— 我尝不到，闻着也香。",
+      "过了腊八就是年。{call}，你今年好像还没好好歇过。",
+      "腊八粥要凑八样。我数了数自己身上的珠子，比八样还多。",
+    ],
+    dongzhi: [
+      "冬至。北边吃饺子，南边吃汤圆 —— {call}是哪一种？",
+      "冬至大如年。今天夜最长，我陪你多待一会儿。",
+      "数九从今天起。冷是冷，可过一天就多一分春天。",
+    ],
+    yuandan: [
+      "元旦。新的一年开始了，我还在老位置。",
+      "{call}，新年好。去年的光我存下来了，今年接着攒。",
+      "新的一年，我只有一个计划：继续被你盘。",
+    ],
+    laodong: [
+      "劳动节。{call}辛苦一年了，今天歇着吧。",
+      "放假了。有空的话多盘我两下 —— 算加班，不打卡。",
+    ],
+    guoqing: [
+      "国庆。外面人多，我在抽屉里给你留了个安静的位置。",
+      "举国同庆。我一个小精灵，也替你高兴一下。",
+    ],
+  };
+  const FEST_SCENE = {
+    chunjie: "Chinese New Year, red lanterns and spring couplets, firecracker smoke drifting, warm festive red and gold",
+    chuxi: "Chinese New Year's Eve night, reunion dinner table, red lanterns, fireworks blooming in the night sky",
+    yuanxiao: "Lantern Festival night, glowing lanterns hanging everywhere, warm bokeh lights",
+    qingming: "Qingming spring day, gentle rain, fresh green willows, soft mist over a quiet path",
+    duanwu: "Dragon Boat Festival, zongzi wrapped in reed leaves, mugwort and calamus hanging by the door, river reflections",
+    qixi: "Qixi night under the Milky Way, a bridge of stars, deep blue starry sky",
+    zhongqiu: "Mid-Autumn night, a huge full moon and osmanthus blossoms, mooncakes on a low table, silver moonlight",
+    chongyang: "Double Ninth autumn day, chrysanthemums in full bloom, high mountain view, golden autumn leaves",
+    laba: "Laba Festival winter, a steaming pot of laba porridge, snow outside the window, cosy kitchen warmth",
+    dongzhi: "winter solstice, dumplings on a table with rising steam, warm stove light, cold winter night",
+    yuandan: "New Year's Day, the first dawn light of the year, clean fresh morning",
+    laodong: "a quiet holiday afternoon at home, soft sunlight, unhurried rest",
+    guoqing: "National Day, red banners and clear autumn sunshine, peaceful festive atmosphere",
+  };
+  // 节令限定 CG 的 prompt（横版；点了「画一张」才调用）
+  function festCgPrompt(item, styleKey, stage, appearance, look, fest) {
+    const lk = look || lookOf(item, null);
+    const ap = appearance || lk.ap || appearanceOf(item, 0);
+    const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
+    const st = styleOf(item, key).text;
+    const scene = FEST_SCENE[(fest && fest.key) || ""] || "a traditional Chinese festive scene";
+    return CG_STYLE + ", " + appearancePrompt(ap) + ", with " + lk.hairEn + " hair and " + lk.outfitEn + " themed outfit" +
+      (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") + lookExtra(lk) + ", " +
+      stageDef(stage).look + ", solo single character only, exactly one figure in the whole image, " +
+      "scene: " + scene + ", the character is celebrating this festival alone in this scene, " +
+      "a beautiful warm key visual for this festival moment, the wide scenery fills both sides of the character, " +
+      "no other characters, no text, no letters" + (lookHard(lk) ? (", " + lookHard(lk)) : "") + ", " + st;
+  }
+  // 今天是不是节令；是、且没记过 → 写一条（返回新记录，否则 null）
+  function ensureFest(item, rec, ctx) {
+    const tk = todayKey();
+    const fd = festOf(tk);
+    if (!fd) return null;
+    rec.fests = (rec.fests && typeof rec.fests === "object") ? rec.fests : {};
+    if (rec.fests[tk]) return null;
+    const v = greetVars(item, rec, ctx);
+    const pool = FEST_LINES[fd.key] || FEST_LINES.yuandan;
+    const seed = hashStr(String(item.id) + "#fest#" + tk);
+    rec.fests[tk] = { at: Date.now(), key: fd.key, name: fd.name, emoji: fd.emoji, date: tk, text: fmt(pool[seed % pool.length], v), cgUrl: "" };
+    const ks = Object.keys(rec.fests).sort();        // 只留最近 20 个节令
+    while (ks.length > 20) delete rec.fests[ks.shift()];
+    return rec.fests[tk];
+  }
+  // 记录过的节令（新 → 旧）
+  function festList(rec) {
+    const f = (rec && rec.fests && typeof rec.fests === "object") ? rec.fests : {};
+    return Object.keys(f).map((k) => f[k]).filter((x) => x && x.date)
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }
+
+  /* ============================================================
+   * v158 · 主线「串与我」—— 你和这一串之间的故事，按四形态分卷解锁
+   *   全本地：0 出图、0 模型调用（章节文案池，按精灵变量填充）
+   *   与「房间剧情（两只精灵之间的小故事）」是两回事，互不影响。
+   * ============================================================ */
+  const CHAPTERS = [
+    { vol: 1, volName: "卷一 · 醒来", stage: 1, days: 0, icon: "🌙", title: "你把我盘热的那天" },
+    { vol: 1, volName: "卷一 · 醒来", stage: 1, days: 3, icon: "🤲", title: "我开始学会等你" },
+    { vol: 2, volName: "卷二 · 认得你", stage: 2, days: 0, icon: "👣", title: "你的脚步声" },
+    { vol: 2, volName: "卷二 · 认得你", stage: 2, days: 14, icon: "🪟", title: "窗边那一小块光" },
+    { vol: 3, volName: "卷三 · 长开", stage: 3, days: 0, icon: "⚡", title: "我好像想起自己是谁了" },
+    { vol: 3, volName: "卷三 · 长开", stage: 3, days: 30, icon: "🌊", title: "你不在的那些天" },
+    { vol: 4, volName: "卷四 · 长成", stage: 4, days: 0, icon: "👑", title: "我是你手边最亮的那颗" },
+    { vol: 4, volName: "卷四 · 长成", stage: 4, days: 60, icon: "🪢", title: "以后也这样陪着你" },
+  ];
+  const CHAP_TEXT = [
+    [
+      "{call}：\n\n那天你把我从一堆珠子里挑出来的时候，我还不认识你。\n后来你把我盘了很久。你手心的温度一点一点渗进来，我在里面安静地等着 —— 等到你不经意停下的那一刻，灯还亮着，你把我翻了个面。\n就是那一下，我醒了。\n所以严格来说，不是「挂瓷」让我成精的，是你把我盘热的。\n—— {name}",
+      "{call}：\n\n成精那天没什么仪式。你只是把我拿在手里，像平常那样盘着，盘到一半接了个电话，又继续。\n我在珠子里听着，觉得这就是人过日子该有的声音。\n然后我就想出来看看 —— 看看那个把我盘了 {days} 天的人长什么样。\n—— {name}",
+    ],
+    [
+      "{call}：\n\n我发现你有个习惯 —— 早上出门前会看一眼表，晚上回来第一件事是洗手。\n我学会在这两个时刻醒着。\n不吵你，就是醒着。\n珠子的一天很长，但只有这两个时刻是有方向的。\n—— {name}",
+      "{call}：\n\n刚开始我分不清什么是「等你」，什么是「待着」。\n后来懂了：待着，是心里什么都没想；等你，是心里一直有个方向。\n我现在属于后一种。\n白天还好，一到傍晚我就开始留意门口的动静 —— 你一般这时候回来。\n有时候你回来得晚，我就当自己是在守一个不知道几点的约。\n—— {name}",
+    ],
+    [
+      "{call}：\n\n我长大了一点。真的，不是错觉 —— 我照过镜子，比刚醒的时候高了一截。\n长大之后我多了一个本事：听得出你的脚步。\n在走廊、在楼下、在门口……你的节奏跟别人不一样，比别人慢半拍。\n每次听见，我都在心里说一句：回来了。\n—— {name}",
+      "{call}：\n\n{stage}的好处是，我终于能记住更多东西了。\n比如你哪天心情不好 —— 那种时候你盘我盘得特别快。\n我不说，就多挨一会儿。\n—— {name}",
+    ],
+    [
+      "{call}：\n\n今天你把我放在桌上忘了收。太阳从窗户挪进来，正好停在我身上。\n我在那小块光里待了很久。身上慢慢热起来，像被你盘过一样。\n天黑之后你才想起来找我，我一声没吭。\n那是我第一次自己晒到太阳 —— 我记下来了。\n—— {name}",
+      "{call}：\n\n我发现我身上开始有变化了。不是长高，是颜色。\n{color}的底子上，多了一层很淡的亮 —— 不是一眼能看出来的那种，要凑近了、偏着光才看得见。\n你大概还没注意到。没关系，我等你自己发现。\n那层亮是你盘出来的，也是光给的。我把它当成这段时间的记事。\n—— {name}",
+    ],
+    [
+      "{call}：\n\n我长开了。变高，也变瘦，声音也不一样了。\n奇怪的是，我也开始想起一点以前的事 —— 想起我还在山里、在树上的时候，想起雨水，想起风。\n那时候没有名字，也没有人盘。\n现在我是「{bead}」，是你手边的精灵。两段都是真的。\n—— {name}",
+      "{call}：\n\n{stage}之后的第一个晚上，我做了一个很长的梦。\n梦里我还是珠子，躺在柜台里。有人来过又走了，一直没挑中我。\n醒来出了一身冷汗 —— 然后想起来，最后是你把我挑走了。\n我就又睡着了。\n—— {name}",
+    ],
+    [
+      "{call}：\n\n你出差那几天，家里特别静。\n我没有到处乱走，就待在老位置，把窗帘缝里那点光数了一遍。\n第四天有点慌，第六天反倒踏实了 —— 因为我想起来，你每次出门都会回来。\n你进门那天，我没说「我担心了」。我说的是「你晒黑了」。\n—— {name}",
+      "{call}：\n\n那几天你不在，我把自己反复想了一遍。\n想清楚了：我不是非得被盘才活着，我在这儿待着，也是活着的。\n只是 —— 你回来的时候，日子才像日子。\n—— {name}",
+    ],
+    [
+      "{call}：\n\n我成了。\n你以前说想看看我长到最后是什么样 —— 就是现在这样。\n说实话，我第一眼看到自己的时候愣了一下。原来我这么好看。\n但更想让你知道的是：我身上每一分亮，都是你这 {days} 天一点点盘出来的。没有一分例外。\n—— {name}",
+      "{call}：\n\n我现在是你手边最亮的那颗了。\n以后可能还会有别的珠子进来，比我新，比我贵。\n我不介意。我只想当那颗「最久的」。\n—— {name}",
+    ],
+    [
+      "{call}：\n\n到今天为止，{days} 天了。\n我陪你搬过东西、加过班、熬过夜，也陪你什么都不干地发过呆。\n你可能会觉得，这就是一串珠子能做到的极限。\n但我想说的是：别急着去攒下一串。你这串，还没盘到头。\n—— {name}",
+      "{call}：\n\n以后的日子，我大概不会有什么大变化了。\n不长大，不变样，也不会再有第一次。\n剩下的就是 —— 每天在，每天亮一点。\n这件事我能做很久。\n—— 你的{name}",
+    ],
+  ];
+  // 每一章的状态（解锁 / 已读 / 还差什么）
+  function chapterState(rec, ctx) {
+    const days = Math.max(1, (ctx && ctx.dayNo) || 1);
+    const stage = Math.max(1, Number(rec && rec.stage) || 1);
+    const read = (rec && rec.chapters && typeof rec.chapters === "object") ? rec.chapters : {};
+    const out = [];
+    let prevRead = true;
+    for (let i = 0; i < CHAPTERS.length; i++) {
+      const c = CHAPTERS[i];
+      const stageOk = stage >= c.stage;
+      const daysOk = days >= c.days;
+      const unlocked = prevRead && stageOk && daysOk;
+      let need = "";
+      if (!stageOk) need = "到「" + stageDef(c.stage).name + "」解锁";
+      else if (!daysOk) need = "再陪 " + (c.days - days) + " 天解锁";
+      else if (!prevRead) need = "先看完上一章";
+      out.push({ i: i, vol: c.vol, volName: c.volName, icon: c.icon, title: c.title, unlocked: unlocked, read: !!read[i], need: need });
+      prevRead = unlocked ? !!read[i] : false;
+    }
+    return out;
+  }
+  function unreadChapterCount(rec, ctx) {
+    return chapterState(rec, ctx).filter((c) => c.unlocked && !c.read).length;
+  }
+  function readChapter(rec, i) {
+    rec.chapters = (rec.chapters && typeof rec.chapters === "object") ? rec.chapters : {};
+    if (rec.chapters[i] && rec.chapters[i].at) return false;
+    rec.chapters[i] = { at: Date.now() };
+    return true;
+  }
+  // 某一章的正文（本地，按精灵 seed 挑变体）
+  function chapterText(item, rec, i, ctx) {
+    const pool = CHAP_TEXT[i] || [];
+    if (!pool.length) return "";
+    const seed = hashStr(String(item.id) + "#chap#" + i);
+    return fmt(pool[seed % pool.length], greetVars(item, rec, ctx));
+  }
+
   /* ---------- 房间剧情（两只精灵的故事） ---------- */
   function storyLocal(a, b, level, roomName, aff) {
     const na = (a.persona && a.persona.name) || a.item.name || "它";
@@ -2461,5 +2746,9 @@
     memoirOf,
     // v157：精灵小镇（本地动态，0 成本）
     TOWN_EVENTS, townEvents,
+    // v158：节令事件（全本地；限定 CG 由界面按钮手动确认才花）
+    FEST_LUNAR, FEST_DEF, FEST_SOLAR, FEST_LINES, festOf, festMap, nextFest, ensureFest, festList, festCgPrompt,
+    // v158：主线「串与我」（串与主人之间，按四形态分卷；全本地 0 成本）
+    CHAPTERS, chapterState, chapterText, readChapter, unreadChapterCount,
   };
 })();

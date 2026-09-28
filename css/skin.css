@@ -955,3 +955,57 @@
 .town-ev-text { font-size: 12.5px; line-height: 1.7; color: var(--wood-2); }
 .town-ev-ico { margin-right: 4px; }
 .town-ev-sub { margin-top: 2px; font-size: 10.5px; color: var(--text-2); }
+
+/* ============================================================
+   v158 · 节令事件 + 主线「串与我」
+   ============================================================ */
+/* 🎋 节令 */
+.ft-item {
+  padding: 9px 10px; border-radius: var(--r-md);
+  background: linear-gradient(180deg, #fffaf0, #f8eeda);
+  border: 1px solid color-mix(in srgb, var(--gold) 34%, var(--line) 66%);
+}
+.ft-item.now { border-color: color-mix(in srgb, var(--gold) 62%, var(--line) 38%); box-shadow: var(--shadow-1); }
+.ft-head { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: #8a5a1e; }
+.ft-head span:last-child { font-weight: 400; color: var(--text-2); }
+.ft-text { margin-top: 6px; font-size: 13px; line-height: 1.85; color: var(--wood-2); }
+.ft-cgimg { margin-top: 8px; }
+.ft-old { margin-top: 9px; display: flex; flex-direction: column; gap: 6px; }
+details.ft-item { padding: 0; background: color-mix(in srgb, var(--card) 92%, #fff); border-color: var(--line); }
+details.ft-item > summary {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 10px; font-size: 12px; color: var(--wood-2); cursor: pointer; list-style: none;
+}
+details.ft-item > summary::-webkit-details-marker { display: none; }
+details.ft-item > summary span:last-child { font-size: 11px; color: var(--text-2); }
+details.ft-item[open] > summary { border-bottom: 1px dashed color-mix(in srgb, var(--line) 80%, #fff); }
+details.ft-item > .ft-text { padding: 0 10px 10px; }
+
+/* 📖 主线 · 串与我 */
+.chap-prog { height: 6px; border-radius: 999px; overflow: hidden; margin: 2px 0 10px; background: color-mix(in srgb, var(--line) 62%, #fff); }
+.chap-prog i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #e6c085, #c08a2e); transition: width .45s var(--ease-out); }
+.chap-list { display: flex; flex-direction: column; }
+.chap-vol { margin: 10px 0 5px; font-size: 11.5px; font-weight: 800; letter-spacing: .5px; color: #8a5a1e; }
+.chap-vol:first-child { margin-top: 0; }
+.chap-item {
+  display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; margin-bottom: 6px;
+  border-radius: var(--r-md); cursor: pointer;
+  background: color-mix(in srgb, var(--card) 94%, #fff);
+  border: 1px solid color-mix(in srgb, var(--line) 82%, #fff);
+}
+.chap-item.unread { border-color: color-mix(in srgb, var(--gold) 48%, var(--line) 52%); background: #fffaf0; }
+.chap-item.locked { cursor: default; opacity: .72; }
+.chap-ico { flex: 0 0 auto; font-size: 15px; line-height: 1.4; }
+.chap-body { flex: 1; min-width: 0; }
+.chap-title { font-size: 13px; font-weight: 700; color: var(--wood-2); display: flex; align-items: center; gap: 6px; }
+.chap-need { margin-top: 2px; font-size: 11px; color: var(--text-2); }
+.chap-new { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; color: #fff; background: #c08a2e; }
+.chap-done { font-size: 10px; font-weight: 400; padding: 1px 6px; border-radius: 999px; color: var(--text-2); background: color-mix(in srgb, var(--line) 60%, #fff); }
+.chap-arrow { flex: 0 0 auto; font-size: 12px; color: var(--text-2); transition: transform .25s var(--ease-out); }
+.chap-item.open .chap-arrow { transform: rotate(180deg); }
+.chap-text {
+  margin-top: 8px; padding-top: 8px; font-size: 13px; line-height: 1.9; color: var(--wood-2);
+  border-top: 1px dashed color-mix(in srgb, var(--line) 80%, #fff);
+}
+.chap-item.locked .chap-arrow { display: none; }
+.chap-hint { margin-top: 4px; font-size: 11.5px; color: #8a5a1e; }
