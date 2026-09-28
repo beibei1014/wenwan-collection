@@ -178,21 +178,41 @@
     "holding a small paper lantern": "提着小灯", "carrying a little woven basket": "挎着小竹篮", "holding a sprig of blossoms": "拿着一枝花",
     "holding a slim wooden scroll": "握着卷轴", "holding a small cloth pouch": "拎着布囊",
   };
-  // 性格 → 表情/姿态（把"性格"画进立绘里，而不是只换颜色）
-  const POSES = [
-    "standing calmly with hands folded in front, gentle closed-lip smile",
-    "mid-gesture with one hand raised as if explaining something, bright open smile",
-    "head slightly tilted with hands behind the back, gaze a little off to the side, soft shy smile",
-    "one hand waving hello, bright open smile, weight shifted onto one leg",
-    "both hands cupped in front, warm soft expression, relaxed shoulders",
-    "arms lightly crossed with the chin slightly raised, confident half-smile",
+  // 姿态池（v152）：全面中式化并扩充到 16 种 —— 中国古风仪态（作揖/拱手/拂袖/执笔/捻珠/团扇…），
+  //   去掉「挥手打招呼」「抬手比划说话」这类偏现代随意的动作；不含 wink / 剪刀手 / 坏笑。
+  //   ⚠️ 姿态**不再是系统锁定的属性**（用户要求：动作按人设自由发挥）——
+  //   这里只作为「中式仪态候选表」，喂给 buildLookTags 做参考，避免 AI 写出日式/现代手势。
+  //   ⚠️ 用 {en,zh} 成对定义再各自 map，保证中英顺序绝不跑偏。
+  const POSES_CAT = [
+    { en: "performing a traditional Chinese cupped-fist salute (gongshou, hands clasped together in front), respectful warm smile", zh: "作揖抱拳、恭敬含笑" },
+    { en: "bowing the upper body forward slightly with hands clasped in a traditional Chinese zuoyi bow, courteous and gentle", zh: "欠身作揖、彬彬有礼" },
+    { en: "standing calmly with both hands folded inside wide crossed sleeves, gentle closed-lip smile", zh: "双手拢袖、端静含笑" },
+    { en: "lifting one long flowing sleeve with a hand as if about to bow, graceful classical courtesy", zh: "拂袖致意、仪态端雅" },
+    { en: "head slightly tilted with hands behind the back, gaze a little off to the side, soft shy smile", zh: "背手歪头、眼神偏一点" },
+    { en: "both hands cupped holding a small cup, warm soft expression, relaxed shoulders", zh: "双手捧盏、神情温柔" },
+    { en: "holding a round Chinese silk fan half in front of the face, smiling eyes", zh: "团扇半遮面、眼含笑意" },
+    { en: "fingering a string of prayer beads with softly lowered eyes, serene and calm", zh: "低眸捻珠、静气凝神" },
+    { en: "holding a writing brush as if about to write, focused gentle expression", zh: "执笔欲书、神情专注" },
+    { en: "unfolding a scroll with both hands to read, curious soft smile", zh: "双手展卷、微带好奇" },
+    { en: "arms lightly crossed with the chin slightly raised, confident dignified half-smile", zh: "抱臂微抬下巴、自信含笑" },
+    { en: "sitting neatly with legs folded to one side, hands resting on the knees, serene classical posture", zh: "侧身敛坐、据膝安然" },
+    { en: "one hand resting on the other sleeve, composed and dignified, gazing steadily forward", zh: "一手抚袖、端立凝望" },
+    { en: "raising one hand in a quiet graceful Chinese greeting with the sleeve flowing down, subtle warm smile", zh: "抬袖轻招、温然一笑" },
+    { en: "half-turned glancing back over the shoulder with the sleeve flowing, light elegant stance", zh: "回眸拂袖、身姿轻盈" },
+    { en: "standing quietly in profile with hands clasped in front, gazing into the distance, faint serene smile", zh: "侧身远望、静默含笑" },
   ];
-  const POSES_ZH = ["双手交叠站得端正", "抬手比划着说话", "背手歪头、眼神偏一点", "挥着手打招呼、开朗地笑",
-    "双手捧在身前、神情温柔", "抱臂微抬下巴、自信"];
-  // 全局负面约束：中国传统文玩调性——不要日式元素、不要现代/西式服装、不要剪刀手、不要坏笑
+  const POSES = POSES_CAT.map((x) => x.en);
+  const POSES_ZH = POSES_CAT.map((x) => x.zh);
+  // 全局负面约束：中国传统文玩调性——不要日式元素、不要现代/西式服装、不要剪刀手/坏笑/wink，并禁止肢体画错
   const NEG_STYLE = "traditional Chinese styling only, strictly no Japanese elements (Japanese flag, rising sun motif, kimono, yukata, torii gate, paper fan with red circle), " +
     "strictly no modern or Western clothing (no jacket, no hoodie, no sweatshirt, no T-shirt, no jeans, no denim, no sportswear, no tracksuit, no suit and tie, no sneakers, no zipper coat), " +
-    "no peace sign or V-sign hand gestures, no smirking or mischievous grin, use gentle neutral expressions and ancient Chinese hanfu-inspired costume";
+    "no peace sign or V-sign hand gestures, no smirking or mischievous grin, no winking, no playful winks, no exaggerated cartoon expressions, " +
+    "strictly no anatomy errors (no third arm, no extra hand, no extra fingers, no missing limb, no deformed or fused hands), " +
+    "use gentle neutral expressions and ancient Chinese hanfu-inspired costume";
+  // v152 全局解剖安全约束：出图模型常把手指/手臂画错（三只手、六指），每次出图都带上
+  const ANATOMY = "strictly correct human anatomy, exactly two arms and two hands, five fingers per hand, " +
+    "simple clear hand shapes, both hands resting naturally and unobstructed, " +
+    "no extra limbs, no extra hands, no extra fingers, no hidden overlapping arms, no detached floating hand";
   // v150 全局正面风格约束：所有精灵统一「中国古风」（用户要求：整个 App 是中国传统文玩调性）
   const GUOFENG = "traditional Chinese gufeng (ancient Chinese dynasty) aesthetic, hanfu-inspired classical costume and hairstyle " +
     "(long flowing hair, hair buns, hairpins, braids and ponytails are all traditional and fine), " +
@@ -229,6 +249,7 @@
       : rollGender((item && item.id) || "");        // 兜底：老记录/未成精时按 id 稳定掷一次
     const hairs = g === "boy" ? BOY_HAIR : GIRL_HAIR;
     const vi = (h >> 12) % VIBES.length;
+    const pi = (h >> 8) % POSES.length;       // v152：姿态与性格解耦（姿态池可独立扩充）
     return {
       gender: g,
       hair: hairs[(h >> 3) % hairs.length],
@@ -241,18 +262,19 @@
       patternZh: PATTERNS[(h >> 21) % PATTERNS.length].zh,
       material: MATERIALS[(h >> 24) % MATERIALS.length],
       prop: PROPS[(h >> 26) % PROPS.length],
-      pose: POSES[vi],
+      pose: POSES[pi],
+      poseIdx: pi,
       vibe: VIBES[vi],
       vibeIdx: vi,
     };
   }
   function appearanceText(ap) {
-    const g = ap.vibeIdx != null ? ap.vibeIdx : Math.max(0, VIBES.indexOf(ap.vibe));
-    // v151：不再显示被锁死的发型（用户反馈：中式古风不该锁发型——发型由「人物设定」说了算）
+    // v152：**不再锁死姿态**（用户反馈：别限定动作，姿态由「人物设定」自由发挥，效果更好）。
+    //   这里只锚定 性别 / 瞳色 / 配饰 / 服装 / 纹样 / 布料；发型与姿态都交给人物设定。
     return (ap.gender === "boy" ? "👦 男孩" : "👧 女孩") + " · " +
       (EYES_ZH[ap.eyes] || ap.eyes) + "眼睛 · " + (ACC_ZH[ap.acc] || ap.acc) +
       " · " + (ap.outfitZh || ap.outfit) + " · " + (ap.patternZh || (ap.pattern + " 纹样")) +
-      " · " + (MATERIALS_ZH[ap.material] || ap.material) + " · " + (POSES_ZH[g] || "");
+      " · " + (MATERIALS_ZH[ap.material] || ap.material);
   }
   // 形象细节条（详情页给人看的一行短描述）
   function appearanceDetail(ap) {
@@ -261,15 +283,15 @@
   }
   function appearancePrompt(ap) {
     const isBoy = ap.gender === "boy";
-    // v151：**不再锁死发型**（用户反馈：中式古风本就不该锁发型，「长发男孩」完全合理）。
-    //   这里只锚定：性别 + 瞳色 + 配饰 + 服装 + 纹样 + 布料 + 姿态；
-    //   发型完全交给「人物设定」—— buildLookTags 会把人设里的发型细节翻成英文关键词进 prompt。
+    // v151/v152：**不再锁死发型、也不再锁死姿态**（用户反馈：中式古风不该锁发型，动作也别限定，按人设出更好）。
+    //   这里只锚定：性别 + 瞳色 + 配饰 + 服装 + 纹样 + 布料；
+    //   发型与姿态完全交给「人物设定」—— buildLookTags 会把设定里的细节翻成英文关键词进 prompt。
     return (isBoy
       ? "a young boy character, clearly male, boyish face: "
       : "a young girl character, clearly female, girlish face: ") +
       ap.eyes + " eyes, wearing " + ap.acc + " and " + ap.acc2 + ", " +
-      "outfit: " + ap.outfit + ", trimmed with " + ap.pattern + ", " + ap.material + " fabric texture, " +
-      "pose: " + ap.pose + (ap.prop ? ", " + ap.prop : "") + ", " + ap.vibe + " personality";
+      "outfit: " + ap.outfit + ", trimmed with " + ap.pattern + ", " + ap.material + " fabric texture" +
+      (ap.prop ? ", " + ap.prop : "") + ", " + ap.vibe + " personality";
   }
   // 一致性硬约束：每次出图都带上，防止突破后"换人"
   // ⚠️ 这里曾经写过 "character evolution sheet"（进化图鉴）→ 模型真的画成了**多格图鉴**：
@@ -712,7 +734,9 @@
       "必须把这句话的意思自然融进正文，让整段读起来是一份完整统一的设定，不要引用原话、不要说「主人说过」、不要写成两套人设；" +
       "⑥ 精灵的性别以下方标注为准，指代精灵的代词绝不能用错；" +
       "⑦【发色、瞳色、特殊特征照下方给定内容写；但**发型自由发挥**】中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），按精灵的性别/性格/主人写的设定来定，不要生硬套短发；" +
-      "⑧【整段基调是中国古风】衣服一律写中式传统样式（汉服、长衫、褂子、襦裙、道袍等），禁止出现现代服装（夹克、运动服、卫衣、T恤、牛仔裤、西装等）。";
+      "⑧【整段基调是中国古风】衣服一律写中式传统样式（汉服、长衫、褂子、襦裙、道袍等），禁止出现现代服装（夹克、运动服、卫衣、T恤、牛仔裤、西装等）；" +
+      "⑨【姿态自由发挥、不要摆拍】可写一个自然的中式仪态（作揖、拱手、拂袖、团扇半遮面、低眸捻珠、执笔、捧盏、展卷等），" +
+      "双手位置要简单清楚、不要遮叠手臂或复杂手势（否则出图容易画成三只手 / 多指），不要现代随意手势或 wink。";
     const NL = String.fromCharCode(10);
     const user = "精灵名：" + ((persona && persona.name) || item.name || "小精灵") +
       NL + spiritGenderLine(ap0) +
@@ -759,7 +783,7 @@
         ", wearing " + ap.acc + ", " + ap.vibe + " personality, " + stageLook + ", " +
         "full body creature illustration, whole body visible, centered with comfortable margin";
     }
-    const bits = [cmp, GUOFENG, soft, SINGLE, CONSISTENCY, GROWTH_LINE, NEG_STYLE];
+    const bits = [cmp, GUOFENG, ANATOMY, soft, SINGLE, CONSISTENCY, GROWTH_LINE, NEG_STYLE];
     // v112：把「人物设定 → 形象细节关键词」也拼进去，立绘不再"只有颜色"
     const tags = getLookTags(item);
     if (tags) bits.push(lk.chosen
@@ -1330,20 +1354,25 @@
   function getLookTags(item) { const all = loadLooks(); const r = item && all[item.id]; return r && r.tags ? r.tags : ""; }
   // 无 AI 时的英文形象细节（结构化拼出来的，保证"不只靠颜色"）
   function localLookTags(ap) {
+    // v152：不再塞入被锁定的姿态（用户要求动作按人设自由发挥）→ 只给一个解剖安全的自然站姿
     return [ap.outfit, ap.material + " fabric", ap.pattern + " trim", ap.acc, ap.acc2,
-      ap.pose, ap.prop, ap.vibe + " expression"].filter(Boolean).join(", ");
+      "natural relaxed classical standing pose, both hands clearly visible and correctly drawn",
+      ap.prop, ap.vibe + " expression"].filter(Boolean).join(", ");
   }
   // 有 AI 时：让它读完中文人物设定，输出英文绘图关键词（形象就"照着人设画"）
   async function buildLookTags(item, ap, personaZh, persona) {
-    // v151 前缀：强制重建一次形象关键词 —— 让「人设里描述的发型」真正进入出图 prompt
-    const key = "v151|" + lookKeyOf(ap) + "|" + (personaZh ? hashStr(personaZh).toString(36) : "");
+    // v152 前缀：强制重建一次形象关键词 —— 让「人设里的发型/姿态」真正进入出图 prompt
+    const key = "v152|" + lookKeyOf(ap) + "|" + (personaZh ? hashStr(personaZh).toString(36) : "");
     const all = loadLooks();
     if (all[item.id] && all[item.id].key === key && all[item.id].tags) return all[item.id].tags;
     let tags = "";
     if (getAiKey() && personaZh) {
       try {
         const sys = "你是动画角色设定师。读给定的中文人物设定，输出一行**英文**绘图关键词（逗号分隔，12-20 个），"
-          + "依次覆盖：服装款式与剪裁、布料质感、配色与纹样点缀、发型细节、配饰细节、表情、姿势、1 个小道具。"
+          + "依次覆盖：服装款式与剪裁、布料质感、配色与纹样点缀、发型细节、配饰细节、表情、姿态、1 个小道具。"
+          + "【姿态按人物设定自由发挥】读完人设后自己判断它此刻自然的动作，优先中国古风仪态"
+          + "（可参考：" + POSES_ZH.join("、") + "）；不要现代随意手势（挥手打招呼、比 V、插兜、剪刀手），不要 wink。"
+          + "【解剖安全】姿态要简单清楚、双手位置明确、不遮叠手臂，避免复杂手势（否则容易画成三只手 / 多指）。"
           + "不要解释、不要编号、不要 Markdown、不要中文。";
         const user = "角色：" + spiritDesc(item, persona, null) + "；固定外形（必须遵守）：" + appearanceText(ap) +
           "；人物设定：" + personaZh + "。请输出形象细节关键词。";
@@ -1396,8 +1425,8 @@
     const rec = ensureIn(store, item.id);
     const lk0 = rec.look || {};
     // 缓存键带上用户的一句话/融合设定：改了设定 → 人设卡跟着重写（否则立绘换了设定卡还是旧的）
-    // v150 前缀 = 规则再升级（外形必须照设定写 + 中国古风），旧的写错发型/现代服装的人设卡全部作废重写一遍
-    const key = "v150|" + (ap.gender || "") + "|" + ap.hair + "|" + ap.eyes + "|" + ap.acc + "|" + (item.color || "") + "|" + (persona && persona.name || "") +
+    // v152 前缀 = 规则再升级（人设里加入「标志性仪态」+ 姿态不再被系统锁死），旧人设卡作废重写一遍
+    const key = "v152|" + (ap.gender || "") + "|" + ap.hair + "|" + ap.eyes + "|" + ap.acc + "|" + (item.color || "") + "|" + (persona && persona.name || "") +
       "|" + (lk0.base || "") + "|" + (lk0.profile || "");
     if (!force && rec.personaZh && rec.personaZhKey === key) return rec.personaZh;
     let txt = "";
@@ -1406,7 +1435,9 @@
         const sys = "你在为一个中文文玩收藏 App 写「挂瓷精灵」的人物设定卡。手串盘到挂瓷会成精，变成一只小精灵。"
           + "请写一段连贯的中文人物设定，200-300 字，用第三人称旁观介绍（不要用「你」称呼精灵），"
           + "必须包含：① 外形（性别、发型、瞳色、配饰；衣服/头发颜色要说明取自古珠的颜色）"
-          + "② 性格（含 2-3 个具体小习惯）③ 与主人的关系与日常。"
+          + "② 性格（含 2-3 个具体小习惯）③ 与主人的关系与日常"
+          + "④ 一个自然的标志性仪态 / 小动作（中国古风优先：作揖、拱手、拂袖、团扇半遮面、低眸捻珠、执笔、捧盏、展卷等）；"
+          + "写仪态时双手位置要简单清楚、不要遮叠手臂或复杂手势（否则出图容易画成三只手 / 多指），也不要现代随意手势或 wink。"
           + "【瞳色/服装/配饰照下方给出的「固定人设」写；但**发型不受限制、自由发挥**】"
           + "中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），按精灵的性别、性格和主人写的设定来定，"
           + "绝不要因为固定人设里没写发型、就生硬地套一个短发。"
@@ -1582,7 +1613,7 @@
     "WIDE LANDSCAPE HORIZONTAL COMPOSITION, 16:9 cinematic framing, " +
     "wide scenery on both sides, generous environment around the character, not a portrait, not a vertical poster, " +
     "no text, no letters, no words, no title, no labels, no watermark, no signature, no logo, " +
-    "single continuous scene, no split panels, no collage, " + NEG_STYLE;
+    "single continuous scene, no split panels, no collage, " + ANATOMY + ", " + NEG_STYLE;
   const CG_MOOD = [
     "just met and politely getting to know each other, a little shy, warm afternoon light",
     "comfortably chatting like friends, one of them laughing, golden sunset light through the window",
