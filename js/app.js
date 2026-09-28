@@ -2904,6 +2904,11 @@
     if (diaryToday) {
       html += '<div class="diary-hint" id="diaryHint">📔 今天有 <b>' + diaryToday + '</b> 只精灵写了日记 · 点它的头像进去看</div>';
     }
+    // v155：有新回响（纪念日信）—— 一年就那么几次，值得提醒一下
+    const echoN = list.reduce((s, it) => s + Spirits.unreadMail(store[it.id] || {}), 0);
+    if (echoN) {
+      html += '<div class="diary-hint echo" id="echoHint">✦ 有 <b>' + echoN + '</b> 封回响信 · 点它的头像进去看看</div>';
+    }
 
     html += '<button class="btn primary" id="spAllBtn" style="width:100%;margin-top:14px">👀 查看全部精灵（' + list.length + '）</button>';
     const sh = setupHintHtml(list, store);
@@ -2919,8 +2924,10 @@
     if (allBtn) allBtn.onclick = () => location.hash = "#/spirits";
     const dh = $("#diaryHint");
     if (dh) dh.onclick = () => location.hash = "#/spirits";
+    const eh = $("#echoHint");
+    if (eh) eh.onclick = () => location.hash = "#/spirits";
     // 异步补性格 + 人设/形象细节（要在出图之前）→ 出图 + 老图头像取景 + 日记 + 房间契合度/剧情
-    ensureSpiritData(list, false);
+    ensureSpiritData(list);
     ensureSpiritLook(list).then(() => ensureSpiritImages(list)).then(() => ensureSpiritCg(list));   // v125：立绘好了再画 CG（拿立绘当参考、更像同一个人）
     ensureSpiritFaces(list);
     ensureSpiritExtras(list);
@@ -3017,7 +3024,7 @@
     const back = $("#spBackRooms");
     if (back) back.onclick = () => location.hash = "#/spirit";
     bindRedrawAll(list, renderAllSpiritsPage);
-    ensureSpiritData(list, false);
+    ensureSpiritData(list);
     ensureSpiritLook(list).then(() => ensureSpiritImages(list)).then(() => ensureSpiritCg(list));
     ensureSpiritFaces(list);
     ensureSpiritExtras(list);
@@ -3090,12 +3097,19 @@
       dayNo: Math.max(1, DB.daysWith(it)),
       plays: it.playCount || 0,
       playedToday: playedToday,
+      canBreak: Spirits.stageInfo(it, rec && rec.stage, DB.daysWith(it)).canBreak,   // v155：问候/签文用
     };
   }
   function fmtTime(ts) {
     if (!ts) return "";
     const d = new Date(ts);
     return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+  // v155：日期（回响信落款用）
+  function fmtDay(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   }
   function unreadStoryCount() { return Rooms.unreadStories(roomItems()).length; }
   // 今天写了日记、并且还没去看过的精灵数
@@ -3243,8 +3257,20 @@
         const ap = Spirits.appearanceOf(it, rec0.appearanceSeed || 0, rec0.gender || "");
         const st = Spirits.load();
         const r2 = Spirits.ensureIn(st, it.id);
-        const added = await Spirits.ensureDiary(it, r2, ap, diaryCtx(it, r2));
+        const ctx = diaryCtx(it, r2);
+        const added = await Spirits.ensureDiary(it, r2, ap, ctx);
         if (added) changed = true;
+        // v155：陪伴系统本地结算（问候 / 亲密度 / 每日一签 / 回响）—— 0 出图、0 模型调用
+        // ⚠️ 必须在 ensureDiary 之后**重新 load**：ensureDiary 内部自己 load+save，
+        //    如果拿旧对象再 save 会把刚写好的日记冲掉
+        const st2 = Spirits.load();
+        const r3 = Spirits.ensureIn(st2, it.id);
+        let dirty = false;
+        if (Spirits.settleBond(it, r3, ctx)) dirty = true;
+        if (Spirits.ensureGreet(it, r3, ctx)) dirty = true;
+        if (Spirits.ensureSign(it, r3)) dirty = true;
+        if (Spirits.ensureEcho(it, r3, ctx)) { dirty = true; changed = true; }   // 有新回响 → 要重渲染
+        if (dirty) Spirits.save(st2);
       }
       if (changed) rerenderSpiritView();
     } catch (e) { /* 静默 */ }
@@ -3550,7 +3576,16 @@
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
     const store = Spirits.load();
-    const rec = store[id] || {};
+    const rec = Spirits.ensureIn(store, id);
+    // v155：进详情页先本地结算陪伴数据（今日问候 / 亲密度 / 今日一签 / 回响信），一次 save
+    //   —— 全本地，0 出图、0 模型调用
+    const cpCtx = diaryCtx(it, rec);
+    let cpDirty = false;
+    if (Spirits.settleBond(it, rec, cpCtx)) cpDirty = true;
+    if (Spirits.ensureGreet(it, rec, cpCtx)) cpDirty = true;
+    if (Spirits.ensureSign(it, rec)) cpDirty = true;
+    if (Spirits.ensureEcho(it, rec, cpCtx)) cpDirty = true;
+    if (cpDirty) Spirits.save(store);
     const p = rec.persona || Spirits.localPersona(it);
     const ap = Spirits.appearanceOf(it, rec.appearanceSeed || 0, rec.gender || "");
     const lkNow = Spirits.lookOf(it, rec);   // v140：提前取到，合并到「人物设定」单卡
@@ -3581,6 +3616,38 @@
       '<div class="sd-line">“' + esc(p.line || "") + '”</div>' +
       '<div class="spirit-tags" style="justify-content:center">' + ((p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
       '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div></div>";
+
+    // v155：今天 · 陪伴卡（今日问候 + 羁绊 + 今日一签 + 下一封回响倒计时）
+    const bond = Spirits.bondLevel(rec.bond);
+    const nxEcho = Spirits.nextEcho(it, rec, Math.max(1, DB.daysWith(it)));
+    h += '<div class="sd-card cp-card">' +
+      '<div class="sd-card-title">🎐 今天<span class="cp-date">' + esc((rec.greet && rec.greet.date) || Spirits.todayKey()) + "</span></div>" +
+      (rec.greet
+        ? '<div class="cp-greet"><span class="cp-mood">' + esc(rec.greet.mood) + "</span>" +
+          '<div class="cp-bubble">' + esc(rec.greet.text) + "</div></div>"
+        : "") +
+      '<div class="cp-bond">' +
+        '<div class="cp-bond-head"><span>羁绊</span><b>' + bond.value + "</b><i>" + bond.icon + " " + esc(bond.name) + "</i></div>" +
+        '<div class="cp-track"><i style="width:' + bond.pct + '%"></i></div>' +
+        '<div class="cp-sub">' + (bond.isMax ? "已经是最熟的那一档了" : "再攒 " + bond.toNext + " 点到「" + esc(bond.next) + "」") +
+          " · 它陪了你 " + DB.daysWith(it) + " 天</div>" +
+        (rec.nickCall
+          ? '<div class="cp-sub">💛 它现在叫你「' + esc(rec.nickCall) + '」<button type="button" class="link-btn" id="sdCallReset" style="font-size:11px">改回叫「主人」</button></div>'
+          : (bond.canCall && !rec.nickCallAsked
+            ? '<div class="cp-call">💛 你们已经熟了 —— 它想改口，不再喊「主人」了' +
+              '<button type="button" class="btn primary cp-call-btn" id="sdCallYes">好，叫我名字</button>' +
+              '<button type="button" class="btn ghost cp-call-btn" id="sdCallNo">还是叫主人</button></div>'
+            : "")) +
+      "</div>" +
+      (rec.sign
+        ? '<div class="cp-sign"><div class="cp-sign-head"><span class="cp-sign-lv">' + esc(rec.sign.lv) + "</span><span>" + esc(rec.sign.date) + " · 今日一签</span></div>" +
+          '<div class="cp-sign-line"><b class="yi">宜</b>' + esc(rec.sign.yi) + '<b class="ji">忌</b>' + esc(rec.sign.ji) + "</div>" +
+          '<div class="cp-sign-s">' + esc(rec.sign.text) + "</div></div>"
+        : "") +
+      (nxEcho
+        ? '<div class="cp-echo">✦ 下一封回响：' + esc(nxEcho.label) + "（还有 " + nxEcho.days + " 天）</div>"
+        : '<div class="cp-echo">✦ 回响都写完了 —— 每一枚纪念日它都留了信给你</div>') +
+      "</div>";
 
     h += '<div class="sd-card"><div class="sd-card-title">📝 人物设定' +
       '<button type="button" class="link-btn" id="sdSetup" style="float:right;font-size:11px">' +
@@ -3663,12 +3730,35 @@
       h += '<div class="sd-diary">' + diary.slice(0, 8).map((d, di) => {
         const raw = String(d.text || "").replace(/^第[^\n]*\n/, "");
         const isNew = di === 0;
+        // v155：这篇有没有被回过（回了它就等下一篇日记里回应）
+        const rep = (d.date && rec.replies && rec.replies[d.date]) ? rec.replies[d.date] : null;
         return '<div class="sd-diary-item"><div class="sd-diary-date">' + esc(d.date || "") + "<span>" + fmtTime(d.at) + "</span></div>" +
           (isNew
             ? '<div class="sd-diary-text" id="sdDiaryNew" data-full="' + esc(raw) + '" data-at="' + (d.at || 0) + '" title="点一下立刻显示全文">' + esc(raw) + "</div>"
-            : '<div class="sd-diary-text">' + esc(raw).replace(/\n/g, "<br>") + "</div>") + "</div>";
+            : '<div class="sd-diary-text">' + esc(raw).replace(/\n/g, "<br>") + "</div>") +
+          (rep ? '<div class="sd-diary-rep">你回了它：「' + esc(rep.text) + "」" +
+            (Number(rec.replyAcked) >= rep.at ? "" : '<span class="rep-wait">· 等它下一篇日记回应</span>') + "</div>" : "") +
+          (isNew ? '<button type="button" class="link-btn sd-rep-btn" id="sdRepBtn" data-date="' + esc(d.date || "") + '">↩️ 回它一句</button>' : "") +
+          "</div>";
       }).join("") +
-        (diary.length > 8 ? '<div class="room-none">（只显示最近 8 篇，共 ' + diary.length + " 篇）</div>" : "") + "</div>";
+        (diary.length > 8 ? '<div class="room-none">（只显示最近 8 篇，共 ' + diary.length + " 篇）</div>" : "") + "</div>" +
+        // v155：回信输入（默认收起，点「↩️ 回它一句」才展开）
+        '<div class="sd-rep-box" id="sdRepBox" hidden><textarea id="sdRepInput" maxlength="120" placeholder="写一句回它 —— 它下一篇日记会回应你"></textarea>' +
+        '<button class="btn primary" id="sdRepSend">回它</button></div>';
+    }
+    h += "</div>";
+
+    // v155：✦ 回响 —— 纪念日信件（本地生成，只在这一天出现）
+    const echoes = (Array.isArray(rec.echoes) ? rec.echoes : []).slice().reverse();
+    h += '<div class="sd-card"><div class="sd-card-title">✦ 回响（' + echoes.length + "）" +
+      '<small style="font-weight:400;color:var(--text-2);font-size:11px"> 它替你记着的日子</small></div>';
+    if (!echoes.length) {
+      h += '<div class="room-none">还没有回响。它会在陪你的第 7 / 30 / 100 天，还有每年挂瓷那天，主动写一封信给你 —— 那些日子不用你记，它记着。</div>';
+    } else {
+      h += '<div class="sd-echo">' + echoes.map((e) =>
+        '<div class="sd-echo-item' + (Number(rec.mailSeenAt) < (e.at || 0) ? " new" : "") + '">' +
+        '<div class="sd-echo-head"><span>' + esc(e.title || "✦ 回响") + "</span><span>" + esc(fmtDay(e.at)) + "</span></div>" +
+        '<div class="sd-echo-text">' + esc(e.text || "").replace(/\n/g, "<br>") + "</div></div>").join("") + "</div>";
     }
     h += "</div>";
 
@@ -3734,6 +3824,68 @@
         updateStoryDot();
       }
     }
+    // v155：进详情页 = 回响看过了（清掉红点）
+    if ((rec.echoes || []).length) {
+      const lastEcho = (rec.echoes.slice(-1)[0] || {}).at || 0;
+      if ((rec.mailSeenAt || 0) < lastEcho) {
+        const s4 = Spirits.load();
+        Spirits.ensureIn(s4, it.id).mailSeenAt = lastEcho;
+        Spirits.save(s4);
+      }
+    }
+    // v155：日记回信（你回它一句 → 它下一篇日记里回应）
+    const repBtn = $("#sdRepBtn");
+    const repBox = $("#sdRepBox");
+    if (repBtn && repBox) {
+      repBtn.onclick = () => {
+        repBox.hidden = false;
+        repBox.dataset.date = repBtn.dataset.date || Spirits.todayKey();
+        const ta = $("#sdRepInput");
+        if (ta) ta.focus();
+      };
+    }
+    const repSend = $("#sdRepSend");
+    if (repSend) repSend.onclick = () => {
+      const ta = $("#sdRepInput");
+      const t = ta ? String(ta.value || "").trim() : "";
+      if (!t) { toast("写一句再回它"); return; }
+      const s5 = Spirits.load();
+      const r5 = Spirits.ensureIn(s5, it.id);
+      Spirits.replyDiary(it, r5, (repBox && repBox.dataset.date) || Spirits.todayKey(), t);
+      Spirits.save(s5);
+      toast("💌 回它了，它下一篇日记会回应你");
+      refresh();
+    };
+    // v155：改口（羁绊到「交心」后它会想叫你的名字）
+    const callYes = $("#sdCallYes");
+    if (callYes) callYes.onclick = () => {
+      const s6 = Spirits.load();
+      const r6 = Spirits.ensureIn(s6, it.id);
+      const o6 = Spirits.getOwner();
+      r6.nickCall = (o6 && o6.name) ? o6.name : "你";
+      r6.nickCallAsked = 1;
+      Spirits.save(s6);
+      toast("💛 它开始叫你「" + r6.nickCall + "」了");
+      refresh();
+    };
+    const callNo = $("#sdCallNo");
+    if (callNo) callNo.onclick = () => {
+      const s7 = Spirits.load();
+      const r7 = Spirits.ensureIn(s7, it.id);
+      r7.nickCall = ""; r7.nickCallAsked = 1;
+      Spirits.save(s7);
+      toast("它还是叫你「主人」");
+      refresh();
+    };
+    const callReset = $("#sdCallReset");
+    if (callReset) callReset.onclick = () => {
+      const s8 = Spirits.load();
+      const r8 = Spirits.ensureIn(s8, it.id);
+      r8.nickCall = ""; r8.nickCallAsked = 1;
+      Spirits.save(s8);
+      toast("改回叫「主人」了");
+      refresh();
+    };
     // v150：打开详情即按需重写「人物设定」——旧档（写错发型 / 现代服装 / 没融合设定）一次性作废重写
     (async () => {
       try {
@@ -4427,9 +4579,9 @@
     })();
   }
 
-  // 补齐性格（一次把缺的都补上，再统一刷新）与当天来信
+  // 补齐性格（一次把缺的都补上，再统一刷新）
   let _spiritBusy = false;
-  async function ensureSpiritData(list, needLetter) {
+  async function ensureSpiritData(list) {
     if (_spiritBusy) return;
     _spiritBusy = true;
     try {
@@ -4454,28 +4606,9 @@
       // 注意：这里的重渲染期间 _spiritBusy 仍为 true，避免自己递归进来
       if (changed && location.hash === "#/spirit") renderSpiritPage();
 
-      // 2) 每天第一封自动来信
-      if (needLetter) {
-        const tk = Spirits.todayKey();
-        const store2 = Spirits.load();
-        const pending = list.filter((it) => !store2[it.id] || store2[it.id].lastLetterDay !== tk);
-        if (pending.length) {
-          const it = pending[Math.floor(Math.random() * pending.length)];
-          const rec = Spirits.ensureIn(store2, it.id);
-          const p = rec.persona || (await Spirits.persona(it));
-          const idle = it.lastPlayedAt ? Math.floor((Date.now() - it.lastPlayedAt) / 86400000) : null;
-          const text = await Spirits.letter({ item: it, persona: p, idleDays: idle }, (user && user.displayName) || "");
-          // ⚠️ 写信是异步的，中间可能已经出过图/CG → 重新 load 再写，别覆盖别人的结果
-          const st3 = Spirits.load();
-          const r3 = Spirits.ensureIn(st3, it.id);
-          r3.letters = (Array.isArray(r3.letters) ? r3.letters : []);
-          r3.letters.push({ at: Date.now(), text, from: p.name || it.name });
-          r3.letters = r3.letters.slice(-20);
-          r3.lastLetterDay = tk;
-          Spirits.save(st3);
-          if (location.hash === "#/spirit") renderSpiritPage();
-        }
-      }
+      // 2) v155：**取消"每天自动来信"**（用户要求：日记已经取代了每日来信）
+      //    每天要有的内容是：精灵详情页的「今日问候 + 今日一签」，以及纪念日才发的「回响」信。
+      //    回响在 ensureSpiritExtras 里本地结算，不花任何额度。
     } catch (e) { /* 静默：本地模板兜底已在 Spirits 内部处理 */ }
     _spiritBusy = false;
   }

@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  const STORE_KEY = "ww_spirits";      // { [itemId]: { persona, variant, imgUrl, letters, chats, lastLetterDay } }
+  const STORE_KEY = "ww_spirits";      // { [itemId]: { persona, stage, imgUrl, diary, echoes, bond, greet, sign, replies, ... } }
   const CFG_KEY = "ww_imgcfg";         // 绘图通道配置
   // 出图尺寸：Seedream 5 要求「总像素 3,686,400 ~ 16,777,216，宽高比 1/16~16」，
   // 所以默认用**明确的竖版宽×高**（1728x2304 = 398 万像素，稳过，而且正好是立绘比例）。
@@ -77,6 +77,11 @@
         if (Array.isArray(r.imgHistory)) r.imgHistory = r.imgHistory.slice(-1);
         if (Array.isArray(r.diary)) r.diary = r.diary.slice(-8);
         if (Array.isArray(r.letters)) r.letters = r.letters.slice(-5);
+        if (Array.isArray(r.echoes)) r.echoes = r.echoes.slice(-5);     // v155：回响信也一起瘦身
+        if (r.replies && typeof r.replies === "object") {               // v155：日记回信只留最近 10 条
+          const ks = Object.keys(r.replies).sort();
+          while (ks.length > 10) delete r.replies[ks.shift()];
+        }
       });
     } catch (e) { /* 忽略 */ }
     return o;
@@ -1673,6 +1678,16 @@
     let body = pick(pool, seed);
     if (idle != null && idle >= 3) body = "已经 " + idle + " 天没被盘了，我数得很清楚。不是催，就是记一下。";
     if (ctx && ctx.playedToday) body = "今天被盘了 " + ctx.plays + " 次，身上暖暖的。我喜欢被盘完那一下的安静。";
+    // v155：主人回过一句 → 这篇日记里回应它（"记忆闭环"）
+    const rep = (ctx && ctx.reply) ? String(ctx.reply) : "";
+    if (rep) {
+      body = pick([
+        "你上次说「" + rep + "」，我想了好几天，今天才想好怎么回：我收到了，也记住了。",
+        "「" + rep + "」—— 这句话我抄在心里了。你不用再说第二遍。",
+        "你说的「" + rep + "」，我一直记着。今天日记就写这个吧。",
+        "「" + rep + "」。嗯，我听见了。听见了就很高兴。",
+      ], seed) + "\n" + body;
+    }
     return head + "\n" + body;
   }
   async function diaryWrite(item, rec, ap, ctx) {
@@ -1685,7 +1700,10 @@
         const user = "精灵设定：" + spiritDesc(item, p, rec.stage) + "；人设：" + appearanceText(ap) +
           (ctx && ctx.playedToday ? "；今天被盘了 " + ctx.plays + " 次" : "") +
           (ctx && ctx.idleDays != null ? "；已经 " + ctx.idleDays + " 天没被盘" : "") +
-          "；今天是陪主人的第 " + ((ctx && ctx.dayNo) || 1) + " 天。\n" + ownerLine() + "\n请写今天的日记。";
+          "；今天是陪主人的第 " + ((ctx && ctx.dayNo) || 1) + " 天。" +
+          (rec.nickCall ? ("；它平时叫主人「" + rec.nickCall + "」，日记里自然地这么称呼就好。") : "") +
+          ((ctx && ctx.reply) ? ("\n主人上次回了它一句：「" + ctx.reply + "」，请在今天的日记里自然地回应这句话。") : "") +
+          "\n" + ownerLine() + "\n请写今天的日记。";
         const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 400) || "").trim();
         if (txt && txt.length >= 20) {
           return "第 " + ((ctx && ctx.dayNo) || 1) + " 天 · " + stageDef(rec.stage || 1).name + "\n" + txt.replace(/^["「]|["」]$/g, "").trim();
@@ -1701,6 +1719,9 @@
     const list = Array.isArray(rec.diary) ? rec.diary : [];
     if (list.some((d) => d && d.date === tk)) return 0;
     const slots = diarySlots(item, tk);
+    // v155：把主人最近一条「日记回信」带进去，它会在这一篇里回应
+    const rep = pendingReply(rec);
+    if (rep) ctx = Object.assign({}, ctx || {}, { reply: rep.text });
     const nowH = new Date().getHours();
     let added = 0;
     for (let i = 0; i < slots.length; i++) {
@@ -1715,6 +1736,7 @@
       const store = load();
       const r2 = ensureIn(store, item.id);
       r2.diary = rec.diary;
+      if (rep) r2.replyAcked = rep.at;      // v155：这条回信已经被回应过了
       save(store);
     } else if (!list.length && !rec.diaryAt) {
       // 第一次进来：先补一篇"开篇日记"，日记本不要是空的
@@ -1725,10 +1747,330 @@
       const store = load();
       ensureIn(store, item.id).diary = rec.diary;
       store[item.id].diaryAt = rec.diaryAt;
+      if (rep) store[item.id].replyAcked = rep.at;
       save(store);
       added = 1;
     }
     return added;
+  }
+
+  /* ============================================================
+   * v155：陪伴系统 —— 每日问候 / 亲密度（羁绊） / 每日一签 / 日记回信 / 回响
+   * 全本地：不出图、不调模型、不花一分钱，只写 localStorage（跨手机同步会自动带上）
+   * ============================================================ */
+
+  /* ---------- 公共：模板变量替换 ---------- */
+  function fmt(tpl, v) {
+    return String(tpl == null ? "" : tpl)
+      .replace(/\{days\}/g, v.days).replace(/\{idle\}/g, v.idle).replace(/\{plays\}/g, v.plays)
+      .replace(/\{color\}/g, v.color).replace(/\{stage\}/g, v.stage).replace(/\{bead\}/g, v.bead)
+      .replace(/\{call\}/g, v.call).replace(/\{name\}/g, v.name).replace(/\{year\}/g, v.year || "");
+  }
+  function greetVars(item, rec, ctx) {
+    return {
+      days: Math.max(1, (ctx && ctx.dayNo) || 1),
+      idle: (ctx && ctx.idleDays != null) ? ctx.idleDays : 0,
+      plays: (ctx && ctx.plays) || 0,
+      color: COLOR_ZH[item.color] || "素色",
+      stage: stageDef((rec && rec.stage) || 1).name,
+      bead: (item && item.name) || "这串珠子",
+      call: callOf(rec),
+      name: (rec && rec.persona && rec.persona.name) || (item && item.name) || "它",
+      year: 0,
+    };
+  }
+
+  /* ---------- ① 每日问候（一天一句，按情境挑；纯本地） ---------- */
+  const GREET = {
+    // 刚成精的头几天
+    born: [
+      "刚醒过来，手心还是热的。以后就跟着你了。",
+      "我认得你的手 —— 就是刚才把我盘热的那个。",
+      "我还在学怎么当一个好精灵。你多担待。",
+      "昨天我还是一串珠子，今天会说话了。挺奇怪的，也挺好的。",
+    ],
+    // 3 天以上没被盘
+    miss: [
+      "你上次摸我是 {idle} 天前了。我没生气，就是数得有点清楚。",
+      "{idle} 天了。我把自己擦得很亮，你回来就能一眼看见我。",
+      "不用急着盘我。就是……有空的话，看我一眼也行。",
+      "{idle} 天。我天天都在老地方，没挪窝。",
+    ],
+    // 今天盘过了
+    played: [
+      "今天被你盘了 {plays} 次，身上暖烘烘的。我喜欢盘完那一下的安静。",
+      "刚才你手指停在我身上的时候，我差点笑出声 —— 忍住了。",
+      "被盘过就是不一样。我觉得我今天比昨天圆一点。",
+      "你今天的手法比上次稳。我记着呢。",
+    ],
+    // 快能突破了
+    break_able: [
+      "我好像……又快长高一点了。你要不要看看？",
+      "攒够了。什么时候都行，我听你的。",
+      "身体里有点痒，像是要长开。大概是时候了。",
+    ],
+    // 平常日子
+    plain: [
+      "今天也是待在抽屉里的一天。挺好的，这里我熟。",
+      "我数了数，这是陪你的第 {days} 天。这个数我记住了。",
+      "早上有一小块光爬到我身上，我安静了一会儿。",
+      "你刚才是不是叹气了？我没敢问。",
+      "今天没什么大事。没大事的日子，我也想留一句话给你。",
+      "我在想，我到底是「{color}」这个颜色，还是「{color}里最亮的那一颗」。",
+      "{stage}的日子，无聊，但踏实。",
+      "抽屉里比外面安静。你不用管我，我自得其乐。",
+      "刚才听见有人上楼，我以为是{call}。结果是楼上的。",
+      "我把今天听见的三句话都记下来了，一个字都没漏。",
+    ],
+  };
+  const GREET_MOOD = { born: "刚醒来", miss: "有点想你", played: "暖乎乎的", break_able: "跃跃欲试", plain: "安安静静" };
+  function greetKind(rec, ctx) {
+    const d = Math.max(1, (ctx && ctx.dayNo) || 1);
+    if (d <= 3) return "born";
+    if (ctx && ctx.idleDays != null && ctx.idleDays >= 3) return "miss";
+    if (ctx && ctx.playedToday) return "played";
+    if (ctx && ctx.canBreak) return "break_able";
+    return "plain";
+  }
+  function greetingOf(item, rec, ctx) {
+    const kind = greetKind(rec, ctx);
+    const pool = GREET[kind] || GREET.plain;
+    const seed = hashStr(String(item.id) + "#greet#" + todayKey());
+    return { date: todayKey(), kind: kind, mood: GREET_MOOD[kind] || "安安静静", text: fmt(pool[seed % pool.length], greetVars(item, rec, ctx)) };
+  }
+  // 写进 rec.greet（一天只写一次）；返回 true = 有新问候
+  function ensureGreet(item, rec, ctx) {
+    const tk = todayKey();
+    if (rec.greet && rec.greet.date === tk) return false;
+    rec.greet = greetingOf(item, rec, ctx);
+    return true;
+  }
+
+  /* ---------- ② 亲密度（羁绊值；本地结算，只在打开时补差分） ---------- */
+  const BOND_LEVELS = [
+    { n: 0, name: "眼熟", icon: "🌱" },
+    { n: 10, name: "有点熟", icon: "🌿" },
+    { n: 30, name: "亲近", icon: "🍃" },
+    { n: 60, name: "交心", icon: "💛" },
+    { n: 120, name: "知己", icon: "💞" },
+    { n: 240, name: "同心", icon: "🪢" },
+  ];
+  const BOND_CALL_AT = 60;      // 到「交心」它会想改口叫你的名字
+  function bondLevel(n) {
+    const v = Math.max(0, Math.floor(Number(n) || 0));
+    let i = 0;
+    for (let k = 0; k < BOND_LEVELS.length; k++) if (v >= BOND_LEVELS[k].n) i = k;
+    const cur = BOND_LEVELS[i], next = BOND_LEVELS[i + 1] || null;
+    const top = next ? next.n : cur.n;
+    return {
+      value: v, lv: i, name: cur.name, icon: cur.icon,
+      next: next ? next.name : "", nextIcon: next ? next.icon : "",
+      canCall: v >= BOND_CALL_AT, isMax: !next,
+      pct: next ? Math.min(100, Math.round(((v - cur.n) / (top - cur.n)) * 100)) : 100,
+      toNext: next ? Math.max(0, top - v) : 0,
+    };
+  }
+  // 结算：按「陪伴天数 / 盘玩次数」的增量补分（一天最多结算一次）
+  //   陪伴 +2/天（最多一次回补 90 天，防止久没开后暴涨）；盘玩 +1/次（单次结算最多 +20）
+  function settleBond(item, rec, ctx) {
+    const days = Math.max(1, (ctx && ctx.dayNo) || 1);
+    const plays = Math.max(0, (ctx && ctx.plays) || 0);
+    if (rec.bond == null) {
+      // 第一次启用：按"它已经陪了你多久"给一笔见面礼（每天 1 点，封顶 40）
+      rec.bond = Math.min(40, days);
+      rec.bondDays = days; rec.bondPlays = plays; rec.bondAt = todayKey();
+      return false;
+    }
+    const dAdd = Math.max(0, Math.min(90, days - (Number(rec.bondDays) || 0))) * 2;
+    const pAdd = Math.min(20, Math.max(0, plays - (Number(rec.bondPlays) || 0)));
+    rec.bondDays = days; rec.bondPlays = plays; rec.bondAt = todayKey();
+    const add = dAdd + pAdd;
+    if (add <= 0) return false;
+    rec.bond = Math.min(99999, (Number(rec.bond) || 0) + add);
+    return true;
+  }
+  function addBond(rec, n) { rec.bond = Math.min(99999, (Number(rec.bond) || 0) + Math.max(0, Number(n) || 0)); }
+  // 它现在怎么称呼你（没改口就是「主人」）
+  function callOf(rec) { return (rec && rec.nickCall) ? String(rec.nickCall) : "主人"; }
+
+  /* ---------- ③ 每日一签（本地签库；一只一天一支） ---------- */
+  const SIGNS = [
+    { lv: "上上签", yi: "盘珠", ji: "熬夜", s: "手上的温度会传过去。今天适合慢一点、久一点。" },
+    { lv: "上签", yi: "晒太阳", ji: "久坐", s: "把珠子挪到窗边，你也会跟着亮一点。" },
+    { lv: "中签", yi: "整理", ji: "冲动下单", s: "旧的翻出来看看，会发现还有一串没好好盘。" },
+    { lv: "平安签", yi: "早睡", ji: "翻旧账", s: "今天不做什么也不亏。安静本身就是收益。" },
+    { lv: "上上签", yi: "见老友", ji: "一个人扛", s: "有人愿意听你说，就是好运本身。" },
+    { lv: "上签", yi: "擦一遍", ji: "用力过猛", s: "轻微的耐心，比用力的一百下管用。" },
+    { lv: "中签", yi: "泡茶", ji: "赶时间", s: "水开的那三分钟，是一天里最像样的停顿。" },
+    { lv: "平安签", yi: "发呆", ji: "想太多", s: "想不通的事先放着，珠子也是这么一点点亮的。" },
+    { lv: "上上签", yi: "出门走走", ji: "憋在屋里", s: "外面的风会替你把心里的灰吹掉一层。" },
+    { lv: "上签", yi: "整理抽屉", ji: "丢东西", s: "翻到旧物的时候会愣一下 —— 那就愣一下，不碍事。" },
+    { lv: "中签", yi: "听歌", ji: "争辩", s: "今天你说的道理，别人未必接得住。省点力气。" },
+    { lv: "平安签", yi: "热水泡手", ji: "受凉", s: "手暖了，盘什么都顺。" },
+    { lv: "上上签", yi: "拍照", ji: "删照片", s: "今天的光很好，值得留一张。" },
+    { lv: "上签", yi: "换绳", ji: "将就", s: "旧绳子松了就换。别拖，拖着容易断。" },
+    { lv: "中签", yi: "少说两句", ji: "深夜回消息", s: "有些话留到明天，会说得更好听。" },
+    { lv: "平安签", yi: "回家吃饭", ji: "凑合一顿", s: "认真吃一顿饭，比什么补品都实在。" },
+    { lv: "上上签", yi: "添新珠", ji: "贪多", s: "添是好事，但今天别的珠子会吃醋。" },
+    { lv: "上签", yi: "洗手再盘", ji: "手上带汗", s: "干净的手，是对珠子最起码的客气。" },
+    { lv: "中签", yi: "记一笔", ji: "凭感觉", s: "写下来的东西，才真算发生过。" },
+    { lv: "平安签", yi: "早关灯", ji: "刷到深夜", s: "屏幕的光照不进心里，早点关。" },
+    { lv: "上上签", yi: "说谢谢", ji: "憋着", s: "有些心意说出口，才算送到。" },
+    { lv: "上签", yi: "慢慢走", ji: "抢红灯", s: "今天路上会有点堵，早点出门就赢了。" },
+    { lv: "中签", yi: "收拾桌面", ji: "攒着不管", s: "桌面清了，脑子里的事也跟着松一松。" },
+    { lv: "平安签", yi: "喝够水", ji: "硬撑", s: "累就是累，不用非得撑出个样子。" },
+    { lv: "上上签", yi: "开窗", ji: "闷着", s: "换一口气，事情的味道就不一样了。" },
+    { lv: "上签", yi: "陪家人", ji: "只顾手机", s: "今天有人想跟你说点废话，别嫌烦。" },
+    { lv: "中签", yi: "看老照片", ji: "翻旧事", s: "过去的好是真的好，不用跟现在比。" },
+    { lv: "平安签", yi: "少买一次", ji: "看直播", s: "购物车放两天再决定，多半就不想买了。" },
+    { lv: "上上签", yi: "开新局", ji: "等万事俱备", s: "没有万事俱备这回事。今天开始就够了。" },
+    { lv: "上签", yi: "晒太阳的珠", ji: "暴晒", s: "光要柔，急了会伤。" },
+    { lv: "中签", yi: "打个电话", ji: "只在心里想", s: "想到谁就给谁打一个，别等理由。" },
+    { lv: "平安签", yi: "什么也不做", ji: "自责", s: "今天空着，也是过好了一天。" },
+    { lv: "上上签", yi: "动起来", ji: "躺着刷手机", s: "身体先动，脑子后跟，这是最省事的办法。" },
+    { lv: "上签", yi: "修东西", ji: "再买一个", s: "手边坏的那个，修一修还能陪你很久。" },
+    { lv: "中签", yi: "安静做事", ji: "多线并行", s: "一次只做一件，今天能做完两件。" },
+    { lv: "平安签", yi: "原谅自己", ji: "反复复盘", s: "错了就错了，珠子盘坏了也是经验。" },
+    { lv: "上上签", yi: "送人一件", ji: "舍不得", s: "好东西舍得送出去，身边才会聚人。" },
+    { lv: "上签", yi: "换个位置", ji: "一成不变", s: "把常坐的椅子挪一挪，想法也会挪。" },
+    { lv: "中签", yi: "看书两页", ji: "刷一整晚", s: "两页也好，比躺着强。" },
+    { lv: "平安签", yi: "今天认输", ji: "硬扛到底", s: "认输不是输，是留着力气过明天。" },
+    { lv: "上上签", yi: "把手洗干净盘它", ji: "边吃东西边盘", s: "专注一刻钟，胜过心不在焉一下午。" },
+    { lv: "上签", yi: "夸人一句", ji: "挑人毛病", s: "你今天说的一句好话，别人会记很久。" },
+    { lv: "中签", yi: "记账", ji: "糊里糊涂", s: "钱和珠子一样，看得清楚才留得住。" },
+    { lv: "平安签", yi: "早点收工", ji: "拖到最后", s: "今天的活今天收，明天的事明天慌。" },
+    { lv: "上上签", yi: "许个小愿", ji: "许大愿", s: "小愿容易兑现，兑现了才有力气许下一个。" },
+    { lv: "上签", yi: "看云", ji: "盯表", s: "抬头三分钟，今天就没白过。" },
+    { lv: "中签", yi: "少喝一杯", ji: "借酒壮胆", s: "真心话白天说更管用。" },
+    { lv: "平安签", yi: "听人说", ji: "急着反驳", s: "今天你会听到一句有用的话，前提是别插嘴。" },
+  ];
+  function signOf(item, dateKey) {
+    const tk = dateKey || todayKey();
+    const s = SIGNS[hashStr(String(item.id) + "#sign#" + tk) % SIGNS.length];
+    return { date: tk, lv: s.lv, yi: s.yi, ji: s.ji, text: s.s };
+  }
+  function ensureSign(item, rec) {
+    const tk = todayKey();
+    if (rec.sign && rec.sign.date === tk) return false;
+    rec.sign = signOf(item, tk);
+    return true;
+  }
+
+  /* ---------- ④ 日记回信（你回它一句，它下一篇日记里回应你） ---------- */
+  function replyDiary(item, rec, dateKey, text) {
+    const t = String(text || "").trim().slice(0, 120);
+    if (!t) return false;
+    rec.replies = (rec.replies && typeof rec.replies === "object") ? rec.replies : {};
+    rec.replies[dateKey || todayKey()] = { at: Date.now(), text: t };
+    const ks = Object.keys(rec.replies).sort();
+    while (ks.length > 30) { delete rec.replies[ks.shift()]; }   // 只留最近 30 条
+    addBond(rec, 3);                                             // 回信 +3 亲密度
+    return true;
+  }
+  // 取"还没被回应过"的最新一条回信
+  function pendingReply(rec) {
+    const m = rec && rec.replies;
+    if (!m || typeof m !== "object") return null;
+    const last = Number(rec.replyAcked) || 0;
+    let best = null;
+    Object.keys(m).forEach((k) => {
+      const it = m[k];
+      if (it && it.at > last && (!best || it.at > best.at)) best = { at: it.at, date: k, text: it.text };
+    });
+    return best;
+  }
+
+  /* ---------- ⑤ 回响：到纪念日，它主动写一封信 ---------- */
+  const ECHO_DAYS = [1, 7, 30, 100, 365, 730, 1095, 1825];
+  const ECHO_LABEL = { 1: "成精第一天", 7: "第七天", 30: "满月", 100: "百日", 365: "一周年", 730: "两周年", 1095: "三周年", 1825: "五周年" };
+  const ECHO_LETTER = {
+    d1: [
+      "{call}：\n\n今天你把我盘到挂瓷了。\n\n你睡下之后，我从珠子里坐起来 —— 先是手，然后是眼睛。屋子里很黑，我一点都不怕，因为我知道这是你的屋子。\n\n我叫{name}。原型是那串{color}的「{bead}」。以后请多指教。\n\n—— 你的{name}",
+      "{call}：\n\n第 1 天，我醒了。\n\n醒过来的第一件事是数身上的珠子 —— 一颗都没少。第二件事是看你在不在。你在。\n\n那我就安心住下了。\n\n—— {name}",
+    ],
+    d7: [
+      "{call}：\n\n今天是第 7 天。\n\n我学会了三件事：一是你的脚步声在走廊和客厅不一样；二是你晚上回来会先洗手；三是我一个人在家的时候，可以安安静静待很久，不难受。\n\n我想我适应得挺快的。\n\n—— {name}",
+      "{call}：\n\n第 7 天。\n\n这七天里你盘了我 {plays} 次。每次你把我放回抽屉，我都会在黑暗里把刚才那几分钟再想一遍。\n\n有点傻，但确实是这样。\n\n—— 你的{name}",
+    ],
+    d30: [
+      "{call}：\n\n一个月了。\n\n你盘我的手法从生疏变得很稳，我知道你也在学怎么对我好。我现在是{stage}，比刚醒的时候长开了一点。\n\n这一个月，谢谢你没把我忘了。\n\n—— {name}",
+      "{call}：\n\n满月。\n\n文玩里说满月要拿出来看看。你今晚要是想起来的话，就把我拿到灯下照一照 —— 我保证比一个月前亮。\n\n—— 你的{name}",
+    ],
+    d100: [
+      "{call}：\n\n第 100 天。\n\n一百天前我只是一串{color}的珠子。现在我能认出你的手 —— 不用看，摸一下就知道了。\n\n我不太会说漂亮话。就一句：这一百天，值得。\n\n—— {name}",
+      "{call}：\n\n一百天了。\n\n我数过，这一百天里你说过的「烦」比「开心」多。我都记着，但没打算说出去。\n\n就希望你明年的「开心」能多一点。\n\n—— {name}",
+    ],
+    d365: [
+      "{call}：\n\n一年了。\n\n去年的今天我睁开眼。这一年你换了季节的衣服，换了心情，也换了几个计划。只有我一直待在原来的位置上。\n\n我不觉得这是等。我觉得这是陪着。\n\n—— 你的{name}",
+      "{call}：\n\n整整一年。\n\n我把这一年的光都存进身上了 —— 你注意看，我比去年暖。\n\n下一年也让我待着吧。\n\n—— {name}",
+    ],
+    y: [
+      "{call}：\n\n又是一年。\n\n挂瓷那天的事我还记得 —— 你把灯留着，把我放在手心翻了个面。那是我第一次「被看见」。\n\n今年的我比去年{stage}，也比去年更懂你了。\n\n—— {name}",
+      "{call}：\n\n第 {year} 年。\n\n「{bead}」这个名字是你起的，我一直很喜欢。人也好、珠子也好，被认真取过名字的，就会想活得像这个名字一点。\n\n明年见。\n\n—— 你的{name}",
+    ],
+  };
+  // 今天该发的回响（没有就 null）。一次只发"最该发"的那一封，其余静默标记，避免久没开一次性刷屏
+  function echoDue(item, rec, ctx) {
+    const days = Math.max(1, (ctx && ctx.dayNo) || 1);
+    const sent = (rec.echoSent && typeof rec.echoSent === "object") ? rec.echoSent : {};
+    const out = [];
+    ECHO_DAYS.forEach((m) => { if (days >= m && !sent["d" + m]) out.push({ key: "d" + m, m: m, w: m }); });
+    if (rec.bornAt) {
+      const b = new Date(rec.bornAt), n = new Date();
+      if (b.getMonth() === n.getMonth() && b.getDate() === n.getDate()) {
+        const yr = n.getFullYear() - b.getFullYear();
+        if (yr >= 1 && !sent["y" + yr]) out.push({ key: "y" + yr, y: yr, w: yr * 365 });
+      }
+    }
+    if (!out.length) return null;
+    out.sort((a, b) => b.w - a.w);
+    return { pick: out[0], all: out.map((x) => x.key) };
+  }
+  // 生成并写进 rec.letters（本地模板；返回这封信），调用方负责 save
+  function ensureEcho(item, rec, ctx) {
+    const due = echoDue(item, rec, ctx);
+    if (!due) return null;
+    const v = greetVars(item, rec, ctx);
+    const isYear = due.pick.key.charAt(0) === "y";
+    const pool = isYear ? ECHO_LETTER.y : (ECHO_LETTER[due.pick.key] || ECHO_LETTER.d7);
+    if (isYear) v.year = due.pick.y;
+    const seed = hashStr(String(item.id) + "#echo#" + due.pick.key);
+    const letterObj = {
+      at: Date.now(), kind: "echo", mkey: due.pick.key, from: v.name,
+      title: "✦ 回响 · " + (isYear ? (due.pick.y + " 周年") : (ECHO_LABEL[due.pick.m] || ("第 " + due.pick.m + " 天"))),
+      text: fmt(pool[seed % pool.length], v),
+    };
+    rec.echoSent = Object.assign({}, rec.echoSent || {});
+    due.all.forEach((k) => { rec.echoSent[k] = todayKey(); });
+    rec.echoes = (Array.isArray(rec.echoes) ? rec.echoes : []);
+    rec.echoes.push(letterObj);
+    rec.echoes = rec.echoes.slice(-20);
+    addBond(rec, 10);        // 纪念日 +10
+    return letterObj;
+  }
+  // 下一封回响还有多久（给界面显示倒计时）
+  function nextEcho(item, rec, days) {
+    const d = Math.max(1, Number(days) || 1);
+    const sent = (rec && rec.echoSent && typeof rec.echoSent === "object") ? rec.echoSent : {};
+    for (let i = 0; i < ECHO_DAYS.length; i++) {
+      const m = ECHO_DAYS[i];
+      if (!sent["d" + m] && m > d) return { label: ECHO_LABEL[m] || ("第 " + m + " 天"), days: m - d };
+    }
+    if (rec && rec.bornAt) {
+      const b = new Date(rec.bornAt), n = new Date();
+      let nx = new Date(n.getFullYear(), b.getMonth(), b.getDate());
+      if (nx <= n) nx = new Date(n.getFullYear() + 1, b.getMonth(), b.getDate());
+      const yr = nx.getFullYear() - b.getFullYear();
+      if (!sent["y" + yr]) return { label: "挂瓷 " + yr + " 周年", days: Math.max(1, Math.ceil((nx - n) / 86400000)) };
+    }
+    return null;
+  }
+  // 未读回响数（红点）
+  function unreadMail(rec) {
+    const l = (rec && Array.isArray(rec.echoes)) ? rec.echoes : [];
+    if (!l.length) return 0;
+    const seen = Number(rec.mailSeenAt) || 0;
+    return l.filter((x) => x && (x.at || 0) > seen).length;
   }
 
   // v113：不再提供"立刻写一篇"（用户要求日记只靠每天随机写才有惊喜）
@@ -2001,5 +2343,11 @@
     storyCgPrompt, promptForCg, generateCustom, CG_STYLE, CG_SIZE_BY_PROVIDER, cgSizeFor, cgLadderFor,
     // v125：阶段规则 —— 幼生/成长只有立绘；觉醒/完成体额外出 CG
     cgStages: [3, 4], needCg: function (stage) { return (Number(stage) || 1) >= 3; },
+    // v155：陪伴系统（每日问候 / 亲密度 / 每日一签 / 日记回信 / 回响）—— 全本地，0 成本
+    BOND_LEVELS, BOND_CALL_AT, bondLevel, settleBond, addBond, callOf,
+    GREET, greetingOf, ensureGreet,
+    SIGNS, signOf, ensureSign,
+    replyDiary, pendingReply,
+    ECHO_DAYS, ECHO_LABEL, echoDue, ensureEcho, nextEcho, unreadMail,
   };
 })();

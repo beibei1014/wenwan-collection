@@ -780,3 +780,84 @@
 .look-setup-tag:active { transform: scale(.94); }
 
 
+
+/* ============================================================
+   v155 · 陪伴系统（今天 / 羁绊 / 今日一签 / 回响 / 日记回信）
+   信息密集、紧凑，和现有卡片同一套木头配色
+   ============================================================ */
+.cp-card .cp-date { float: right; font-size: 11px; font-weight: 400; color: var(--text-2); }
+.cp-greet { margin-top: 8px; }
+.cp-mood {
+  display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px;
+  color: #7a5518; background: linear-gradient(180deg, #fdf3dc, #f6e2b8);
+  border: 1px solid color-mix(in srgb, var(--gold) 55%, var(--line) 45%);
+}
+.cp-bubble {
+  margin-top: 7px; padding: 10px 12px; border-radius: 12px; font-size: 13px; line-height: 1.8;
+  color: var(--wood-2); background: color-mix(in srgb, var(--tape) 26%, #fff);
+  border: 1px solid color-mix(in srgb, var(--tape) 58%, var(--line) 42%);
+}
+.cp-bond { margin-top: 11px; }
+.cp-bond-head { display: flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--text-2); }
+.cp-bond-head b { font-size: 16px; color: var(--wood); }
+.cp-bond-head i { font-style: normal; font-weight: 700; color: #8a5a1e; margin-left: auto; }
+.cp-track {
+  margin-top: 5px; height: 7px; border-radius: 999px; overflow: hidden;
+  background: color-mix(in srgb, var(--line) 65%, #fff);
+}
+.cp-track i {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #e6c085, #c08a2e); transition: width .5s var(--ease-out);
+}
+.cp-sub { margin-top: 5px; font-size: 11px; line-height: 1.65; color: var(--text-2); }
+.cp-call {
+  margin-top: 9px; padding: 9px 10px; border-radius: 10px; font-size: 12px; line-height: 1.6;
+  color: #7a5518; background: #fff8ec;
+  border: 1px dashed color-mix(in srgb, var(--gold) 55%, var(--line) 45%);
+}
+.cp-call-btn { display: inline-block; width: auto; margin: 8px 8px 0 0; padding: 6px 14px; font-size: 12px; }
+.cp-sign {
+  margin-top: 11px; padding: 10px 12px; border-radius: 12px;
+  background: linear-gradient(180deg, #fbf7ee, #f6efe2);
+  border: 1px solid color-mix(in srgb, var(--line) 78%, #fff);
+}
+.cp-sign-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-2); }
+.cp-sign-lv { font-weight: 800; letter-spacing: .6px; color: #8a5a1e; }
+.cp-sign-line { margin-top: 7px; font-size: 12.5px; color: var(--wood-2); }
+.cp-sign-line b { font-size: 11px; padding: 1px 7px; border-radius: 5px; margin-right: 5px; }
+.cp-sign-line b.yi { color: #3f6b41; background: #e8f3e8; }
+.cp-sign-line b.ji { color: #94494a; background: #fdeeee; margin-left: 12px; }
+.cp-sign-s { margin-top: 7px; font-size: 12px; line-height: 1.7; color: var(--text-2); }
+.cp-echo {
+  margin-top: 11px; padding-top: 9px; font-size: 11.5px; color: #8a5a1e;
+  border-top: 1px dashed color-mix(in srgb, var(--line) 82%, #fff);
+}
+
+/* ✦ 回响信 */
+.sd-echo-item { padding: 10px 0; border-bottom: 1px dashed color-mix(in srgb, var(--line) 78%, #fff); }
+.sd-echo-item:last-child { border-bottom: 0; padding-bottom: 0; }
+.sd-echo-item.new {
+  margin-left: -12px; padding-left: 9px; border-left: 3px solid var(--gold);
+}
+.sd-echo-head { display: flex; justify-content: space-between; font-size: 11.5px; font-weight: 700; color: #8a5a1e; }
+.sd-echo-head span:last-child { font-weight: 400; color: var(--text-2); }
+.sd-echo-text { margin-top: 7px; font-size: 13px; line-height: 1.9; color: var(--wood-2); white-space: pre-wrap; }
+
+/* 日记回信 */
+.sd-diary-rep {
+  margin-top: 7px; padding: 7px 9px; border-radius: 9px; font-size: 12px; line-height: 1.65;
+  color: #3b5b9a; background: #f3f7ff; border: 1px solid #dbe6f7;
+}
+.sd-diary-rep .rep-wait { font-size: 11px; color: #8aa0c4; }
+.sd-rep-btn { margin-top: 6px; font-size: 11px; }
+.sd-rep-box { margin-top: 10px; }
+.sd-rep-box textarea {
+  width: 100%; min-height: 62px; padding: 9px 10px; border-radius: 10px; box-sizing: border-box;
+  border: 1px solid var(--line); background: #fff; color: var(--text);
+  font-size: 13px; line-height: 1.6; resize: vertical; font-family: inherit;
+}
+.sd-rep-box .btn { width: 100%; margin-top: 8px; }
+.diary-hint.echo {
+  color: #7a5518; background: #fdf6e8;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--line) 55%);
+}
