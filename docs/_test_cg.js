@@ -47,19 +47,19 @@ function extractFn(src, name) {
     const S = h.sandbox.Spirits;
     const full = "data:image/jpeg;base64," + FULL_MARK;
     const thumb = "data:image/jpeg;base64," + THUMB_MARK;
-    const wrote = await S.cgPutPixels("CG-01", { full: full, thumb: thumb });
+    const wrote = await S.cgPutPixels("SP1", "CG-01", { full: full, thumb: thumb });
     ok(wrote === true, "cgPutPixels 写入成功");
-    const back = await S.cgGetPixels("CG-01");
+    const back = await S.cgGetPixels("SP1", "CG-01");
     ok(back && back.full.indexOf(FULL_MARK) >= 0, "cgGetPixels 取回大图");
     ok(back && back.thumb.indexOf(THUMB_MARK) >= 0, "cgGetPixels 取回缩略图");
     ok(!!h.sandbox.indexedDB._dbs["ww_cg"], "IndexedDB 库名为 ww_cg");
-    ok(!!h.sandbox.indexedDB._dbs["ww_cg"]._data["pixels"].has("CG-01"), "像素落在 ww_cg/pixels 的 CG-01 键上");
+    ok(!!h.sandbox.indexedDB._dbs["ww_cg"]._data["pixels"].has("SP1|CG-01"), "像素落在 ww_cg/pixels 的 SP1|CG-01 键上（owner 隔离）");
     ok(h.store.getItem("ww_spirits") == null, "像素写入**没有**碰主 store（ww_spirits 仍为空）");
     ok(h.store.getItem("ww_cg_px") == null, "IDB 可用时不走 localStorage 退路");
-    const has = await S.cgHasPixels("CG-01");
+    const has = await S.cgHasPixels("SP1", "CG-01");
     ok(has === true, "cgHasPixels 为真");
-    await S.cgDelPixels("CG-01");
-    ok(!(await S.cgHasPixels("CG-01")), "cgDelPixels 删除成功");
+    await S.cgDelPixels("SP1", "CG-01");
+    ok(!(await S.cgHasPixels("SP1", "CG-01")), "cgDelPixels 删除成功");
   }
 
   /* ========== 2. IndexedDB 不可用 → 独立 key 退路（prune 够不着） ========== */
@@ -68,11 +68,11 @@ function extractFn(src, name) {
     const h = boot(false);
     const S = h.sandbox.Spirits;
     const full = "data:image/jpeg;base64," + FULL_MARK;
-    const wrote = await S.cgPutPixels("CG-02", { full: full, thumb: "" });
+    const wrote = await S.cgPutPixels("SP1", "CG-02", { full: full, thumb: "" });
     ok(wrote === true, "无 IDB 时 cgPutPixels 走退路成功");
     ok(h.store.getItem("ww_cg_px") != null, "退路写了独立 key ww_cg_px");
     ok(h.store.getItem("ww_spirits") == null, "退路也没碰主 store");
-    const back = await S.cgGetPixels("CG-02");
+    const back = await S.cgGetPixels("SP1", "CG-02");
     ok(back && back.full.indexOf(FULL_MARK) >= 0, "退路可读回");
     // pruneForQuota 只处理传进来的主 store 对象 → 不可能碰到 ww_cg_px
     S.pruneForQuota({ any: { imgHistory: [1, 2, 3], cgUrl: "x" } });
@@ -170,7 +170,7 @@ function extractFn(src, name) {
   {
     const h = boot(true);
     const S = h.sandbox.Spirits;
-    await S.cgPutPixels("CG-01", { full: "data:image/jpeg;base64," + FULL_MARK, thumb: "data:image/jpeg;base64," + THUMB_MARK });
+    await S.cgPutPixels("SP1", "CG-01", { full: "data:image/jpeg;base64," + FULL_MARK, thumb: "data:image/jpeg;base64," + THUMB_MARK });
     const rec = {
       imgHistory: ["A".repeat(60000), "B".repeat(60000), "C".repeat(60000)],
       diary: [], letters: [], echoes: [],
@@ -195,7 +195,7 @@ function extractFn(src, name) {
     ok(parsed.it0 && parsed.it0.cgs && parsed.it0.cgs["CG-01"].hasImg === true, "胖身后元数据仍在 → 不会倒退成未解锁");
     ok(parsed.it0.cgUrl === "", "cgUrl 最后被丢");
     ok(parsed.it0.imgHistory.length === 1, "可再生数据最先被裁");
-    const px = await S2.cgGetPixels("CG-01");
+    const px = await S2.cgGetPixels("SP1", "CG-01");
     ok(!!px && px.full.indexOf(FULL_MARK) >= 0, "IndexedDB 里的大图仍在（不受 localStorage 配额影响）");
   }
 
@@ -231,7 +231,7 @@ function extractFn(src, name) {
     const st = S.load();
     ok(st.it0.cgs["CG-01"].hasImg === true, "元数据写进主 store");
     ok(!!st.it0.cgs["CG-01"].caption, "题词存进元数据");
-    const px = await S.cgGetPixels("CG-01");
+    const px = await S.cgGetPixels("it0", "CG-01");
     ok(!!px && (px.full || px.thumb), "像素写进 IndexedDB");
     const rawS = h.store.getItem("ww_spirits");
     ok(rawS.indexOf(THUMB_MARK) >= 0, "缩略图在 ww_spirits");
@@ -240,7 +240,7 @@ function extractFn(src, name) {
     const slots = await mk.cgAlbumSlots(st.it0);
     ok(slots.collected.length === 1 && slots.collected[0].state === "ready", "cgAlbumSlots 给出 ready 态");
     // 换设备模拟：清掉像素 → 变 missing，但「已收集」不掉
-    await S.cgDelPixels("CG-01");
+    await S.cgDelPixels("it0", "CG-01");
     const slots2 = await mk.cgAlbumSlots(st.it0);
     ok(slots2.collected[0].state === "missing", "🔴 像素不在本机 → missing");
     ok(mk.cgAlbumProgress(st.it0).n === 1, "missing 时「已收集」仍是 1（进度不倒退）");

@@ -2792,11 +2792,12 @@
     } catch (e) { full = ""; }
     let thumb = "";
     if (full) { try { thumb = (await shrinkToDataUri(full, CG_THUMB_SIZE, CG_THUMB_Q)) || ""; } catch (e) { thumb = ""; } }
-    // ① 像素 → IndexedDB（不碰主 store）
+    // ① 像素 → IndexedDB（按 owner 隔离，避免多主串同名 CG 互相覆盖；K4）
     let wrote = false;
-    try { wrote = await Spirits.cgPutPixels(id, { full: full, thumb: thumb }); } catch (e) { wrote = false; }
+    try { wrote = await Spirits.cgPutPixels(item.id, id, { full: full, thumb: thumb }); } catch (e) { wrote = false; }
     // ② 元数据 → 主 store（🔴 元数据在 = 已收集；不依赖像素在不在）
-    const fresh = Spirits.cgMarkCollected(st.rec, id, meta, thumb);
+    //    meta.ownerId 记下这只串，cgSlotOf 取像素时按它定位（与 ① 的 key 同源）
+    const fresh = Spirits.cgMarkCollected(st.rec, id, Object.assign({}, meta, { ownerId: String(item.id) }), thumb);
     try { bumpGenCount(st.rec); } catch (e) { /* 忽略 */ }
     st.flush();
     return { ok: true, id: id, fresh: fresh, missing: !wrote };

@@ -177,9 +177,12 @@
 
   /* ---------- 像素读写（对外唯一入口） ---------- */
   // pixels = { full:"data:...", thumb:"data:..." }；返回 true = 至少写进了 full
-  function cgPutPixels(id, pixels) {
-    const key = String(id);
-    const val = { full: String((pixels && pixels.full) || ""), thumb: String((pixels && pixels.thumb) || ""), at: Date.now() };
+  // ⚠️ ownerId = 串 id：多主串各自「第 N 章-A 变体」的 CG id 完全相同，必须按 owner 隔离，
+  //    否则主串 A 的图会把主串 B 的同名 CG 像素覆盖掉（K4 P0）。
+  //    key = ownerId + "|" + id；元数据 cgs[id].ownerId 同源，cgSlotOf 取像素时复用。
+  function cgPutPixels(ownerId, id, pixels) {
+    const key = String(ownerId) + "|" + String(id);
+    const val = { full: String((pixels && pixels.full) || ""), thumb: String((pixels && pixels.thumb) || ""), at: Date.now(), ownerId: String(ownerId) };
     return cgIdbPut(key, val).then((idbOK) => {
       if (idbOK) {                                   // IDB 成功 → 清掉退路里的旧副本，避免两份
         const f = cgFallbackAll();
@@ -190,24 +193,24 @@
       return !!val.full;
     });
   }
-  function cgGetPixels(id) {
-    const key = String(id);
+  function cgGetPixels(ownerId, id) {
+    const key = String(ownerId) + "|" + String(id);
     return cgIdbGet(key).then((v) => {
       if (v && (v.full || v.thumb)) return v;
       const f = cgFallbackAll();
       return f[key] || null;
     });
   }
-  function cgDelPixels(id) {
-    const key = String(id);
+  function cgDelPixels(ownerId, id) {
+    const key = String(ownerId) + "|" + String(id);
     return cgIdbDel(key).then(() => {
       const f = cgFallbackAll();
       if (f[key]) { delete f[key]; cgFallbackSave(f); }
       return true;
     });
   }
-  function cgHasPixels(id) {
-    return cgGetPixels(id).then((v) => !!(v && (v.full || v.thumb)));
+  function cgHasPixels(ownerId, id) {
+    return cgGetPixels(ownerId, id).then((v) => !!(v && (v.full || v.thumb)));
   }
 
   /* ---------- CG 元数据（只住主 store；🔴「已收集」以它为准） ---------- */
@@ -265,7 +268,8 @@
   function cgSlotOf(rec, id) {
     const m = cgMetaOf(rec, id);
     if (!m || !m.hasImg) return Promise.resolve({ id: String(id), state: cgStateOf(rec, id), meta: m, pixels: null });
-    return cgGetPixels(id).then((px) => ({
+    // 按元数据里的 ownerId 定位像素（与 cgPutPixels 的 key 同源）；无 ownerId（极旧数据）按空串兜底
+    return cgGetPixels(m && m.ownerId != null ? m.ownerId : "", id).then((px) => ({
       id: String(id), state: cgStateOf(rec, id, !!(px && (px.full || px.thumb))), meta: m, pixels: px || null,
     }));
   }
@@ -3833,7 +3837,7 @@
   // 万能槽位替换：{days}{call}{A}{A_title}{A_line}{star}… 认不出的原样留下（方便排查）
   function thText(t, v) {
     if (t && typeof t === "object") t = t.def || t.warm || "";
-    return String(t == null ? "" : t).replace(/\{(\w+)\}/g, (m, k) => (v[k] != null && v[k] !== "") ? String(v[k]) : m);
+    return String(t == null ? "" : t).replace(/\{([^{}]+)\}/g, (m, k) => (v[k] != null && v[k] !== "") ? String(v[k]) : m);
   }
   function thWho(w, cast) {
     const c = (cast || []).filter((x) => x.slot === w)[0];
@@ -4622,7 +4626,7 @@
    *         解锁链仍然是 v158 那套（上一章看过才放下一章）。
    *   与「夜话（跨串群聊）」是两套独立剧本，只共用对话页外壳。
    * ============================================================ */
-  const CHAP_TALK_CAP = 40;   // 一章最多播多少条消息 —— 纯保险阀（正常聊完 12~16 条）
+  const CHAP_TALK_CAP = 48;   // 一章最多播多少条消息 —— 纯保险阀（实测最长分支路径 39 条，余量留到 48）
 
   const CHAP_SCRIPTS = [
     /* ---------- 第一章 · 你把我盘热的那天 ---------- */
