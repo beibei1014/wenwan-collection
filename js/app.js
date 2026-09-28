@@ -2914,6 +2914,16 @@
       '<button class="btn primary" id="spAllBtn">👀 全部精灵（' + list.length + '）</button>' +
       '<button class="btn ghost" id="spTownBtn">🏘 精灵小镇</button>' +
       "</div>";
+    // v160：夜话（跨串大剧情 · 互动对话）—— 两只以上才开群
+    const nCast0 = Spirits.nightCast(list, store);
+    if (nCast0.length >= 2) {
+      const nRec0 = store[nCast0[0].id] || {};
+      const nActs0 = Spirits.nightActs(nRec0, diaryCtx(nCast0[0].item, nRec0), nCast0);
+      const nDone0 = nActs0.filter((a) => a.done).length;
+      const nOpen0 = nActs0.filter((a) => a.unlocked && !a.done).length;
+      html += '<button class="nt-launch" id="spNightBtn">📱 夜话 · ' + nCast0.length + ' 只串的群聊' +
+        '<small>跨串大剧情 · 已聊 ' + nDone0 + "/" + nActs0.length + ' 幕' + (nOpen0 ? " · 有 " + nOpen0 + " 幕新的" : "") + '</small></button>';
+    }
     const sh = setupHintHtml(list, store);
     if (sh.html) html += sh.html;
     view.innerHTML = html;
@@ -2927,6 +2937,8 @@
     if (allBtn) allBtn.onclick = () => location.hash = "#/spirits";
     const twBtn = $("#spTownBtn");      // v157：精灵小镇
     if (twBtn) twBtn.onclick = () => location.hash = "#/town";
+    const ntBtn = $("#spNightBtn");     // v160：夜话
+    if (ntBtn) ntBtn.onclick = () => { _nightFrom = "#/spirit"; location.hash = "#/night"; };
     const dh = $("#diaryHint");
     if (dh) dh.onclick = () => location.hash = "#/spirits";
     const eh = $("#echoHint");
@@ -3850,6 +3862,16 @@
     }
     h += "</div>";
 
+    // v160：夜话入口（跨串大剧情 · 互动对话）—— 两只以上才开群
+    const nCast = Spirits.nightCast(spiritItems(), store);
+    if (nCast.length >= 2) {
+      const nRec = store[nCast[0].id] || {};
+      const nActs = Spirits.nightActs(nRec, diaryCtx(nCast[0].item, nRec), nCast);
+      const nDone = nActs.filter((a) => a.done).length;
+      const nOpen = nActs.filter((a) => a.unlocked && !a.done).length;
+      h += '<button class="nt-launch" id="sdNight">📱 夜话 · 跨串大剧情' +
+        '<small>' + nCast.length + ' 只串的群聊 · 已聊 ' + nDone + "/" + nActs.length + ' 幕' + (nOpen ? " · 有 " + nOpen + " 幕新的" : "") + '</small></button>';
+    }
     h += '<div class="sd-actions">' +
       '<button class="btn ghost" id="sdChat">💬 它们聊天</button>' +
       '<button class="btn ghost" id="sdSpiritList">🍡 所有精灵</button></div>';
@@ -4043,6 +4065,7 @@
     const gb = $("#sdGoBead"); if (gb) gb.onclick = () => location.hash = "#/item/" + it.id;
     const ch = $("#sdChat"); if (ch) ch.onclick = () => showSpiritChatModal(it);
     const sl = $("#sdSpiritList"); if (sl) sl.onclick = () => location.hash = "#/spirit";
+    const sdn = $("#sdNight"); if (sdn) sdn.onclick = () => { _nightFrom = "#/spirit/" + encodeURIComponent(id); location.hash = "#/night"; };
     const rg = $("#sdRoomGo"); if (rg) rg.onclick = (e) => { e.stopPropagation(); location.hash = "#/room/" + encodeURIComponent(room.id); };
     const rp = $("#sdRoomPick"); if (rp) rp.onclick = () => showSpiritRoomPicker(it);
     view.querySelectorAll("[data-mate]").forEach((el) => el.onclick = () => { location.hash = "#/spirit/" + encodeURIComponent(el.dataset.mate); });
@@ -4537,6 +4560,213 @@
     view.querySelectorAll("[data-room]").forEach((c) => c.addEventListener("click", () => {
       location.hash = "#/room/" + encodeURIComponent(c.dataset.room);
     }));
+  }
+
+  /* ---------- v160：夜话（跨串大剧情 · 互动对话） ----------
+     全本地剧本 + 本地状态机：0 出图、0 模型调用，怎么聊都不花额度。
+     进度存在「第一位成员」（成精最早的那只）的记录里 —— 跟着跨手机同步走。
+     与「房间剧情（同屋两只小故事）」「主线·串与我（单串 8 章）」互不影响。 */
+  let _nightFrom = "#/spirit";
+  function nightNow() {
+    const list = spiritItems();
+    const store = Spirits.load();
+    const cast = Spirits.nightCast(list, store);
+    const host = cast.length ? cast[0].item : null;
+    const hostId = cast.length ? cast[0].id : "";
+    const rec = hostId ? (store[hostId] || {}) : {};
+    return {
+      list: list, store: store, cast: cast, host: host, hostId: hostId, rec: rec,
+      ctx: host ? diaryCtx(host, rec) : { dayNo: 1, idleDays: null, plays: 0 },
+    };
+  }
+  function nightStatOf(S) {
+    const acts = Spirits.nightActs(S.rec, S.ctx, S.cast);
+    return {
+      acts: acts,
+      done: acts.filter((a) => a.done).length,
+      open: acts.filter((a) => a.unlocked && !a.done).length,
+      brief: Spirits.nightBrief(S.rec),
+    };
+  }
+
+  function renderNightPage() {
+    topbarTitle.textContent = "夜话";
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+    const S = nightNow();
+    if (S.cast.length < 2) {
+      view.innerHTML = emptyCardHtml({
+        ill: "spirit", icon: "📱", title: "群里还只有一位成员",
+        sub: "「夜话」是跨串大剧情 —— 几只精灵夜里凑在一个群里跟你聊天，<br>你挑一句回，剧情就跟着你走，每一幕有三个结尾。",
+        hint: "再来一只精灵就开群（挂瓷成精 → 两只以上）",
+      }) + '<button class="btn primary" id="ntGoSpirit" style="width:100%;margin-top:12px">回到精灵页</button>';
+      const b0 = $("#ntGoSpirit");
+      if (b0) b0.onclick = () => location.hash = "#/spirit";
+      return;
+    }
+    const st = nightStatOf(S);
+    let h = '<div class="nt-group">' +
+      '<div class="nt-group-av">' + S.cast.map((c) => spiritThumbHtml(c.item, S.store[c.id] || {}, 40)).join("") + "</div>" +
+      '<div class="nt-group-meta"><div class="nt-group-name">' + esc(Spirits.NIGHT_GROUP) + "</div>" +
+      '<div class="nt-group-sub">' + esc(S.cast.map((c) => c.name).join("、")) + " · " + S.cast.length + " 位成员</div></div>" +
+      '<div class="nt-group-stat"><b>' + st.done + "</b>/" + st.acts.length + "<span>幕</span></div></div>" +
+      '<div class="room-hint" style="margin-top:10px">夜里它们借你的手机开了个群。你回一句，剧情就跟着你走 —— 每一幕都有 <b>3 个结尾</b>。全程本地，聊多久都不花额度。</div>';
+    if (st.open) h += '<div class="diary-hint" id="ntHint">📱 有 <b>' + st.open + "</b> 幕可以聊了 · 点进去就开始</div>";
+    const br = st.brief;
+    h += '<div class="nt-list">';
+    st.acts.forEach((a) => {
+      const cur = br && !br.ended && br.actId === a.id;
+      if (!a.unlocked) {
+        h += '<div class="nt-item locked"><span class="nt-item-ico">🔒</span>' +
+          '<div class="nt-item-body"><div class="nt-item-title">' + esc(a.title) + "</div>" +
+          '<div class="nt-item-sub">' + esc(a.need || "还没解锁") + "</div></div></div>";
+        return;
+      }
+      let sub, badge;
+      if (a.done) { sub = "已聊完 · " + (a.done.name || "结局"); badge = '<span class="nt-badge done">已聊完</span>'; }
+      else if (cur && br && br.last) {
+        const l = br.last;
+        sub = (l.w === "me" ? "我：" : (l.name ? l.name + "：" : "")) + String(l.text || "");
+        badge = '<span class="nt-badge on">聊到一半</span>';
+      } else { sub = a.sub; badge = '<span class="nt-badge new">新</span>'; }
+      h += '<div class="nt-item' + (a.done ? " done" : "") + '" data-act="' + esc(a.id) + '">' +
+        '<span class="nt-item-ico">' + esc(a.icon) + "</span>" +
+        '<div class="nt-item-body"><div class="nt-item-title">' + esc(a.title) + badge + "</div>" +
+        '<div class="nt-item-sub">' + esc(sub) + "</div></div>" +
+        '<span class="chap-arrow">›</span></div>';
+    });
+    h += "</div>";
+    h += '<button class="btn ghost" id="ntGoSpirit2" style="width:100%;margin-top:10px">← 回到精灵页</button>';
+    view.innerHTML = h;
+    bindSpiritImgFallback(view);
+    view.querySelectorAll("[data-act]").forEach((el) => {
+      el.onclick = () => { _nightFrom = "#/night"; location.hash = "#/night/" + encodeURIComponent(el.dataset.act); };
+    });
+    const b1 = $("#ntGoSpirit2");
+    if (b1) b1.onclick = () => location.hash = "#/spirit";
+  }
+
+  function renderNightChatPage(actId, preset) {
+    const S = nightNow();
+    if (S.cast.length < 2 || !S.host) { location.hash = "#/night"; return; }
+    const st0 = nightStatOf(S);
+    const info = st0.acts.filter((a) => a.id === actId)[0];
+    if (!info || !info.unlocked) { location.hash = "#/night"; return; }
+    topbarTitle.textContent = Spirits.NIGHT_GROUP;
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+
+    const store = Spirits.load();
+    const rec = Spirits.ensureIn(store, S.hostId);
+    let r = preset;
+    if (!r) { r = Spirits.nightEnter(S.host, rec, S.ctx, S.cast, actId); Spirits.save(store); }
+
+    view.innerHTML = '<div class="nt-chat">' +
+      '<div class="nt-chat-head">' +
+      '<div class="nt-head-av">' + S.cast.map((c) => spiritThumbHtml(c.item, S.store[c.id] || {}, 30)).join("") + "</div>" +
+      '<div class="nt-head-meta"><b>' + esc(Spirits.NIGHT_GROUP) + "</b><span>" + esc(info.icon + " " + info.title) + "</span></div>" +
+      '<button class="link-btn" id="ntListBtn">全部夜话</button>' +
+      "</div>" +
+      '<div class="nt-body" id="ntBody"></div>' +
+      '<div class="nt-foot" id="ntFoot"></div></div>';
+    bindSpiritImgFallback(view);
+
+    const body = $("#ntBody"), foot = $("#ntFoot");
+    const msgHtml = (m) => {
+      if (m.w === "sys") return '<div class="nt-sys">' + esc(m.text) + "</div>";
+      if (m.w === "me") return '<div class="nt-row me"><div class="nt-bub me">' + esc(m.text) + '</div><div class="nt-av nt-av-me">我</div></div>';
+      const c = S.cast.filter((x) => x.slot === m.w)[0];
+      const av = c ? spiritThumbHtml(c.item, S.store[c.id] || {}, 30) : "";
+      return '<div class="nt-row"><div class="nt-av">' + av + "</div>" +
+        '<div class="nt-col"><div class="nt-name">' + esc(m.name || "") + "</div>" +
+        '<div class="nt-bub">' + esc(m.text) + "</div></div></div>";
+    };
+    const log = (rec.night && Array.isArray(rec.night.log)) ? rec.night.log : [];
+    const nAdd = r.added.length;
+    body.innerHTML = log.slice(0, Math.max(0, log.length - nAdd)).map(msgHtml).join("") + '<div id="ntPend"></div>';
+    const pend = $("#ntPend");
+    const scrollEnd = () => { try { window.scrollTo(0, document.body.scrollHeight); } catch (e) { /* 忽略 */ } };
+
+    let qi = 0, timer = 0, waiting = false;
+    const append = (m) => {
+      const d = document.createElement("div");
+      d.innerHTML = msgHtml(m);
+      const node = d.firstChild;
+      if (node) { node.classList.add("nt-in"); body.insertBefore(node, pend); }
+    };
+    const endingHtml = (e) => {
+      const all = Spirits.nightActs(rec, S.ctx, S.cast).every((a) => a.done);
+      return '<div class="nt-end">' +
+        '<div class="nt-end-tag">本幕结束</div>' +
+        '<div class="nt-end-name">' + esc(e.name) + "</div>" +
+        '<div class="nt-end-text">' + esc(e.text) + "</div>" +
+        (all ? '<div class="nt-end-final">🪢 四幕都聊完了 —— 这个群从此就一直在那儿。点「全部夜话」还能回去重看。</div>' : "") +
+        '<div class="nt-end-btns"><button class="btn ghost" id="ntAgain">再看一遍</button>' +
+        '<button class="btn primary" id="ntBack">回夜话列表</button></div></div>';
+    };
+    const bindEnd = () => {
+      const ag = $("#ntAgain");
+      if (ag) ag.onclick = () => {
+        if (ag.disabled) return;
+        ag.disabled = true;
+        const s2 = Spirits.load();
+        const r2 = Spirits.ensureIn(s2, S.hostId);
+        const rr = Spirits.nightReplay(S.host, r2, S.ctx, S.cast, actId);
+        Spirits.save(s2);
+        renderNightChatPage(actId, rr);
+      };
+      const bk = $("#ntBack");
+      if (bk) bk.onclick = () => location.hash = "#/night";
+    };
+    const showFoot = () => {
+      if (waiting) return;
+      waiting = true;
+      pend.innerHTML = "";
+      if (r.ending) { foot.innerHTML = endingHtml(r.ending); bindEnd(); }
+      else if (r.choices && r.choices.length) {
+        foot.innerHTML = '<div class="nt-ask">你的回复</div>' + r.choices.map((c, i) =>
+          '<button class="nt-opt" data-i="' + i + '">' + esc(c.t) + "</button>").join("");
+        foot.querySelectorAll(".nt-opt").forEach((b) => { b.onclick = () => pick(Number(b.dataset.i)); });
+      } else { foot.innerHTML = ""; }
+      scrollEnd();
+    };
+    const step = () => {
+      if (qi >= r.added.length) { showFoot(); return; }
+      const m = r.added[qi++];
+      if (m.w === "me") { append(m); scrollEnd(); step(); return; }        // 我自己那条立刻出现
+      pend.innerHTML = '<div class="nt-row"><div class="nt-av"></div>' +
+        '<div class="nt-bub nt-typing"><i></i><i></i><i></i></div></div>';
+      scrollEnd();
+      timer = setTimeout(() => {
+        pend.innerHTML = "";
+        append(m);
+        scrollEnd();
+        step();
+      }, 380 + Math.min(900, String(m.text || "").length * 24));
+    };
+    const pick = (i) => {
+      if (!waiting) return;
+      waiting = false;
+      clearTimeout(timer);
+      foot.innerHTML = "";
+      const s3 = Spirits.load();
+      const r3 = Spirits.ensureIn(s3, S.hostId);
+      const rr = Spirits.nightChoose(S.host, r3, S.ctx, S.cast, i);
+      Spirits.save(s3);
+      r = { added: rr.added, choices: rr.choices, ending: rr.ending, ended: rr.ended };
+      qi = 0;
+      step();
+    };
+    // 点一下就能跳过打字（不想等的时候）
+    body.addEventListener("click", () => {
+      if (waiting) return;
+      clearTimeout(timer);
+      while (qi < r.added.length) append(r.added[qi++]);
+      showFoot();
+    });
+    const lb = $("#ntListBtn");
+    if (lb) lb.onclick = () => location.hash = "#/night";
+    step();
   }
 
   function renderRoomPage(roomId) {
@@ -7400,6 +7630,8 @@
     else if (h.startsWith("#/spirit/")) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));   // 每只精灵的独立页面
     else if (h.startsWith("#/room/")) renderRoomPage(decodeURIComponent(h.slice(7)));             // 小房间
     else if (h === "#/town") renderTownPage();                                                    // v157：精灵小镇
+    else if (h === "#/night") renderNightPage();                                                 // v160：夜话（跨串大剧情）
+    else if (h.indexOf("#/night/") === 0) renderNightChatPage(decodeURIComponent(h.slice(8)));   // v160：夜话 · 某一幕的对话页
     else if (h === "#/fav") renderFavPage();
     else if (h.startsWith("#/box/")) renderBoxPage(decodeURIComponent(h.slice(6)));
     else if (h === "#/" || h === "#") renderHome();
@@ -7488,6 +7720,8 @@
       location.hash = id ? "#/item/" + id : "#/";                            // 编辑 → 详情/首页
       return;
     }
+    if (h.indexOf("#/night/") === 0) { location.hash = "#/night"; return; }   // 对话页 → 夜话列表
+    if (h === "#/night") { location.hash = _nightFrom || "#/spirit"; return; } // 夜话列表 → 进来的那一页
     if (h === "#/spirits") { location.hash = "#/spirit"; return; }        // 全部精灵 → 回到小房间
     if (h === "#/settings" || h === "#/profile" || h === "#/new" || h === "#/cat" || h === "#/stats" || h === "#/quest" || h === "#/spirit") { location.hash = "#/"; return; }
     if (h.startsWith("#/box/")) { location.hash = "#/cat"; return; }
@@ -7544,7 +7778,8 @@
     let active = "home";
     if (h === "#/settings") active = "settings";
     else if (h === "#/cat") active = "cat";
-    else if (h === "#/spirit" || h === "#/spirits" || h === "#/town" || h.indexOf("#/spirit/") === 0 || h.indexOf("#/room/") === 0) active = "spirit";
+    else if (h === "#/spirit" || h === "#/spirits" || h === "#/town" || h === "#/night" ||
+      h.indexOf("#/spirit/") === 0 || h.indexOf("#/room/") === 0 || h.indexOf("#/night/") === 0) active = "spirit";
     else if (h === "#/stats") active = "stats";
     else if (h === "#/quest") active = "quest";
     else if (h === "#/fav") active = "fav";

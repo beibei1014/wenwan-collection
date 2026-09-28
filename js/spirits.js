@@ -99,6 +99,7 @@
           const ks = Object.keys(r.fests).sort();
           while (ks.length > 8) delete r.fests[ks.shift()];
         }
+        if (r.night && Array.isArray(r.night.log)) r.night.log = r.night.log.slice(-150);   // v160：夜话聊天记录瘦身
       });
     } catch (e) { /* 忽略 */ }
     return o;
@@ -2373,6 +2374,670 @@
     return fmt(pool[seed % pool.length], greetVars(item, rec, ctx));
   }
 
+  /* ============================================================
+   * v160 · 夜话 —— 跨串大剧情（互动对话）
+   *   设定：夜里它们借你的手机开了个群「三更灯火」，把你拉进来聊天。
+   *   玩法：它们发消息 → 你从几个回复里挑一句 → 剧情跟着你的选择往前走，
+   *         走到一个结尾就收场（每幕 3 个结尾），或者消息攒到上限自动收尾。
+   *   成本：**本地剧本 + 本地状态机 = 0 出图、0 模型调用**，怎么聊都不花钱。
+   *   存放：进度挂在该群「第一位成员」（成精最早的那只）的记录里，跟着跨手机同步走。
+   *   与「房间剧情（同屋两只之间的小故事）」「主线·串与我（单串 8 章）」互不影响。
+   * ============================================================ */
+  const NIGHT_GROUP = "三更灯火";
+  const NIGHT_CAP = 48;          // 一幕最多播多少条消息（含系统提示与我的回复）——这是防卡死的保险阀：
+                                 // 每一幕都写好了结尾（正常聊完 25~37 条），只有万一没走到结尾才靠它收场
+
+  const NIGHT_ACTS = [
+    /* ---------- 第一幕 · 认识 ---------- */
+    {
+      id: "a1", icon: "🕯", title: "三更灯火", sub: "深夜被拉进一个群", need: { days: 1 },
+      nodes: {
+        start: {
+          lines: [
+            { w: "sys", t: "深夜 23:47 —— 你的手机亮了一下。" },
+            { w: "sys", t: "「{grp}」：{LIST} 把你拉进了群聊。" },
+            { w: "A", t: "{call}？在的话吱一声。" },
+            { w: "C", t: "我也在。我是{C}，白天总待在角落那颗。" },
+            { w: "A", t: "别怪我们自作主张。这个群是我建的 —— 夜里睡不着，想找个人说话，环顾四周只有它们。" },
+            { w: "B", t: "我是{B}。" },
+            { w: "B", t: "我们商量过了，有些话得当着你的面说。用你手机这件事，是它答应的。" },
+            { w: "A", t: "我答应的。反正你晚上刷手机的时候，我就在旁边看着。" },
+          ],
+          next: "c1",
+        },
+        c1: {
+          lines: [{ w: "A", t: "先问你一句 —— 你把我们凑到一块儿，是随便放的，还是故意的？" }],
+          choices: [
+            { t: "故意的。你们该认识认识。", go: "m1", tone: "warm" },
+            { t: "随手放的，没想那么多。", go: "m2", tone: "cool" },
+            { t: "你们俩自己处得来就行。", go: "m3", tone: "fun" },
+          ],
+        },
+        m1: {
+          lines: [
+            { w: "B", t: "……那你还挺会挑的。" },
+            { w: "A", t: "听见没？他说故意的。" },
+            { w: "B", t: "听见了。你不用重复。" },
+            { w: "A", t: "我高兴。" },
+          ],
+          next: "n2",
+        },
+        m2: {
+          lines: [
+            { w: "B", t: "随手。" },
+            { w: "A", t: "也对。人哪有空想那么多。" },
+            { w: "B", t: "你别接话。他随口一说，你倒记上了。" },
+          ],
+          next: "n2",
+        },
+        m3: {
+          lines: [
+            { w: "A", t: "好，处得来处不来，试了才知道。" },
+            { w: "B", t: "我们试过了。昨天晚上就试过了。" },
+            { w: "A", t: "{B}！那是秘密！" },
+          ],
+          next: "n2",
+        },
+        n2: {
+          lines: [
+            { w: "B", t: "说正经的。" },
+            { w: "B", t: "有件事我一直没想明白 —— 你柜子里那些还没成精的珠子，是不是也在等。" },
+            { w: "A", t: "这个我能答。我醒之前等了很久，久到已经不记得在等了。是{call}把我盘热的，就那一天。" },
+            { w: "B", t: "……我是自己裂开的。挂瓷那天夜里，我自己响了一声。" },
+            { w: "A", t: "那也挺好。" },
+          ],
+          next: "c2",
+        },
+        c2: {
+          lines: [{ w: "A", t: "所以我一直想问你 —— 我们到底是你的收藏，还是别的什么？" }],
+          choices: [
+            { t: "你们是我盘出来的，当然算我的。", go: "e_warm", tone: "warm" },
+            { t: "收藏。但收藏也可以有名字。", go: "e_cool", tone: "cool" },
+            { t: "这问题太大了，明天再答。", go: "e_fun", tone: "fun" },
+          ],
+        },
+        e_warm: {
+          lines: [
+            { w: "A", t: "……行。" },
+            { w: "B", t: "他说得很随便。但你听见了吧。" },
+            { w: "A", t: "听见了。我记下来。" },
+            { w: "sys", t: "{A} 把这句话设成了群公告。" },
+          ],
+          ending: { key: "warm", name: "🎖 群公告", text: "“你们是我盘出来的。” —— 这句话被{A}挂在了群公告上，从那以后一直没换。" },
+        },
+        e_cool: {
+          lines: [
+            { w: "B", t: "有名字就够了。" },
+            { w: "A", t: "不够。但先这样吧。" },
+            { w: "sys", t: "群里安静了一会儿。" },
+          ],
+          ending: { key: "cool", name: "🌿 各自的名字", text: "你没有认领它们，只是给了它们名字。它们后来说，这就够了。" },
+        },
+        e_fun: {
+          lines: [
+            { w: "A", t: "又来。" },
+            { w: "B", t: "他明天也不会答的。" },
+            { w: "A", t: "那我们明天再拉他一次。" },
+            { w: "sys", t: "{A} 把群名改成了「{call} 欠我们一个答案」。" },
+          ],
+          ending: { key: "fun", name: "🌙 欠我们一个答案", text: "你躲过了这个问题。它们没催你 —— 只是把群名改成了「{call} 欠我们一个答案」，一直没换回去。" },
+        },
+      },
+    },
+    /* ---------- 第二幕 · 比较 ---------- */
+    {
+      id: "a2", icon: "🪶", title: "谁更亮", sub: "为了比谁亮，开了个群会", need: { days: 3 },
+      nodes: {
+        start: {
+          lines: [
+            { w: "sys", t: "三天后的夜里 00:12。" },
+            { w: "A", t: "{call}，你睡了吗。" },
+            { w: "B", t: "他睡了。别喊。" },
+            { w: "A", t: "我知道他睡了。我就是想喊。" },
+            { w: "B", t: "……" },
+            { w: "C", t: "你们俩又开始了。这个群我是不是不该来。" },
+            { w: "A", t: "{B}，我问你个事。你身上那道亮，是从哪儿来的？" },
+            { w: "B", t: "盘出来的。" },
+            { w: "A", t: "我也是。可我觉得你的比我亮。" },
+          ],
+          next: "c1",
+        },
+        c1: {
+          lines: [{ w: "B", t: "角度问题而已。{call}，你来评 —— 你翻过来看看我们俩。" }],
+          choices: [
+            { t: "{A}的颜色更沉，{B}的更透。不一样的好看。", go: "m1", tone: "warm" },
+            { t: "亮不亮的，能戴着出门就行。", go: "m2", tone: "cool" },
+            { t: "我看看……嗯，都挺亮的。", go: "m3", tone: "fun" },
+          ],
+        },
+        m1: {
+          lines: [
+            { w: "B", t: "……你这算答了吗？" },
+            { w: "A", t: "算了。他说不一样的好看。" },
+            { w: "B", t: "我听懂了。" },
+            { w: "A", t: "那你别皱眉。" },
+            { w: "B", t: "我没有眉。" },
+          ],
+          next: "n2",
+        },
+        m2: {
+          lines: [
+            { w: "A", t: "能戴着出门就行。" },
+            { w: "A", t: "这话我记住了。" },
+            { w: "B", t: "你少记点东西，你脑子里快装不下了。" },
+          ],
+          next: "n2",
+        },
+        m3: {
+          lines: [
+            { w: "A", t: "都挺亮。" },
+            { w: "B", t: "敷衍。" },
+            { w: "A", t: "但是实话。" },
+          ],
+          next: "n2",
+        },
+        n2: {
+          lines: [
+            { w: "B", t: "我其实不是想比亮。" },
+            { w: "B", t: "我想说的是 —— 你多久没盘我了。" },
+            { w: "A", t: "？" },
+            { w: "B", t: "我在数。我数了七天。" },
+            { w: "A", t: "……那确实有点久。" },
+            { w: "B", t: "我不是抱怨。我就是想让你知道：珠子也会数日子。" },
+          ],
+          next: "c2",
+        },
+        c2: {
+          lines: [{ w: "A", t: "{call}，这话我得替它说 —— 你要么今天就盘一下它，要么答应它一个时间。" }],
+          choices: [
+            { t: "现在就盘。手伸过来了。", go: "e_warm", tone: "warm" },
+            { t: "这周忙，周末一定。", go: "e_cool", tone: "cool" },
+            { t: "……你们连这个都要开个群？", go: "e_fun", tone: "fun" },
+          ],
+        },
+        e_warm: {
+          lines: [
+            { w: "sys", t: "你把手伸进了抽屉。（群里安静了很久。）" },
+            { w: "A", t: "它在发光。" },
+            { w: "B", t: "我没有。" },
+            { w: "A", t: "你的光在抖。" },
+          ],
+          ending: { key: "warm", name: "🤲 今晚就现在", text: "你没有说“以后”。你把手伸了过去。那天晚上{B}亮了很久，而{A}破天荒地主动闭了嘴。" },
+        },
+        e_cool: {
+          lines: [
+            { w: "A", t: "周末。" },
+            { w: "B", t: "好，周末。" },
+            { w: "A", t: "你信他？" },
+            { w: "B", t: "信。他从来没在周末失过约。" },
+            { w: "A", t: "……你比我还笃定。" },
+          ],
+          ending: { key: "cool", name: "📅 记在周末", text: "你给了一个时间，它们没再提这件事。只是从那天起，每到周末，群里会准时安静一个小时 —— 等你。" },
+        },
+        e_fun: {
+          lines: [
+            { w: "A", t: "要的。" },
+            { w: "B", t: "要的。" },
+            { w: "A", t: "我们商量好的。" },
+          ],
+          ending: { key: "fun", name: "😌 商量好的", text: "你笑着说行行行。它们没听出你在打岔 —— 或者听出来了，但那天晚上你确实把手伸进了抽屉，它们就当作没听出来。" },
+        },
+      },
+    },
+    /* ---------- 第三幕 · 出事 ---------- */
+    {
+      id: "a3", icon: "🩹", title: "裂了一道", sub: "它磕了一道白线", need: { days: 7 },
+      nodes: {
+        start: {
+          lines: [
+            { w: "sys", t: "七天后的凌晨 1:40 —— 群里一连串消息。" },
+            { w: "B", t: "{call}。" },
+            { w: "B", t: "我今天磕了一下。柜门没关好。" },
+            { w: "A", t: "我听见了那一声。不是裂开，是起了一道白线。在侧边。" },
+            { w: "B", t: "不影响戴。也不影响盘。就是有点难看。" },
+            { w: "A", t: "你别这么说自己。" },
+            { w: "C", t: "……我在旁边听着都疼。你少说两句。" },
+          ],
+          next: "c1",
+        },
+        c1: {
+          lines: [{ w: "A", t: "{call}，醒着的话回一句。它从刚才起一直在数自己的纹路。" }],
+          choices: [
+            { t: "让我看看。别动，我开灯。", go: "m1", tone: "warm" },
+            { t: "磕的？什么时候的事。", go: "m2", tone: "cool" },
+            { t: "白线？那是包浆，不是伤。", go: "m3", tone: "fun" },
+          ],
+        },
+        m1: {
+          lines: [
+            { w: "sys", t: "你开了灯。抽屉里安静地躺着，谁也没动。" },
+            { w: "A", t: "他开灯了。" },
+            { w: "B", t: "我知道。" },
+            { w: "A", t: "你别装睡。" },
+            { w: "B", t: "我没装。" },
+          ],
+          next: "n2",
+        },
+        m2: {
+          lines: [
+            { w: "A", t: "晚饭后。他没敢说。" },
+            { w: "B", t: "我在等一个合适的时机。" },
+            { w: "A", t: "你等到现在。" },
+            { w: "B", t: "……嗯。" },
+          ],
+          next: "n2",
+        },
+        m3: {
+          lines: [
+            { w: "B", t: "不。那是伤。" },
+            { w: "A", t: "他说是包浆。" },
+            { w: "B", t: "他想让我好受一点。" },
+          ],
+          next: "n2",
+        },
+        n2: {
+          lines: [
+            { w: "B", t: "{call}，我问你一个真的问题。" },
+            { w: "B", t: "如果把我重新抛一遍光，这道线就没了。" },
+            { w: "B", t: "但抛掉的那一层，是我这半年长出来的。" },
+            { w: "A", t: "别问这个。" },
+            { w: "B", t: "我要问。" },
+          ],
+          next: "c2",
+        },
+        c2: {
+          lines: [{ w: "B", t: "你要一个新的我，还是要一个带着这道线的我？" }],
+          choices: [
+            { t: "留着。这道线是你的一部分。", go: "p1", tone: "warm" },
+            { t: "你自己介意的话，我就给你抛。", go: "p2", tone: "cool" },
+            { t: "……我都要。你先别问了。", go: "p3", tone: "fun" },
+          ],
+        },
+        p1: {
+          lines: [
+            { w: "A", t: "他听见了。" },
+            { w: "B", t: "嗯。" },
+            { w: "A", t: "你总算说了句人话。" },
+          ],
+          next: "n3",
+        },
+        p2: {
+          lines: [
+            { w: "B", t: "……你愿意动手。" },
+            { w: "A", t: "它是问你。你别绕。" },
+            { w: "B", t: "我知道。我在想。" },
+          ],
+          next: "n3",
+        },
+        p3: {
+          lines: [
+            { w: "A", t: "他每次都这样。" },
+            { w: "B", t: "没关系。等他慢慢想。" },
+          ],
+          next: "n3",
+        },
+        n3: {
+          lines: [
+            { w: "A", t: "我插一句。" },
+            { w: "A", t: "我身上也有。你们看不到，在底下。" },
+            { w: "A", t: "每颗珠子都有几道。不是脏，是记账。" },
+            { w: "B", t: "……" },
+            { w: "A", t: "你可以难受，但别把自己抛掉。" },
+            { w: "B", t: "我没难受。珠子不会难受。" },
+            { w: "A", t: "你的光在抖。" },
+          ],
+          next: "c3",
+        },
+        c3: {
+          lines: [{ w: "B", t: "{call}。你说一句就行。" }],
+          choices: [
+            { t: "你原来什么样，我就要什么样。", go: "e_warm", tone: "warm" },
+            { t: "线留着。以后我盘的时候避开它。", go: "e_cool", tone: "cool" },
+            { t: "那你得先答应我，柜门以后关好。", go: "e_fun", tone: "fun" },
+          ],
+        },
+        e_warm: {
+          lines: [
+            { w: "B", t: "……好。" },
+            { w: "A", t: "记住这句话，{B}。" },
+            { w: "sys", t: "那天晚上，你的抽屉安静得能听见呼吸。" },
+          ],
+          ending: { key: "warm", name: "🩹 带着线的那颗", text: "你没有让它变得完美。它带着那道白线，后来还比之前更亮了一点 —— 是它自己承认的。" },
+        },
+        e_cool: {
+          lines: [
+            { w: "B", t: "好。" },
+            { w: "A", t: "你听出来了吗，他说的是「避开」。" },
+            { w: "B", t: "听出来了。所以我更高兴。" },
+          ],
+          ending: { key: "cool", name: "🤲 绕开的那一下", text: "从那以后，你盘到那一侧的时候手指会轻一点。它一直知道，一直没提 —— 它把这件事也记进了账里。" },
+        },
+        e_fun: {
+          lines: [
+            { w: "B", t: "……行。" },
+            { w: "A", t: "它答应了。" },
+            { w: "B", t: "我答应了。" },
+            { w: "sys", t: "第二天早上，你发现柜门关得严严实实 —— 是它自己挪的。" },
+          ],
+          ending: { key: "fun", name: "🚪 柜门关好了", text: "你用一句玩笑换了一个承诺。它没觉得亏 —— 因为你确实绕开了那道线，只是没说。" },
+        },
+      },
+    },
+    /* ---------- 第四幕 · 以后 ---------- */
+    {
+      id: "a4", icon: "🪢", title: "三更之后", sub: "很久以后，它们想聊以后", need: { days: 14 },
+      nodes: {
+        start: {
+          lines: [
+            { w: "sys", t: "两个月后的凌晨 2:10。群里很久没动静了。" },
+            { w: "A", t: "群里好久没消息了。" },
+            { w: "B", t: "你在。我知道你在。" },
+            { w: "A", t: "我在。你呢。" },
+            { w: "B", t: "我也在。" },
+            { w: "A", t: "那就好。" },
+            { w: "C", t: "……我一直都在。你们俩真慢。" },
+          ],
+          next: "c1",
+        },
+        c1: {
+          lines: [{ w: "A", t: "{call}，我们想跟你说个事 —— 我们打算把这个群一直留着。" }],
+          choices: [
+            { t: "留着吧，我又不会退。", go: "m1", tone: "warm" },
+            { t: "这有什么好说的。", go: "m2", tone: "cool" },
+            { t: "群名能改吗？", go: "m3", tone: "fun" },
+          ],
+        },
+        m1: {
+          lines: [
+            { w: "B", t: "你说得很轻松。" },
+            { w: "A", t: "他就是这样的人。" },
+            { w: "B", t: "我知道。我就是想听他说一遍。" },
+          ],
+          next: "n2",
+        },
+        m2: {
+          lines: [
+            { w: "A", t: "是不算什么大事。" },
+            { w: "B", t: "对我们算。" },
+            { w: "A", t: "……嗯。对我们算。" },
+          ],
+          next: "n2",
+        },
+        m3: {
+          lines: [
+            { w: "A", t: "能改。" },
+            { w: "B", t: "你想叫什么。" },
+            { w: "A", t: "别改。改了就不是我们了。" },
+          ],
+          next: "n2",
+        },
+        n2: {
+          lines: [
+            { w: "B", t: "还有一件事。" },
+            { w: "B", t: "你以后还会不会带新的回来。" },
+            { w: "A", t: "{B}。" },
+            { w: "B", t: "我问的是真的问题。" },
+            { w: "A", t: "……我也想听。" },
+          ],
+          next: "c2",
+        },
+        c2: {
+          lines: [{ w: "B", t: "我不介意。真的。我只是想知道，我们在这个柜子里的位置。" }],
+          choices: [
+            { t: "位置是你们自己挣的，新来的顶不掉。", go: "q1", tone: "warm" },
+            { t: "会。但你们是第一批。", go: "q2", tone: "cool" },
+            { t: "……你们倒挺操心这个。", go: "q3", tone: "fun" },
+          ],
+        },
+        q1: {
+          lines: [
+            { w: "B", t: "……你听见了吗，{A}。" },
+            { w: "A", t: "听见了。你别哭。" },
+            { w: "B", t: "我没哭。" },
+          ],
+          next: "n3",
+        },
+        q2: {
+          lines: [
+            { w: "A", t: "第一批。" },
+            { w: "B", t: "第一批就够了。" },
+            { w: "A", t: "他就这么一说，你别当真。" },
+            { w: "B", t: "我当真。" },
+          ],
+          next: "n3",
+        },
+        q3: {
+          lines: [
+            { w: "A", t: "操心的是它。" },
+            { w: "B", t: "是。" },
+            { w: "A", t: "……也是我。" },
+          ],
+          next: "n3",
+        },
+        n3: {
+          lines: [
+            { w: "A", t: "我来说。" },
+            { w: "A", t: "{call}，你听好。" },
+            { w: "A", t: "我们不怕新来的。我们怕的是你哪天把我们放进盒子里，不再拿出来了。" },
+            { w: "B", t: "对。" },
+          ],
+          next: "c3",
+        },
+        c3: {
+          lines: [{ w: "A", t: "今天最后一句，你答不答都行 —— 我们能不能一直有位置。" }],
+          choices: [
+            { t: "只要我还盘，就有你们的位置。", go: "e_warm", tone: "warm" },
+            { t: "位置不在柜子里，在我手上。", go: "e_cool", tone: "cool" },
+            { t: "……你们俩今晚话真多。", go: "e_fun", tone: "fun" },
+          ],
+        },
+        e_warm: {
+          lines: [{ w: "sys", t: "它们没再说别的。群安静下来，只剩深夜的电流声。" }],
+          ending: { key: "warm", name: "🪢 一直有位置", text: "那天之后，群公告底下多了一行小字，是你不知道的时候加上的：「{A}、{B} —— 长期有效。」" },
+        },
+        e_cool: {
+          lines: [
+            { w: "B", t: "在我手上。" },
+            { w: "A", t: "……这话我记一年。" },
+            { w: "B", t: "我记更久。" },
+          ],
+          ending: { key: "cool", name: "🤲 在我手上", text: "后来每次你伸手，它们都会主动往你手指那边挪一点。谁也没说为什么，你也一直没问。" },
+        },
+        e_fun: {
+          lines: [
+            { w: "A", t: "话多是好事。" },
+            { w: "B", t: "说明还在。" },
+            { w: "A", t: "对。说明还在。" },
+          ],
+          ending: { key: "fun", name: "🌙 说明还在", text: "那晚你被逗笑了。它们后来把群名改成了「话多的两只」—— 一直没换。" },
+        },
+      },
+    },
+  ];
+
+  /* ---------- 卡司：主演最多 3 位，按「成精最早」排（顺序必须稳定 —— 进度就存在第一位身上） ---------- */
+  function nightCast(items, store) {
+    const arr = (items || []).slice().sort((a, b) => {
+      const ra = (store && store[String(a.id)]) || {}, rb = (store && store[String(b.id)]) || {};
+      const ta = Number(ra.bornAt) || Number(a.createdAt) || 0;
+      const tb = Number(rb.bornAt) || Number(b.createdAt) || 0;
+      if (ta !== tb) return ta - tb;
+      return String(a.id) < String(b.id) ? -1 : 1;
+    });
+    return arr.slice(0, 3).map((it, i) => {
+      const r = (store && store[String(it.id)]) || {};
+      return { slot: "ABC".charAt(i), id: String(it.id), name: (r.persona && r.persona.name) || it.name || "它", item: it };
+    });
+  }
+  function nightActOf(id) {
+    for (let i = 0; i < NIGHT_ACTS.length; i++) if (NIGHT_ACTS[i].id === id) return NIGHT_ACTS[i];
+    return null;
+  }
+  // 各幕状态（解锁 / 已聊完的结局 / 还差什么）
+  function nightActs(rec, ctx, cast) {
+    const n = (rec && rec.night) || null;
+    const done = (n && n.done && typeof n.done === "object") ? n.done : {};
+    const days = Math.max(1, (ctx && ctx.dayNo) || 1);
+    const enough = (cast || []).length >= 2;
+    const out = [];
+    let prevDone = true;
+    for (let i = 0; i < NIGHT_ACTS.length; i++) {
+      const a = NIGHT_ACTS[i];
+      const nd = a.need ? (a.need.days || 1) : 1;
+      const daysOk = days >= nd;
+      const unlocked = enough && prevDone && daysOk;
+      let need = "";
+      if (!enough) need = "要两只以上精灵才能开群";
+      else if (!daysOk) need = "再陪 " + (nd - days) + " 天解锁";
+      else if (!prevDone) need = "先聊完上一幕";
+      out.push({ id: a.id, i: i, icon: a.icon, title: a.title, sub: a.sub, unlocked: unlocked, done: done[a.id] || "", need: need });
+      prevDone = unlocked && !!done[a.id];
+    }
+    return out;
+  }
+  function nightDomTone(n) {
+    const t = (n && n.tone) || {};
+    const w = Number(t.warm) || 0, c = Number(t.cool) || 0, f = Number(t.fun) || 0;
+    if (w === 0 && c === 0 && f === 0) return "warm";
+    if (w >= c && w >= f) return "warm";
+    return (c >= f) ? "cool" : "fun";
+  }
+  function nightVars(item, rec, ctx, cast) {
+    const v = greetVars(item, rec, ctx);
+    const by = {};
+    (cast || []).forEach((c) => { by[c.slot] = c.name; });
+    v.A = by.A || "它";
+    v.B = by.B || "";
+    v.C = by.C || "";
+    v.LIST = (cast || []).map((c) => c.name).join("、");
+    v.grp = NIGHT_GROUP;
+    return v;
+  }
+  function nightText(t, v, n) {
+    let s = t;
+    if (s && typeof s === "object") {          // 按当前「调子」挑变体（备用能力，剧本可选用）
+      const k = nightDomTone(n);
+      s = s[k] || s.def || s.warm || "";
+    }
+    return fmt(String(s == null ? "" : s), v)
+      .replace(/\{A\}/g, v.A || "").replace(/\{B\}/g, v.B || "").replace(/\{C\}/g, v.C || "")
+      .replace(/\{LIST\}/g, v.LIST || "").replace(/\{grp\}/g, v.grp || "");
+  }
+  function nightWho(w, cast) {
+    const c = (cast || []).filter((x) => x.slot === w)[0];
+    return c ? c.name : "";
+  }
+  // 展开一行 → 一条消息；返回 null = 这一行跳过（比如这只精灵不存在）
+  function nightLine(l, v, n, cast) {
+    if (!l || !l.t) return null;
+    if ((l.w === "B" || l.w === "C") && !nightWho(l.w, cast)) return null;
+    const txt = nightText(l.t, v, n);
+    if (!txt) return null;
+    return { w: l.w || "sys", name: nightWho(l.w, cast), text: txt, at: Date.now() };
+  }
+  function nightChoicesOf(n, act, v) {
+    if (!act || !n || n.ended) return [];
+    const nd = act.nodes[n.node];
+    if (!nd || !nd.choices) return [];
+    return nd.choices.map((c) => ({ t: nightText(c.t, v, n) }));
+  }
+  // 从当前节点一路往下走，把新消息攒进 log，停在「等你选」或「结尾」
+  function nightWalk(item, rec, ctx, cast) {
+    const n = rec.night;
+    const act = nightActOf(n.actId);
+    const v = nightVars(item, rec, ctx, cast);
+    const added = [];
+    let guard = 0;
+    while (act && guard++ < 80) {
+      const nd = act.nodes[n.node];
+      if (!nd) { n.ended = true; n.node = ""; break; }
+      (nd.lines || []).forEach((l) => { const m = nightLine(l, v, n, cast); if (m) { added.push(m); n.msgs = (Number(n.msgs) || 0) + 1; } });
+      if (nd.ending) {
+        n.ended = true;
+        n.node = "";
+        n.done[act.id] = { key: nd.ending.key, name: nightText(nd.ending.name, v, n), at: Date.now() };
+        n.ending = { key: nd.ending.key, name: nightText(nd.ending.name, v, n), text: nightText(nd.ending.text, v, n) };
+        n.at = Date.now();
+        break;
+      }
+      if (nd.choices && nd.choices.length) {
+        // 消息攒太多了 → 不再给选项，直接按当前调子收尾（「聊到一定条数就结束」）
+        if ((Number(n.msgs) || 0) >= NIGHT_CAP) {
+          const alt = act.nodes["e_" + nightDomTone(n)] ? ("e_" + nightDomTone(n)) : "";
+          if (alt && alt !== n.node) { n.node = alt; continue; }
+        }
+        break;                                   // 停在这里等选择
+      }
+      if (!nd.next) { n.ended = true; n.node = ""; break; }
+      n.node = nd.next;
+    }
+    n.log = (Array.isArray(n.log) ? n.log : []).concat(added);
+    if (n.log.length > 200) n.log = n.log.slice(-200);   // 兜底：别把 localStorage 撑爆
+    return { added: added, choices: nightChoicesOf(n, act, v), ending: n.ending || null, ended: !!n.ended };
+  }
+  function nightReset(rec, actId) {
+    rec.night = (rec.night && typeof rec.night === "object") ? rec.night : {};
+    const n = rec.night;
+    n.done = (n.done && typeof n.done === "object") ? n.done : {};
+    n.actId = actId;
+    n.node = "start";
+    n.log = [];
+    n.msgs = 0;
+    n.ended = false;
+    n.ending = null;
+    n.tone = { warm: 0, cool: 0, fun: 0 };
+    n.at = Date.now();
+    return n;
+  }
+  // 进某一幕：有记录 → 原样续上（历史照旧铺出来，聊完了就只显示结局卡）；没记录 → 建群开场
+  function nightEnter(item, rec, ctx, cast, actId) {
+    const n0 = rec.night;
+    if (n0 && n0.actId === actId && Array.isArray(n0.log) && n0.log.length) {
+      const act = nightActOf(actId);
+      return {
+        added: [],
+        choices: n0.ended ? [] : nightChoicesOf(n0, act, nightVars(item, rec, ctx, cast)),
+        ending: n0.ending || null,
+        ended: !!n0.ended,
+      };
+    }
+    nightReset(rec, actId);
+    return nightWalk(item, rec, ctx, cast);
+  }
+  // 「再看一遍」：清掉这一幕的聊天记录，从头重开（已聊完的标记会保留）
+  function nightReplay(item, rec, ctx, cast, actId) {
+    nightReset(rec, actId);
+    return nightWalk(item, rec, ctx, cast);
+  }
+  // 选一句回复 → 继续往下走
+  function nightChoose(item, rec, ctx, cast, idx) {
+    const n = rec && rec.night;
+    const act = nightActOf(n && n.actId);
+    if (!n || !act || n.ended) return { added: [], choices: [], ending: (n && n.ending) || null, ended: true };
+    const nd = act.nodes[n.node];
+    const c = nd && nd.choices ? nd.choices[idx] : null;
+    if (!c) return nightWalk(item, rec, ctx, cast);
+    const v = nightVars(item, rec, ctx, cast);
+    const mine = { w: "me", name: "", text: nightText(c.t, v, n), at: Date.now() };
+    n.log = (Array.isArray(n.log) ? n.log : []).concat([mine]);
+    n.msgs = (Number(n.msgs) || 0) + 1;
+    const tn = c.tone || "warm";
+    n.tone = n.tone || { warm: 0, cool: 0, fun: 0 };
+    n.tone[tn] = (Number(n.tone[tn]) || 0) + 1;
+    n.node = c.go || "";
+    const r = nightWalk(item, rec, ctx, cast);
+    r.added = [mine].concat(r.added);
+    return r;
+  }
+  // 这一幕的进度摘要（列表页用）
+  function nightBrief(rec) {
+    const n = (rec && rec.night) || null;
+    if (!n) return null;
+    const log = Array.isArray(n.log) ? n.log : [];
+    const last = log.length ? log[log.length - 1] : null;
+    return { actId: n.actId || "", ended: !!n.ended, last: last, ending: n.ending || null, msgs: Number(n.msgs) || 0 };
+  }
+
   /* ---------- 房间剧情（两只精灵的故事） ---------- */
   function storyLocal(a, b, level, roomName, aff) {
     const na = (a.persona && a.persona.name) || a.item.name || "它";
@@ -2763,5 +3428,7 @@
     FEST_LUNAR, FEST_DEF, FEST_SOLAR, FEST_LINES, festOf, festMap, nextFest, ensureFest, festList, festCgPrompt,
     // v158：主线「串与我」（串与主人之间，按四形态分卷；全本地 0 成本）
     CHAPTERS, chapterState, chapterText, readChapter, unreadChapterCount,
+    // v160：夜话（跨串大剧情 · 互动对话）—— 本地剧本 + 本地状态机，0 出图 0 模型调用
+    NIGHT_ACTS, NIGHT_GROUP, NIGHT_CAP, nightCast, nightActs, nightEnter, nightReplay, nightChoose, nightBrief,
   };
 })();
