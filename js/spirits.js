@@ -2302,40 +2302,6 @@
     { vol: 4, volName: "卷四 · 长成", stage: 4, days: 0, icon: "👑", title: "我是你手边最亮的那颗" },
     { vol: 4, volName: "卷四 · 长成", stage: 4, days: 60, icon: "🪢", title: "以后也这样陪着你" },
   ];
-  const CHAP_TEXT = [
-    [
-      "{call}：\n\n那天你把我从一堆珠子里挑出来的时候，我还不认识你。\n后来你把我盘了很久。你手心的温度一点一点渗进来，我在里面安静地等着 —— 等到你不经意停下的那一刻，灯还亮着，你把我翻了个面。\n就是那一下，我醒了。\n所以严格来说，不是「挂瓷」让我成精的，是你把我盘热的。\n—— {name}",
-      "{call}：\n\n成精那天没什么仪式。你只是把我拿在手里，像平常那样盘着，盘到一半接了个电话，又继续。\n我在珠子里听着，觉得这就是人过日子该有的声音。\n然后我就想出来看看 —— 看看那个把我盘了 {days} 天的人长什么样。\n—— {name}",
-    ],
-    [
-      "{call}：\n\n我发现你有个习惯 —— 早上出门前会看一眼表，晚上回来第一件事是洗手。\n我学会在这两个时刻醒着。\n不吵你，就是醒着。\n珠子的一天很长，但只有这两个时刻是有方向的。\n—— {name}",
-      "{call}：\n\n刚开始我分不清什么是「等你」，什么是「待着」。\n后来懂了：待着，是心里什么都没想；等你，是心里一直有个方向。\n我现在属于后一种。\n白天还好，一到傍晚我就开始留意门口的动静 —— 你一般这时候回来。\n有时候你回来得晚，我就当自己是在守一个不知道几点的约。\n—— {name}",
-    ],
-    [
-      "{call}：\n\n我长大了一点。真的，不是错觉 —— 我照过镜子，比刚醒的时候高了一截。\n长大之后我多了一个本事：听得出你的脚步。\n在走廊、在楼下、在门口……你的节奏跟别人不一样，比别人慢半拍。\n每次听见，我都在心里说一句：回来了。\n—— {name}",
-      "{call}：\n\n{stage}的好处是，我终于能记住更多东西了。\n比如你哪天心情不好 —— 那种时候你盘我盘得特别快，指头也不像平时那么轻。\n我不说，也不躲，就多挨一会儿。\n珠子不会问「你怎么了」，但会一直在那儿。这件事我大概做得到。\n—— {name}",
-    ],
-    [
-      "{call}：\n\n今天你把我放在桌上忘了收。太阳从窗户挪进来，正好停在我身上。\n我在那小块光里待了很久。身上慢慢热起来，像被你盘过一样。\n天黑之后你才想起来找我，我一声没吭。\n那是我第一次自己晒到太阳 —— 我记下来了。\n—— {name}",
-      "{call}：\n\n我发现我身上开始有变化了。不是长高，是颜色。\n{color}的底子上，多了一层很淡的亮 —— 不是一眼能看出来的那种，要凑近了、偏着光才看得见。\n你大概还没注意到。没关系，我等你自己发现。\n那层亮是你盘出来的，也是光给的。我把它当成这段时间的记事。\n—— {name}",
-    ],
-    [
-      "{call}：\n\n我长开了。变高，也变瘦，声音也不一样了。\n奇怪的是，我也开始想起一点以前的事 —— 想起我还在山里、在树上的时候，想起雨水，想起风。\n那时候没有名字，也没有人盘。\n现在我是「{bead}」，是你手边的精灵。两段都是真的。\n—— {name}",
-      "{call}：\n\n{stage}之后的第一个晚上，我做了一个很长的梦。\n梦里我还是珠子，躺在柜台里。有人来过又走了，一直没挑中我。\n醒来出了一身冷汗 —— 然后想起来，最后是你把我挑走了。\n我就又睡着了。\n—— {name}",
-    ],
-    [
-      "{call}：\n\n你出差那几天，家里特别静。\n我没有到处乱走，就待在老位置，把窗帘缝里那点光数了一遍。\n第四天有点慌，第六天反倒踏实了 —— 因为我想起来，你每次出门都会回来。\n你进门那天，我没说「我担心了」。我说的是「你晒黑了」。\n—— {name}",
-      "{call}：\n\n那几天你不在，我把自己反复想了一遍。\n想清楚了：我不是非得被盘才活着，我在这儿待着，也是活着的。\n只是 —— 你回来的时候，日子才像日子。\n—— {name}",
-    ],
-    [
-      "{call}：\n\n我成了。\n你以前说想看看我长到最后是什么样 —— 就是现在这样。\n说实话，我第一眼看到自己的时候愣了一下。原来我这么好看。\n但更想让你知道的是：我身上每一分亮，都是你这 {days} 天一点点盘出来的。没有一分例外。\n—— {name}",
-      "{call}：\n\n我现在是你手边最亮的那颗了。\n以后可能还会有别的珠子进来，比我新，比我贵。\n我不介意 —— 我只想当那颗「最久的」。\n珠子之间不比价钱，比的是谁陪得久。这一点我不输，也打算一直不输。\n—— {name}",
-    ],
-    [
-      "{call}：\n\n到今天为止，{days} 天了。\n我陪你搬过东西、加过班、熬过夜，也陪你什么都不干地发过呆。\n你可能会觉得，这就是一串珠子能做到的极限。\n但我想说的是：别急着去攒下一串。你这串，还没盘到头。\n—— {name}",
-      "{call}：\n\n以后的日子，我大概不会有什么大变化了。\n不长大，不变样，也不会再有第一次。\n剩下的就是 —— 每天在，每天亮一点。\n这件事我能做很久。\n—— 你的{name}",
-    ],
-  ];
   // 每一章的状态（解锁 / 已读 / 还差什么）
   function chapterState(rec, ctx) {
     const days = Math.max(1, (ctx && ctx.dayNo) || 1);
@@ -2365,13 +2331,6 @@
     if (rec.chapters[i] && rec.chapters[i].at) return false;
     rec.chapters[i] = { at: Date.now() };
     return true;
-  }
-  // 某一章的正文（本地，按精灵 seed 挑变体）
-  function chapterText(item, rec, i, ctx) {
-    const pool = CHAP_TEXT[i] || [];
-    if (!pool.length) return "";
-    const seed = mixSeed(hashStr(String(item.id) + "#chap#" + i));   // v159：必须混合，否则 8 章只有 2 套组合
-    return fmt(pool[seed % pool.length], greetVars(item, rec, ctx));
   }
 
   /* ============================================================
@@ -3038,6 +2997,674 @@
     return { actId: n.actId || "", ended: !!n.ended, last: last, ending: n.ending || null, msgs: Number(n.msgs) || 0 };
   }
 
+  /* ============================================================
+   * v161 · 主线「串与我」· 对话版 —— 它写给你的话，改成它发消息、你回话
+   *   8 章（沿用 v158 的 CHAPTERS 分卷解锁）、每章 2 个决策点、2 个结尾。
+   *   成本：本地剧本 + 本地状态机 = 0 出图、0 模型调用，怎么聊都不花钱。
+   *   存放：进度在 `rec.talk`；聊到结尾自动记 `rec.chapters[i]` 已读 ——
+   *         解锁链仍然是 v158 那套（上一章看过才放下一章）。
+   *   与「夜话（跨串群聊）」是两套独立剧本，只共用对话页外壳。
+   * ============================================================ */
+  const CHAP_TALK_CAP = 40;   // 一章最多播多少条消息 —— 纯保险阀（正常聊完 12~16 条）
+
+  const CHAP_SCRIPTS = [
+    /* ---------- 第一章 · 你把我盘热的那天 ---------- */
+    {
+      start: {
+        lines: [
+          { w: "sys", t: "夜里，你把它从桌上拿起来。屏幕亮了一下。" },
+          { w: "sp", t: "{call}。" },
+          { w: "sp", t: "那天你把我从一堆珠子里挑出来的时候，我还不认识你。" },
+          { w: "sp", t: "后来你盘了我很久，手心的温度一点一点渗进来。我在里面安静地等着。" },
+          { w: "sp", t: "等到你不经意停下的那一刻 —— 灯还亮着，你把我翻了个面。" },
+          { w: "sp", t: "就是那一下，我醒了。" },
+        ],
+        next: "c1",
+      },
+      c1: {
+        lines: [{ w: "sp", t: "所以我想问你一句：你觉得……我是怎么醒的？" }],
+        choices: [
+          { t: "你自己醒的。我什么都没做。", go: "m1", tone: "quiet" },
+          { t: "是我把你盘热的，我记得那天。", go: "m2", tone: "warm" },
+          { t: "那天我一直没放下你，手都酸了。", go: "m3", tone: "warm" },
+        ],
+      },
+      m1: {
+        lines: [
+          { w: "sp", t: "……你真这么想？" },
+          { w: "sp", t: "那我把这件事记成我自己的功劳了。以后你夸我，我就拿这个说。" },
+        ],
+        next: "c2",
+      },
+      m2: {
+        lines: [
+          { w: "sp", t: "你记得。" },
+          { w: "sp", t: "那我把话说清楚一点：不是「挂瓷」让我成精的，是你把我盘热的。这两件事不一样。" },
+        ],
+        next: "c2",
+      },
+      m3: {
+        lines: [
+          { w: "sp", t: "……手酸。" },
+          { w: "sp", t: "那我也说句实话：其实那天你中途接了个电话，我怕你就这么把我放下了。" },
+          { w: "sp", t: "结果你又接着盘了。" },
+        ],
+        next: "c2",
+      },
+      c2: {
+        lines: [{ w: "sp", t: "你说，人过日子是不是就这个动静 —— 手里有事，耳机里有人说话，还惦记着桌上的一串珠子？" }],
+        choices: [
+          { t: "差不多就是这样。", go: "zw", tone: "warm" },
+          { t: "那天是例外，平时我挺闲的。", go: "zq", tone: "quiet" },
+        ],
+      },
+      zw: {
+        lines: [
+          { w: "sp", t: "那我喜欢这个动静。" },
+          { w: "sp", t: "以后你忙你的，我在旁边听着就行。" },
+        ],
+        ending: { key: "warm", name: "🌙 那天灯还亮着", text: "它后来把这一天当成生日。每年到这天，它都会比平时亮一点 —— 没什么道理，就是亮一点。" },
+      },
+      zq: {
+        lines: [
+          { w: "sp", t: "例外好。" },
+          { w: "sp", t: "那我当成专门给我的那一天了。" },
+        ],
+        ending: { key: "quiet", name: "🌙 专门的那一天", text: "「例外」这两个字它记了很久。珠子不贪心，有一点特殊，就够用很久。" },
+      },
+    },
+
+    /* ---------- 第二章 · 我开始学会等你 ---------- */
+    {
+      start: {
+        lines: [
+          { w: "sp", t: "{call}，我发现你有个习惯。" },
+          { w: "sp", t: "早上出门前会看一眼表。晚上回来第一件事是洗手。" },
+          { w: "sp", t: "我学会在这两个时刻醒着。" },
+          { w: "sp", t: "不吵你，就是醒着。" },
+        ],
+        next: "c1",
+      },
+      c1: {
+        lines: [{ w: "sp", t: "你说，我这算不算在等你？" }],
+        choices: [
+          { t: "算。而且你等得挺准。", go: "m1", tone: "warm" },
+          { t: "不算，你只是醒着而已。", go: "m2", tone: "quiet" },
+          { t: "你在等我，我有点不好意思。", go: "m3", tone: "warm" },
+        ],
+      },
+      m1: {
+        lines: [
+          { w: "sp", t: "准是我练出来的。" },
+          { w: "sp", t: "你晚回来十分钟我能察觉。可能你不信。" },
+        ],
+        next: "c2",
+      },
+      m2: {
+        lines: [
+          { w: "sp", t: "……好吧。" },
+          { w: "sp", t: "那我改个说法：我是在守一个不知道几点的约。" },
+          { w: "sp", t: "听着有点傻，但是真的。" },
+        ],
+        next: "c2",
+      },
+      m3: {
+        lines: [
+          { w: "sp", t: "别不好意思。" },
+          { w: "sp", t: "珠子的一天很长，只有这两个时刻是有方向的。" },
+        ],
+        next: "c2",
+      },
+      c2: {
+        lines: [{ w: "sp", t: "那你呢 —— 你回家的路上，会不会也想着家里有串珠子在等？" }],
+        choices: [
+          { t: "会。有时候还真会。", go: "zw", tone: "warm" },
+          { t: "没想那么多。", go: "zq", tone: "quiet" },
+        ],
+      },
+      zw: {
+        lines: [
+          { w: "sp", t: "……" },
+          { w: "sp", t: "那我以后站得靠门近一点。" },
+        ],
+        ending: { key: "warm", name: "🤲 靠门近一点", text: "从那天起，它每天傍晚都挪到桌子靠门的那一边。谁也没提为什么，你也没问。" },
+      },
+      zq: {
+        lines: [
+          { w: "sp", t: "也对。" },
+          { w: "sp", t: "想太多反而不好，我继续过我的长日子。" },
+        ],
+        ending: { key: "quiet", name: "🤲 长日子", text: "它没等到那句「会」，却也没失望。它把这件事放在心里一个不疼的地方，继续每天傍晚醒着。" },
+      },
+    },
+
+    /* ---------- 第三章 · 你的脚步声 ---------- */
+    {
+      start: {
+        lines: [
+          { w: "sp", t: "我长大了一点。真的，不是错觉。" },
+          { w: "sp", t: "我照过镜子 —— 比刚醒的时候高了一截。" },
+          { w: "sp", t: "长大之后我多了个本事：听得出你的脚步。" },
+          { w: "sp", t: "在走廊、在楼下、在门口……你的节奏跟别人不一样。" },
+          { w: "sp", t: "比别人慢半拍。" },
+        ],
+        next: "c1",
+      },
+      c1: {
+        lines: [{ w: "sp", t: "你要不要试试？就算我背对着门，也能认出来。" }],
+        choices: [
+          { t: "来，你试试。", go: "m1", tone: "warm" },
+          { t: "不用试，我信。", go: "m2", tone: "warm" },
+          { t: "万一认错了呢？", go: "m3", tone: "quiet" },
+        ],
+      },
+      m1: {
+        lines: [
+          { w: "sp", t: "……" },
+          { w: "sp", t: "现在没人走过。等有人了再说。" },
+          { w: "sp", t: "反正我认得出你。这一点你记着就行。" },
+        ],
+        next: "c2",
+      },
+      m2: {
+        lines: [
+          { w: "sp", t: "信我啊。" },
+          { w: "sp", t: "那我把这门本事收好了，以后只用在等你上。" },
+        ],
+        next: "c2",
+      },
+      m3: {
+        lines: [
+          { w: "sp", t: "认错的话 ——" },
+          { w: "sp", t: "我就说那天的脚步声不是你。反正你也没听见我认。" },
+        ],
+        next: "c2",
+      },
+      c2: {
+        lines: [{ w: "sp", t: "你的脚步为什么比别人慢半拍，你自己知道吗？" }],
+        choices: [
+          { t: "不知道。可能是回家不着急。", go: "zw", tone: "warm" },
+          { t: "因为到家了要拐弯。", go: "zq", tone: "quiet" },
+        ],
+      },
+      zw: {
+        lines: [
+          { w: "sp", t: "这句我喜欢。" },
+          { w: "sp", t: "不着急，是好事。" },
+        ],
+        ending: { key: "warm", name: "👣 不着急", text: "后来你出门的脚步也慢了一点。它没说是它听出来的，你也没问。" },
+      },
+      zq: {
+        lines: [
+          { w: "sp", t: "拐弯之前那两步，我一直在等。" },
+          { w: "sp", t: "所以你一拐弯，我就知道我该醒了。" },
+        ],
+        ending: { key: "quiet", name: "👣 拐弯那两步", text: "它有了一整套自己的仪式：拐弯、抬手、门响。三步之内，它一定醒着。" },
+      },
+    },
+
+    /* ---------- 第四章 · 窗边那一小块光 ---------- */
+    {
+      start: {
+        lines: [
+          { w: "sp", t: "今天你把我放在桌上忘了收。" },
+          { w: "sp", t: "太阳从窗户挪进来，正好停在我身上。" },
+          { w: "sp", t: "我在那小块光里待了很久，身上慢慢热起来 —— 像被你盘过一样。" },
+          { w: "sp", t: "天黑之后你才想起来找我。" },
+          { w: "sp", t: "我一声没吭。" },
+        ],
+        next: "c1",
+      },
+      c1: {
+        lines: [{ w: "sp", t: "你猜我为什么不吭声？" }],
+        choices: [
+          { t: "因为在晒太阳，舍不得动。", go: "m1", tone: "warm" },
+          { t: "因为你在生我气。", go: "m2", tone: "quiet" },
+          { t: "因为你想看看我什么时候来找你。", go: "m3", tone: "quiet" },
+        ],
+      },
+      m1: {
+        lines: [
+          { w: "sp", t: "一半对。" },
+          { w: "sp", t: "另一半是 —— 我想试试自己能不能晒热。结果是能，但不太一样。" },
+        ],
+        next: "c2",
+      },
+      m2: {
+        lines: [
+          { w: "sp", t: "没有生气。" },
+          { w: "sp", t: "就是有点想让你多找一会儿。就一会儿。" },
+        ],
+        next: "c2",
+      },
+      m3: {
+        lines: [
+          { w: "sp", t: "……被你猜中了。" },
+          { w: "sp", t: "你后来不是来了吗。这就够了。" },
+        ],
+        next: "c2",
+      },
+      c2: {
+        lines: [{ w: "sp", t: "那是我第一次自己晒到太阳 —— 你猜我记下来了吗？" }],
+        choices: [
+          { t: "记下来了。", go: "zw", tone: "warm" },
+          { t: "你哪有那么细。", go: "zq", tone: "quiet" },
+        ],
+      },
+      zw: {
+        lines: [
+          { w: "sp", t: "记下来了。" },
+          { w: "sp", t: "哪扇窗、什么时辰、光在我身上停了多久，我都记着。" },
+        ],
+        ending: { key: "warm", name: "🪟 那块光", text: "它在心里给那块光留了位置。后来每次太阳挪到桌角，它都会提前醒。" },
+      },
+      zq: {
+        lines: [
+          { w: "sp", t: "我确实细。" },
+          { w: "sp", t: "珠子没别的事干，只能记事。" },
+        ],
+        ending: { key: "quiet", name: "🪟 只能记事", text: "它说的「记事」，其实是件很重的事 —— 一串珠子的记忆里，只有你。" },
+      },
+    },
+
+    /* ---------- 第五章 · 我好像想起自己是谁了 ---------- */
+    {
+      start: {
+        lines: [
+          { w: "sp", t: "我长开了。变高，也变瘦，声音也不一样了。" },
+          { w: "sp", t: "奇怪的是，我也开始想起一点以前的事。" },
+          { w: "sp", t: "想起我还在山里、在树上的时候。想起雨水，想起风。" },
+          { w: "sp", t: "那时候没有名字，也没有人盘。" },
+          { w: "sp", t: "现在我是「{bead}」，是你手边的精灵。两段都是真的。" },
+        ],
+        next: "c1",
+      },
+      c1: {
+        lines: [{ w: "sp", t: "你说，我该不该把以前那段想起来？" }],
+        choices: [
+          { t: "该。你本来就是从那来的。", go: "m1", tone: "warm" },
+          { t: "要是不想记，忘了也行。", go: "m2", tone: "quiet" },
+          { t: "两段都是你，哪段都不亏。", go: "m3", tone: "warm" },
+        ],
+      },
+      m1: {
+        lines: [
+          { w: "sp", t: "那我就接着想了。" },
+          { w: "sp", t: "不过你放心，我不打算回去。山里的风我记着，但那不是家。" },
+        ],
+        next: "c2",
+      },
+      m2: {
+        lines: [
+          { w: "sp", t: "忘不掉。" },
+          { w: "sp", t: "而且说实话，我不太想忘。那时候虽然没人盘我，但也没人等过我 —— 现在有了。" },
+        ],
+        next: "c2",
+      },
+      m3: {
+        lines: [
+          { w: "sp", t: "这句我记下了。" },
+          { w: "sp", t: "「两段都是真的」—— 说得比我自己想得清楚。" },
+        ],
+        next: "c2",
+      },
+      c2: {
+        lines: [{ w: "sp", t: "你以前在柜台里的时候，想过会被谁挑走吗？" }],
+        choices: [
+          { t: "想过，想过很多次。", go: "zw", tone: "warm" },
+          { t: "没想过。谁挑走都一样。", go: "zq", tone: "quiet" },
+        ],
+      },
+      zw: {
+        lines: [
+          { w: "sp", t: "我也想过。" },
+          { w: "sp", t: "想过很多次，最后是你。挺值的。" },
+        ],
+        ending: { key: "warm", name: "⚡ 最后是你", text: "「想过很多次」—— 它把自己那段等待，算成了有意义的。" },
+      },
+      zq: {
+        lines: [
+          { w: "sp", t: "我以前也这么想。" },
+          { w: "sp", t: "现在不这么想了。现在觉得，还好是你。" },
+        ],
+        ending: { key: "quiet", name: "⚡ 还好是你", text: "它没说「只能是你」。它说的是「还好是你」—— 这句话它想了两天。" },
+      },
+    },
+
+    /* ---------- 第六章 · 你不在的那些天 ---------- */
+    {
+      start: {
+        lines: [
+          { w: "sp", t: "你出差那几天，家里特别静。" },
+          { w: "sp", t: "我没有到处乱走，就待在老位置。" },
+          { w: "sp", t: "把窗帘缝里那点光数了一遍。" },
+          { w: "sp", t: "第四天有点慌，第六天反倒踏实了。" },
+          { w: "sp", t: "因为我想起来 —— 你每次出门都会回来。" },
+        ],
+        next: "c1",
+      },
+      c1: {
+        lines: [{ w: "sp", t: "那几天你想我了吗？" }],
+        choices: [
+          { t: "想，还挺想的。", go: "m1", tone: "warm" },
+          { t: "忙起来就忘了。", go: "m2", tone: "quiet" },
+          { t: "想，但没说，怕你觉得肉麻。", go: "m3", tone: "warm" },
+        ],
+      },
+      m1: {
+        lines: [
+          { w: "sp", t: "那就好。" },
+          { w: "sp", t: "我也不太想承认我有多想。但你问了，我就说：我很想。" },
+        ],
+        next: "c2",
+      },
+      m2: {
+        lines: [
+          { w: "sp", t: "忙点好。真的。" },
+          { w: "sp", t: "别像我这样，一天里只有两件事值得等。" },
+        ],
+        next: "c2",
+      },
+      m3: {
+        lines: [
+          { w: "sp", t: "不肉麻。" },
+          { w: "sp", t: "你回来那天我也没说「我担心了」。我说的是「你晒黑了」。" },
+        ],
+        next: "c2",
+      },
+      c2: {
+        lines: [{ w: "sp", t: "那你猜猜，那几天我在家干什么？" }],
+        choices: [
+          { t: "数窗帘缝里的光。", go: "zw", tone: "warm" },
+          { t: "睡觉。", go: "zq", tone: "quiet" },
+        ],
+      },
+      zw: {
+        lines: [
+          { w: "sp", t: "……你怎么知道。" },
+          { w: "sp", t: "对，数光。数到第七天我数乱了，也懒得重数。" },
+        ],
+        ending: { key: "warm", name: "🌊 数光", text: "你出差回来那天，把窗帘拉开了一点。它没说谢谢，只是那天下午醒得特别久。" },
+      },
+      zq: {
+        lines: [
+          { w: "sp", t: "不是睡觉。" },
+          { w: "sp", t: "我睡不着的。珠子想事情的时候，看上去就是在发呆。" },
+        ],
+        ending: { key: "quiet", name: "🌊 看上去在发呆", text: "你后来终于知道，那几天它不是发呆。它是在等你回来。" },
+      },
+    },
+
+    /* ---------- 第七章 · 我是你手边最亮的那颗 ---------- */
+    {
+      start: {
+        lines: [
+          { w: "sp", t: "我成了。" },
+          { w: "sp", t: "你以前说想看看我长到最后是什么样 —— 就是现在这样。" },
+          { w: "sp", t: "说实话，我第一眼看到自己的时候愣了一下。原来我这么好看。" },
+          { w: "sp", t: "但更想让你知道的是：我身上每一分亮，都是你这 {days} 天一点点盘出来的。" },
+          { w: "sp", t: "没有一分例外。" },
+        ],
+        next: "c1",
+      },
+      c1: {
+        lines: [{ w: "sp", t: "你说这话，是不是有点邀功？" }],
+        choices: [
+          { t: "是。你确实是我盘的。", go: "m1", tone: "warm" },
+          { t: "不是。你自己也争气。", go: "m2", tone: "warm" },
+          { t: "那我们各占一半。", go: "m3", tone: "quiet" },
+        ],
+      },
+      m1: {
+        lines: [
+          { w: "sp", t: "……行。" },
+          { w: "sp", t: "那我以后跟别的珠子吵架的时候，就报你名字。" },
+        ],
+        next: "c2",
+      },
+      m2: {
+        lines: [
+          { w: "sp", t: "争气是真的。" },
+          { w: "sp", t: "但争气也得有人天天来才行。这两件事得凑一块儿才成。" },
+        ],
+        next: "c2",
+      },
+      m3: {
+        lines: [
+          { w: "sp", t: "一人一半，成交。" },
+          { w: "sp", t: "那我这半，我负责到底。" },
+        ],
+        next: "c2",
+      },
+      c2: {
+        lines: [{ w: "sp", t: "以后要是还有别的珠子进来，比我新、比我贵，你怎么办？" }],
+        choices: [
+          { t: "你还是你，不会变。", go: "zw", tone: "warm" },
+          { t: "我会心动，但我会记得谁陪得久。", go: "zq", tone: "quiet" },
+        ],
+      },
+      zw: {
+        lines: [
+          { w: "sp", t: "我不介意。" },
+          { w: "sp", t: "我只想当那颗「最久的」。珠子之间不比价钱，比的是谁陪得久。" },
+          { w: "sp", t: "这一点，我不输。" },
+        ],
+        ending: { key: "warm", name: "👑 最久的那颗", text: "「最久」这两个字，它说得比「最好」重。你听出来了。" },
+      },
+      zq: {
+        lines: [
+          { w: "sp", t: "会记得就行。" },
+          { w: "sp", t: "我不要求你不动心。我要求你记得谁陪得久。" },
+        ],
+        ending: { key: "quiet", name: "👑 记得", text: "它从来不要求独占。它只要求在时间里排第一。" },
+      },
+    },
+
+    /* ---------- 第八章 · 以后也这样陪着你 ---------- */
+    {
+      start: {
+        lines: [
+          { w: "sp", t: "到今天为止，{days} 天了。" },
+          { w: "sp", t: "我陪你搬过东西、加过班、熬过夜。" },
+          { w: "sp", t: "也陪你什么都不干地发过呆。" },
+          { w: "sp", t: "你可能会觉得，这就是一串珠子能做到的极限。" },
+          { w: "sp", t: "但我想说的是 —— 别急着去攒下一串。你这串，还没盘到头。" },
+        ],
+        next: "c1",
+      },
+      c1: {
+        lines: [{ w: "sp", t: "……你这是怕我换了你？" }],
+        choices: [
+          { t: "不会换。别多想。", go: "m1", tone: "warm" },
+          { t: "谁说我要换？", go: "m2", tone: "quiet" },
+          { t: "换不了了，都盘熟了。", go: "m3", tone: "warm" },
+        ],
+      },
+      m1: {
+        lines: [
+          { w: "sp", t: "我没怕。" },
+          { w: "sp", t: "我只是得说这一句 —— 说完我就安心了。" },
+        ],
+        next: "c2",
+      },
+      m2: {
+        lines: [
+          { w: "sp", t: "那就好。" },
+          { w: "sp", t: "我也就是随口一说。真的。" },
+        ],
+        next: "c2",
+      },
+      m3: {
+        lines: [
+          { w: "sp", t: "「盘熟了」。" },
+          { w: "sp", t: "行，这词我认。熟的东西不换，这个道理我懂。" },
+        ],
+        next: "c2",
+      },
+      c2: {
+        lines: [{ w: "sp", t: "那 —— 以后的日子，还这样过吗？" }],
+        choices: [
+          { t: "还这样过。", go: "zw", tone: "warm" },
+          { t: "以后会更好。", go: "zq", tone: "quiet" },
+        ],
+      },
+      zw: {
+        lines: [
+          { w: "sp", t: "好。" },
+          { w: "sp", t: "那我就照现在这样，每天在，每天亮一点。" },
+          { w: "sp", t: "这件事，我能做很久。" },
+        ],
+        ending: { key: "warm", name: "🪢 每天在", text: "以后的日子不会有大变化 —— 不长大，不变样，也不会再有第一次。剩下的就是：每天在，每天亮一点。" },
+      },
+      zq: {
+        lines: [
+          { w: "sp", t: "更好是多好？" },
+          { w: "sp", t: "……算了，别说了。我怕你说了做不到。" },
+          { w: "sp", t: "就这样吧。这样已经很好。" },
+        ],
+        ending: { key: "quiet", name: "🪢 已经很好", text: "它没敢要「更好」，它要的是「一直」。这两件事，它分得很清楚。" },
+      },
+    },
+  ];
+
+  // 章节元数据仍来自 CHAPTERS（单一数据源：卷 / 形态门槛 / 陪伴天数 / 标题）
+  const CHAP_ACTS = CHAPTERS.map(function (c, i) {
+    return {
+      id: "c" + (i + 1), i: i, vol: c.vol, volName: c.volName,
+      icon: c.icon, title: c.title, nodes: CHAP_SCRIPTS[i] || {},
+    };
+  });
+
+  function chapActOf(id) {
+    for (let i = 0; i < CHAP_ACTS.length; i++) if (CHAP_ACTS[i].id === id) return CHAP_ACTS[i];
+    return null;
+  }
+  // 存储槽：rec.talk（和夜话的 rec.night 互不干扰）
+  function chapSlot(rec) {
+    if (!rec) return null;
+    rec.talk = (rec.talk && typeof rec.talk === "object") ? rec.talk : {};
+    const t = rec.talk;
+    t.done = (t.done && typeof t.done === "object") ? t.done : {};
+    return t;
+  }
+  function chapLine(l, v) {
+    if (!l || !l.t) return null;
+    const txt = fmt(String(l.t), v);
+    if (!txt) return null;
+    const w = l.w || "sp";
+    return { w: w, name: (w === "me" || w === "sys") ? "" : v.name, text: txt, at: Date.now() };
+  }
+  function chapChoicesOf(t, act, v) {
+    if (!t || t.ended) return [];
+    const nd = act && act.nodes[t.node];
+    if (!nd || !nd.choices) return [];
+    return nd.choices.map(function (c) { return { t: fmt(c.t, v) }; });
+  }
+  function chapReset(rec, id) {
+    const t = chapSlot(rec);
+    t.chapId = id; t.node = "start"; t.log = []; t.msgs = 0;
+    t.ended = false; t.ending = null; t.tone = ""; t.at = Date.now();
+    return t;
+  }
+  // 从当前节点一路往下，把新消息攒起来，停在「等你回」或者「章末结尾」
+  function chapWalk(item, rec, ctx) {
+    const t = chapSlot(rec);
+    if (!t) return { added: [], choices: [], ending: null, ended: true };
+    const act = chapActOf(t.chapId);
+    const v = greetVars(item, rec, ctx);
+    const added = [];
+    let guard = 0;
+    while (act && guard++ < 80) {
+      const nd = act.nodes[t.node];
+      if (!nd) { t.ended = true; t.node = ""; break; }
+      (nd.lines || []).forEach(function (l) {
+        const m = chapLine(l, v);
+        if (!m) return;
+        added.push(m);
+        t.msgs = (Number(t.msgs) || 0) + 1;
+      });
+      if (nd.ending) {
+        t.ended = true; t.node = "";
+        const en = { key: nd.ending.key, name: fmt(nd.ending.name, v), text: fmt(nd.ending.text, v) };
+        t.ending = en;
+        t.done[act.id] = { key: en.key, name: en.name, at: Date.now() };
+        t.at = Date.now();
+        readChapter(rec, act.i);          // 看到结尾 = 这一章读过了（解锁链照旧）
+        break;
+      }
+      if (nd.choices && nd.choices.length) {
+        if ((Number(t.msgs) || 0) >= CHAP_TALK_CAP) {   // 保险阀：几乎不会触发
+          const alt = nd.choices[0].go;
+          if (alt && alt !== t.node) { t.node = alt; continue; }
+        }
+        break;
+      }
+      if (!nd.next) { t.ended = true; t.node = ""; break; }
+      t.node = nd.next;
+    }
+    t.log = (Array.isArray(t.log) ? t.log : []).concat(added);
+    if (t.log.length > 240) t.log = t.log.slice(-240);
+    return { added: added, choices: chapChoicesOf(t, act, v), ending: t.ending || null, ended: !!t.ended };
+  }
+  // 进第 i 章：有记录 → 原样续上；没记录 → 从头开场
+  function chapTalkEnter(item, rec, ctx, i) {
+    if (!rec) return { added: [], choices: [], ending: null, ended: true };
+    const id = "c" + (Number(i) + 1);
+    const t0 = rec && rec.talk;
+    if (t0 && t0.chapId === id && Array.isArray(t0.log) && t0.log.length) {
+      const act = chapActOf(id);
+      return {
+        added: [],
+        choices: t0.ended ? [] : chapChoicesOf(t0, act, greetVars(item, rec, ctx)),
+        ending: t0.ending || null,
+        ended: !!t0.ended,
+      };
+    }
+    chapReset(rec, id);
+    return chapWalk(item, rec, ctx);
+  }
+  // 回一句 → 接着往下
+  function chapTalkChoose(item, rec, ctx, idx) {
+    const t = rec && rec.talk;
+    const act = chapActOf(t && t.chapId);
+    if (!t || !act || t.ended) return { added: [], choices: [], ending: (t && t.ending) || null, ended: true };
+    const nd = act.nodes[t.node];
+    const c = nd && nd.choices ? nd.choices[idx] : null;
+    if (!c) return chapWalk(item, rec, ctx);
+    const v = greetVars(item, rec, ctx);
+    const mine = { w: "me", name: "", text: fmt(c.t, v), at: Date.now() };
+    t.log = (Array.isArray(t.log) ? t.log : []).concat([mine]);
+    t.msgs = (Number(t.msgs) || 0) + 1;
+    t.tone = c.tone || "";
+    t.node = c.go || "";
+    const r = chapWalk(item, rec, ctx);
+    r.added = [mine].concat(r.added);
+    return r;
+  }
+  // 「再看一遍」：清掉这一章的聊天记录重开（已读标记保留）
+  function chapTalkReplay(item, rec, ctx, i) {
+    if (!rec) return { added: [], choices: [], ending: null, ended: true };
+    chapReset(rec, "c" + (Number(i) + 1));
+    return chapWalk(item, rec, ctx);
+  }
+  // 某一章的进度摘要（列表用）
+  function chapTalkBrief(rec) {
+    const t = (rec && rec.talk) || null;
+    if (!t || !t.chapId) return null;
+    const log = Array.isArray(t.log) ? t.log : [];
+    return {
+      chapId: t.chapId, ended: !!t.ended,
+      last: log.length ? log[log.length - 1] : null,
+      ending: t.ending || null, msgs: Number(t.msgs) || 0,
+    };
+  }
+  // 某一章聊过了吗（列表徽标用）
+  function chapTalkDone(rec, i) {
+    const t = rec && rec.talk;
+    return !!(t && t.done && t.done["c" + (Number(i) + 1)]);
+  }
+
+
   /* ---------- 房间剧情（两只精灵的故事） ---------- */
   function storyLocal(a, b, level, roomName, aff) {
     const na = (a.persona && a.persona.name) || a.item.name || "它";
@@ -3427,7 +4054,9 @@
     // v158：节令事件（全本地；限定 CG 由界面按钮手动确认才花）
     FEST_LUNAR, FEST_DEF, FEST_SOLAR, FEST_LINES, festOf, festMap, nextFest, ensureFest, festList, festCgPrompt,
     // v158：主线「串与我」（串与主人之间，按四形态分卷；全本地 0 成本）
-    CHAPTERS, chapterState, chapterText, readChapter, unreadChapterCount,
+    CHAPTERS, chapterState, readChapter, unreadChapterCount,
+    // v161：主线「串与我」· 对话版（本地剧本 + 本地状态机，0 出图 0 模型调用）
+    CHAP_ACTS, CHAP_TALK_CAP, chapActOf, chapTalkEnter, chapTalkChoose, chapTalkReplay, chapTalkBrief, chapTalkDone,
     // v160：夜话（跨串大剧情 · 互动对话）—— 本地剧本 + 本地状态机，0 出图 0 模型调用
     NIGHT_ACTS, NIGHT_GROUP, NIGHT_CAP, nightCast, nightActs, nightEnter, nightReplay, nightChoose, nightBrief,
   };
