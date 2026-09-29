@@ -64,7 +64,7 @@ const LIST = [
 ];
 const STORE = {
   it1: { persona: { title: "慢热掌柜", line: "盘我，太快喵~", traits: ["软糯", "慢热"] }, stage: 2 },
-  it2: { persona: null, stage: 1 },
+  it2: { persona: null, stage: 1, mail: 1 },
   it3: { persona: { title: "见人就想包浆", line: "包浆给你看！", traits: ["油亮"] }, stage: 4, cgUrl: "data:x" },
 };
 
@@ -117,7 +117,7 @@ function makeSandbox() {
       }),
       headCountOf: () => 6,
       todayKey: () => "2026-09-29",
-      unreadMail: () => 0,
+      unreadMail: (rec) => (rec && rec.mail) || 0,
       cgCollectedIds: () => [], cgMetaOf: () => null, CG_TOTAL: 8,
       STAGES: [
         { icon: "🌱", name: "凝形" }, { icon: "🌿", name: "开窍" },
@@ -204,6 +204,16 @@ function checkPage(name, label) {
   const st = isInside(opens, "sp-stars", "spirit-name");
   if (name === "renderSpiritPage") ok(st.n > 0 && st.okAll, ".sp-stars 全部位于 .spirit-name 内部（命中 " + st.n + " 个）");
   else ok(st.n === 0 || st.okAll, ".sp-stars 若存在则位于 .spirit-name 内部（命中 " + st.n + " 个）");
+
+  // v163d：回响提示必须点名「是谁留的信」——单尊时出现这一尊的名字 + 总封数
+  //   （改 app.js 之前这条会 FAIL：旧文案「✦ 有 N 封回响信」不含名字 → 负向对照成立）
+  if (name === "renderSpiritPage") {
+    const em = /id="echoHint"[^>]*>([\s\S]*?)<\/div>/.exec(html);
+    ok(!!em, "存在 id=\"echoHint\" 的回响提示块");
+    const et = em ? em[1] : "";
+    ok(et.indexOf("粉黛熊") >= 0, "回响提示点名「是谁写的」（含 粉黛熊）—— 实测文案：" + et);
+    ok(et.indexOf("<b>1</b>") >= 0, "回响提示含封数（1）—— 实测文案：" + et);
+  }
 }
 
 checkPage("renderSpiritPage", "#/spirit 沁灵页");

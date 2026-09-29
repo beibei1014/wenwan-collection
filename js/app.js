@@ -3008,9 +3008,24 @@
       html += '<div class="diary-hint" id="diaryHint">📔 今天有 <b>' + diaryToday + '</b> 只沁灵写了日记 · 点它的头像进去看</div>';
     }
     // v155：有新回响（纪念日信）—— 一年就那么几次，值得提醒一下
-    const echoN = list.reduce((s, it) => s + Spirits.unreadMail(store[it.id] || {}), 0);
+    // v163d：点名「是谁写的」—— 用户反馈只知道「今天有回响」却不知道是谁留的。
+    //   单遍 O(n) 同扫（owners + 总数一起收，禁 list.filter + list.reduce 两遍）
+    const echoOwners = [];
+    let echoN = 0;
+    list.forEach((it) => {
+      const n = Spirits.unreadMail(store[it.id] || {});
+      if (n > 0) { echoOwners.push({ id: it.id, name: spiritName(it, store), n: n }); echoN += n; }
+    });
     if (echoN) {
-      html += '<div class="diary-hint echo" id="echoHint">✦ 有 <b>' + echoN + '</b> 封回响信 · 点它的头像进去看看</div>';
+      let echoWho;
+      if (echoOwners.length === 1) {
+        echoWho = "<b>" + esc(echoOwners[0].name) + "</b> 给你留了";
+      } else {
+        // 名单 ≥4 尊一律折叠成「前 3 +M」（项目硬约束：列表 / badge 只画前 N）
+        const head = echoOwners.slice(0, 3).map((o) => esc(o.name)).join("、");
+        echoWho = "<b>" + head + "</b>" + (echoOwners.length > 3 ? " 等 " + echoOwners.length + " 尊" : "") + " 给你留了";
+      }
+      html += '<div class="diary-hint echo" id="echoHint">✦ ' + echoWho + " <b>" + echoN + "</b> 封回响信 · 点它进去看</div>";
     }
 
     html += '<div class="section-title">🍡 我的沁灵（' + list.length + '）' +
@@ -3066,7 +3081,12 @@
     const dh = $("#diaryHint");
     if (dh) dh.onclick = () => location.hash = "#/spirits";
     const eh = $("#echoHint");
-    if (eh) eh.onclick = () => location.hash = "#/spirits";
+    // v163d：只有一尊写了回响信 → 直接进它详情页（详情页有「✦ 回响」卡片，一步到位）；多尊 → 回列表
+    if (eh) eh.onclick = () => {
+      location.hash = (echoOwners.length === 1)
+        ? "#/spirit/" + encodeURIComponent(echoOwners[0].id)
+        : "#/spirits";
+    };
     // 异步补性格 + 人设/形象细节（要在出图之前）→ 出图 + 老图头像取景 + 日记 + 房间契合度/剧情
     ensureSpiritData(list);
     ensureSpiritLook(list).then(() => ensureSpiritImages(list)).then(() => ensureSpiritCg(list));   // v125：立绘好了再画 CG（拿立绘当参考、更像同一个人）
@@ -3081,8 +3101,17 @@
    *         事件瞬时卡 drain / 出图确认闸门
    * ============================================================ */
   const EVENT_TOAST_MS = 6000;     // v163b：事件瞬时卡停留时长（§D3）
-  const TALK_CHAR_MS   = 45;       // v163b：夜话逐字间隔（C+.3.2）
-  const TALK_LEAD_MS   = 300;      // v163b：逐字前的"思考气泡"停留
+  const TALK_LEAD_MS      = 300;   // v163d：消息弹出前的「正在输入」三点气泡停留
+  const TALK_MIN_MS       = 700;   // v163d：每条气泡最短停留（读完再出下一条，别连成一片）
+  const TALK_PER_CHAR_MS  = 55;    // v163d：每个字追加的停留
+  const TALK_MAX_MS       = 4000;  // v163d：单条最长停留（防超长旁白把节奏卡住）
+  // v163d：气泡停留时长 = clamp(最短 + 字长 × 每字, 最短, 最长)
+  //   （v163d 删掉了 v163b 的逐字打字机：逐字每 45ms 重建整个 .nt-row 节点，
+  //    节点被销毁重建 → .nt-row 的 320ms 入场动画永远播不完 = 闪烁）
+  function talkDwell(text) {
+    const len = String(text || "").length;
+    return Math.max(TALK_MIN_MS, Math.min(TALK_MAX_MS, TALK_MIN_MS + len * TALK_PER_CHAR_MS));
+  }
 
   // 全沁灵「已收集」合计（分母 = CG_TOTAL × 居民数，不硬编码 8）
   function albumEntryHtml(list, store) {
@@ -5257,22 +5286,20 @@
     const step = () => {
       if (qi >= r.added.length) { showFoot(); return; }
       const m = r.added[qi++];
-      if (m.w === "me") { append(m); scrollEnd(); step(); return; }        // 我自己那条立刻出现
+      const dwell = talkDwell(m.text);     // v163d：按字长停留，别让所有气泡瞬间连成一片
+      // v163d：整条一次性出现，不再逐字 —— 逐字每 45ms 重建整个 .nt-row，
+      //   节点被销毁重建导致 .nt-row 的 320ms 入场动画永远播不完 = 闪烁
+      if (m.w === "me") { append(m); scrollEnd(); timer = setTimeout(step, dwell); return; }    // 我自己那条立刻出现
+      if (m.w === "sys") { append(m); scrollEnd(); timer = setTimeout(step, dwell); return; }   // 旁白不是"人在打字"，不给三点气泡
       pend.innerHTML = '<div class="nt-row"><div class="nt-av"></div>' +
         '<div class="nt-bub nt-typing"><i></i><i></i><i></i></div></div>';
       scrollEnd();
-      // v163b：先显示"思考气泡" TALK_LEAD_MS，再逐字揭示（覆盖夜话 + 主线两端）
+      // v163d：先显示"正在输入"三点气泡 TALK_LEAD_MS，再把整条弹出来，停 dwell 后出下一条
       timer = setTimeout(() => {
-        const full = String(m.text || "");
-        let i = 0;
-        const tick = () => {
-          i++;
-          pend.innerHTML = msgHtml({ w: m.w, name: m.name, text: full.slice(0, i) });
-          // 超长句（>80 字）每拍多吐 1 字，避免过久
-          if (i < full.length) { if (full.length > 80 && i < full.length - 1) i++; timer = setTimeout(tick, TALK_CHAR_MS); }
-          else { pend.innerHTML = ""; append(m); scrollEnd(); step(); }
-        };
-        tick();
+        pend.innerHTML = "";
+        append(m);
+        scrollEnd();
+        timer = setTimeout(step, dwell);
       }, TALK_LEAD_MS);
     };
     const pick = (i) => {
