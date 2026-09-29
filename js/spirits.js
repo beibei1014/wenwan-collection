@@ -650,33 +650,62 @@
   const STAGES = [
     {
       n: 1, name: "凝形", icon: "🥚", need: 0, sizeZh: "约 4 头身（初生小宝宝）",
-      look: "a tiny newborn baby version of the character, about 4 heads tall, " +
-        "round baby face, small soft body, simple plain clothes, no accessories, " +
-        "soft innocent eyes, just awakened, extremely cute",
+      // v164c：比例**只由阶段描述负责**（风格预设里绝不能写 chibi，见上面的注释）。
+      //   旧版这里只有 "about 4 heads tall, round baby face"——"数字头身比"对扩散模型是极弱约束
+      //   （模型并不会真的去数头），缺的是可执行的比例词：大头 / 短身 / 短腿 / 幼儿脸。
+      look: "a tiny newborn chibi version of the character, about 4 heads tall, " +
+        "oversized round head, soft chubby baby cheeks, a small childlike face with a short chin and tiny nose, " +
+        "tiny short body with short stubby arms and legs, small feet, very simple plain clothing, " +
+        "soft innocent round eyes, just awakened, extremely cute",
+      // 🔴 比例锁定块：**压在 prompt 最末尾**（模型对末尾最敏感）。必须同时给"该是什么"和"不许是什么"。
+      //   旧版的致命问题是完全没有反向约束 → 模型回落到"美型全身立绘"默认先验 ≈ 6 头身。
+      prop: "PROPORTION LOCK: a 4-heads-tall chibi newborn, the head is very large relative to the body, " +
+        "the body and legs are short and small so the figure looks like a chubby toddler, childlike baby face; " +
+        "no adult proportions, no teenage body, no tall slender figure, no long legs, " +
+        "no mature face, no mature jawline, not a grown-up",
     },
     {
       n: 2, name: "开窍", icon: "🌱", need: 30, sizeZh: "约 6 头身（小孩子）",
       look: "a small child version of the character, about 6 heads tall, " +
-        "noticeably taller than the newborn form, neat simple outfit, small accessory, " +
-        "lively bright eyes, energetic pose, still cute and round",
+        "clearly taller than the newborn form but still a young child, " +
+        "rounded childlike face with soft cheeks, slim but short-limbed child body, " +
+        "neat simple outfit, one small accessory, lively bright eyes, energetic pose, still cute",
+      prop: "PROPORTION LOCK: a 6-heads-tall young child, rounded childlike face, small torso and short legs; " +
+        "no adult proportions, no mature body, no tall slender figure, no long legs, no mature jawline",
     },
     {
       n: 3, name: "蜕形", icon: "⚡", need: 90, sizeZh: "约 8 头身（少年，变高变帅）",
       look: "a teenage version of the character, about 8 heads tall, " +
-        "slim teenage proportions, longer limbs, a more defined jawline, confident pose, " +
-        "stylish detailed outfit with subtle pattern, environment behind",
+        "slim teenage proportions, longer limbs than the child form, a more defined jawline, " +
+        "confident pose, stylish detailed outfit with subtle pattern, environment behind",
+      prop: "PROPORTION LOCK: an 8-heads-tall teenager, slim teenage build with longer arms and legs; " +
+        "no baby proportions, no chibi, no oversized head, not a small child",
     },
     {
       n: 4, name: "化形", icon: "👑", need: 180, sizeZh: "约 9 头身（化形 · 华丽服饰+场景）",
       look: "a fully grown adult version of the same character, about 9 heads tall, " +
-        "magnificent ornate ceremonial outfit with rich glowing patterns, " +
+        "elegantly tall adult proportions, magnificent ornate ceremonial outfit with rich glowing patterns, " +
         "rich cinematic scene behind, elegant and beautiful, masterpiece quality",
+      prop: "PROPORTION LOCK: a fully grown adult at about 9 heads tall, elegantly tall adult proportions; " +
+        "no chibi, no baby proportions, no oversized head, no childlike face",
     },
   ];
-  // 每次出图都带上：明确"这是同一个人的下一个年龄段，比上一形态更高更成熟"
-  const GROWTH_LINE = "this is the same character at an older age than the previous stage, " +
-    "keep the exact same face, hair color, eye color and accessories, only grow taller and more mature, " +
-    "body proportions and height must change with the age described above, do not keep the baby proportions";
+  // 🔴 v164c：这句原来是**恒定**的，原文为
+  //     "this is the same character at an OLDER AGE THAN THE PREVIOUS STAGE ... do not keep the baby proportions"。
+  //   但**凝形（第 1 阶）根本没有"上一阶段"**，于是模型在 prompt 后段直接收到"不要保留婴儿比例"的指令，
+  //   把它前面 4000 字符处的 "a tiny newborn baby, about 4 heads tall" 全部推翻
+  //   → 用户实测「花间酒」凝形出图画成了少年（脸像 6 头身、身子却是 4 头身，头大身长腿短，很不美观）。
+  //   现在按阶段分叉：第 1 阶只说"这是它最初、最年幼的形态"，绝不再出现"上一阶段/更长更高"。
+  //   不再重复 CONSISTENCY 那句"same character / same hair / do not change identity"——
+  //   身份一致性由 CONSISTENCY 独占，这里只谈**年龄与身高递进**，省下的字符留给比例锁定块。
+  function growthLine(stage) {
+    const s = Math.min(4, Math.max(1, Number(stage) || 1));
+    if (s <= 1) return "this is its very first and youngest form";
+    return "this is the same character grown up from its " +
+      (s === 2 ? "newborn form" : s === 3 ? "child form" : "teenage form") +
+      ", it is now taller and more mature than that earlier form, " +
+      "its body proportions and height must match the age described above";
+  }
   // v163b：四阶段进阶 =「挂瓷后天数 ∧ 盘玩次数」双条件派生（取较慢者）；旧 rec.stage 值忽略、不再手动突破
   //   （下游读者 stageDef/needCg/when:{stage:N} 一律不变，零改造兼容）
   const STAGE_DAYS  = [0,   7,  30, 120];   // 1-based；[0] 占位（挂瓷后天数下限）
@@ -1774,7 +1803,8 @@
       (!lk.outfitZh && !(lk.brief && lk.brief.outfitZh) && lk.beadHex ? (", sampled from the real bracelet: " + lk.beadHex + ", keep the outfit close to this color") : "");
     const soft = SOFT_EN[item.softness || ""] || SOFT_EN[""];
     const isChar = (key === "anime");          // 日漫 Q 版角色：颜色落在头发/衣服上
-    const stageLook = stageDef(stage == null ? 1 : stage).look;   // 该形态的外形描述（进阶的核心）
+    const stageObj = stageDef(stage == null ? 1 : stage);         // 该形态（外形 + 比例锁定块）
+    const stageLook = stageObj.look;                              // 该形态的外形描述（进阶的核心）
     let cmp;
     if (isChar) {
       // 先写死"这个人是谁"（外观锚点），再写"他现在多大"（形态描述）→ 深沁只会长大，不会换人
@@ -1790,7 +1820,7 @@
         ", wearing " + ap.acc + ", " + ap.vibe + " personality, " + stageLook + ", " +
         "full body creature illustration, whole body visible, centered with comfortable margin";
     }
-    const bits = [cmp, GUOFENG, ANATOMY, soft, SINGLE, CONSISTENCY, GROWTH_LINE, NEG_STYLE];
+    const bits = [cmp, GUOFENG, ANATOMY, soft, SINGLE, CONSISTENCY, growthLine(stage == null ? 1 : stage), NEG_STYLE];
     // v112：把「人物设定 → 形象细节关键词」也拼进去，立绘不再"只有颜色"
     const tags = getLookTags(item);
     if (tags) bits.push(lk.chosen
@@ -1803,7 +1833,10 @@
     if (bHard) bits.push(bHard);
     if (item.softness === "soft") bits.push(isChar ? "round soft cheeks, relaxed happy sleepy eyes" : "round blob-like silhouette, soft chewy texture");
     if (item.softness === "slight") bits.push(isChar ? "calm gentle eyes, neat tidy look" : "slightly squishy but mostly smooth silhouette");
-    return bits.join(", ") + ", " + st;
+    // v164c：风格预设 `st` 里全是成人/少年措辞（big expressive eyes / richly detailed outfit / full body），
+    //   它是 prompt 结尾权重最高的一段，却对"几头身"零约束 —— 这正是凝形被画成少年的第二个元凶。
+    //   所以**比例锁定块必须压在 `st` 之后、占据最末尾**（briefHard 只管服饰/发色/持物/神态，从不谈比例，两者不冲突）。
+    return bits.join(", ") + ", " + st + (stageObj.prop ? (", " + stageObj.prop) : "");
   }
   function seedOf(id, variant) { return (hashStr(id) % 900000) + 1000 + (variant || 0) * 7919; }
   // 免密钥通道：直接把 URL 交给 <img>（浏览器自己下载，天然带缓存）；其余通道要 POST 生成
@@ -3124,13 +3157,14 @@
     const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
     const st = styleOf(item, key).text;
     const scene = FEST_SCENE[(fest && fest.key) || ""] || "a traditional Chinese festive scene";
+    const stageObj = stageDef(stage);
     return CG_STYLE + ", " + appearancePrompt(ap) + ", with " + lk.hairEn + " hair and " + lk.outfitEn + " themed outfit" +
       (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") + lookExtra(lk) + ", " +
-      stageDef(stage).look + ", solo single character only, exactly one figure in the whole image, " +
+      stageObj.look + ", solo single character only, exactly one figure in the whole image, " +
       "scene: " + scene + ", the character is celebrating this festival alone in this scene, " +
       "a beautiful warm key visual for this festival moment, the wide scenery fills both sides of the character, " +
       "no other characters, no text, no letters" + (lookHard(lk) ? (", " + lookHard(lk)) : "") +
-      (briefHard(lk) ? (", " + briefHard(lk)) : "") + ", " + st;
+      (briefHard(lk) ? (", " + briefHard(lk)) : "") + ", " + st + (stageObj.prop ? (", " + stageObj.prop) : "");
   }
   // 今天是不是节令；是、且没记过 → 写一条（返回新记录，否则 null）
   function ensureFest(item, rec, ctx) {
@@ -6018,7 +6052,8 @@
     const lk = _ab.lk;
     const ap = _ab.ap;
     const color = lk.hairEn;
-    const stageLook = stageDef(stage).look;
+    const stageObj = stageDef(stage);
+    const stageLook = stageObj.look;
     return CG_STYLE + ", " + appearancePrompt(ap) + ", with " + color + " hair and " + lk.outfitEn + " themed outfit" +
       (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") + lookExtra(lk) + ", " +
       stageLook + ", solo single character only, exactly one figure in the whole image, " +
@@ -6026,7 +6061,7 @@
       "personality, dramatic pose and camera angle, full body visible from head to toe, " +
       "the horizontal frame filled with the wide scenery of the scene (sky / room / distant view) on both sides of the character, " +
       "light particles and elegant atmosphere, no other characters" + (lookHard(lk) ? (", " + lookHard(lk)) : "") +
-      (briefHard(lk) ? (", " + briefHard(lk)) : "") + ", " + st;
+      (briefHard(lk) ? (", " + briefHard(lk)) : "") + ", " + st + (stageObj.prop ? (", " + stageObj.prop) : "");
   }
   // 两只沁灵的事件 CG（房间剧情用）
   function storyCgPrompt(a, b, level, roomName) {
