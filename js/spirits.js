@@ -75,7 +75,7 @@
     h = Math.imul(h, 3266489909) >>> 0;
     return (h ^ (h >>> 16)) >>> 0;
   }
-  function todayKey() { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  function todayKey(ts) { const d = ts ? new Date(Number(ts)) : new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
   function load() {
     try { const raw = localStorage.getItem(STORE_KEY); const o = raw ? JSON.parse(raw) : {}; return o && typeof o === "object" ? o : {}; } catch (e) { return {}; }
   }
@@ -401,9 +401,13 @@
         rec.personaZh = null;
         rec.personaZhKey = "";
       }
-      save(store);
-      gender = rec.gender;
-    } else save(store);
+    }
+    // v163b：阶段由「挂瓷后天数 ∧ 盘玩次数」派生（取代旧手动突破值）
+    rec.stage = stageOf(item, rec, Date.now());
+    // v163b：开沁里程碑事件（瞬时卡 + 回顾）
+    recordEvent(rec, { type: "milestone", title: "挂瓷开沁", summary: "它第一次睁开眼，认得你了", linked: [item.id], at: Date.now(), icon: "✨" });
+    save(store);
+    gender = rec.gender;
     return { isNew: isNew, gender: gender, bornAt: rec.bornAt };
   }
 
@@ -645,35 +649,205 @@
         把"身高与头身比"全部挪到阶段描述里，并且明确写「比上一形态更高」→ 深沁会真的长大。 */
   const STAGES = [
     {
-      n: 1, name: "凝形", icon: "🥚", need: 0, sizeZh: "约 2 头身（Q 版小宝宝）",
-      look: "a tiny newborn baby version of the character, chibi proportions about 2 heads tall, " +
-        "very small chubby body, big round head and tiny limbs, simple minimal details, " +
-        "sleepy innocent eyes, just awakened, extremely cute and soft",
+      n: 1, name: "凝形", icon: "🥚", need: 0, sizeZh: "约 4 头身（初生小宝宝）",
+      look: "a tiny newborn baby version of the character, about 4 heads tall, " +
+        "round baby face, small soft body, simple plain clothes, no accessories, " +
+        "soft innocent eyes, just awakened, extremely cute",
     },
     {
-      n: 2, name: "开窍", icon: "🌱", need: 30, sizeZh: "约 4 头身（小孩子）",
-      look: "a small child version of the character, noticeably taller than the newborn form, " +
-        "child proportions about 4 heads tall, rounder face with bigger eyes, shorter limbs than an adult, " +
-        "lively bright eyes, simple but neat outfit, energetic pose, still cute and round",
+      n: 2, name: "开窍", icon: "🌱", need: 30, sizeZh: "约 6 头身（小孩子）",
+      look: "a small child version of the character, about 6 heads tall, " +
+        "noticeably taller than the newborn form, neat simple outfit, small accessory, " +
+        "lively bright eyes, energetic pose, still cute and round",
     },
     {
-      n: 3, name: "蜕形", icon: "⚡", need: 90, sizeZh: "约 6 头身（少年，变高变帅）",
-      look: "a cool teenage version of the character, grown up and clearly taller with slim teenage proportions " +
-        "about 6 heads tall, longer limbs, a more defined jawline, confident dynamic pose, " +
-        "stylish detailed outfit, glowing aura and light particles, sharp determined eyes, cinematic lighting",
+      n: 3, name: "蜕形", icon: "⚡", need: 90, sizeZh: "约 8 头身（少年，变高变帅）",
+      look: "a teenage version of the character, about 8 heads tall, " +
+        "slim teenage proportions, longer limbs, a more defined jawline, confident pose, " +
+        "stylish detailed outfit with subtle pattern, environment behind",
     },
     {
-      n: 4, name: "化形", icon: "👑", need: 180, sizeZh: "约 8.5 头身（成年，又帅又美）",
-      look: "a stunning fully grown-up version of the same character, tall elegant fashion-model proportions " +
-        "about 8.5 heads tall, long slim legs, sharp refined facial features, strikingly handsome and beautiful, " +
-        "cool and glamorous presence, confident charismatic aura, magnificent ornate outfit with elegant flowing details, " +
-        "cinematic rim lighting, subtle glowing accents, masterpiece quality, epic composition, breathtaking",
+      n: 4, name: "化形", icon: "👑", need: 180, sizeZh: "约 9 头身（化形 · 华丽服饰+场景）",
+      look: "a fully grown adult version of the same character, about 9 heads tall, " +
+        "magnificent ornate ceremonial outfit with rich glowing patterns, " +
+        "rich cinematic scene behind, elegant and beautiful, masterpiece quality",
     },
   ];
   // 每次出图都带上：明确"这是同一个人的下一个年龄段，比上一形态更高更成熟"
   const GROWTH_LINE = "this is the same character at an older age than the previous stage, " +
     "keep the exact same face, hair color, eye color and accessories, only grow taller and more mature, " +
     "body proportions and height must change with the age described above, do not keep the baby proportions";
+  // v163b：四阶段进阶 =「挂瓷后天数 ∧ 盘玩次数」双条件派生（取较慢者）；旧 rec.stage 值忽略、不再手动突破
+  //   （下游读者 stageDef/needCg/when:{stage:N} 一律不变，零改造兼容）
+  const STAGE_DAYS  = [0,   7,  30, 120];   // 1-based；[0] 占位（挂瓷后天数下限）
+  const STAGE_PLAYS = [0,   5,  20,  60];   // 盘玩次数下限
+  const HEAD_COUNT  = [0,   4,   6,   8,   9]; // 头身比（化形取 9）
+  function stageOf(item, rec, now) {
+    const days  = dayNoOf(rec && rec.bornAt, now);   // 挂瓷后自然日；未挂瓷 = 0
+    const plays = Number(item && item.playCount) || 0;
+    let s = 1;
+    for (let k = 2; k <= 4; k++) {
+      if (days >= STAGE_DAYS[k] && plays >= STAGE_PLAYS[k]) s = k;  // 双条件取较慢者：任一不满足即停
+      else break;
+    }
+    return s;
+  }
+  function headCountOf(stage) { return HEAD_COUNT[Math.min(4, Math.max(1, Number(stage) || 1))]; }
+  function stageOrnate(stage) { return Number(stage) === 4; }   // 化形（终阶）：更华丽服饰 + 场景
+  function stageProgress(item, rec, now) {
+    const s = stageOf(item, rec, now);
+    if (s >= 4) return { isMax: true, pct: 100, toNextDays: 0, toNextPlays: 0, bottleneck: "" };
+    const dNeed = STAGE_DAYS[s + 1], pNeed = STAGE_PLAYS[s + 1];
+    const days = dayNoOf(rec && rec.bornAt, now), plays = Number(item && item.playCount) || 0;
+    const dRem = Math.max(0, dNeed - days), pRem = Math.max(0, pNeed - plays);
+    const pct = Math.min(100, Math.round(Math.min(days / dNeed, plays / pNeed) * 100));
+    return { pct: pct, toNextDays: dRem, toNextPlays: pRem, bottleneck: dRem >= pRem ? "days" : "plays" };
+  }
+
+  /* ---------- v163b：事件卡（瞬时弹出 + 事件回顾）—— 见 docs/v163-互动系统设计.md 【C+.2】 ---------- */
+  const EVENT_KEEP = 60;                 // 每只沁灵最多保留 60 条事件（体积纪律）
+  const _eventPops = [];                 // 待弹出的瞬时事件（app.js 负责 drain 渲染）
+  function recordEvent(rec, ev) {
+    rec.events = rec.events || [];
+    const id = (ev.linked && ev.linked[0] || "?") + "|" + ev.type + "|" + todayKey(ev.at);  // 同类型同日去重键
+    const ex = rec.events.find((e) => e.id === id);
+    if (ex) { ex.at = ev.at; ex.title = ev.title; ex.summary = ev.summary; ex.icon = ev.icon; return false; }  // 更新不新增
+    rec.events.push({
+      id: id, type: ev.type, at: ev.at, title: ev.title, summary: ev.summary, icon: ev.icon,
+      linked: (ev.linked && ev.linked.length) ? ev.linked.slice() : [ev.linked && ev.linked[0] || "?"],
+    });
+    if (rec.events.length > EVENT_KEEP) rec.events.splice(0, rec.events.length - EVENT_KEEP);  // 超限丢最旧
+    _eventPops.push({ title: ev.title, summary: ev.summary, icon: ev.icon, ownerId: (ev.linked && ev.linked[0]) || "?", at: ev.at });
+    return true;                         // true = 首次新增（用于触发弹出）
+  }
+  function drainEventPops() { const p = _eventPops.slice(); _eventPops.length = 0; return p; }
+  function allEvents(items, store) {     // O(n)：每只扫一次 rec.events，绝不两两枚举
+    const out = [];
+    (items || []).forEach((it) => {
+      const rec = (store && store[it.id]) || {};
+      (rec.events || []).forEach((e) => out.push({
+        id: e.id, type: e.type, at: e.at, title: e.title, summary: e.summary, icon: e.icon,
+        linked: e.linked, ownerId: it.id, ownerName: it.name,
+      }));
+    });
+    out.sort((a, b) => (b.at || 0) - (a.at || 0));   // 倒序：最近的在前
+    return out;
+  }
+
+  /* ---------- v163b：出图提炼器 / 自检器 / 确认卡 —— 见 docs/v163-出图提炼规范.md ---------- */
+  function _esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  const _POSES_ZH_EN = {
+    "作揖": "bowing with hands together", "拱手": "cupping one hand in the other", "拂袖": "sweeping the sleeve",
+    "团扇半遮面": "holding a round fan half-covering the face", "低眸": "looking down with lowered eyes",
+    "捻珠": "twirling prayer beads", "执笔": "holding a brush pen", "捧盏": "holding a small cup with both hands",
+    "展卷": "unfolding a scroll", "捧着": "holding with both hands", "抱着": "hugging",
+  };
+  const _PROPS_ZH_EN = {
+    "绣球花": "a bouquet of hydrangea flowers", "竹简": "bamboo slips", "团扇": "a round silk fan",
+    "盏": "a small tea cup", "卷": "a scroll", "珠串": "a string of prayer beads", "灯笼": "a paper lantern",
+    "花": "a small flower", "书": "a book", "剑": "a small wooden sword", "琴": "a small zither", "荷包": "a small pouch",
+  };
+  const _OUTFIT_ZH_EN = {
+    "襦裙": "a ruqun (cross-collar hanfu dress)", "长衫": "a long scholar's robe", "褙子": "a beizi (open-sided hanfu coat)",
+    "道袍": "a taoist robe", "汉服": "elegant hanfu", "襕衫": "a lanshan robe", "直裾": "a zhiju robe",
+  };
+  const _HAIR_ZH_EN = {
+    "长直": "long straight hair", "发髻": "hair tied in a bun", "发冠": "hair held by a hair crown",
+    "马尾": "a ponytail", "辫": "braided hair", "披发": "loose flowing hair", "双马尾": "twin tails", "双环": "twin buns",
+  };
+  function _scanZh(text, map) {
+    const hit = [];
+    for (const k in map) if (text && text.indexOf(k) >= 0) hit.push({ zh: k, en: map[k] });
+    return hit;
+  }
+  // 把一只沁灵的人设（rec.look.base/profile + personaZh）提炼成结构化草稿 LookBrief
+  function extractLookBrief(rec, item) {
+    rec = rec || {};
+    const lk = rec.look || {};
+    const lf = lookOf(item, rec);
+    const ap = lf.ap || {};
+    const base = lk.base || "", profile = lk.profile || "", personaZh = rec.personaZh || "";
+    const src = base + "\n" + profile + "\n" + personaZh;
+    // 动作：用户写过优先，否则古风仪态池
+    const poseHit = _scanZh(src, _POSES_ZH_EN);
+    const poseZh = poseHit.length ? poseHit.map((x) => x.zh).join("，") : "静立";
+    const poseEn = poseHit.length ? poseHit.map((x) => x.en).join(", ") : "standing gracefully";
+    // 持物：用户写过优先，绝不替换随机池
+    const propHit = _scanZh(src, _PROPS_ZH_EN);
+    const propZh = propHit.length ? propHit.map((x) => x.zh).join("，") : (ap.prop || "");
+    const propEn = propHit.length ? propHit.map((x) => x.en).join(", ") : (ap.prop || "");
+    // 服饰款式
+    const outfitHit = _scanZh(src, _OUTFIT_ZH_EN);
+    const outfitZh = outfitHit.length ? outfitHit.map((x) => x.zh).join("，") : (ap.outfit || "古风常服");
+    const outfitEn = outfitHit.length ? outfitHit.map((x) => x.en).join(", ") : "traditional hanfu attire";
+    // 颜色：衣服色取「人设原文里贴着服装词的色名」（v163b，与 lookOf 同一套，确认卡和出图才不会打架）
+    const colors = [];
+    if (lf.outfitZh) colors.push({ part: "衣", cn: lf.outfitZh, hex: lf.outfitHex || "" });
+    const hairHex = lf.hairHex || "", hairCn = lf.hairZh || "";
+    if (hairHex) colors.push({ part: "发", cn: hairCn, hex: hairHex });
+    else if (hairCn) colors.push({ part: "发", cn: hairCn, hex: "" });
+    // 发型
+    const hairHit = _scanZh(src, _HAIR_ZH_EN);
+    const hairstyleZh = hairHit.length ? hairHit.map((x) => x.zh).join("，") : (hairCn || "古风发式");
+    const hairstyleEn = hairHit.length ? hairHit.map((x) => x.en).join(", ") : "elegant ancient hairstyle";
+    // 特征
+    const feats = (lf.feats || []).map((f) => ({ zh: f.zh || f.id, en: f.en || f.id }));
+    // 场景：立绘可极简，给安全默认
+    const sceneZh = (profile && profile.indexOf("场景") >= 0) ? profile : "素净背景，柔光";
+    const sceneEn = "plain soft background with gentle light";
+    const gender = (ap.gender || rec.gender || (item && item.gender) || "");
+    return {
+      gender: gender,
+      pose: poseEn, poseZh: poseZh,
+      prop: propEn, propZh: propZh,
+      outfit: outfitEn, outfitZh: outfitZh,
+      colors: colors,
+      hairstyle: hairstyleEn, hairstyleZh: hairstyleZh,
+      feats: feats,
+      scene: sceneEn, sceneZh: sceneZh,
+      styleBits: (GUOFENG || "") + " " + (NEG_STYLE || "") + " " + (CONSISTENCY || "") + " " + (SINGLE || ""),
+      anatomyBits: (ANATOMY || "") + ", simple clear posture, both arms and hands fully visible and uncrossed, " +
+        "no overlapping or hidden arms, avoid complex hand gestures that risk extra limbs or extra fingers",
+    };
+  }
+  // 出图前自检（§4.2 四断言）；不过则禁止出图
+  function validateAnatomy(draft) {
+    const issues = [];
+    const t = [draft.pose || "", draft.prop || "", draft.outfit || "", draft.scene || "",
+      (draft.feats || []).map((f) => (f.en || f.zh || "")).join(" "), draft.hairstyle || ""].join(" ").toLowerCase();
+    if (/third arm|extra (arm|hand|limb)|floating hand|detached/.test(t)) {
+      issues.push("草稿含「额外肢体」字样，已退回到双手双脚的简单姿态");
+    }
+    if (draft.prop) {
+      if (/各持/.test(draft.propZh || "")) issues.push("出现「各持多件」，已降级为单手捧物");
+      const cnt = (String(draft.prop).match(/,/g) || []).length + 1;
+      if (cnt > 2) issues.push("持物过多，已降级为单手捧一物");
+    }
+    if (!(ANATOMY || "").toLowerCase().indexOf("five fingers") >= 0 &&
+        !(ANATOMY || "").toLowerCase().indexOf("5 fingers") >= 0) {
+      issues.push("解剖约束未拼入，已补「每手五指」");
+    }
+    return { ok: issues.length === 0, issues: issues };
+  }
+  // 确认卡结构（§5.2）—— 返回 HTML，app.js 嵌进 modal 展示
+  function renderConfirmCard(draft) {
+    const colorRows = (draft.colors && draft.colors.length)
+      ? draft.colors.map((c) => '<div class="cf-color">' + _esc(c.part) + "·" + _esc(c.cn) + (c.hex ? " (" + _esc(c.hex) + ")" : "") + "</div>").join("")
+      : '<div class="cf-color">（未指定，按古风仪态池）</div>';
+    const featRows = (draft.feats && draft.feats.length) ? draft.feats.map((f) => _esc(f.zh || f.en || f.id)).join("、") : "（无 · 普通人身）";
+    return '<div class="cf-card">' +
+      '<div class="cf-row"><span class="cf-k">动作</span><span class="cf-v">' + _esc(draft.poseZh || "静立") + "</span></div>" +
+      '<div class="cf-row"><span class="cf-k">持物</span><span class="cf-v">' + _esc(draft.propZh || "（无）") + "</span></div>" +
+      '<div class="cf-row"><span class="cf-k">服饰</span><span class="cf-v">' + _esc(draft.outfitZh || "古风常服") + "</span></div>" +
+      '<div class="cf-row"><span class="cf-k">颜色</span><span class="cf-v">' + colorRows + "</span></div>" +
+      '<div class="cf-row"><span class="cf-k">场景</span><span class="cf-v">' + _esc(draft.sceneZh || "素净背景") + "</span></div>" +
+      '<div class="cf-row"><span class="cf-k">发型</span><span class="cf-v">' + _esc(draft.hairstyleZh || "古风发式") + "</span></div>" +
+      '<div class="cf-row"><span class="cf-k">特征</span><span class="cf-v">' + featRows + "</span></div>" +
+      '<div class="cf-sep">── 以下两行只读，不可改 ──</div>' +
+      '<div class="cf-row ro"><span class="cf-k">风格</span><span class="cf-v">中式古风（已锁定）</span></div>' +
+      '<div class="cf-row ro"><span class="cf-k">一致</span><span class="cf-v">与旧像同人同色（已锁定）</span></div>' +
+      '<div class="cf-fee">确认即耗出图额度一，画面依上表生成，落定难悔。</div></div>';
+  }
   function stageDef(n) { return STAGES[Math.min(STAGES.length, Math.max(1, Number(n) || 1)) - 1]; }
   // 成长值：盘一次 +3，陪伴一天 +1（days 由调用方用 DB.daysWith 传进来）
   function growthOf(item, days) {
@@ -686,15 +860,24 @@
     const growth = growthOf(item, days);
     const def = stageDef(cur);
     const next = STAGES[cur] || null;               // 下一形态（cur=4 时为 null）
-    const canBreak = !!next && growth >= next.need;
+    const canBreak = false;                          // v163b：阶段不再手动突破，恒 false
+    const plays = Number(item && item.playCount) || 0;
+    const d = Number(days) || 0;
+    if (!next) {
+      return {
+        stage: cur, name: def.name, icon: def.icon, growth: growth, need: def.need, next: "", nextIcon: "",
+        canBreak: false, isMax: true, pct: 100, toNext: 0,
+      };
+    }
+    const dNeed = STAGE_DAYS[cur + 1], pNeed = STAGE_PLAYS[cur + 1];   // v163b：双条件门槛
+    const dRem = Math.max(0, dNeed - d), pRem = Math.max(0, pNeed - plays);
+    const pct = Math.min(100, Math.round(Math.min(d / dNeed, plays / pNeed) * 100));
+    const bottleneck = dRem >= pRem ? "days" : "plays";
+    const toNext = bottleneck === "days" ? dRem : pRem;
     return {
       stage: cur, name: def.name, icon: def.icon, growth: growth,
-      need: next ? next.need : def.need, next: next ? next.name : "",
-      nextIcon: next ? next.icon : "",
-      canBreak: canBreak,
-      isMax: !next,
-      pct: next ? Math.min(100, Math.round((growth / next.need) * 100)) : 100,
-      toNext: next ? Math.max(0, next.need - growth) : 0,
+      need: Math.max(dNeed, pNeed), next: next.name, nextIcon: next.icon,
+      canBreak: false, isMax: false, pct: pct, toNext: toNext, bottleneck: bottleneck,
     };
   }
 
@@ -1046,6 +1229,60 @@
     }
     return s;     // 英文直接用
   }
+  // v163b：从人设原文里提炼「衣服颜色」——用户自己写在设定里的色名必须生效。
+  // 旧逻辑只读珠子主色（木串 → 棕黄），用户写「月白淡紫」却出棕黄衣服，这是最不满意的一条。
+  // 规则：只认**紧贴服装词**（衣/衫/裙/袍…）的色名，避免把发色、瞳色误当成衣服色。
+  const _CLOTH_WORDS = ["衣", "衫", "裙", "袍", "裳", "服", "襦", "褙", "袄", "装", "衣着", "外袍", "长衫", "襦裙", "外裳"];
+  function _nearCloth(src, pos, len) {
+    const from = Math.max(0, pos - 8), to = Math.min(src.length, pos + len + 8);
+    const win = src.slice(from, to);
+    for (let i = 0; i < _CLOTH_WORDS.length; i++) if (win.indexOf(_CLOTH_WORDS[i]) >= 0) return true;
+    return false;
+  }
+  function outfitColorFromText(src) {
+    src = String(src || "");
+    if (!src) return null;
+    const hits = [];
+    let i, p;
+    // ① 中国传统色名（带精确 hex，最准）
+    for (i = 0; i < CN_TRAD_COLORS.length; i++) {
+      const zh = CN_TRAD_COLORS[i][0], hex = CN_TRAD_COLORS[i][1];
+      p = src.indexOf(zh);
+      while (p >= 0) {
+        if (_nearCloth(src, p, zh.length)) hits.push({ zh: zh, hex: hex, at: p });
+        p = src.indexOf(zh, p + 1);
+      }
+    }
+    // ② 简易中文色词（无 hex，兜底）
+    const cz = Object.keys(COLOR_WORD_ZH);
+    for (i = 0; i < cz.length; i++) {
+      const w = cz[i];
+      if (!w) continue;
+      p = src.indexOf(w);
+      while (p >= 0) {
+        if (_nearCloth(src, p, w.length)) hits.push({ zh: w, hex: "", at: p });
+        p = src.indexOf(w, p + 1);
+      }
+    }
+    if (!hits.length) return null;
+    hits.sort((a, b) => a.at - b.at);
+    // 去掉互相包含的重复命中（已命中「月白」就不再单独算「白」），最多取 2 个（如「月白淡紫」）
+    const picked = [];
+    for (i = 0; i < hits.length && picked.length < 2; i++) {
+      const h = hits[i];
+      let covered = false;
+      for (let j = 0; j < picked.length; j++) {
+        if (picked[j].zh.indexOf(h.zh) >= 0 || h.zh.indexOf(picked[j].zh) >= 0) { covered = true; break; }
+      }
+      if (!covered) picked.push(h);
+    }
+    if (!picked.length) picked.push(hits[0]);
+    const zh = picked.map((x) => x.zh).join("");
+    const en = picked.map((x) => (hairWordFromInput(x.zh) || "")).filter(Boolean).join(" and ");
+    const hex = (picked.filter((x) => x.hex)[0] || {}).hex || "";
+    return { zh: zh, en: en || zh, hex: hex };
+  }
+
   // 用户设定 + 自动推断 = 这一尊**真正要用**的外形参数
   // rec 可以不传：不传就自己去 localStorage 读这只沁灵的记录（保证任何调用点都拿得到用户设定）
   function lookOf(item, rec) {
@@ -1089,10 +1326,15 @@
     ).filter((f) => f && f.id !== "none").slice(0, 3);
     // 性格
     const pers = PERSONA_BY_ID[lk.pers] || null;
-    // 服装色：默认跟珠子主色（用户没要求改），可被设定里的 customOutfit 覆盖
-    const outfitEn = lk.outfitColor ? hairWordFromInput(lk.outfitColor) : beadWord;
+    // 服装色：① 用户明确填的 outfitColor ② 人设原文里提炼的色名（v163b）
+    // ③ 兜底才跟珠子主色。写了「月白淡紫」就必须出月白淡紫，不能再出棕黄。
+    const _ocSrc = (lk.base || "") + "\n" + (lk.profile || "") + "\n" + (r.personaZh || "");
+    const _oc = outfitColorFromText(_ocSrc);
+    const outfitEn = lk.outfitColor ? hairWordFromInput(lk.outfitColor) : (_oc ? (_oc.en || _oc.zh) : beadWord);
+    const outfitZh = lk.outfitColor ? String(lk.outfitColor) : (_oc ? _oc.zh : "");
+    const outfitHex = lk.outfitColor ? "" : (_oc ? _oc.hex : "");
     return {
-      ap, bead, beadWord, beadHex, hairEn, hairHex, hairSrc, hairZh, outfitEn,
+      ap, bead, beadWord, beadHex, hairEn, hairHex, hairSrc, hairZh, outfitEn, outfitZh, outfitHex,
       feats, noFeat, pers,
       base: lk.base || "", profile: lk.profile || "",
       asked: !!r.lookAsked, chosen: !!(lk.hairc || ids.length || lk.pers || lk.base),
@@ -1110,9 +1352,12 @@
   // 用户确认过的设定 → 放到 prompt 末尾做"硬约束"（模型对靠后的关键词更敏感，
   // 而且能压住 AI 形象关键词里可能冲突的配色/发型描述）
   function lookHard(lk) {
-    if (!lk || !lk.chosen) return "";
+    if (!lk || (!lk.chosen && !lk.outfitZh)) return "";
     const hard = [];
     if (lk.hairEn) hard.push(lk.hairEn + " hair color (keep exactly this hair color)");
+    // v163b：用户写在人设里的衣服颜色（如「月白淡紫」）压到 prompt 末尾做硬约束，模型对这个位置最敏感
+    if (lk.outfitZh) hard.push("outfit color must be " + lk.outfitZh +
+      (lk.outfitHex ? " (" + lk.outfitHex + ")" : "") + ", owner specified, do not use any other outfit color");
     if (lk.feats && lk.feats.length) hard.push(lk.feats.map((f) => f.en).join(", "));
     if (lk.noFeat) hard.push("strictly human look: no animal ears, no tail, no wings, no horns");
     if (lk.pers) hard.push(lk.pers.en + " personality, " + lk.pers.face);
@@ -1194,7 +1439,9 @@
     const color = lk.hairEn;
     const outfitColor = lk.outfitEn;
     const colorHint = (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") +
-      (lk.beadHex ? (", sampled from the real bracelet: " + lk.beadHex + ", keep the outfit close to this color") : "");
+      (lk.outfitHex ? (", the exact outfit color is " + lk.outfitHex) : "") +
+      // 用户自己指定了衣服颜色时，绝不再让"跟珠子主色"把它顶掉（旧逻辑出棕黄的元凶）
+      (!lk.outfitZh && lk.beadHex ? (", sampled from the real bracelet: " + lk.beadHex + ", keep the outfit close to this color") : "");
     const soft = SOFT_EN[item.softness || ""] || SOFT_EN[""];
     const isChar = (key === "anime");          // 日漫 Q 版角色：颜色落在头发/衣服上
     const stageLook = stageDef(stage == null ? 1 : stage).look;   // 该形态的外形描述（进阶的核心）
@@ -2550,6 +2797,8 @@
     rec.fests[tk] = { at: Date.now(), key: fd.key, name: fd.name, emoji: fd.emoji, date: tk, text: fmt(pool[seed % pool.length], v), cgUrl: "" };
     const ks = Object.keys(rec.fests).sort();        // 只留最近 20 个节令
     while (ks.length > 20) delete rec.fests[ks.shift()];
+    // v163b：节令事件（瞬时卡 + 回顾）
+    recordEvent(rec, { type: "fest", title: fd.name, summary: "今天过节，它说了一句只属于这天的话", linked: [item.id], at: Date.now(), icon: "🎋" });
     return rec.fests[tk];
   }
   // 记录过的节令（新 → 旧）
@@ -2620,6 +2869,9 @@
     rec.chapters = (rec.chapters && typeof rec.chapters === "object") ? rec.chapters : {};
     if (rec.chapters[i] && rec.chapters[i].at) return false;
     rec.chapters[i] = { at: Date.now() };
+    // v163b：主线章末事件（瞬时卡 + 回顾）
+    const ct = (CHAPTERS[i] && CHAPTERS[i].title) || "沁灵纪";
+    recordEvent(rec, { type: "chapter", title: "读完「" + ct + "」", summary: "串与你的故事又往前走了一步", linked: ["?"], at: Date.now(), icon: "📜" });
     return true;
   }
 
@@ -3326,21 +3578,27 @@
   // 今天这只串"该过什么"：生日（入手周年）/ 开沁里程碑。都不占 → null
   function occasionOf(item, rec, nowTs) {
     const now = Number(nowTs) || Date.now();
+    let occ = null;
     if (item && item.createdAt) {
       const b = new Date(Number(item.createdAt)), n = new Date(now);
       if (b.getMonth() === n.getMonth() && b.getDate() === n.getDate()) {
         const yr = n.getFullYear() - b.getFullYear();
-        return { kind: "birthday", n: yr, zh: yr >= 1 ? (yr + " 岁生日") : "到你身边那天" };
+        occ = { kind: "birthday", n: yr, zh: yr >= 1 ? (yr + " 岁生日") : "到你身边那天" };
       }
     }
-    if (rec && rec.bornAt) {
+    if (!occ && rec && rec.bornAt) {
       const d = dayNoOf(rec.bornAt, now);
       for (let i = OCC_BANDS.length - 1; i >= 0; i--) {
         const bd = OCC_BANDS[i];
-        if (d >= bd.day && d <= bd.day + bd.win) return { kind: bd.key, n: d, zh: bd.zh };
+        if (d >= bd.day && d <= bd.day + bd.win) { occ = { kind: bd.key, n: d, zh: bd.zh }; break; }
       }
     }
-    return null;
+    // v163b：生日 / 开沁里程碑事件（瞬时卡 + 回顾）；dedup 保证每天至多一条
+    if (occ && rec) {
+      const icon = occ.kind === "birthday" ? "🎂" : "🏮";
+      recordEvent(rec, { type: "milestone", title: occ.zh, summary: "今天是个特别的日子", linked: [item && item.id || "?"], at: now, icon: icon });
+    }
+    return occ;
   }
 
   /* ============================================================
@@ -3946,9 +4204,14 @@
         run.ended = true; run.node = "";
         const key = nd.ending.key, nm = thText(nd.ending.name, v), tx = thText(nd.ending.text, v);
         const st = thState(rec, thread);
+        const wasDone = !!st.done[ev.id];
         st.done[ev.id] = { key: key, name: nm, at: Date.now() };
         run.ending = { key: key, name: nm, text: tx };
         run.at = Date.now();
+        if (!wasDone) {  // v163b：夜话解锁新一幕 → 事件（瞬时卡 + 回顾）
+          const mids = (thread.members || []).map((m) => (m && typeof m === "object" ? m.id : m));
+          recordEvent(rec, { type: "night", title: ev.title, summary: ev.sub, linked: mids, at: Date.now(), icon: "📱" });
+        }
         break;
       }
       if (nd.choices && nd.choices.length) {
@@ -5698,7 +5961,7 @@
 
   window.Spirits = {
     PROVIDERS, STYLE_PRESETS, DEFAULT_STYLE, SIZE_PRESETS, SIZE_PRESETS_BY_PROVIDER, sizePresetsFor, DEFAULT_SIZE, getImageCfg, setImageCfg, providerInfo, sizeLadderFor, MODEL_PICKS, refSupportOf, refSupportText, keyUiHint,
-    STAGES, stageDef, stageInfo, growthOf,
+    STAGES, stageDef, stageInfo, growthOf, STAGE_DAYS, STAGE_PLAYS, HEAD_COUNT, stageOf, headCountOf, stageOrnate, stageProgress,
     appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
     // v127：设定向导（发色/特征/性格可确认可修改；一句基础设定 → 扩写成详细设定）
     HAIR_COLORS, HAIR_PALETTE, hexToCnTrad, FEATURES, PERSONAS_PICK, lookOf, lookText, lookExtra, hairWordFromInput, expandProfile, profileLocal,
@@ -5706,7 +5969,7 @@
     TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText, listModels,
     promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
     localPersona, persona, chat, letter, localChat, localLetter,
-    todayKey, load, save, ensureIn,
+    todayKey, load, save, ensureIn, recordEvent, allEvents, drainEventPops, extractLookBrief, validateAnatomy, renderConfirmCard,
     // v110：性别在「挂瓷开沁」时定下来（男女 3:1），之后不可改
     born, rollGender, legacyGender,
     // v111：主人设定（性别/昵称）—— 日记、剧情、聊天、人物设定都要按它来写

@@ -352,9 +352,11 @@
         const arrived = Math.floor((now - (i.arrivedAt || i.createdAt || now)) / day);
         return { item: i, idleDays, arrived };
       })
-      // 待盘玩一直提醒；其余按阈值：已挂瓷 > 5 天、盘玩中 > 2 天（含从未盘过）
-      .filter((x) => x.item.playStatus === "ready" || x.idleDays == null || x.idleDays > idleLimitOf(x.item))
+      // 待盘玩一直提醒；已挂瓷始终保留（v163b：首页要能直接点「今日盘过」快捷入口）；其余按阈值
+      .filter((x) => x.item.playStatus === "ready" || x.item.playStatus === "done" || x.idleDays == null || x.idleDays > idleLimitOf(x.item))
       .sort((a, b) => {
+        const aDone = a.item.playStatus === "done" ? 1 : 0, bDone = b.item.playStatus === "done" ? 1 : 0;
+        if (aDone !== bDone) return aDone - bDone;                  // 挂瓷排最后，不挤掉真正该盘的
         if (a.idleDays == null && b.idleDays != null) return -1;   // 从未盘过优先
         if (a.idleDays != null && b.idleDays == null) return 1;
         if (a.idleDays == null && b.idleDays == null) return b.arrived - a.arrived;

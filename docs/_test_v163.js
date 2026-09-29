@@ -158,7 +158,7 @@ section("4. 命名：全 APP 无「精灵」统称残留");
   ok(sp.indexOf("window.Spirits = {") >= 0, "window.Spirits 未动");
   const idx = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
   ok(idx.indexOf("js/spirits.js?v=") >= 0, "js/spirits.js 文件名未动");
-  ok(/\?v=202611\d\d/.test(idx) && idx.indexOf("20260928h") < 0, "index.html 版本号已 bump（无旧版本号残留）");
+  ok(/\?v=202612\d\d/.test(idx) && idx.indexOf("20260928h") < 0, "index.html 版本号已 bump（无旧版本号残留）");
 }
 
 /* ---------------- 5. 行尾检查 ---------------- */

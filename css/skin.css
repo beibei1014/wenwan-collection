@@ -1128,3 +1128,133 @@ details.ft-item > .ft-text { padding: 0 10px 10px; }
   color: #7a5518; background: #f0e2c6; font-weight: 600; }
 .nt-item.hot { border-color: color-mix(in srgb, var(--gold) 55%, var(--line) 45%);
   background: linear-gradient(180deg, #fffdf5, #fbf1dd); }
+
+/* ============================================================
+   v163b · 沁灵板块重做新增组件（仅消费既有 -- 变量 / color-mix，无裸新色）
+   ============================================================ */
+
+/* —— 星级（首页 / 详情派生自 stage） —— */
+.sp-stars { font-size: 12px; letter-spacing: 1px; color: var(--gold); }
+
+/* —— 事件瞬时卡（§D3） —— */
+@keyframes evtIn  { from { opacity: 0; transform: translate(-50%, -10px) scale(.98); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+@keyframes evtOut { from { opacity: 1; } to { opacity: 0; transform: translate(-50%, -8px); } }
+.evt-pop {
+  position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
+  width: min(366px, calc(100% - 24px)); z-index: 60;
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 10px 12px; border-radius: var(--r-md); text-align: left; cursor: pointer;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--card) 100%, #fff), var(--card));
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--line) 55%);
+  box-shadow: var(--shadow-2); animation: evtIn .26s var(--ease-spring) both;
+}
+.evt-pop.leaving { animation: evtOut .24s var(--ease-out) forwards; }
+.evt-pop-ico { font-size: 18px; flex: none; line-height: 1.2; }
+.evt-pop-body { flex: 1; min-width: 0; }
+.evt-pop-title { font-family: var(--font-hand); font-size: 14.5px; color: var(--wood); line-height: 1.3; }
+.evt-pop-sum { font-size: 12.5px; color: var(--wood-2); margin-top: 2px; line-height: 1.4; }
+
+/* —— CG 相册入口卡（§A3，复用：夜话页顶部 + 沁灵首页顶部） —— */
+.album-entry {
+  width: 100%; display: flex; align-items: center; gap: 11px;
+  padding: 9px 12px 12px; margin-top: 10px;
+  border-radius: var(--r-md); text-align: left; cursor: pointer;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--card) 100%, #fff), var(--card));
+  border: 1px solid color-mix(in srgb, var(--gold) 34%, var(--line) 66%);
+  box-shadow: var(--shadow-1);
+  transition: transform .18s var(--ease-spring), box-shadow .22s var(--ease-out);
+}
+.album-entry:active { transform: scale(.975); }
+.album-entry-cover { position: relative; flex: none; }
+.album-entry-img {
+  width: 104px; aspect-ratio: 4/3; object-fit: cover; display: block;
+  border-radius: var(--r-sm); background: var(--ph-bg, #efe9dd); box-shadow: var(--shadow-1);
+}
+.album-entry-ph {
+  width: 104px; aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center;
+  font-size: 26px; border-radius: var(--r-sm); background: var(--ph-bg, #efe9dd);
+  box-shadow: var(--shadow-1); color: var(--wood-2);
+}
+.album-entry-stack {
+  position: absolute; left: 6px; right: 6px; bottom: -5px; height: 9px;
+  border: 1px solid var(--line); border-top: 0;
+  border-radius: 0 0 var(--r-sm) var(--r-sm); background: var(--card); opacity: .72;
+}
+.album-entry-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.album-entry-title { font-family: var(--font-hand); font-size: 15.5px; font-weight: 700; letter-spacing: 1.5px; color: var(--wood); }
+.album-entry-sub { font-size: 11.5px; color: var(--wood-2); }
+.album-entry-sub b { color: var(--gold); font-weight: 700; }
+.album-entry-go { flex: none; font-size: 14px; color: var(--text-2); }
+
+/* —— 相册页（§A4：分册 + 按卷分组宫格） —— */
+.album-head { display: flex; align-items: center; gap: 12px; padding: 4px 2px 12px; }
+.album-head-n { font-family: var(--font-hand); line-height: 1; flex: none; }
+.album-head-n b { font-size: 30px; color: var(--wood); }
+.album-head-n span { font-size: 14px; color: var(--text-2); }
+.album-head-title { font-size: 14px; font-weight: 700; color: var(--wood); letter-spacing: 1px; }
+.album-head-sub { font-size: 11.5px; color: var(--wood-2); margin-top: 3px; }
+.album-sec { margin-top: 6px; }
+.album-sec-head { display: flex; align-items: baseline; justify-content: space-between; padding: 10px 2px 6px; }
+.album-sec-name { font-size: 13px; font-weight: 600; color: var(--wood); letter-spacing: 1px; }
+.album-sec-head small { font-size: 11px; color: var(--text-2); }
+.album-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (min-width: 480px) { .album-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.album-cell {
+  position: relative; padding: 0; overflow: hidden; aspect-ratio: 4/3;
+  border-radius: var(--r-sm); background: var(--ph-bg, #efe9dd);
+  border: 1px solid color-mix(in srgb, var(--line) 90%, var(--wood) 10%);
+  box-shadow: var(--shadow-1); cursor: zoom-in;
+  transition: transform .14s var(--ease-spring), box-shadow .2s var(--ease-out);
+}
+.album-cell:active { transform: scale(.96); }
+.album-cell-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.album-cell-tag {
+  position: absolute; left: 4px; bottom: 3px; padding: 1px 5px; border-radius: 99px;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .5px; color: var(--card);
+  background: color-mix(in srgb, var(--wood) 72%, transparent);
+}
+.album-cell.locked, .album-cell.pending {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  background: color-mix(in srgb, var(--line) 55%, var(--card));
+  border: 1px dashed color-mix(in srgb, var(--line) 88%, var(--wood) 12%);
+  box-shadow: none; cursor: default;
+}
+.album-cell.locked:active, .album-cell.pending:active { transform: none; }
+.album-cell-lock { font-size: 16px; opacity: .72; }
+.album-cell-need { font-size: 10.5px; line-height: 1.35; text-align: center; padding: 0 6px; color: var(--wood-2); }
+
+/* —— 事件回顾页（§D4：复用 .memo-* 视觉语言） —— */
+.memo-title { font-size: 13px; font-weight: 600; color: var(--wood-2); line-height: 1.35; }
+.memo-text { font-size: 11.5px; color: var(--text-2); line-height: 1.5; margin-top: 1px; }
+.memo-sub { font-size: 10.5px; color: var(--text-2); margin-top: 2px; }
+
+/* —— 全主串 CG 墙（沁灵巷） —— */
+.cg-wall-row { padding: 8px 0; border-bottom: 1px dashed var(--line); }
+.cg-wall-row:last-child { border-bottom: 0; }
+.cg-wall-name { font-size: 12.5px; font-weight: 600; color: var(--wood); margin-bottom: 6px; }
+.cg-wall-name small { color: var(--gold); font-weight: 700; margin-left: 4px; }
+.cg-wall-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.cg-wall-thumb {
+  width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block;
+  border-radius: var(--r-sm); background: var(--ph-bg, #efe9dd);
+  box-shadow: var(--shadow-1); cursor: zoom-in;
+}
+
+/* —— 出图确认卡（§5.2，嵌进 modal） —— */
+.look-confirm { text-align: left; }
+.look-confirm-head { font-family: var(--font-hand); font-size: 16px; font-weight: 700; color: var(--wood); letter-spacing: 1px; margin-bottom: 8px; text-align: center; }
+.cf-card { background: color-mix(in srgb, var(--card) 100%, #fff); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 10px; }
+.cf-row { display: flex; gap: 8px; padding: 3px 0; font-size: 12.5px; line-height: 1.5; }
+.cf-k { flex: none; width: 42px; color: var(--wood-2); }
+.cf-v { flex: 1; min-width: 0; color: var(--text); }
+.cf-color { display: inline-block; font-size: 11px; color: var(--wood); background: color-mix(in srgb, var(--tape) 60%, var(--card)); border-radius: 6px; padding: 0 5px; margin: 1px 3px 1px 0; }
+.cf-sep { text-align: center; font-size: 10.5px; color: var(--text-2); margin: 6px 0 2px; }
+.cf-row.ro .cf-v { color: var(--wood-2); }
+.cf-fee { font-size: 11px; color: var(--text-2); margin-top: 6px; line-height: 1.5; }
+.look-confirm-warn { font-size: 11.5px; color: #94494a; background: color-mix(in srgb, var(--line) 40%, #fdeeee); border-radius: var(--r-sm); padding: 6px 8px; margin: 8px 0; line-height: 1.5; }
+.look-confirm-actions { display: flex; gap: 10px; margin-top: 10px; }
+.look-confirm-actions .btn { flex: 1; }
+
+/* —— 隐藏 AI 助手浮窗（沁灵 / 夜话沉浸区，§D6） —— */
+body.route-spirit #aiFab,
+body.route-night #aiFab { display: none !important; }
