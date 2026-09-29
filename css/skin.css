@@ -1254,6 +1254,21 @@ details.ft-item > .ft-text { padding: 0 10px 10px; }
 .look-confirm-warn { font-size: 11.5px; color: #94494a; background: color-mix(in srgb, var(--line) 40%, #fdeeee); border-radius: var(--r-sm); padding: 6px 8px; margin: 8px 0; line-height: 1.5; }
 .look-confirm-actions { display: flex; gap: 10px; margin-top: 10px; }
 .look-confirm-actions .btn { flex: 1; }
+/* v164：三个按钮的横排（返回 / 重润 / 就用它） */
+.look-confirm-actions.three { display: flex; gap: 6px; }
+.look-confirm-actions.three .btn { flex: 1 1 0; min-width: 0; padding-left: 6px; padding-right: 6px; font-size: 12.5px; }
+.look-confirm-sub { font-size: 11.5px; color: var(--text-2); line-height: 1.6; text-align: left; margin-bottom: 8px; }
+/* v164：出图单里每一行都能改（用户说"提取了也不能改，那让我确认干嘛"） */
+.cf-in {
+  width: 100%; box-sizing: border-box; font-family: inherit; font-size: 12.5px; line-height: 1.5;
+  color: var(--text); background: color-mix(in srgb, var(--card) 70%, #fff);
+  border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; outline: none;
+}
+.cf-in:focus { border-color: var(--wood-2); background: #fff; }
+.cf-ta { resize: vertical; min-height: 44px; }
+/* v164：第 1 步的多行设定框（不限字数）+ 第 2 步的人设框 */
+.setup-ta { width: 100%; box-sizing: border-box; resize: vertical; min-height: 96px; line-height: 1.65; font-family: inherit; }
+#lkPersona.setup-ta { margin-top: 4px; min-height: 150px; }
 
 /* —— 隐藏 AI 助手浮窗（沁灵 / 夜话沉浸区，§D6） —— */
 body.route-spirit #aiFab,

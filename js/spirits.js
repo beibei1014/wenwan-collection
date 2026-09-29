@@ -746,65 +746,199 @@
     "绣球花": "a bouquet of hydrangea flowers", "竹简": "bamboo slips", "团扇": "a round silk fan",
     "盏": "a small tea cup", "卷": "a scroll", "珠串": "a string of prayer beads", "灯笼": "a paper lantern",
     "花": "a small flower", "书": "a book", "剑": "a small wooden sword", "琴": "a small zither", "荷包": "a small pouch",
+    // v164：用户自己写的东西必须认得出来（旧表只有 12 个词，写「柿子」就完全读不到）
+    "柿子": "a ripe persimmon", "果子": "a piece of fruit", "桃子": "a peach", "苹果": "an apple",
+    "橘子": "a tangerine", "荔枝": "a lychee", "桂花": "osmanthus blossoms", "花枝": "a sprig of blossoms",
+    "折扇": "a folding fan", "扇子": "a fan", "油纸伞": "an oil-paper umbrella", "纸伞": "an oil-paper umbrella",
+    "玉笛": "a jade flute", "笛": "a bamboo flute", "箫": "a bamboo flute", "酒壶": "a wine flask",
+    "茶杯": "a small tea cup", "茶": "a cup of tea", "竹篮": "a small woven basket", "篮子": "a small woven basket",
+    "毛笔": "a writing brush", "画笔": "a painting brush", "玉佩": "a jade pendant", "葫芦": "a gourd",
+    "铃铛": "a tiny bell", "香囊": "a scented sachet", "卷轴": "a scroll", "棋盘": "a go board",
+    "布偶": "a small cloth doll", "风车": "a paper pinwheel", "蝴蝶": "a butterfly",
   };
   const _OUTFIT_ZH_EN = {
     "襦裙": "a ruqun (cross-collar hanfu dress)", "长衫": "a long scholar's robe", "褙子": "a beizi (open-sided hanfu coat)",
     "道袍": "a taoist robe", "汉服": "elegant hanfu", "襕衫": "a lanshan robe", "直裾": "a zhiju robe",
+    // v164：补常见中式形制（用户写「圆领袍」时旧表一个都不命中 → 直接掉进随机池）
+    "圆领袍": "a yuanlingpao (round-collar robe)", "圆领": "a round-collar robe", "袍": "a long traditional robe",
+    "大袖衫": "a wide-sleeved gown", "大袖": "a wide-sleeved gown", "袄裙": "a padded jacket and skirt set",
+    "袄": "a padded jacket", "披风": "a Chinese cape", "斗篷": "a hooded cloak", "鹤氅": "a crane-feather cloak",
+    "对襟": "a front-buttoned robe", "交领": "a cross-collar robe", "半臂": "a sleeveless short jacket",
+    "齐胸": "a chest-high ruqun", "曲裾": "a quju robe", "褂": "a mandarin jacket", "外袍": "an outer robe",
+    "裙": "a skirt", "衫": "a robe", "衣裳": "a traditional outfit",
   };
   const _HAIR_ZH_EN = {
     "长直": "long straight hair", "发髻": "hair tied in a bun", "发冠": "hair held by a hair crown",
     "马尾": "a ponytail", "辫": "braided hair", "披发": "loose flowing hair", "双马尾": "twin tails", "双环": "twin buns",
+    // v164：发型词表（旧表不认「高高束起」，于是发型字段回退成了发色「柿红」）
+    "高高束起": "hair tied up high in an elegant topknot", "高束": "hair tied up high", "束起": "hair tied up",
+    "束发": "hair tied up", "挽起": "hair gathered up", "盘发": "hair coiled into a bun", "丸子头": "a top bun",
+    "半扎": "half-up hair", "编发": "braided hair", "长发": "long hair", "短发": "short hair",
+    "齐肩": "shoulder-length hair", "散发": "loose flowing hair", "披肩": "hair falling over the shoulders",
   };
+  // v164：神态词表（「明媚笑容」这类以前完全读不到，特征栏直接显示「无」）
+  const _SMILE_ZH_EN = {
+    "明媚笑容": "a bright cheerful smile", "明媚的笑": "a bright cheerful smile", "灿烂笑容": "a radiant smile",
+    "笑容": "a warm smile", "微笑": "a gentle smile", "含笑": "a soft smile", "浅笑": "a faint smile",
+    "大笑": "a hearty laugh", "冷峻": "a cool stern expression", "温柔": "a tender expression",
+    "慵懒": "a lazy relaxed expression", "害羞": "a shy bashful look", "英气": "a spirited dashing look",
+    "忧郁": "a melancholy look", "顽皮": "a playful smirk-free grin", "认真": "a focused serious look",
+  };
+  // v164：性别词（用户写「少年郎」以前读不到，出图性别只能靠随机）
+  const _BOY_WORDS = ["少年郎", "少年", "男孩", "男童", "小哥", "少年人", "男儿", "公子", "郎君"];
+  const _GIRL_WORDS = ["姑娘", "少女", "女孩", "女童", "妹子", "女子", "少女郎", "小姐", "闺秀"];
+  // 长键优先 + 命中即"吃掉"该区间，避免「花枝」和「花」被重复算两次
   function _scanZh(text, map) {
+    const src = String(text || "");
+    if (!src) return [];
+    const keys = Object.keys(map).sort((a, b) => b.length - a.length);
     const hit = [];
-    for (const k in map) if (text && text.indexOf(k) >= 0) hit.push({ zh: k, en: map[k] });
+    const used = [];
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      let p = src.indexOf(k);
+      while (p >= 0) {
+        let covered = false;
+        for (let j = 0; j < used.length; j++) {
+          if (p >= used[j][0] && p + k.length <= used[j][1]) { covered = true; break; }
+        }
+        if (!covered) { hit.push({ zh: k, en: map[k], at: p }); used.push([p, p + k.length]); }
+        p = src.indexOf(k, p + 1);
+      }
+    }
+    hit.sort((a, b) => a.at - b.at);
     return hit;
   }
-  // 把一只沁灵的人设（rec.look.base/profile + personaZh）提炼成结构化草稿 LookBrief
+  // v164：把命中位置所在的**整句**抠出来（到标点或 ±14 字为止）。
+  //   用户写「穿着柿红色搭配鹅黄色的圆领袍」，我们要的是这句话，不是词表里的「袍」。
+  function _grabClause(src, pos, len, span) {
+    const s = String(src || "");
+    if (!s) return "";
+    const cut = /[，。；！？、,.!?;:\n\r]/;
+    const lim = span || 14;
+    let a = Math.max(0, pos - lim), b = Math.min(s.length, pos + len + lim);
+    for (let i = pos; i >= a; i--) { if (cut.test(s.charAt(i))) { a = i + 1; break; } }
+    for (let i = pos + len; i < b; i++) { if (cut.test(s.charAt(i))) { b = i; break; } }
+    let out = s.slice(a, b).trim();
+    // 去掉开头的动词/量词，留下真正的描述（「穿着柿红色搭配鹅黄色的圆领袍」→「柿红色搭配鹅黄色的圆领袍」）
+    out = out.replace(/^(身穿|身着|穿着|穿了|披着|戴着|系着|一身|一袭|手拿着|手里握着|手里拿着|握着|拿着|抱着|捧着)/, "");
+    out = out.replace(/^[的了着有把一穿]/, "");
+    return out.trim();
+  }
+  // v164：把一段中文里出现的**所有**色名抠出来（最长优先、不重复）。
+  //   用户写「柿红色搭配鹅黄色的圆领袍」→ [{柿红,#e0513a},{鹅黄,#fff143}]
+  //   （旧版靠 outfitColorFromText 的 ±8 邻近窗口，窗口太窄，只认到末尾的「鹅黄」就丢了「柿红」）
+  //   两张表都扫：CN_TRAD_COLORS 带精确 hex 优先，COLOR_WORD_ZH 兜底（否则「淡紫」这种就丢了）
+  function _colorsIn(text) {
+    const s = String(text || "");
+    if (!s) return [];
+    const all = [];
+    CN_TRAD_COLORS.forEach((c) => all.push({ zh: c[0], hex: c[1] }));
+    const known = {};
+    CN_TRAD_COLORS.forEach((c) => { known[c[0]] = 1; });
+    Object.keys(COLOR_WORD_ZH).forEach((w) => { if (w && !known[w]) all.push({ zh: w, hex: "" }); });
+    all.sort((a, b) => b.zh.length - a.zh.length);
+    const out = [], used = [];
+    for (let i = 0; i < all.length; i++) {
+      const zh = all[i].zh, hex = all[i].hex;
+      let p = s.indexOf(zh);
+      while (p >= 0) {
+        let cov = false;
+        for (let j = 0; j < used.length; j++) if (p >= used[j][0] && p + zh.length <= used[j][1]) { cov = true; break; }
+        if (!cov) { out.push({ zh: zh, hex: hex, at: p }); used.push([p, p + zh.length]); }
+        p = s.indexOf(zh, p + 1);
+      }
+    }
+    out.sort((a, b) => a.at - b.at);
+    return out;
+  }
+  // v164：把一只沁灵**用户自己写的设定**（look.base + 用户确认过的人设 look.persona + look.profile）
+  //   提炼成结构化草稿 LookBrief。
+  // ⛔ 故意**不读** rec.personaZh —— 那是模型自动扩写的正文，扫它等于把 AI 编的
+  //   「灯笼、花、剑」当成用户要求（旧版就是这么把用户写的「柿子」顶掉的）。
   function extractLookBrief(rec, item) {
     rec = rec || {};
     const lk = rec.look || {};
     const lf = lookOf(item, rec);
     const ap = lf.ap || {};
-    const base = lk.base || "", profile = lk.profile || "", personaZh = rec.personaZh || "";
-    const src = base + "\n" + profile + "\n" + personaZh;
+    const base = lk.base || "", profile = lk.profile || "", persona = lk.persona || "";
+    const src = [base, profile, persona].filter(Boolean).join("\n");
     // 动作：用户写过优先，否则古风仪态池
     const poseHit = _scanZh(src, _POSES_ZH_EN);
     const poseZh = poseHit.length ? poseHit.map((x) => x.zh).join("，") : "静立";
     const poseEn = poseHit.length ? poseHit.map((x) => x.en).join(", ") : "standing gracefully";
     // 持物：用户写过优先，绝不替换随机池
+    //   （旧版"没读到就退回随机池"，于是用户写「手里握着柿子」、卡片上显示的是随机到的「灯笼、花、剑」）
     const propHit = _scanZh(src, _PROPS_ZH_EN);
-    const propZh = propHit.length ? propHit.map((x) => x.zh).join("，") : (ap.prop || "");
-    const propEn = propHit.length ? propHit.map((x) => x.en).join(", ") : (ap.prop || "");
-    // 服饰款式
+    const propZh = propHit.length ? propHit.map((x) => x.zh).join("，") : "";
+    const propEn = propHit.length ? propHit.map((x) => x.en).join(", ") : "";
+    // 服饰：抠**整句**（「柿红色搭配鹅黄色的圆领袍」），不是词表里孤零零的「袍」。
+    //   v164b：抠出来后再**裁到最后一个服装词结尾**，别把后面的「的小姑娘」也一起带走。
+    //   没人写才退回固定人设 —— 且必须用 ap.outfitZh（旧版这里错写成 ap.outfit，
+    //   把英文串塞进了中文字段，卡片上就是这么显示出一长串英文的）
     const outfitHit = _scanZh(src, _OUTFIT_ZH_EN);
-    const outfitZh = outfitHit.length ? outfitHit.map((x) => x.zh).join("，") : (ap.outfit || "古风常服");
+    let outfitZh = "古风常服";
+    if (outfitHit.length) {
+      let oc = _grabClause(src, outfitHit[0].at, outfitHit[0].zh.length, 12) || outfitHit[0].zh;
+      const cw = Object.keys(_OUTFIT_ZH_EN).sort((a, b) => b.length - a.length);
+      let end = -1;
+      for (let i = 0; i < cw.length; i++) {
+        const p = oc.indexOf(cw[i]);
+        if (p >= 0) { const e = p + cw[i].length; if (e > end) end = e; }
+      }
+      if (end > 0 && end < oc.length) oc = oc.slice(0, end);
+      outfitZh = oc;
+    } else if (ap.outfitZh) {
+      outfitZh = ap.outfitZh;
+    }
     const outfitEn = outfitHit.length ? outfitHit.map((x) => x.en).join(", ") : "traditional hanfu attire";
-    // 颜色：衣服色取「人设原文里贴着服装词的色名」（v163b，与 lookOf 同一套，确认卡和出图才不会打架）
-    const colors = [];
-    if (lf.outfitZh) colors.push({ part: "衣", cn: lf.outfitZh, hex: lf.outfitHex || "" });
-    const hairHex = lf.hairHex || "", hairCn = lf.hairZh || "";
-    if (hairHex) colors.push({ part: "发", cn: hairCn, hex: hairHex });
-    else if (hairCn) colors.push({ part: "发", cn: hairCn, hex: "" });
-    // 发型
+    // 发型：词表词；**绝不用发色兜底**
+    //   （旧版没命中就退回 hairCn，于是发型栏显示成「柿红」这个颜色）
     const hairHit = _scanZh(src, _HAIR_ZH_EN);
-    const hairstyleZh = hairHit.length ? hairHit.map((x) => x.zh).join("，") : (hairCn || "古风发式");
+    const hairstyleZh = hairHit.length ? hairHit.map((x) => x.zh).join("，") : "古风发式";
     const hairstyleEn = hairHit.length ? hairHit.map((x) => x.en).join(", ") : "elegant ancient hairstyle";
-    // 特征
+    // 神态（「明媚笑容」这类以前完全读不到）
+    const smileHit = _scanZh(src, _SMILE_ZH_EN);
+    // 颜色：① 人设原文里贴着服装词的色名（lookOf 那套，最准）
+    //       ② 没有就扫贴着头发词的色名  ③ 都还没有才用固定人设里的（且发色不留「跟珠子主色/自动 · x」占位符）
+    const colors = [];
+    if (outfitHit.length) {
+      // 用抠出来的**整句**扫全部色名 —— 「柿红配鹅黄」两个都要，不能只留一个
+      const ocs = _colorsIn(outfitZh);
+      if (ocs.length) ocs.forEach((c) => colors.push({ part: "衣", cn: c.zh, hex: c.hex }));
+      else colors.push({ part: "衣", cn: outfitZh, hex: "" });
+    } else if (lf.outfitZh) {
+      colors.push({ part: "衣", cn: lf.outfitZh, hex: lf.outfitHex || "" });
+    }
+    const hairCol = _colorNearWord(src, ["头发", "长发", "发丝", "发髻", "发型", "发"], 7, 7);
+    if (hairCol) colors.push({ part: "发", cn: hairCol.zh, hex: hairCol.hex || "" });
+    else if ((lf.hairSrc === "custom" || lf.hairSrc === "pick") && lf.hairZh) colors.push({ part: "发", cn: lf.hairZh, hex: lf.hairHex || "" });
+    // 性别：用户写了「少年郎 / 姑娘」就以此为准（旧版完全忽略，出图性别只能靠随机）
+    const _bw = _BOY_WORDS.filter((w) => src.indexOf(w) >= 0);
+    const _gw = _GIRL_WORDS.filter((w) => src.indexOf(w) >= 0);
+    // 特征：chips 选中的 + 从人设原文读到的神态
     const feats = (lf.feats || []).map((f) => ({ zh: f.zh || f.id, en: f.en || f.id }));
+    smileHit.forEach((x) => feats.push({ zh: x.zh, en: x.en }));
     // 场景：立绘可极简，给安全默认
     const sceneZh = (profile && profile.indexOf("场景") >= 0) ? profile : "素净背景，柔光";
     const sceneEn = "plain soft background with gentle light";
-    const gender = (ap.gender || rec.gender || (item && item.gender) || "");
+    // 性别：用户原话里写了「少年郎 / 姑娘」就以他写的为准（旧版完全忽略，出图性别只能靠随机）
+    let gender = (ap.gender || rec.gender || (item && item.gender) || "");
+    if (_bw.length && !_gw.length) gender = "boy";
+    else if (_gw.length && !_bw.length) gender = "girl";
     return {
       gender: gender,
+      genderWord: (_bw[0] || _gw[0] || ""),
       pose: poseEn, poseZh: poseZh,
       prop: propEn, propZh: propZh,
       outfit: outfitEn, outfitZh: outfitZh,
       colors: colors,
       hairstyle: hairstyleEn, hairstyleZh: hairstyleZh,
+      hairColorZh: hairCol ? hairCol.zh : "",
+      hairColorHex: hairCol ? (hairCol.hex || "") : "",
       feats: feats,
       scene: sceneEn, sceneZh: sceneZh,
+      extraZh: "",
       styleBits: (GUOFENG || "") + " " + (NEG_STYLE || "") + " " + (CONSISTENCY || "") + " " + (SINGLE || ""),
       anatomyBits: (ANATOMY || "") + ", simple clear posture, both arms and hands fully visible and uncrossed, " +
         "no overlapping or hidden arms, avoid complex hand gestures that risk extra limbs or extra fingers",
@@ -829,25 +963,124 @@
     }
     return { ok: issues.length === 0, issues: issues };
   }
-  // 确认卡结构（§5.2）—— 返回 HTML，app.js 嵌进 modal 展示
-  function renderConfirmCard(draft) {
-    const colorRows = (draft.colors && draft.colors.length)
-      ? draft.colors.map((c) => '<div class="cf-color">' + _esc(c.part) + "·" + _esc(c.cn) + (c.hex ? " (" + _esc(c.hex) + ")" : "") + "</div>").join("")
-      : '<div class="cf-color">（未指定，按古风仪态池）</div>';
-    const featRows = (draft.feats && draft.feats.length) ? draft.feats.map((f) => _esc(f.zh || f.en || f.id)).join("、") : "（无 · 普通人身）";
-    return '<div class="cf-card">' +
-      '<div class="cf-row"><span class="cf-k">动作</span><span class="cf-v">' + _esc(draft.poseZh || "静立") + "</span></div>" +
-      '<div class="cf-row"><span class="cf-k">持物</span><span class="cf-v">' + _esc(draft.propZh || "（无）") + "</span></div>" +
-      '<div class="cf-row"><span class="cf-k">服饰</span><span class="cf-v">' + _esc(draft.outfitZh || "古风常服") + "</span></div>" +
-      '<div class="cf-row"><span class="cf-k">颜色</span><span class="cf-v">' + colorRows + "</span></div>" +
-      '<div class="cf-row"><span class="cf-k">场景</span><span class="cf-v">' + _esc(draft.sceneZh || "素净背景") + "</span></div>" +
-      '<div class="cf-row"><span class="cf-k">发型</span><span class="cf-v">' + _esc(draft.hairstyleZh || "古风发式") + "</span></div>" +
-      '<div class="cf-row"><span class="cf-k">特征</span><span class="cf-v">' + featRows + "</span></div>" +
+  // 确认卡结构（§5.2 / v164 可编辑）—— 返回 HTML，app.js 嵌进 modal 展示
+  //   v164 关键改动：**每一行都能改**。用户原话：「提取了也不能修改，那让我确认干嘛？」
+  //   editable=true 时渲染成输入框，改完的值由 app.js 读回 → toBrief() 存成 look.brief → 真进 prompt。
+  function renderConfirmCard(draft, editable) {
+    const ed = !!editable;
+    const d = draft || {};
+    const inp = (key, val, ph, ta) => {
+      const v = _esc(val || "");
+      const p = _esc(ph || "");
+      return ta
+        ? '<textarea class="cf-in cf-ta" data-cf="' + key + '" rows="2" placeholder="' + p + '">' + v + "</textarea>"
+        : '<input class="cf-in" type="text" data-cf="' + key + '" value="' + v + '" placeholder="' + p + '">';
+    };
+    const row = (k, key, val, ph, ta) =>
+      '<div class="cf-row"><span class="cf-k">' + k + '</span><span class="cf-v">' +
+      (ed ? inp(key, val, ph, ta) : _esc(val || "")) + "</span></div>";
+    const colorText = (d.colors || []).map((c) => c.part + "·" + c.cn + (c.hex ? "(" + c.hex + ")" : "")).join("；");
+    const featText = (d.feats || []).map((f) => f.zh || f.en || f.id).join("、");
+    return '<div class="cf-card" data-cf-card="1">' +
+      row("动作", "poseZh", d.poseZh || "静立", "例：双手拢袖、端静含笑") +
+      row("持物", "propZh", d.propZh || "", "例：手里握着柿子（留空=不拿东西）") +
+      row("服饰", "outfitZh", d.outfitZh || "", "例：柿红配鹅黄的圆领袍") +
+      row("发型", "hairstyleZh", d.hairstyleZh || "", "例：高高束起") +
+      row("颜色", "colorsText", colorText, "例：衣·柿红(#e0513a)；发·柿红") +
+      row("特征", "featsText", featText, "例：明媚笑容、猫耳") +
+      row("场景", "sceneZh", d.sceneZh || "素净背景，柔光", "例：素净背景，柔光") +
+      (ed ? row("补充", "extraZh", d.extraZh || "", "还想让它怎样？这里写的会原样进提示词", true) : "") +
       '<div class="cf-sep">── 以下两行只读，不可改 ──</div>' +
       '<div class="cf-row ro"><span class="cf-k">风格</span><span class="cf-v">中式古风（已锁定）</span></div>' +
       '<div class="cf-row ro"><span class="cf-k">一致</span><span class="cf-v">与旧像同人同色（已锁定）</span></div>' +
       '<div class="cf-fee">确认即耗出图额度一，画面依上表生成，落定难悔。</div></div>';
   }
+  // v164：颜色表 → 给人看的一行（同部位合并）：「衣·柿红+鹅黄(#e0513a,#fff143)；发·柿红(#e0513a)」
+  function _groupColors(cols) {
+    const ord = [], map = {};
+    (cols || []).forEach((c) => {
+      const p = c.part || "衣";
+      if (!map[p]) { map[p] = { part: p, cns: [], hexes: [] }; ord.push(map[p]); }
+      if (c.cn && map[p].cns.indexOf(c.cn) < 0) map[p].cns.push(c.cn);
+      if (c.hex && map[p].hexes.indexOf(c.hex) < 0) map[p].hexes.push(c.hex);
+    });
+    return ord.map((g) => g.part + "·" + g.cns.join("+") + (g.hexes.length ? "(" + g.hexes.join(",") + ")" : "")).join("；");
+  }
+  // v164：草稿 → 可落库的出图单。这是「确认卡」和「出图 prompt」之间唯一的桥。
+  function toBrief(draft) {
+    draft = draft || {};
+    const col = (draft.colors || []);
+    const hairC = col.filter((c) => c.part === "发")[0] || null;
+    const outfitC = col.filter((c) => c.part === "衣" && c.hex)[0] || col.filter((c) => c.part === "衣")[0] || null;
+    return {
+      ver: 1, at: Date.now(),
+      gender: draft.gender || "",
+      poseZh: draft.poseZh || "", propZh: draft.propZh || "", outfitZh: draft.outfitZh || "",
+      hairstyleZh: draft.hairstyleZh || "", sceneZh: draft.sceneZh || "",
+      colorsText: _groupColors(col),
+      featsText: (draft.feats || []).map((f) => f.zh || f.en || f.id).join("、"),
+      extraZh: draft.extraZh || "",
+      hairColorZh: draft.hairColorZh || (hairC ? hairC.cn : ""),
+      hairColorHex: draft.hairColorHex || (hairC ? (hairC.hex || "") : ""),
+      outfitHex: outfitC ? (outfitC.hex || "") : "",
+    };
+  }
+  // v164：把用户确认卡上改过的值覆盖回去（app.js 读 DOM 后调用；纯函数，方便测）
+  function mergeBrief(brief, vals) {
+    const b = Object.assign({}, brief || {}, vals || {});
+    if (vals && vals.hairColorZh) { b.hairColorZh = vals.hairColorZh; }
+    if (vals && (vals.hairColorHex || vals.hairColorHex === "")) b.hairColorHex = vals.hairColorHex;
+    // 颜色那一行是自由文本 → 从里面再抠一遍发色 hex，保证发色硬约束有精确值
+    if (b.colorsText && !b.hairColorHex) {
+      const m = String(b.colorsText).match(/发[·:：]\s*([^（(；;]+)(?:[（(](#?[0-9a-fA-F]{6})[)）])?/);
+      if (m) { b.hairColorZh = b.hairColorZh || String(m[1]).trim(); if (m[2]) b.hairColorHex = m[2]; }
+    }
+    b.ver = 1; b.at = Date.now();
+    return b;
+  }
+  // v164：出图单 → prompt 末尾的硬约束（模型对靠后关键词最敏感）。
+  //   中英并列：中文保真（用户原话），英文给模型更明确的指令。
+  function briefHard(lk) {
+    const b = (lk && lk.brief) || null;
+    if (!b) return "";
+    const L = [];
+    if (b.gender === "boy") L.push("this character is a BOY");
+    else if (b.gender === "girl") L.push("this character is a GIRL");
+    if (b.outfitZh) L.push("outfit: " + b.outfitZh + (b.outfitHex ? " (" + b.outfitHex + ")" : "") +
+      " — use exactly this outfit, no other style or color");
+    if (b.colorsText) L.push("colors — " + b.colorsText);
+    if (b.propZh) L.push("in hand: " + b.propZh + " — show exactly this, and nothing else in the hands");
+    else L.push("both hands empty unless the pose requires otherwise");
+    if (b.hairColorZh) L.push("hair color: " + b.hairColorZh + (b.hairColorHex ? " (" + b.hairColorHex + ")" : "") +
+      " — keep exactly this hair color");
+    if (b.hairstyleZh) L.push("hair style: " + b.hairstyleZh);
+    if (b.poseZh) L.push("pose: " + b.poseZh);
+    if (b.featsText) L.push("expression / features: " + b.featsText);
+    if (b.sceneZh) L.push("scene: " + b.sceneZh);
+    if (b.extraZh) L.push("owner's extra note (must obey): " + b.extraZh);
+    if (!L.length) return "";
+    return "OWNER-CONFIRMED DRAWING SPEC (highest priority; ignore any earlier conflicting detail): " + L.join("; ") + ". ";
+  }
+  // v164：出图单里写死的项 → 掐掉随机外观池里会打架的同类项（用户写了柿子，就不能同时出现随机抽的灯笼）
+  function applyBrief(lk, ap) {
+    const b = (lk && lk.brief) || null;
+    if (!b) return { lk: lk, ap: ap };
+    const ap2 = Object.assign({}, ap || {});
+    if (b.propZh || b.propZh === "") ap2.prop = "";   // 持物：用户说了算，掐掉随机池的
+    if (b.outfitZh) { ap2.outfit = b.outfitZh; ap2.outfitZh = b.outfitZh; }
+    const lk2 = Object.assign({}, lk || {});
+    // 出图单里的发色 / 衣服色必须**压过**随机池和珠子主色（否则"确认了柿红头发、画出来还是棕色"）
+    if (b.hairColorZh) { lk2.hairZh = b.hairColorZh; lk2.hairEn = hairWordFromInput(b.hairColorZh) || b.hairColorZh; }
+    if (b.hairColorHex) lk2.hairHex = b.hairColorHex;
+    if (b.outfitZh) {
+      const oc = outfitColorFromText(b.outfitZh);
+      lk2.outfitZh = b.outfitZh;
+      lk2.outfitEn = (oc && (oc.en || oc.zh)) || b.outfitZh;
+      lk2.outfitHex = b.outfitHex || (oc && oc.hex) || "";
+    }
+    return { lk: lk2, ap: ap2 };
+  }
+
   function stageDef(n) { return STAGES[Math.min(STAGES.length, Math.max(1, Number(n) || 1)) - 1]; }
   // 成长值：盘一次 +3，陪伴一天 +1（days 由调用方用 DB.daysWith 传进来）
   function growthOf(item, days) {
@@ -1141,6 +1374,11 @@
     ["藏青", "#3b2e7e"], ["天蓝", "#44cef6"], ["湖蓝", "#30dff3"], ["石青", "#1685a9"],
     ["花青", "#003472"], ["鸦青", "#424c50"], ["黛蓝", "#425066"], ["天青", "#8ec5cf"],
     ["缥色", "#7fecff"],
+    // v164：用户口语里最常用的那几个色名（旧表认不出「柿红」，写「柿红色搭配鹅黄色」时
+    //   只有「鹅黄」命中、衣色整栏空白）
+    ["柿红", "#e0513a"], ["柿色", "#e8834e"], ["枣红", "#b8302f"], ["水红", "#f0a3a8"],
+    ["奶黄", "#f7e5a8"], ["米黄", "#f3ddb0"], ["杏子黄", "#f6cf6b"], ["藕粉", "#f0c8cc"],
+    ["玫红", "#d4496c"], ["雾蓝", "#a8c0d8"], ["藏蓝", "#2b3a63"], ["墨蓝", "#2a3d52"],
   ];
   // sRGB → Lab(D65)：用 CIE76 色差找"人眼最接近"的传统色（比裸 RGB 距离准得多，
   //   裸 RGB 会把灰调色错配成「土黄 / 咖色」）
@@ -1191,6 +1429,21 @@
     { id: "glasses", zh: "圆框眼镜", en: "round thin-frame glasses", tail: false },
     { id: "freckles", zh: "小雀斑", en: "a few light freckles across the cheeks", tail: false },
     { id: "blush", zh: "害羞腮红", en: "soft rosy blush on the cheeks", tail: false },
+    // v164：用户反馈「选项太少了」→ 补一批**中式古风**向的面部/气质特征（禁用日式西式元素）
+    { id: "huadian", zh: "眉心花钿", en: "a delicate traditional Chinese huadian floral mark painted on the forehead between the eyebrows", tail: false },
+    { id: "zhusha", zh: "额间朱砂", en: "a small vermilion cinnabar dot on the center of the forehead", tail: false },
+    { id: "teardrop", zh: "眼下泪痣", en: "a tiny beauty mark just below one eye", tail: false },
+    { id: "dimples", zh: "小酒窝", en: "sweet little dimples when smiling", tail: false },
+    { id: "fangs", zh: "小虎牙", en: "a small cute fang peeking out at the corner of the mouth", tail: false },
+    { id: "peachblossom", zh: "桃花眼", en: "charming peach-blossom shaped eyes with slightly upturned corners", tail: false },
+    { id: "phoenix", zh: "丹凤眼", en: "narrow phoenix eyes with elegant upswept outer corners", tail: false },
+    { id: "catpupil", zh: "猫瞳", en: "cat-like vertical slit pupils in bright eyes", tail: false },
+    { id: "scales", zh: "玉色鳞片", en: "a few subtle jade-colored scales along the cheekbones and temples", tail: false },
+    { id: "lashwhite", zh: "白睫", en: "long snow-white eyelashes", tail: false },
+    { id: "starorn", zh: "星月额饰", en: "a small traditional Chinese forehead ornament with a star and crescent moon motif", tail: false },
+    { id: "redstring", zh: "颈间红绳", en: "a thin red string necklace tied around the neck", tail: false },
+    { id: "inkmark", zh: "脸颊墨痕", en: "a faint brush-ink smudge on one cheek", tail: false },
+    { id: "browdot", zh: "眉梢小痣", en: "a tiny mole at the outer tip of one eyebrow", tail: false },
     { id: "none", zh: "普通人形（不要额外特征）", en: "", tail: false },
   ];
   const FEATURE_BY_ID = {};
@@ -1203,6 +1456,16 @@
     { id: "calm", zh: "沉稳可靠", en: "calm and dependable", face: "steady reassuring expression" },
     { id: "mystery", zh: "神秘慵懒", en: "mysterious and laid-back", face: "sleepy lidded eyes, lazy elegant mood" },
     { id: "cheeky", zh: "古灵精怪", en: "playful and mischievous", face: "playful bright smile with sparkling eyes" },
+    // v164：用户反馈「选项太少了」→ 补中式气质（侠气 / 才情 / 端方 / 娇憨…）
+    { id: "wanderer", zh: "洒脱江湖", en: "free-spirited wanderer with a heroic air", face: "unrestrained confident grin, bright daring eyes" },
+    { id: "scholar", zh: "温润书卷", en: "refined and scholarly", face: "warm gentle gaze, quiet bookish poise" },
+    { id: "aloof", zh: "清冷疏离", en: "cold and distant", face: "faint expression, cool distant gaze" },
+    { id: "sweet", zh: "娇憨可爱", en: "sweet and endearingly simple", face: "round innocent eyes, soft pouty look" },
+    { id: "dignified", zh: "端方持重", en: "dignified and composed", face: "upright serene face, measured expression" },
+    { id: "sentimental", zh: "多愁善感", en: "sentimental and wistful", face: "soft melancholy eyes, faint sighing smile" },
+    { id: "heroic", zh: "侠气凛然", en: "chivalrous and upright", face: "resolute eyes and a firm righteous look" },
+    { id: "pampered", zh: "慵懒富贵", en: "languid and pampered", face: "half-lidded relaxed eyes, faint spoiled smirk" },
+    { id: "wild", zh: "野性未驯", en: "wild and untamed", face: "sharp alert eyes, a hint of defiant spirit" },
   ];
   const PERSONA_BY_ID = {};
   PERSONAS_PICK.forEach((p) => { PERSONA_BY_ID[p.id] = p; });
@@ -1282,6 +1545,57 @@
     const hex = (picked.filter((x) => x.hex)[0] || {}).hex || "";
     return { zh: zh, en: en || zh, hex: hex };
   }
+  // v164：把 outfitColorFromText 的「只认贴着服装词的色名」推广成「贴着**任意一组词**」。
+  //   发色要认「柿红色的**头发**」，绝不能被同一句里的「圆领袍」抢走 —— 所以近邻词要能换。
+  //   before/after 是以命中位置为基准向左/右各放宽多少字（默认 6/6）。
+  function _colorNearWord(src, words, before, after) {
+    src = String(src || "");
+    if (!src || !words || !words.length) return null;
+    const b = Number(before) || 6, a = Number(after) || 6;
+    const near = (pos, len) => {
+      const win = src.slice(Math.max(0, pos - b), Math.min(src.length, pos + len + a));
+      for (let i = 0; i < words.length; i++) if (win.indexOf(words[i]) >= 0) return true;
+      return false;
+    };
+    const hits = [];
+    let i, p;
+    // ① 中国传统色名（带精确 hex，最准）
+    for (i = 0; i < CN_TRAD_COLORS.length; i++) {
+      const zh = CN_TRAD_COLORS[i][0], hex = CN_TRAD_COLORS[i][1];
+      p = src.indexOf(zh);
+      while (p >= 0) {
+        if (near(p, zh.length)) hits.push({ zh: zh, hex: hex, at: p });
+        p = src.indexOf(zh, p + 1);
+      }
+    }
+    // ② 简易中文色词（无 hex，兜底）
+    const cz = Object.keys(COLOR_WORD_ZH);
+    for (i = 0; i < cz.length; i++) {
+      const w = cz[i];
+      if (!w) continue;
+      p = src.indexOf(w);
+      while (p >= 0) {
+        if (near(p, w.length)) hits.push({ zh: w, hex: "", at: p });
+        p = src.indexOf(w, p + 1);
+      }
+    }
+    if (!hits.length) return null;
+    hits.sort((x, y) => x.at - y.at);
+    // 去掉互相包含的重复命中（已命中「柿红」就不再单独算「红」）
+    const picked = [];
+    for (i = 0; i < hits.length && picked.length < 2; i++) {
+      const h = hits[i];
+      let covered = false;
+      for (let j = 0; j < picked.length; j++) {
+        if (picked[j].zh.indexOf(h.zh) >= 0 || h.zh.indexOf(picked[j].zh) >= 0) { covered = true; break; }
+      }
+      if (!covered) picked.push(h);
+    }
+    if (!picked.length) picked.push(hits[0]);
+    const zh = picked.map((x) => x.zh).join("");
+    const en = picked.map((x) => (hairWordFromInput(x.zh) || "")).filter(Boolean).join(" and ");
+    return { zh: zh, en: en || zh, hex: (picked.filter((x) => x.hex)[0] || {}).hex || "" };
+  }
 
   // 用户设定 + 自动推断 = 这一尊**真正要用**的外形参数
   // rec 可以不传：不传就自己去 localStorage 读这只沁灵的记录（保证任何调用点都拿得到用户设定）
@@ -1326,9 +1640,10 @@
     ).filter((f) => f && f.id !== "none").slice(0, 3);
     // 性格
     const pers = PERSONA_BY_ID[lk.pers] || null;
-    // 服装色：① 用户明确填的 outfitColor ② 人设原文里提炼的色名（v163b）
+    // 服装色：① 用户明确填的 outfitColor ② 用户原话 / 用户确认过的人设里提炼的色名
     // ③ 兜底才跟珠子主色。写了「月白淡紫」就必须出月白淡紫，不能再出棕黄。
-    const _ocSrc = (lk.base || "") + "\n" + (lk.profile || "") + "\n" + (r.personaZh || "");
+    // v164：源里去掉 r.personaZh —— 那是模型按随机参数另写的正文，扫它等于把 AI 编的衣服色当用户要求。
+    const _ocSrc = (lk.base || "") + "\n" + (lk.persona || "") + "\n" + (lk.profile || "");
     const _oc = outfitColorFromText(_ocSrc);
     const outfitEn = lk.outfitColor ? hairWordFromInput(lk.outfitColor) : (_oc ? (_oc.en || _oc.zh) : beadWord);
     const outfitZh = lk.outfitColor ? String(lk.outfitColor) : (_oc ? _oc.zh : "");
@@ -1336,7 +1651,7 @@
     return {
       ap, bead, beadWord, beadHex, hairEn, hairHex, hairSrc, hairZh, outfitEn, outfitZh, outfitHex,
       feats, noFeat, pers,
-      base: lk.base || "", profile: lk.profile || "",
+      base: lk.base || "", profile: lk.profile || "", persona: lk.persona || "", brief: lk.brief || null,
       asked: !!r.lookAsked, chosen: !!(lk.hairc || ids.length || lk.pers || lk.base),
     };
   }
@@ -1363,7 +1678,9 @@
     if (lk.pers) hard.push(lk.pers.en + " personality, " + lk.pers.face);
     // v130：主人写的一句话/融合后的设定 = 描述**沁灵本人**的硬约束。
     // 用户反馈：写「洒脱的江湖侠士」指的是珠子，结果 AI 安给了主人、立绘也不跟 —— 现在直接进 prompt 末尾硬约束。
-    const personaNote = lk.profile || lk.base;
+    // v164：有出图单时只带**主人原话**（出图单已把关键点拆成结构化字段了，
+    //   再塞整段 AI 扩写进去只会稀释指令、还会把扩写里可能编出来的细节带进画面）
+    const personaNote = lk.brief ? (lk.base || "") : (lk.persona || lk.profile || lk.base);
     if (personaNote) hard.push("character setting from owner (describes THIS spirit itself, never the owner): " + personaNote);
     return "IMPORTANT character features that must be clearly visible: " + hard.join("; ");
   }
@@ -1396,35 +1713,43 @@
       "性子偏「" + persTxt + "」，平时话不多，但主人一伸手它就会靠过来。" + baseTxt;
   }
   // 用文字模型把"一句基础设定 + 选项"扩写成一小段（失败就退回本地模板）
+  // v164：这段扩写 = 用户流程里「AI 润色的人设」，是要给用户**确认**、并最终显示在详情页的正稿。
+  //   铁律：只把主人写的东西**扩展润色**，绝不替换、绝不凭空调色/加道具。
+  //   （旧版把随机外观池的服装写进去、还让 AI 自由加持物，于是卡片上冒出「灯笼、花、木剑」，
+  //     用户写的是柿子 —— 这就是"提取出来跟我说的没半毛钱关系"的根源）
   async function expandProfile(item, lk, persona) {
     const local = profileLocal(item, lk, persona);
     const base = (lk && lk.base) ? String(lk.base).trim() : "";
-    // v130：沁灵性别要交代清楚（之前只交代主人代词，男沁灵被写成「她」）
     const r0 = (item && item.id) ? load()[item.id] || {} : {};
     const ap0 = appearanceOf(item, r0.appearanceSeed || 0, r0.gender || "");
-    const sys = "你是一个角色设定师。请根据用户给的选项，为主人的手串沁灵写一小段中文人物设定，要求：" +
-      "① 只写 90-150 字，一段话，不要标题、不要分点、不要引号；② 必须体现：外貌（发色 / 特殊特征）、性格、和主人以及这串珠子的关系；" +
+    const sys = "你是一个角色设定师。请把主人给出的设定**润色扩写**成一小段中文人物设定，要求：" +
+      "① 只写 150-260 字，一段话，不要标题、不要分点、不要引号；② 必须体现：外貌（发色 / 特殊特征）、性格、和主人以及这串珠子的关系；" +
       "③ 口吻温柔、有画面感，像手账里的备注；④ 不要出现「AI」「提示词」「角色设定」这类词；" +
-      "⑤【最重要】主人写的那句话描述的是**沁灵本人**的性格/身份/气质（例如「洒脱的江湖侠士」＝这只沁灵是侠士，不是主人是侠士），" +
-      "必须把这句话的意思自然融进正文，让整段读起来是一份完整统一的设定，不要引用原话、不要说「主人说过」、不要写成两套人设；" +
-      "⑥ 沁灵的性别以下方标注为准，指代沁灵的代词绝不能用错；" +
-      "⑦【发色、瞳色、特殊特征照下方给定内容写；但**发型自由发挥**】中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），按沁灵的性别/性格/主人写的设定来定，不要生硬套短发；" +
-      "发色若给的是中国传统色名（胭脂、天青、月白、秋香、藕荷、黛色等），正文里就用这个名称来写，不要改成现代色号；" +
-      "⑧【整段基调是中国古风】衣服一律写中式传统样式（汉服、长衫、褂子、襦裙、道袍等），禁止出现现代服装（夹克、运动服、卫衣、T恤、牛仔裤、西装等）；" +
-      "⑨【姿态自由发挥、不要摆拍】可写一个自然的中式仪态（作揖、拱手、拂袖、团扇半遮面、低眸捻珠、执笔、捧盏、展卷等），" +
+      "⑤【最重要·不许跑偏】主人原话里写到的东西（衣服样式与颜色、头发颜色、发型、手里拿的东西、神态、性别称呼）" +
+      "一律**照写、只在原来的意思上加细节**，绝不许替换成别的东西、不许改色、不许改样式；" +
+      "⑥【不许凭空加道具】主人原话里**没写**手里拿东西，就绝对不要提任何手里拿的物件（不许写灯笼、花、木剑、扇子之类）；" +
+      "主人写了什么就写什么，一件不多一件不少；" +
+      "⑦ 主人写的那句话描述的是**沁灵本人**的性格/身份/气质（例如「洒脱的江湖侠士」＝这只沁灵是侠士，不是主人是侠士），" +
+      "必须自然融进正文，让整段读起来是一份完整统一的设定，不要引用原话、不要说「主人说过」、不要写成两套人设；" +
+      "⑧ 沁灵的性别以下方标注为准，指代沁灵的代词绝不能用错；" +
+      "⑨【发色、瞳色、特殊特征照下方给定内容写；但**发型自由发挥**】中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），" +
+      "按沁灵的性别/性格/主人写的设定来定，不要生硬套短发（主人原话写了发型就照他写的）；" +
+      "发色若给的是中国传统色名（胭脂、天青、月白、秋香、藕荷、柿红、黛色等），正文里就用这个名称来写，不要改成现代色号；" +
+      "⑩【整段基调是中国古风】衣服一律写中式传统样式（汉服、长衫、褂子、襦裙、圆领袍、道袍等），禁止出现现代服装（夹克、运动服、卫衣、T恤、牛仔裤、西装等）；" +
+      "⑪【姿态自由发挥、不要摆拍】可写一个自然的中式仪态（作揖、拱手、拂袖、团扇半遮面、低眸捻珠、执笔、捧盏、展卷等），" +
       "双手位置要简单清楚、不要遮叠手臂或复杂手势（否则出图容易画成三只手 / 多指），不要现代随意手势或 wink。";
     const NL = String.fromCharCode(10);
     const user = "沁灵名：" + ((persona && persona.name) || item.name || "小沁灵") +
       NL + spiritGenderLine(ap0) +
       NL + "来自手串：" + ((item && item.name) || "") + (item && item.craft ? "（" + item.craft + "）" : "") +
       NL + "发色（中国传统色名）：" + (((lk && lk.hairZh) ? String(lk.hairZh).replace(/^自动 · /, "") : "") || "跟珠子主色") +
-      NL + "服装（必须是中式传统古风样式）：" + (ap0.outfitZh || ap0.outfit) +
+      NL + "服装参考（**主人原话写了衣服就以原话为准**，没写才按这个）：" + (ap0.outfitZh || ap0.outfit) +
       NL + "特殊特征：" + ((lk && lk.feats && lk.feats.length) ? lk.feats.map((f) => f.zh).join("、") : ((lk && lk.noFeat) ? "普通人形" : "未指定")) +
       NL + "性格：" + ((lk && lk.pers) ? lk.pers.zh : "未指定") +
-      (base ? (NL + "主人给的一句话设定（描述的是沁灵本人，融进正文）：" + base) : "") +
+      (base ? (NL + "【主人原话·最高优先级，一字不许跑偏】" + base) : "") +
       NL + ownerLine() + NL + "请写这一小段设定。";
     try {
-      const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 400) || "").trim();
+      const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 500) || "").trim();
       const clean = txt.replace(/^["「]|["」]$/g, "").replace(/\s*\n+\s*/g, "").trim();
       if (clean && clean.length >= 40) return { text: clean, ai: true };
     } catch (e) { /* 没 key / 失败 → 本地模板 */ }
@@ -1435,17 +1760,21 @@
     const st = styleOf(item, key).text;
     // 颜色：优先用 **用户在「设定向导」里确认过的发色**；没设过才用"从手串照片里采到的真实主色"，
     // 再拿不到才退回颜色分类（v127：用户反馈"颜色读不准、每只都太像"→ 现在可确认、可改、可按种子分散）
-    const lk = look || lookOf(item, null);
+    const lkRaw = look || lookOf(item, null);
+    // v164：**用户确认过的出图单优先** —— 掐掉随机外观池里跟它打架的项
+    //   （用户写了「手握柿子」，随机抽到的「提着小灯」就不能再出现在提示词里）
+    const _ab = applyBrief(lkRaw, appearance || appearanceOf(item, 0));
+    const lk = _ab.lk;
+    const ap = _ab.ap;
     const color = lk.hairEn;
     const outfitColor = lk.outfitEn;
     const colorHint = (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") +
       (lk.outfitHex ? (", the exact outfit color is " + lk.outfitHex) : "") +
       // 用户自己指定了衣服颜色时，绝不再让"跟珠子主色"把它顶掉（旧逻辑出棕黄的元凶）
-      (!lk.outfitZh && lk.beadHex ? (", sampled from the real bracelet: " + lk.beadHex + ", keep the outfit close to this color") : "");
+      (!lk.outfitZh && !(lk.brief && lk.brief.outfitZh) && lk.beadHex ? (", sampled from the real bracelet: " + lk.beadHex + ", keep the outfit close to this color") : "");
     const soft = SOFT_EN[item.softness || ""] || SOFT_EN[""];
     const isChar = (key === "anime");          // 日漫 Q 版角色：颜色落在头发/衣服上
     const stageLook = stageDef(stage == null ? 1 : stage).look;   // 该形态的外形描述（进阶的核心）
-    const ap = appearance || appearanceOf(item, 0);         // 固定人设（性别/发型/瞳色/配饰）
     let cmp;
     if (isChar) {
       // 先写死"这个人是谁"（外观锚点），再写"他现在多大"（形态描述）→ 深沁只会长大，不会换人
@@ -1469,6 +1798,9 @@
       : ("extra character design details: " + tags));
     const hard = lookHard(lk);
     if (hard) bits.push(hard);
+    // v164：用户确认过的出图单压在最末尾（模型对最后出现的关键词最敏感）——"确认的就是画出来的"
+    const bHard = briefHard(lk);
+    if (bHard) bits.push(bHard);
     if (item.softness === "soft") bits.push(isChar ? "round soft cheeks, relaxed happy sleepy eyes" : "round blob-like silhouette, soft chewy texture");
     if (item.softness === "slight") bits.push(isChar ? "calm gentle eyes, neat tidy look" : "slightly squishy but mostly smooth silhouette");
     return bits.join(", ") + ", " + st;
@@ -2113,6 +2445,19 @@
     const store = load();
     const rec = ensureIn(store, item.id);
     const lk0 = rec.look || {};
+    // v164：用户**亲手确认过**的人设（look.persona）就是最终稿 —— 原样返回，不再叫 AI 重写。
+    //   理由：用户流程是「我写设定 → AI 扩写 → 我确认 → 出图」，那这段确认稿必须
+    //   ① 原样显示在详情页 ② 也是出图 brief 的提取源。若这里再让 AI 生成一遍，
+    //   就会出现「我确认的」和「详情页显示的」不是同一段字（用户最反感的一点）。
+    if (!force && lk0.persona) {
+      if (rec.personaZh !== lk0.persona) {
+        rec.personaZh = lk0.persona;
+        rec.personaZhKey = "user|" + (lk0.personaAt || 0);
+        rec.personaZhAt = Date.now();
+        save(store);
+      }
+      return lk0.persona;
+    }
     // 缓存键带上用户的一句话/融合设定：改了设定 → 人设卡跟着重写（否则立绘换了设定卡还是旧的）
     // v154 前缀 = 规则再升级（纹样改「人设优先，池子兜底」），旧人设卡作废重写一遍
     //   —— 顺带把纹样并进缓存键：以后换纹样，人设正文也会跟着重写，不会再出现"标签是芭蕉叶、正文还写着水波"
@@ -2772,8 +3117,10 @@
   };
   // 节令限定 CG 的 prompt（横版；点了「画一张」才调用）
   function festCgPrompt(item, styleKey, stage, appearance, look, fest) {
-    const lk = look || lookOf(item, null);
-    const ap = appearance || lk.ap || appearanceOf(item, 0);
+    const lkRaw = look || lookOf(item, null);
+    const _ab = applyBrief(lkRaw, appearance || lkRaw.ap || appearanceOf(item, 0));   // v164：出图单优先
+    const lk = _ab.lk;
+    const ap = _ab.ap;
     const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
     const st = styleOf(item, key).text;
     const scene = FEST_SCENE[(fest && fest.key) || ""] || "a traditional Chinese festive scene";
@@ -2782,7 +3129,8 @@
       stageDef(stage).look + ", solo single character only, exactly one figure in the whole image, " +
       "scene: " + scene + ", the character is celebrating this festival alone in this scene, " +
       "a beautiful warm key visual for this festival moment, the wide scenery fills both sides of the character, " +
-      "no other characters, no text, no letters" + (lookHard(lk) ? (", " + lookHard(lk)) : "") + ", " + st;
+      "no other characters, no text, no letters" + (lookHard(lk) ? (", " + lookHard(lk)) : "") +
+      (briefHard(lk) ? (", " + briefHard(lk)) : "") + ", " + st;
   }
   // 今天是不是节令；是、且没记过 → 写一条（返回新记录，否则 null）
   function ensureFest(item, rec, ctx) {
@@ -5665,9 +6013,11 @@
   function promptForCg(item, styleKey, stage, appearance, look) {
     const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
     const st = styleOf(item, key).text;
-    const lk = look || lookOf(item, null);
+    const lkRaw = look || lookOf(item, null);
+    const _ab = applyBrief(lkRaw, appearance || lkRaw.ap || appearanceOf(item, 0));   // v164：出图单优先
+    const lk = _ab.lk;
+    const ap = _ab.ap;
     const color = lk.hairEn;
-    const ap = appearance || lk.ap || appearanceOf(item, 0);
     const stageLook = stageDef(stage).look;
     return CG_STYLE + ", " + appearancePrompt(ap) + ", with " + color + " hair and " + lk.outfitEn + " themed outfit" +
       (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") + lookExtra(lk) + ", " +
@@ -5675,7 +6025,8 @@
       "a breathtaking key visual for a big moment: the character alone in a beautiful scene that matches its " +
       "personality, dramatic pose and camera angle, full body visible from head to toe, " +
       "the horizontal frame filled with the wide scenery of the scene (sky / room / distant view) on both sides of the character, " +
-      "light particles and elegant atmosphere, no other characters" + (lookHard(lk) ? (", " + lookHard(lk)) : "") + ", " + st;
+      "light particles and elegant atmosphere, no other characters" + (lookHard(lk) ? (", " + lookHard(lk)) : "") +
+      (briefHard(lk) ? (", " + briefHard(lk)) : "") + ", " + st;
   }
   // 两只沁灵的事件 CG（房间剧情用）
   function storyCgPrompt(a, b, level, roomName) {
@@ -5970,6 +6321,8 @@
     promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
     localPersona, persona, chat, letter, localChat, localLetter,
     todayKey, load, save, ensureIn, recordEvent, allEvents, drainEventPops, extractLookBrief, validateAnatomy, renderConfirmCard,
+    // v164：出图单（用户确认卡 → look.brief → 真进 prompt）
+    toBrief, mergeBrief, briefHard, applyBrief,
     // v110：性别在「挂瓷开沁」时定下来（男女 3:1），之后不可改
     born, rollGender, legacyGender,
     // v111：主人设定（性别/昵称）—— 日记、剧情、聊天、人物设定都要按它来写

@@ -61,11 +61,17 @@ section("E. extractLookBrief 与 lookOf 同源（确认卡和出图不打架）"
   const it = mkItem();
   const rec = { look: { base: "穿月白淡紫长衫的小姑娘" }, gender: "girl", appearanceSeed: 1 };
   const br = S.extractLookBrief(rec, it);
-  const cloth = (br.colors || []).filter((c) => c.part === "衣")[0];
-  ok(!!cloth, "确认卡里有「衣」这一项");
+  const cloths = (br.colors || []).filter((c) => c.part === "衣");
+  ok(cloths.length > 0, "确认卡里有「衣」这一项");
   const lk = S.lookOf(it, rec);
-  ok(!!cloth && cloth.cn === lk.outfitZh,
-    "确认卡衣服色 == lookOf 衣服色：" + (cloth && cloth.cn) + " / " + lk.outfitZh);
+  // v164：卡片按色名**逐个**列出（用户可以单独改），lookOf.outfitZh 是拼起来的串 —— 语义必须一致
+  const joined = cloths.map((c) => c.cn).join("");
+  ok(joined.indexOf("月白") >= 0 && /紫/.test(joined),
+    "确认卡衣服色与 lookOf 同源：" + joined + " / " + lk.outfitZh);
+  ok(joined.indexOf("月白") >= 0 && (lk.outfitZh || "").indexOf("月白") >= 0,
+    "两边都认到「月白」，不会一边棕黄一边月白");
+  ok(!!br.outfitZh && br.outfitZh.indexOf("长衫") >= 0 && br.outfitZh.indexOf("姑娘") < 0,
+    "服饰字段裁到服装词结尾（没带上「的小姑娘」）：" + br.outfitZh);
 }
 
 summary();

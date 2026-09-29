@@ -3239,28 +3239,81 @@
     } catch (e) { /* 忽略 */ }
   }
 
-  // v163b：出图确认闸门（提纯 → 自检 → 确认卡 → 才出图）。永不跳过确认直接调绘图 API。
+  /* ============================================================
+   * v164：可编辑面板基础设施
+   * 用户原话：「提取了也不能修改，那让我确认干嘛？」「不 OK 要有给我修改的地方」
+   * → 所有"确认"类弹层一律做成**能改**的，改完的值真的落库、真的进 prompt。
+   * ============================================================ */
+  // 打开一个面板，返回 Promise<{ok, alt, tag, values}>；values 由 onRead(modal) 读出
+  //   onBind(modal, finish) 可选：给调用方挂自己的按钮（如「重新润色」），用 finish(false,false,"tag") 回传
+  function openEditPanel(html, onRead, onBind) {
+    const mask = $("#modalMask"), modal = $("#modal");
+    modal.innerHTML = html;
+    mask.hidden = false; modal.hidden = false; modal.style.display = "";
+    return new Promise((resolve) => {
+      let closed = false;
+      const finish = (ok, alt, tag) => {
+        if (closed) return; closed = true;
+        const values = (ok && onRead) ? onRead(modal) : null;
+        mask.hidden = true; modal.hidden = true; modal.style.display = ""; mask.onclick = null;
+        resolve({ ok: !!ok, alt: !!alt, tag: tag || "", values: values });
+      };
+      modal._pOk = () => finish(true, false, "ok");
+      modal._pNo = () => finish(false, false, "no");
+      modal._pAlt = () => finish(false, true, "alt");
+      const b1 = modal.querySelector("[data-p-ok]"), b2 = modal.querySelector("[data-p-no]"), b3 = modal.querySelector("[data-p-alt]");
+      if (b1) b1.onclick = () => finish(true, false, "ok");
+      if (b2) b2.onclick = () => finish(false, false, "no");
+      if (b3) b3.onclick = () => finish(false, true, "alt");
+      mask.onclick = () => finish(false, false, "no");
+      if (onBind) onBind(modal, finish);
+    });
+  }
+  // 读回出图单里用户改过的值（只读 DOM，不碰业务）
+  function readBriefCard(scope) {
+    const out = {};
+    const nodes = (scope || document).querySelectorAll("[data-cf]");
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      out[n.getAttribute("data-cf")] = (n.value || "").trim();
+    }
+    return out;
+  }
+  // 出图单面板（设定流程第 3 步 / 首次出图前的闸门共用）
+  //   返回 {ok, brief}；ok=true 时 brief 已落库到 rec.look.brief
+  async function briefPanel(item, draft, title) {
+    try {
+      const v = Spirits.validateAnatomy(draft);
+      const html = '<div class="look-confirm">' +
+        '<div class="look-confirm-head">' + esc(title || "🎨 出图设定（可以直接改）") + "</div>" +
+        '<div class="look-confirm-sub">这就是照着画的那张单子。<b>哪行不对就直接点进去改</b>，改完点「保存并出图」。</div>' +
+        Spirits.renderConfirmCard(draft, true) +
+        (v.ok ? "" : '<div class="look-confirm-warn">⚠️ ' + esc(v.issues.join("；")) + "</div>") +
+        '<div class="look-confirm-actions">' +
+        '<button class="btn ghost" data-p-no>再想想</button>' +
+        '<button class="btn primary" data-p-ok>保存并出图</button></div></div>';
+      const res = await openEditPanel(html, (m) => readBriefCard(m));
+      if (!res.ok) return { ok: false };
+      const brief = Spirits.mergeBrief(Spirits.toBrief(draft), res.values || {});
+      const s2 = Spirits.load();
+      const r2 = Spirits.ensureIn(s2, item.id);
+      r2.look = Object.assign({}, r2.look || {}, { brief: brief });
+      Spirits.save(s2);
+      return { ok: true, brief: brief };
+    } catch (e) {
+      return { ok: true, brief: null };   // 异常不阻塞（降级放行，生成本体仍走既有逻辑）
+    }
+  }
+  // v163b/v164：出图确认闸门。已经确认过出图单（look.brief）→ 直接放行；
+  //   没确认过（老记录 / 刚装的）→ 弹一次可编辑的出图单，确认后落库，之后再出图不再重复打扰。
   async function gateLookConfirm(item) {
     try {
       const rec = Spirits.ensureIn(Spirits.load(), item.id);
-      const brief = Spirits.extractLookBrief(rec, item);
-      const v = Spirits.validateAnatomy(brief);
-      const card = Spirits.renderConfirmCard(brief);
-      const mask = $("#modalMask"), modal = $("#modal");
-      modal.innerHTML = '<div class="look-confirm">' +
-        '<div class="look-confirm-head">🎨 确认出图设定</div>' + card +
-        (v.ok ? '' : '<div class="look-confirm-warn">⚠️ ' + esc(v.issues.join("；")) + '</div>') +
-        '<div class="look-confirm-actions">' +
-          '<button class="btn ghost" id="lcCancel">再想想</button>' +
-          '<button class="btn primary" id="lcOk">就依此画</button></div></div>';
-      mask.hidden = false; modal.hidden = false; modal.style.display = "";
-      return await new Promise((resolve) => {
-        const done = (val) => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; resolve(val); };
-        $("#lcCancel").onclick = () => done(false);
-        $("#lcOk").onclick = () => done(true);
-        mask.onclick = () => done(false);
-      });
-    } catch (e) { return true; }   // 异常时不阻塞用户（闸门失败降级为放行；生成本体仍走既有逻辑）
+      if (rec.look && rec.look.brief) return true;            // 已确认过 → 直接用
+      const draft = Spirits.extractLookBrief(rec, item);
+      const got = await briefPanel(item, draft, "🎨 确认出图设定（可以直接改）");
+      return !!got.ok;
+    } catch (e) { return true; }
   }
 
   /* ---------- 全部沁灵（#/spirits，v113 从沁灵页拆出来） ---------- */
@@ -4072,7 +4125,7 @@
     h += '<div class="sd-card"><div class="sd-card-title">📝 人物设定' +
       '<button type="button" class="link-btn" id="sdSetup" style="float:right;font-size:11px">' +
       (lkNow.chosen ? "改设定" : "✨ 4 步定设定") + "</button></div>" +
-      '<div class="sd-persona" id="sdPersonaText">' + (rec.personaZh ? esc(rec.personaZh) : '<span style="color:var(--text-2)">正在为它写设定…（第一次会调用一次文字模型，稍等几秒）</span>') + "</div>" +
+      '<div class="sd-persona" id="sdPersonaText">' + (rec.personaZh ? esc(rec.personaZh) : ((rec.look && rec.look.persona) ? esc(rec.look.persona) : '<span style="color:var(--text-2)">正在为它写设定…（第一次会调用一次文字模型，稍等几秒）</span>')) + "</div>" +
       '<div class="look-sum" style="margin-top:8px">' +
         '<span class="look-sw big" style="background:' + esc(lkNow.hairHex || "#ddd") + '"></span>' +
         "<span>" + esc(lkNow.hairZh || "跟珠子主色") + "</span>" +
@@ -4572,6 +4625,7 @@
       pers: cur.pers || "",
       base: cur.base || "",
       ai: cur.ai !== false,
+      persona: cur.persona || "",       // v164：用户确认过的完整人设（第 2 步的正文）
       alsoBead: false,
     };
     // v153：发色 = 两种模式（跟珠子 / 自动）+ 一大片颜色格子（只给色块，不给中文色名）
@@ -4592,7 +4646,7 @@
     const persChips = Spirits.PERSONAS_PICK.map((p) =>
       lookChipHtml("pers", p.id, esc(p.zh), state.pers === p.id)).join("");
 
-    modal.innerHTML = '<div class="setup-wrap">' +
+    const step1Html = () => '<div class="setup-wrap">' +
       // v129：先把"这是给谁做设定"写在最上面（用户反馈：不知道在给哪一尊做设定）
       (function () {
         const nm = spiritName(item, Spirits.load());
@@ -4606,7 +4660,7 @@
           '<span class="sw-who-tip">' + (hasLook ? "已有设定，改完保存会按新设定重画" : "还没定过设定 —— 出图前先定一下") + "</span>" +
           "</span></div>";
       })() +
-      '<div class="setup-head">✨ 给它定设定<small>4 步 · 不确定就用默认的，随时能改</small></div>' +
+      '<div class="setup-head">✨ 第 1 步 / 共 3 步 · 改设定<small>不确定就用默认的，随时能改</small></div>' +
       // ① 发色
       '<div class="setup-sec"><div class="setup-t"><b>1</b> 发色 / 色调</div>' +
       '<div class="setup-desc">我识别到的珠子主色是 ' +
@@ -4629,21 +4683,20 @@
       '<div class="setup-sec"><div class="setup-t"><b>3</b> 性格</div>' +
       '<div class="setup-desc">会影响它的表情、姿态和日记口吻。</div>' +
       '<div class="setup-chips" id="lkPers">' + persChips + "</div></div>" +
-      // ④ 一句话
-      '<div class="setup-sec"><div class="setup-t"><b>4</b> 一句话基础设定（可选）</div>' +
-      '<div class="setup-desc">随便写一句就行，例：「它像一只爱睡觉的白猫，总趴在窗台」。我会把它扩写成一段小设定，显示在它的详情页。<br>写到的<b>纹样</b>会照你说的画（例：「衣服也有芭蕉叶的纹样」），不写就按原来的随机来。</div>' +
-      '<input class="form-input" id="lkBase" maxlength="60" placeholder="（可留空）随便说一句它是什么样的" value="' + esc(state.base) + '">' +
-      '<label class="setup-check"><input type="checkbox" id="lkAi"' + (state.ai ? " checked" : "") + '> 用 AI 把这句话扩写成详细设定（没填 AI Key 就用本地模板）</label>' +
+      // ④ 一句话（v164：改成多行、**不限字数** —— 用户说"这里是我主要补充的地方"）
+      '<div class="setup-sec"><div class="setup-t"><b>4</b> 你想要的设定<small>随便写，多少都行</small></div>' +
+      '<div class="setup-desc">想让它什么样就写在这儿，<b>写得越具体画得越准</b>。<br>' +
+      '例：「柿红色的头发高高束起，穿着柿红色搭配鹅黄色的圆领袍，有着明媚笑容的少年郎，手里握着爱吃的柿子」。<br>' +
+      '你写到的<b>发色、发型、衣服样式与颜色、手里拿的东西、神态、性别</b>我都会一条条提出来，' +
+      '下一步给你确认、可以改；写到的<b>纹样</b>也会照你说的画（例：「衣服也有芭蕉叶的纹样」）。不写就按原来的随机来。</div>' +
+      '<textarea class="form-input setup-ta" id="lkBase" rows="5" placeholder="（可留空）例：柿红色的头发高高束起，穿着柿红色搭配鹅黄色的圆领袍，有着明媚笑容的少年郎，手里握着爱吃的柿子">' + esc(state.base) + "</textarea>" +
       "</div>" +
       '<div class="setup-actions">' +
       '<button class="btn ghost" id="lkSkip">先跳过（按自动的来）</button>' +
-      '<button class="btn primary" id="lkSave">保存并重画</button>' +
+      '<button class="btn primary" id="lkNext">下一步：润色人设 →</button>' +
       "</div>" +
-      '<div class="setup-note">保存后按新设定重画它的立绘（消耗 1 次出图额度）；蜕形/化形的 CG 也会跟着重画。</div>' +
+      '<div class="setup-note">① 改设定 → ② 我按你写的润色出完整人设（你可改）→ ③ 确认出图要求 → 出图。<br>最后一步确认会重画它的立绘（消耗 1 次出图额度），蜕形/化形的 CG 也一起重画。</div>' +
       "</div>";
-    mask.hidden = false;
-    modal.hidden = false;
-    modal.style.display = "";
     let closed = false;
     const close = () => {
       if (closed) return;
@@ -4651,6 +4704,10 @@
       mask.hidden = true; modal.hidden = true; modal.style.display = "";
     };
 
+    let renderStep1 = null;
+
+    // ── 第 1 步的交互绑定（重渲染时要重新绑，所以包成函数） ──
+    const bindStep1 = () => {
     // v153：色板选中态 + 当前发色提示（点色块 = 选自定义色，复用 customColor 链路）
     const syncHairSel = () => {
       const wrap = document.getElementById("lkPalette");
@@ -4732,90 +4789,164 @@
         toast("这张照片识别不出来，直接选一个色吧");
       }
     };
+    // 第 1 步的两个按钮（在 bindStep1 里绑 → 每次重渲染都会重绑，不会累积监听）
+    const nx = $("#lkNext");
+    if (nx) nx.onclick = () => startFlow();
+    const skBtn = $("#lkSkip");
+    if (skBtn) skBtn.onclick = () => doSkip();
+    };   // ← bindStep1 结束
+    renderStep1 = () => {
+      modal.innerHTML = step1Html();
+      mask.hidden = false; modal.hidden = false; modal.style.display = "";
+      bindStep1();
+      mask.onclick = () => close();     // 第 1 步点遮罩 = 关掉（不落库、不出图）
+    };
 
-    const save = async (skip) => {
+    /* ============================================================
+     * v164：三段式流程（用户指定的流程，原话）：
+     *   ① 我改设定 → ② 你根据设定完善润色人设，让我看是否 OK
+     *   → ③ 我看了 OK，你再根据人设提取出图的关键要求和描述 → 出图；
+     *   不 OK 要有给我修改的地方。
+     * ============================================================ */
+    // 收第 1 步的输入并落库（**只存设定**，不出图、不清旧图）
+    const collectStep1 = () => {
+      const baseEl = $("#lkBase");
+      state.base = (baseEl && baseEl.value || "").trim();
+      const alsoEl = $("#lkAlsoBead");
+      state.alsoBead = !!(alsoEl && alsoEl.checked);
+      const featInput2 = document.getElementById("lkFeatCustom");
+      state.customFeat = (featInput2 && featInput2.value || "").trim();
+      let featsFinal = state.feats.filter((x) => String(x).indexOf("custom:") !== 0);
+      if (state.customFeat) {
+        if (featsFinal.filter((x) => x !== "none").length >= 3) { toast("特征最多 3 个，自己填的也算"); return false; }
+        featsFinal.push("custom:" + state.customFeat);
+      }
+      const s2 = Spirits.load();
+      const r2 = Spirits.ensureIn(s2, item.id);
+      r2.look = Object.assign({}, r2.look || {}, {
+        ver: 1, hairc: state.hairc, customColor: state.customColor, feats: featsFinal,
+        pers: state.pers, base: state.base, ai: state.ai, at: Date.now(),
+      });
+      Spirits.save(s2);
+      if (state.alsoBead) {
+        const hex = state.hairc === "custom"
+          ? (/^#?[0-9a-f]{6}$/i.test(state.customColor) ? state.customColor : "")
+          : ((Spirits.HAIR_COLORS.filter((h) => h.id === state.hairc)[0] || {}).sw || "");
+        if (hex) Spirits.setBeadColor(item, hex);
+      }
+      return true;
+    };
+    // 第 2 步：按当前设定润色人设（有 Key 走 AI，没 Key 走本地模板）
+    const polishPersona = async () => {
+      const store = Spirits.load();
+      const recN = Spirits.ensureIn(store, item.id);
+      const lkNow = Spirits.lookOf(item, recN);
+      const personaObj = recN.persona || Spirits.localPersona(item);
+      const nm = spiritName(item, Spirits.load());
+      const res = await Spirits.expandProfile(item, lkNow, Object.assign({}, personaObj, { name: nm }));
+      return (res && res.text) || "";
+    };
+    const busy = (txt) => {
+      modal.innerHTML = '<div class="look-confirm"><div class="look-confirm-head">⏳ ' + esc(txt) + "</div>" +
+        '<div class="look-confirm-sub">通常只要几秒钟，别关掉就好…</div></div>';
+      mask.hidden = false; modal.hidden = false; modal.style.display = "";
+    };
+    // 第 2 步面板：人设可编辑 + 可重润 + 可退回改设定
+    const runStep2 = async () => {
+      let repolish = false;
+      for (let i = 0; i < 12; i++) {
+        if (!state.persona || repolish) {
+          busy(repolish ? "正在按新设定重写人设…" : "正在把你写的设定润色成人设…");
+          try { state.persona = (await polishPersona()) || state.persona; } catch (e) { /* 保留原文本 */ }
+          repolish = false;
+          if (!state.persona) { toast("人设没生成出来，可以直接在这儿手写一段"); }
+        }
+        const html = '<div class="look-confirm">' +
+          '<div class="look-confirm-head">📝 第 2 步 / 共 3 步 · 这是它的完整人设</div>' +
+          '<div class="look-confirm-sub">我按你第 1 步写的东西润色成了下面这段。<b>哪里不对就直接点进去改</b> —— ' +
+          '改好的这段会显示在它的详情页，也是下一步出图要求的依据。<br>' +
+          '第 1 步改过设定、觉得这版不对，点「🪄 重新润色」。</div>' +
+          '<textarea class="form-input setup-ta" id="lkPersona" rows="9" placeholder="（可以留空，我再按设定写一版）">' +
+          esc(state.persona) + "</textarea>" +
+          '<div class="look-confirm-actions three">' +
+          '<button class="btn ghost" data-p-alt>← 返回改设定</button>' +
+          '<button class="btn ghost" id="lkRepolish">🪄 重新润色</button>' +
+          '<button class="btn primary" data-p-ok>就用它 →</button>' +
+          "</div></div>";
+        const res = await openEditPanel(
+          html,
+          (m) => ({ persona: ((m.querySelector("#lkPersona") || {}).value || "").trim() }),
+          (m, finish) => { const rp = m.querySelector("#lkRepolish"); if (rp) rp.onclick = () => finish(false, false, "repolish"); }
+        );
+        if (res.ok) { state.persona = (res.values && res.values.persona) || state.persona; return "next"; }
+        if (res.alt) return "back";
+        if (res.tag === "repolish") { repolish = true; continue; }
+        return "cancel";
+      }
+      return "cancel";
+    };
+    // 第 3 步：先落库人设 → 按人设提取出图要求 → 可编辑的出图单
+    const runStep3 = async () => {
       try {
-        if (!skip && !(await gateLookConfirm(item))) return;     // v163b：保存并重画前先确认设定
-        const s2 = Spirits.load();
-        const r2 = Spirits.ensureIn(s2, item.id);
-        if (!skip) {
-          // v153：发色改由色板决定（点色块时已写入 state.customColor），不再有文本输入框
-          const baseEl = $("#lkBase"), aiEl = $("#lkAi");
-          state.base = (baseEl && baseEl.value || "").trim();
-          state.ai = !aiEl || aiEl.checked;
-          const alsoEl = $("#lkAlsoBead");
-          state.alsoBead = !!(alsoEl && alsoEl.checked);
-          // v130：把「自己填」的特征并进 feats（存成 "custom:描述"，lookOf 会翻回可用的对象）
-          const featInput2 = document.getElementById("lkFeatCustom");
-          state.customFeat = (featInput2 && featInput2.value || "").trim();
-          let featsFinal = state.feats.filter((x) => String(x).indexOf("custom:") !== 0);
-          if (state.customFeat) {
-            if (featsFinal.filter((x) => x !== "none").length >= 3) { toast("特征最多 3 个，自己填的也算"); return; }
-            featsFinal.push("custom:" + state.customFeat);
-          }
-          r2.look = {
-            ver: 1,
-            hairc: state.hairc,
-            customColor: state.customColor,
-            feats: featsFinal,
-            pers: state.pers,
-            base: state.base,
-            ai: state.ai,
-            profile: r2.look && r2.look.profile ? r2.look.profile : "",
-            at: Date.now(),
-          };
-        } else if (!r2.look) {
-          r2.look = { ver: 1, hairc: "auto", feats: [], pers: "", base: "", ai: true, profile: "", at: Date.now() };
+        const s3 = Spirits.load();
+        const r3 = Spirits.ensureIn(s3, item.id);
+        r3.look = Object.assign({}, r3.look || {}, { persona: state.persona, personaAt: Date.now() });
+        Spirits.save(s3);
+        const draft = Spirits.extractLookBrief(r3, item);
+        const got = await briefPanel(item, draft, "🎨 第 3 步 / 共 3 步 · 出图设定");
+        return got.ok ? "next" : "back";
+      } catch (e) { return "back"; }
+    };
+    const finalize = async () => {
+      const s4 = Spirits.load();
+      const r4 = Spirits.ensureIn(s4, item.id);
+      r4.lookAsked = 1;
+      delete r4.setupPending;
+      // 确认后重画：清掉旧立绘 / 旧 CG（CG 的 key 里有外观种子与服务商，显式清掉最稳）
+      r4.imgUrl = ""; r4.imgAt = 0; r4.face = null; r4._imgErr = ""; r4._imgErrAt = 0;
+      r4.cgUrl = ""; r4.cgKey = ""; r4.cgStage = 0;
+      Spirits.save(s4);
+      close();
+      toast(spiritName(item, Spirits.load()) + "：人设和出图单都定好了，这就照单画 🎨");
+      rerenderSpiritView();
+      ensureSpiritLook([item]).then(() => ensureSpiritImages([item])).then(() => refreshCgAfter(item));
+      if (o.onDone) o.onDone();
+    };
+    const startFlow = async () => {
+      if (!collectStep1()) return;
+      let step = 2;
+      for (let guard = 0; guard < 24; guard++) {
+        if (step === 2) {
+          const r = await runStep2();
+          if (r === "cancel") { close(); return; }
+          if (r === "back") { renderStep1(); return; }
+          step = 3;
         }
-        r2.lookAsked = 1;
-        delete r2.setupPending;
-        // 保存后重画：清掉旧立绘/旧 CG（CG 的 key 里有外观种子与服务商，这里显式清掉最稳）
-        r2.imgUrl = ""; r2.imgAt = 0; r2.face = null; r2._imgErr = ""; r2._imgErrAt = 0;
-        r2.cgUrl = ""; r2.cgKey = ""; r2.cgStage = 0;
-        Spirits.save(s2);
-        // 用户勾了「顺便把珠子主色也改」→ 同步到采样表（收藏列表的颜色也跟着对）
-        if (!skip && state.alsoBead) {
-          const hex = state.hairc === "custom"
-            ? (/^#?[0-9a-f]{6}$/i.test(state.customColor) ? state.customColor : "")
-            : ((Spirits.HAIR_COLORS.filter((h) => h.id === state.hairc)[0] || {}).sw || "");
-          if (hex) Spirits.setBeadColor(item, hex);
+        if (step === 3) {
+          const r = await runStep3();
+          if (r === "next") { await finalize(); return; }
+          step = 2;                          // 出图单不满意 → 退回改人设
         }
+      }
+    };
+    // 先跳过（按自动的来）
+    const doSkip = async () => {
+      try {
+        const s5 = Spirits.load();
+        const r5 = Spirits.ensureIn(s5, item.id);
+        if (!r5.look) r5.look = { ver: 1, hairc: "auto", feats: [], pers: "", base: "", ai: true, profile: "", at: Date.now() };
+        r5.lookAsked = 1;
+        delete r5.setupPending;
+        r5.imgUrl = ""; r5.imgAt = 0; r5.face = null; r5._imgErr = ""; r5._imgErrAt = 0;
+        Spirits.save(s5);
         close();
-        const nmNow = spiritName(item, Spirits.load());
-        toast(skip ? (nmNow + "：先按自动的来，之后随时能改 ✨") : (nmNow + " 的设定保存好了，正在按新设定画 🎨"));
-        // 4④ 一句话 → 扩写成详细设定（AI 优先，失败用本地模板）
-        const lkNew = Spirits.lookOf(item, r2);
-        if (!skip && (state.base || state.ai)) {
-          SparkleNote(item, lkNew);
-        }
+        toast(spiritName(item, Spirits.load()) + "：先按自动的来，之后随时能改 ✨");
         rerenderSpiritView();
         ensureSpiritLook([item]).then(() => ensureSpiritImages([item])).then(() => refreshCgAfter(item));
         if (o.onDone) o.onDone();
-      } catch (e) {
-        toast("保存失败：" + ((e && e.message) || ""));
-        close();
-      }
+      } catch (e) { toast("保存失败：" + ((e && e.message) || "")); close(); }
     };
-    const sv = $("#lkSave");
-    if (sv) sv.onclick = () => save(false);
-    const sk = $("#lkSkip");
-    if (sk) sk.onclick = () => save(true);
-    // 点遮罩 = 先跳过（避免"永远不出图"）
-    mask.onclick = () => save(true);
-  }
-  // 把「一句话基础设定」扩写并存进 rec.look.profile（详情页显示那段小文字）
-  async function SparkleNote(item, lk) {
-    try {
-      const rec = Spirits.ensureIn(Spirits.load(), item.id);
-      const persona = rec.persona || Spirits.localPersona(item);
-      const nm = spiritName(item, Spirits.load());
-      const res = await Spirits.expandProfile(item, lk, Object.assign({}, persona, { name: nm }));
-      const s2 = Spirits.load();
-      const r2 = Spirits.ensureIn(s2, item.id);
-      r2.look = Object.assign({}, r2.look || {}, { profile: res.text, profileAi: !!res.ai, profileAt: Date.now() });
-      Spirits.save(s2);
-      rerenderSpiritView();
-    } catch (e) { /* 静默 */ }
+    renderStep1();
   }
 
   /* ---------- 房间页 ---------- */
