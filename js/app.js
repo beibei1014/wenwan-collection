@@ -2974,7 +2974,7 @@
     if (!list.length) {
       view.innerHTML = emptyCardHtml({
         ill: "spirit", icon: "🍡", title: "还没有沁灵醒过来",
-        sub: "把一串盘到「已挂瓷」，它就会开沁<br>（顺便去给它们标一下软糯程度，形象会跟着变）",
+        sub: "把一串盘到「已挂瓷」，它就会开沁",
         hint: "盘玩 → 已挂瓷 → 自动开沁",
       }) + '<button class="btn primary" id="spiritGoHome" style="width:100%;margin-top:12px">去盘串</button>';
       const g = $("#spiritGoHome");
@@ -3560,7 +3560,7 @@
           (mem.length ? mem.slice(0, 5).map((it) => spiritThumbHtml(it, store[it.id] || {}, 42)).join("")
             : '<span class="room-none">还没有沁灵入住</span>') +
           (mem.length > 5 ? '<span class="room-more">+' + (mem.length - 5) + "</span>" : "") + "</div>" +
-          '<div class="room-foot">' + (mem.length < 2 ? "住满 2 只才会攒契合度"
+          '<div class="room-foot">' + (mem.length < 2 ? "住满 2 只，它们才会慢慢熟起来"
             : (aff.best ? "💞 最合拍：" + esc(nameOf(aff.best.a, store)) + " × " + esc(nameOf(aff.best.b, store)) + " · " + aff.best.aff : "")) + "</div>" +
           "</div>";
       });
@@ -3874,7 +3874,7 @@
       r._imgErr = ""; r._imgErrAt = 0;
       Spirits.save(s);
       const nap = Spirits.appearanceOf(item, r.appearanceSeed, r.gender || "");
-      toast("新设定：" + Spirits.appearanceText(nap) + "（性别不变，正在生成…）");
+      toast("新样子定了，这就为它重画…");
       if (h.busy) h.busy(true, "正在重画…");
       if (h.refresh) h.refresh();
       const res = await Spirits.generateImage(item, r.variant || 0, null, r.stage || 1, { appearanceSeed: r.appearanceSeed, gender: r.gender || "" });
@@ -4030,13 +4030,11 @@
     if (Spirits.ensureFest(it, rec, cpCtx)) cpDirty = true;      // v158：节令（只有当天过节才写）
     if (cpDirty) Spirits.save(store);
     const p = rec.persona || Spirits.localPersona(it);
-    const ap = Spirits.appearanceOf(it, rec.appearanceSeed || 0, rec.gender || "");
     const lkNow = Spirits.lookOf(it, rec);   // v140：提前取到，合并到「人物设定」单卡
     const si = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
     const idle = it.lastPlayedAt ? Math.floor((Date.now() - it.lastPlayedAt) / 86400000) : null;
     const colorName = Spirits.COLOR_ZH[it.color] || "素色";
     const softName = it.softness === "soft" ? "软糯" : (it.softness === "slight" ? "微糯" : "未标注");
-    const bead = Spirits.beadColor(it);
     const photo = it.photos && it.photos[0];
     const room = rec.roomId ? Rooms.getRoom(rec.roomId) : null;
     const items = roomItems();
@@ -4132,13 +4130,7 @@
         (lkNow.pers ? '<span class="look-tag">' + esc(lkNow.pers.zh) + "</span>" : "") +
         lkNow.feats.map((f) => '<span class="look-tag">' + esc(f.zh) + "</span>").join("") +
         (lkNow.noFeat ? '<span class="look-tag">普通人形</span>' : "") +
-      "</div>" +
-      '<div class="sd-look">🔒 ' + esc(Spirits.appearanceText(ap)) + "</div>" +
-      '<div class="sd-look-sub">🧵 ' + esc(Spirits.appearanceDetail(ap)) + "</div>" +
-      '<div class="sd-look-sub">🎂 ' + (rec.bornAt
-        ? "出生于 " + Math.max(1, Math.round((Date.now() - rec.bornAt) / 86400000)) + " 天前 —— 性别在挂瓷开沁那一刻随机定下（男 3 : 女 1），之后就固定了，不能改～"
-        : "性别在挂瓷开沁那一刻随机定下（男 3 : 女 1），之后固定不变") + "</div>" +
-      '<div class="sd-look-sub">🎨 ' + (bead ? "立绘主色取自原串照片：" + esc(bead.hex) + "（" + esc(bead.word) + "）" : "立绘主色按颜色分类生成") + "</div></div>";
+      "</div></div>";
 
     h += '<div class="sd-card"><div class="sd-card-title">📿 原型手串</div><div class="sd-bead">' +
       (photo ? '<img src="' + esc(photoUrl(photo)) + '" alt="">' : '<div class="placeholder">📿</div>') +
@@ -4164,9 +4156,8 @@
       '<button class="btn ghost" id="sdReRoll">🎲 换外观设定</button>' +
       '<button class="btn ghost" id="sdEvents">📜 它的纪事</button>' +
       "</div>" +
-      (rec.lookStale ? '<div class="sd-stale">🆕 形象系统升级了：现在会照着「人物设定」画服装、纹样、布料、配饰、姿态和道具。点「✨ 按新设定重画」把这只沁灵换成细致版（消耗 1 次出图额度）。</div>' : "") +
-      '<div class="sd-gen">已为它出图 ' + (Number(rec.genCount) || 1) + " 张 · 本机累计 " + genTotal() + " 张" +
-      '<span class="sd-gen-hint">（换形象/换设定各消耗 1 次出图额度；性别不会变）</span></div>' +
+      (rec.lookStale ? '<div class="sd-stale">🆕 它还想再细致些 —— 点「✨ 按新设定重画」，照「人物设定」重新画一遍。</div>' : "") +
+      '<div class="sd-gen">已为它画过 ' + (Number(rec.genCount) || 1) + " 张</div>" +
       (hist.length > 1 ? '<div class="spirit-hist">' + hist.map((x) => {
         const d = Spirits.stageDef(x.stage);
         return '<div class="spirit-hist-item' + (x.stage === si.stage ? " now" : "") + '" title="' + esc(d.name) + '">' +
@@ -4995,7 +4986,7 @@
     }
 
     h += '<div class="sd-card"><div class="sd-card-title">📰 今天的小镇' +
-      '<small style="font-weight:400;color:var(--text-2);font-size:11px"> 每天换一批 · 不花额度</small></div>';
+      '<small style="font-weight:400;color:var(--text-2);font-size:11px"> 每天换一批</small></div>';
     if (!evs.length) {
       h += '<div class="room-none">今天小镇很安静。</div>';
     } else {
@@ -5008,7 +4999,7 @@
           '<div class="town-ev-body"><div class="town-ev-text"><span class="town-ev-ico">' + esc(e.icon) + "</span>" + esc(e.text) + "</div>" +
           '<div class="town-ev-sub">' + (e.sameRoom ? "同一间屋子 · 住在一起" : "在院子里碰上") + "</div></div></div>";
       }).join("") + "</div>" +
-        '<div class="room-hint">同住的沁灵每天 +1 契合度；两只最近都在盘，当天 +2。攒够就有它们自己的故事。</div>';
+        '<div class="room-hint">住在一起，它们慢慢就熟了 —— 熟了会有自己的故事。</div>';
     }
     h += "</div>";
 
@@ -5027,7 +5018,7 @@
           '<div class="room-members">' +
           (mem.length ? mem.slice(0, 5).map((it) => spiritThumbHtml(it, store[it.id] || {}, 42)).join("")
             : '<span class="room-none">空着</span>') + "</div>" +
-          '<div class="room-foot">' + (mem.length < 2 ? "住满 2 只才会攒契合度" : "💞 平均契合 " + aff.avg) + "</div></div>";
+          '<div class="room-foot">' + (mem.length < 2 ? "住满 2 只，它们才会慢慢熟起来" : "💞 平均契合 " + aff.avg) + "</div></div>";
       });
       h += "</div>";
     }
@@ -5179,7 +5170,7 @@
       return;
     }
     let h = '<div class="room-hint" style="margin-bottom:10px">夜里它们借你的手机开了几个群。' +
-      "你回一句，剧情就跟着你走 —— 每个事件都有 <b>3 个结尾</b>。全程本地，聊多久都不花额度。</div>";
+      "你回一句，剧情就跟着你走 —— 每个事件都有 <b>3 个结尾</b>。</div>";
     const groups = [
       { title: "全家福", tip: "所有开沁的串都在这儿", arr: S.threads.filter((t) => t.kind === "family") },
       { title: "同屋小群", tip: "住在一个房间里的", arr: S.threads.filter((t) => t.kind === "room") },
@@ -5197,7 +5188,7 @@
         const doneN = evs.filter((e) => e.done).length;
         openAll += open;
         let sub = thLastText(T);
-        if (!sub) sub = t.members.length + " 位成员 · 可能发生 " + evs.length + " 件事";
+        if (!sub) sub = t.members.length + " 位成员";
         h += '<div class="nt-item' + (open ? " hot" : "") + '" data-tid="' + esc(t.id) + '">' +
           '<div class="nt-th-av">' + thAvatars(t.members, S.store, 30, 4) + "</div>" +
           '<div class="nt-item-body"><div class="nt-item-title">' + esc(t.name) +
@@ -5237,7 +5228,6 @@
       '<div class="nt-group-sub">' + esc(t.members.map((m) => m.name).join("、")) + " · " + t.members.length + " 位成员</div></div>" +
       '<div class="nt-group-stat"><b>' + doneN + "</b>/" + evs.length + "<span>件事</span></div></div>";
     if (t.kind === "duo" && t.tag) h += '<div class="room-hint" style="margin-top:8px">' + esc(String(t.tag).trim()) + " · 这两个凑一块儿才有的事</div>";
-    if (t.kind === "family") h += '<div class="room-hint" style="margin-top:8px">以后每一串开沁，都会自己进这个群。</div>';
     const open = threadOpenCount(T);
     if (open) h += '<div class="diary-hint">📱 有 <b>' + open + "</b> 件事可以聊了</div>";
 
@@ -5536,15 +5526,15 @@
         h += '<div class="aff-row"><div class="aff-head"><span>' + esc(nameOf(a, store)) + " × " + esc(nameOf(b, store)) +
           '</span><span class="aff-num">' + aff + " · " + esc(li.levelName) + "</span></div>" +
           '<div class="room-track big"><i style="width:' + li.pct + '%"></i></div>' +
-          '<div class="aff-sub">' + (li.next == null ? "已经是最懂彼此的那一档了 👑" : "再一起住 " + li.need + " 天会有新剧情") + "</div></div>";
+          '<div class="aff-sub">' + (li.next == null ? "已经是最懂彼此的那一档了 👑" : "再多住些日子，会有新故事") + "</div></div>";
       }
-      h += '<div class="room-hint">每天同住 +1 契合度；如果两只最近都在盘，当天 +2。</div></div>';
+      h += "</div>";
     } else {
       h += '<div class="sd-card"><div class="room-none">至少要有 2 只沁灵，才会开始攒契合度。</div></div>';
     }
 
     h += '<div class="sd-card"><div class="sd-card-title">📖 剧情（' + stories.length + "）</div>";
-    if (!stories.length) h += '<div class="room-none">契合度到 7 就会解锁第一段剧情。</div>';
+    if (!stories.length) h += '<div class="room-none">它们还没熟到会讲故事的程度。</div>';
     else h += stories.map((s) => {
       const a = items.find((x) => x.id === s.pair[0]), b = items.find((x) => x.id === s.pair[1]);
       const nm = (a ? nameOf(a, store) : "") + " × " + (b ? nameOf(b, store) : "");
@@ -5905,8 +5895,7 @@
         return '<div class="spirit-row' + (i % 2 ? " alt" : "") + '">' +
           '<img class="spirit-avatar" src="' + esc(a ? a.url : Spirits.localAvatarSvg(item)) + '" alt="">' +
           '<div class="spirit-bubble"><span class="spirit-who">' + esc(l.who) + "</span>" + esc(l.text) + "</div></div>";
-      }).join("") + "</div>" +
-        '<div class="spirit-foot">（剧情由 ' + esc(Spirits.textInfo().key ? (Spirits.textInfo().label || "AI") : "本地模板") + " 现编）</div>";
+      }).join("") + "</div>";
     })();
   }
 
