@@ -5240,7 +5240,9 @@
     let pend = $("#ntPend");
     const scrollEnd = () => { try { window.scrollTo(0, document.body.scrollHeight); } catch (e) { /* 忽略 */ } };
 
-    let qi = 0, timer = 0, waiting = false;
+    // v163e：inflight = 已从 added 取出、但尚未显示的那条（三点气泡期间在途）。
+    //   它的下标就是 qi-1；不显式记账的话，点跳过时它既不在 DOM 上、qi 又已前移 = 被吞掉
+    let qi = 0, timer = 0, waiting = false, inflight = null;
     const append = (m) => {
       const d = document.createElement("div");
       d.innerHTML = msgHtml(m);
@@ -5258,6 +5260,7 @@
       if (waiting && !r.ended) return;      // 正在播就别打断
       waiting = false;
       clearTimeout(timer);
+      inflight = null;                      // v163e：防御性清脏状态
       foot.innerHTML = "";
       r = o.replay();
       qi = 0;
@@ -5293,9 +5296,11 @@
       if (m.w === "sys") { append(m); scrollEnd(); timer = setTimeout(step, dwell); return; }   // 旁白不是"人在打字"，不给三点气泡
       pend.innerHTML = '<div class="nt-row"><div class="nt-av"></div>' +
         '<div class="nt-bub nt-typing"><i></i><i></i><i></i></div></div>';
+      inflight = m;                        // v163e：记下在途消息（点跳过时要补回来）
       scrollEnd();
       // v163d：先显示"正在输入"三点气泡 TALK_LEAD_MS，再把整条弹出来，停 dwell 后出下一条
       timer = setTimeout(() => {
+        inflight = null;                   // v163e：先清 —— 这条马上要显示了，别让随后的点击再补一次
         pend.innerHTML = "";
         append(m);
         scrollEnd();
@@ -5306,6 +5311,7 @@
       if (!waiting) return;
       waiting = false;
       clearTimeout(timer);
+      inflight = null;                      // v163e：防御性清脏状态
       foot.innerHTML = "";
       r = o.choose(i);
       qi = 0;
@@ -5315,6 +5321,8 @@
     body.addEventListener("click", () => {
       if (waiting) return;
       clearTimeout(timer);
+      // v163e：先补回「正在输入」的那条（下标 = qi-1），再铺剩下的 —— 顺序反了会错序
+      if (inflight) { pend.innerHTML = ""; append(inflight); inflight = null; }
       while (qi < r.added.length) append(r.added[qi++]);
       showFoot();
     });
