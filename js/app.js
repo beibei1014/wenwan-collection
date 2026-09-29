@@ -3030,9 +3030,9 @@
         '<div class="spirit-meta">' +
         '<div class="spirit-name">' + esc(spiritName(it, store)) +
         '<span class="sp-stars">' + stars + "</span></div>" +
-        '<div class="spirit-stage">' + si.icon + " " + esc(si.name) + " · " + Spirits.headCountOf(si.stage) + "头身</div>" +
+        '<span class="spirit-stage">' + si.icon + " " + esc(si.name) + " · " + Spirits.headCountOf(si.stage) + "头身</span>" +
         (needSetup ? '<span class="look-setup-tag" data-setup="' + esc(it.id) + '">✨ 定设定</span>' : "") +
-        (wroteToday ? '<span class="spirit-break-tag" style="background:#e8f0ff;color:#3b5b9a">📔 写日记了</span>' : "") + "</div>" +
+        (wroteToday ? '<span class="spirit-break-tag" style="background:#e8f0ff;color:#3b5b9a">📔 写日记了</span>' : "") +
         '<div class="spirit-title">' + esc((p && p.title) || "正在酝酿性格…") + "</div>" +
         '<div class="spirit-line">' + esc((p && p.line) || "") + "</div>" +
         (si.isMax ? '<div class="spirit-prog max">已是化形 · 巅峰形态 👑</div>'
