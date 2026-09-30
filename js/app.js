@@ -2841,20 +2841,52 @@
   }
   function genTotal() { try { return Number(localStorage.getItem("ww_gen_total") || "0"); } catch (e) { return 0; } }
   // 把一次出图结果落地到沁灵记录（含进化史 + 计数），所有路径共用，保证"卡片/弹层/深沁"看到的是同一张
+  // v164h：把压好的 data URI 传到自家 Supabase Storage（bucket bracelet-images），换一个**永不过期**的公网 URL。
+  //   成功 → 立绘/CG 存云端地址（localStorage 不膨胀、跨设备同步负载小、换手机也稳）；
+  //   失败（未登录/离线/权限）→ 返回 ""，调用方回退用 data URI（同样永久，只是占本地配额）。
+  async function spiritUploadPermanent(dataUri) {
+    try {
+      if (!dataUri || !/^data:image\//i.test(dataUri)) return "";
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return "";
+      if (!window.DB || typeof DB.uploadPhoto !== "function") return "";
+      const head = dataUri.indexOf(",");
+      if (head < 0) return "";
+      const bin = atob(dataUri.slice(head + 1));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const file = new File([bytes], "spirit.jpg", { type: "image/jpeg" });
+      const up = await DB.uploadPhoto(file);   // 不传前缀 → 与用户照片同一套路径/权限模式
+      return (up && up.url) || "";
+    } catch (e) { return ""; }
+  }
   async function saveSpiritImage(item, rec, res, stage) {
     let url = res.url || "";
+    let permanent = false;   // v164h：最终 URL 是否永久有效（云存储 URL / data URI）
     if (res.b64) {
       const small = await shrinkToDataUri("data:image/png;base64," + res.b64, SPIRIT_IMG_SIZE, 0.86);
-      url = small || ("data:image/png;base64," + res.b64);
+      const local = small || ("data:image/png;base64," + res.b64);
+      // v164h：先试着换成自家云存储的永久 URL（localStorage 不膨胀、同步负载小）；失败再用 data URI（也永久，只是占本地）
+      const cloud = await spiritUploadPermanent(local);
+      if (cloud) { url = cloud; permanent = true; } else { url = local; }
     } else if (url) {
       // 外链先尽量转成本地图（不然 20 小时后会被当成过期 → 又重出一遍）
       const local = await urlToDataUri(url, SPIRIT_IMG_SIZE, 0.86);
-      if (local) url = local;
+      if (local) {
+        const cloud = await spiritUploadPermanent(local);
+        if (cloud) { url = cloud; permanent = true; } else { url = local; }
+      }
     }
     if (!url) return "";
+    // v164h：永久图一律冻结 —— spiritImgStale 永不判过期，修掉「方舟外链 20 小时过期 → 自动重出 = 天天烧钱」。
+    //   手动「重画立绘/换形象」走 saveSpiritImage 会覆盖 imgUrl（仍是永久图），不受影响。
+    if (permanent || /^data:/i.test(url)) rec.imgFrozen = true;
     const hist = Array.isArray(rec.imgHistory) ? rec.imgHistory : [];
     const last = hist[hist.length - 1];
-    if (!(last && last.url === url)) hist.push({ stage: stage || rec.stage || 1, url, at: Date.now() });
+    // v164h：入史条目若是 data URI，先压成 256 小图（历史格子本来就只有指甲盖大），
+    //   防止 8 条 × ~100KB 的整图 data URI 撑爆 localStorage；云 URL / 普通外链体积小，原样入史。
+    let histUrl = url;
+    if (/^data:/i.test(url)) histUrl = (await shrinkToDataUri(url, 256, 0.72)) || url;
+    if (!(last && last.url === histUrl)) hist.push({ stage: stage || rec.stage || 1, url: histUrl, at: Date.now() });
     rec.imgHistory = hist.slice(-8);
     rec.imgUrl = url;
     rec.imgAt = Date.now();

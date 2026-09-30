@@ -1266,7 +1266,7 @@
   }
   // 「已经自动修正过」的记忆要**按服务商分开记**：
   // 否则给智谱关掉参考图之后，再切回方舟也会被一起关掉（方舟本来是支持图生图的）
-  const _fixed = { noRef: {}, noWatermark: {}, autoModel: {} };
+  const _fixed = { noRef: {}, noWatermark: {}, autoModel: {}, b64: {} };
   function fixedOf(kind, key) { return !!_fixed[kind][key || "?"]; }
   function markFixed(kind, key) { _fixed[kind][key || "?"] = true; }
 
@@ -1965,6 +1965,11 @@
     const payload = { model: info.model, prompt: prompt, n: 1, size: size || DEFAULT_SIZE };
     // 火山方舟（Seedream）支持 seed：固定种子能让"长大"的各形态保持同一个角色的辨识度
     if (isArk && seed != null) payload.seed = seed;
+    // v164h：方舟默认返回 **24 小时就过期的临时外链**，而浏览器去下载它又被 CORS 拦死
+    //   （urlToDataUri 下载不到 → 只能存外链 → 20 小时后判过期 → 自动重出一遍 = 天天白烧钱）。
+    //   直接要 b64_json：图片字节就在 POST 响应里，不碰 CDN、不碰 CORS，落库走永久保存（云存储/data URI）。
+    //   个别模型不认这个字段会报错 → 按服务商记住后去掉重试一次（与下面水印字段同一套模式）。
+    if (isArk && !fixedOf("b64", pk)) payload.response_format = "b64_json";
     // 图生图参考图：方舟（Seedream）支持；其它家也先带上试一次 ——
     // 不支持的服务商会报错，generateImage 的 ② 分支会去掉它重试并**按这家**记住，
     // 所以"能图生图的就用上、不能的自动退回纯文本锚点"，不用每家单独判断。
@@ -1991,6 +1996,12 @@
       if ((payload.watermark === false || payload.watermark_enabled === false) &&
           /watermark|水印|去水印|未签署/i.test(msg)) {
         markFixed("noWatermark", pk);
+        return await callImageApi(info, prompt, size, seed, ref);
+      }
+      // v164h：模型不认 response_format=b64_json → 记住后去掉重试一次（回落到外链模式，至少不坏）
+      if (payload.response_format === "b64_json" &&
+          /response_format|b64|Unknown parameter|未知参数|不支持的参数/i.test(msg)) {
+        markFixed("b64", pk);
         return await callImageApi(info, prompt, size, seed, ref);
       }
       throw new Error(msg);
