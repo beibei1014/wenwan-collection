@@ -3623,6 +3623,43 @@
 
   /* ---------- 契合度推进 + 剧情生成 ---------- */
   let _roomBusy = false;
+  let _brokenSrcs = new Set();   // v164f：详情页收集到的「加载失败」图片 src，供🧹清理使用
+
+  // v164f：把详情页里加载失败的图（进化史 / CG / 节令插画 / 主立绘）标记出来，换成「图已失效」占位，并记录 src 供清理
+  function bindBrokenImgCleanup(root) {
+    (root || view).querySelectorAll("img").forEach((img) => {
+      img.addEventListener("error", () => {
+        if (img.dataset.broken) return;
+        img.dataset.broken = "1";
+        const src = img.getAttribute("src") || img.src || "";
+        if (src) _brokenSrcs.add(src);
+        if (img.dataset.fallback) return;   // 带兜底的主图由 bindSpiritImgFallback 处理
+        const ph = document.createElement("div");
+        ph.className = "img-broken-ph";
+        ph.textContent = "🚫 图已失效";
+        ph.style.cssText = "width:100%;min-height:64px;display:flex;align-items:center;justify-content:center;color:var(--text-2);font-size:12px;background:var(--line);border-radius:8px;margin:4px 0";
+        img.replaceWith(ph);
+      });
+    });
+  }
+  // v164f：清空当前沁灵所有「加载失败」的图（进化史 + 主立绘），清完重渲染
+  function cleanupBrokenImages(it) {
+    if (!it) return;
+    const st = Spirits.load();
+    const r = Spirits.ensureIn(st, it.id);
+    let n = 0;
+    if (Array.isArray(r.imgHistory)) {
+      const before = r.imgHistory.length;
+      r.imgHistory = r.imgHistory.filter((x) => x && x.url && !_brokenSrcs.has(x.url));
+      n += before - r.imgHistory.length;
+    }
+    if (r.imgUrl && _brokenSrcs.has(r.imgUrl)) { r.imgUrl = ""; r.imgFrozen = 0; r.imgAt = 0; n++; }
+    if (!n) { toast("没有发现失效图（能正常显示的都留着）"); return; }
+    Spirits.save(st);
+    _brokenSrcs.clear();
+    toast("已清理 " + n + " 张失效图");
+    renderSpiritDetailPage(it.id);
+  }
   async function tickRooms() {
     if (_roomBusy) return;
     _roomBusy = true;
@@ -4063,6 +4100,7 @@
     btnSettings.style.visibility = "hidden";
     const store = Spirits.load();
     const rec = Spirits.ensureIn(store, id);
+    _brokenSrcs = new Set();   // v164f：每次进详情页重置「失效图」收集（供🧹清理）
     // v163b：显示层按「挂瓷后天数 ∧ 盘玩次数」派生阶段（不改存储语义）
     rec.stage = Spirits.stageOf(it, rec, Date.now());
     // v155：进详情页先本地结算陪伴数据（今日问候 / 亲密度 / 今日一签 / 回响信），一次 save
@@ -4201,6 +4239,8 @@
         : '<button class="btn ghost" id="sdNewLook">🔁 换形象</button>') +
       '<button class="btn ghost" id="sdReRoll">🎲 换外观设定</button>' +
       '<button class="btn ghost" id="sdEvents">📜 它的纪事</button>' +
+      '<button class="btn ghost" id="sdRecoverOld">🔙 恢复旧立绘</button>' +
+      '<button class="btn ghost" id="sdCleanup">🧹 清理失效图</button>' +
       "</div>" +
       (rec.lookStale ? '<div class="sd-stale">🆕 它还想再细致些 —— 点「✨ 按新设定重画」，照「人物设定」重新画一遍。</div>' : "") +
       '<div class="sd-gen">已为它画过 ' + (Number(rec.genCount) || 1) + " 张</div>" +
@@ -4344,6 +4384,7 @@
 
     view.innerHTML = h;
     bindSpiritImgFallback(view);
+    bindBrokenImgCleanup(view);
     // 原地刷新（保持滚动位置）/ 回到顶部（让用户第一时间看到新立绘）
     const refresh = () => { const y = window.scrollY; renderSpiritDetailPage(id); window.scrollTo(0, y); };
     const refreshTop = () => { renderSpiritDetailPage(id); window.scrollTo(0, 0); };
@@ -4363,6 +4404,12 @@
     const nl = $("#sdNewLook"); if (nl) nl.onclick = () => spiritNewLook(it, host);
     const rr = $("#sdReRoll"); if (rr) rr.onclick = () => spiritReRoll(it, host);
     const ev = $("#sdEvents"); if (ev) ev.onclick = () => { location.hash = "#/events?owner=" + encodeURIComponent(id); };
+    const ro = $("#sdRecoverOld"); if (ro) ro.onclick = async () => {
+      const yes = await confirmModal("恢复到 v164c 之前的旧立绘？", "用旧版出图设定重铺这只沁灵的立绘（仅当它还在缓存里才回得来）。当前立绘不会被删，只是换成旧版。", "恢复旧立绘", true);
+      if (!yes) return;
+      await recoverOldPortraits([it], renderSpiritDetailPage);
+    };
+    const cl = $("#sdCleanup"); if (cl) cl.onclick = () => cleanupBrokenImages(it);
     const su = $("#sdSetup"); if (su) su.onclick = () => showSpiritSetupModal(it);   // v127：设定向导
     // v156：翻页式日记本 —— 一次摊开一篇，上一篇 / 下一篇（或左右滑动）翻
     const dBook = $("#sdDiaryBook");
@@ -4594,6 +4641,7 @@
       } catch (e) { /* 无 key / 生成失败不影响查看 */ }
     })();
     ensureSpiritExtras([it]);
+    tickRooms();          // v164f：进详情页也推进契合度/补写剧情（之前只在全部沁灵/房间页推，导致详情页看着契合度不涨）
   }
 
   /* ---------- 改名（每个沁灵只能改一次） ---------- */
@@ -5391,7 +5439,12 @@
 
     const body = $("#ntBody"), foot = $("#ntFoot");
     const msgHtml = (m) => {
-      if (m.w === "sys") return '<div class="nt-sys">' + esc(m.text) + "</div>";
+      if (m.w === "sys") {
+        let s = String(m.text || "");
+        // v164f：夜话里写死的「HH:MM ——」时间戳，渲染时换成「点开这幕的真实时间」，跟用户打开剧情的时间同步
+        s = s.replace(/^\d{1,2}:\d{2}\s*——\s*/, fmtTime(Date.now()) + " —— ");
+        return '<div class="nt-sys">' + esc(s) + "</div>";
+      }
       if (m.w === "me") return '<div class="nt-row me"><div class="nt-av nt-av-me">' + meAvatarHtml() + "</div>" +
         '<div class="nt-bub me">' + esc(m.text) + "</div></div>";
       return '<div class="nt-row"><div class="nt-av">' + o.av(m.w) + "</div>" +

@@ -147,9 +147,10 @@
         for (let j = i + 1; j < mem.length; j++) {
           const a = mem[i], b = mem[j];
           const k = pairKey(a.id, b.id);
-          let bd = bonds[k] || { affinity: 0, lastDay: today, stories: [] };
+          const _yesterday = todayKey(new Date(Date.now() - 86400000));
+          let bd = bonds[k] || { affinity: 0, lastDay: _yesterday, stories: [] };
           if (!Array.isArray(bd.stories)) bd.stories = [];
-          if (!bd.lastDay) bd.lastDay = today;
+          if (!bd.lastDay) bd.lastDay = _yesterday;
           const days = daysBetween(bd.lastDay, today);
           if (days > 0) {
             const bothPlayed = (a.lastPlayedAt || 0) > now - recent && (b.lastPlayedAt || 0) > now - recent;
