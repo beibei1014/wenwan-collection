@@ -706,6 +706,20 @@
       ", it is now taller and more mature than that earlier form, " +
       "its body proportions and height must match the age described above";
   }
+  // 旧版（v164c 之前）写死的成长描述常量：对「第 1 阶（凝形，没有上一阶段）」语义反转，
+  // 把模型导向少年比例（"do not keep the baby proportions" 在 prompt 后段出现，推翻前面的 4 头身）—— 这是 v164c 修掉的元凶。
+  // 仅用于「恢复旧立绘」：用旧 prompt 精确还原 v164c 之前的出图 URL，把被改 prompt 洗掉的旧图找回来。
+  const LEGACY_GROWTH_LINE = "this is the same character at an older age than the previous stage, " +
+    "keep the exact same face, hair color, eye color and accessories, only grow taller and more mature, " +
+    "body proportions and height must change with the age described above, do not keep the baby proportions";
+  // v164c 把 STAGES 的 look 文案也改过（凝形从 "baby version / no accessories" 改成 "chibi version / very simple plain clothing" 等），
+  // 要精确复刻旧 URL 必须连这段旧文案一起还原 —— 否则 pollinations 缓存命中不了，找回来的就不是原图。
+  const LEGACY_STAGE_LOOKS = [
+    "a tiny newborn baby version of the character, about 4 heads tall, round baby face, small soft body, simple plain clothes, no accessories, soft innocent eyes, just awakened, extremely cute",
+    "a small child version of the character, about 6 heads tall, noticeably taller than the newborn form, neat simple outfit, small accessory, lively bright eyes, energetic pose, still cute and round",
+    "a teenage version of the character, about 8 heads tall, slim teenage proportions, longer limbs, a more defined jawline, confident pose, stylish detailed outfit with subtle pattern, environment behind",
+    "a fully grown adult version of the same character, about 9 heads tall, magnificent ornate ceremonial outfit with rich glowing patterns, rich cinematic scene behind, elegant and beautiful, masterpiece quality",
+  ];
   // v163b：四阶段进阶 =「挂瓷后天数 ∧ 盘玩次数」双条件派生（取较慢者）；旧 rec.stage 值忽略、不再手动突破
   //   （下游读者 stageDef/needCg/when:{stage:N} 一律不变，零改造兼容）
   const STAGE_DAYS  = [0,   7,  30, 120];   // 1-based；[0] 占位（挂瓷后天数下限）
@@ -1784,7 +1798,7 @@
     } catch (e) { /* 没 key / 失败 → 本地模板 */ }
     return { text: local, ai: false };
   }
-  function promptFor(item, styleKey, stage, appearance, look) {
+  function promptFor(item, styleKey, stage, appearance, look, opts) {
     const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
     const st = styleOf(item, key).text;
     // 颜色：优先用 **用户在「设定向导」里确认过的发色**；没设过才用"从手串照片里采到的真实主色"，
@@ -1804,7 +1818,12 @@
     const soft = SOFT_EN[item.softness || ""] || SOFT_EN[""];
     const isChar = (key === "anime");          // 日漫 Q 版角色：颜色落在头发/衣服上
     const stageObj = stageDef(stage == null ? 1 : stage);         // 该形态（外形 + 比例锁定块）
-    const stageLook = stageObj.look;                              // 该形态的外形描述（进阶的核心）
+    const stageLook = (opts && opts.legacy)
+      ? (LEGACY_STAGE_LOOKS[Math.min(4, Math.max(1, Number(stage) || 1)) - 1] || stageObj.look)
+      : stageObj.look;                                           // 该形态的外形描述（进阶的核心）
+    // legacy：恢复 v164c 之前的旧立绘时才用旧版写死的成长描述（且末尾不挂比例锁定块）
+    const growth = (opts && opts.legacy) ? LEGACY_GROWTH_LINE : growthLine(stage == null ? 1 : stage);
+    const propLock = (opts && opts.legacy) ? "" : (stageObj.prop ? (", " + stageObj.prop) : "");
     let cmp;
     if (isChar) {
       // 先写死"这个人是谁"（外观锚点），再写"他现在多大"（形态描述）→ 深沁只会长大，不会换人
@@ -1820,7 +1839,7 @@
         ", wearing " + ap.acc + ", " + ap.vibe + " personality, " + stageLook + ", " +
         "full body creature illustration, whole body visible, centered with comfortable margin";
     }
-    const bits = [cmp, GUOFENG, ANATOMY, soft, SINGLE, CONSISTENCY, growthLine(stage == null ? 1 : stage), NEG_STYLE];
+    const bits = [cmp, GUOFENG, ANATOMY, soft, SINGLE, CONSISTENCY, growth, NEG_STYLE];
     // v112：把「人物设定 → 形象细节关键词」也拼进去，立绘不再"只有颜色"
     const tags = getLookTags(item);
     if (tags) bits.push(lk.chosen
@@ -1836,7 +1855,15 @@
     // v164c：风格预设 `st` 里全是成人/少年措辞（big expressive eyes / richly detailed outfit / full body），
     //   它是 prompt 结尾权重最高的一段，却对"几头身"零约束 —— 这正是凝形被画成少年的第二个元凶。
     //   所以**比例锁定块必须压在 `st` 之后、占据最末尾**（briefHard 只管服饰/发色/持物/神态，从不谈比例，两者不冲突）。
-    return bits.join(", ") + ", " + st + (stageObj.prop ? (", " + stageObj.prop) : "");
+    //   legacy（恢复旧立绘）时末尾不挂比例锁定块，精确复刻 v164c 之前的 prompt。
+    return bits.join(", ") + ", " + st + propLock;
+  }
+  // 用「v164c 之前的旧 prompt」精确还原当时的出图 URL —— 用于「恢复旧立绘」，把被 prompt 改动洗掉的旧图找回来。
+  // 与旧版显示路径一致：不传 appearance / stage（旧显示走的就是默认外观 + 第 1 阶），才能精确复刻当时浏览器请求的那个 URL。
+  function legacyPollinationsUrl(item, variant, styleKey, stage, appearance) {
+    const style = styleKey || getImageCfg().style || DEFAULT_STYLE;
+    return "https://image.pollinations.ai/prompt/" + encodeURIComponent(promptFor(item, style, stage, appearance, null, { legacy: true })) +
+      "?width=512&height=512&nologo=true&seed=" + seedOf(item.id, variant);
   }
   function seedOf(id, variant) { return (hashStr(id) % 900000) + 1000 + (variant || 0) * 7919; }
   // 免密钥通道：直接把 URL 交给 <img>（浏览器自己下载，天然带缓存）；其余通道要 POST 生成
@@ -6353,7 +6380,7 @@
     HAIR_COLORS, HAIR_PALETTE, hexToCnTrad, FEATURES, PERSONAS_PICK, lookOf, lookText, lookExtra, hairWordFromInput, expandProfile, profileLocal,
     COLOR_ZH, HAIR_ZH, EYES_ZH, ACC_ZH, VIBE_ZH,
     TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText, listModels,
-    promptFor, pollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
+    promptFor, pollinationsUrl, legacyPollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
     localPersona, persona, chat, letter, localChat, localLetter,
     todayKey, load, save, ensureIn, recordEvent, allEvents, drainEventPops, extractLookBrief, validateAnatomy, renderConfirmCard,
     // v164：出图单（用户确认卡 → look.brief → 真进 prompt）

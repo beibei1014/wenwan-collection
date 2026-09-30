@@ -2869,6 +2869,7 @@
   function spiritImgStale(rec) {
     const u = rec && rec.imgUrl;
     if (!u) return true;
+    if (rec.imgFrozen) return false;                       // 已冻结的免密钥立绘：prompt 再变也不重出，永久有效
     if (/^data:/.test(u)) return false;                    // 本地存好的图 → 永久有效
     return (Date.now() - (rec.imgAt || 0)) > 20 * 3600 * 1000;   // 外链 → 20 小时后续期
   }
@@ -2902,7 +2903,23 @@
   async function ensureSpiritImages(list) {
     if (_imgBusy) return;
     const cfg = Spirits.getImageCfg();
-    if (cfg.provider === "pollinations") return;   // 免密钥通道直接把 URL 交给 <img>，不用预生成
+    if (cfg.provider === "pollinations") {
+      // 免密钥通道：不联网、不预生成，但把「当前应显示的 URL」冻结进 rec.imgUrl。
+      // 这样以后 prompt 文字再变（如 v164c 加比例锁定），已显示的立绘也不会偷偷跟着换图。
+      // 用户点「恢复旧立绘」会写入旧 URL 并标 imgFrozen；这里遇到已冻结/已存图的直接跳过，绝不覆盖。
+      let changed = false;
+      const cur = Spirits.load();
+      for (const it of (list || [])) {
+        const r = Spirits.ensureIn(cur, it.id);
+        if (r.imgFrozen || r.imgUrl) continue;
+        r.imgUrl = Spirits.pollinationsUrl(it, (r.variant || 0));
+        r.imgAt = Date.now();
+        r.imgFrozen = true;
+        changed = true;
+      }
+      if (changed) Spirits.save(cur);
+      return;
+    }
     _imgBusy = true;
     try {
       let changed = false;
@@ -3351,7 +3368,8 @@
     ]);
     html += '<div class="section-title">🍡 我的沁灵（' + list.length + '）' +
       '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点它进详情页</small>' +
-      '<button type="button" class="link-btn" id="spRedrawAll" style="float:right;font-size:11px">🖌 全部重画</button></div>';
+      '<button type="button" class="link-btn" id="spRedrawAll" style="float:right;font-size:11px">🖌 全部重画</button>' +
+      '<button type="button" class="link-btn" id="spRecoverOld" style="float:right;font-size:11px;margin-right:8px">🔙 恢复旧立绘</button></div>';
     // 形态收集进度（图鉴感）：四个形态各多少只
     html += paperCardHtml('<div class="bkc-row" style="display:flex;gap:6px;text-align:center">' +
       Spirits.STAGES.map((sd, i) =>
@@ -3414,27 +3432,55 @@
     maybeOpenSpiritSetup(list);      // v127
   }
 
+  // 🔙 恢复旧立绘（v164c 回归用）：用旧版 prompt 精确还原 v164c 之前的出图 URL，冻结进 rec.imgUrl。
+  // 仅当 pollinations 还缓存着旧 URL（或按旧 prompt + 固定 seed 重新生成出相近图）时，旧立绘才会回来。
+  async function recoverOldPortraits(list, rerender) {
+    const st = Spirits.load();
+    let n = 0;
+    for (const it of (list || [])) {
+      const r = Spirits.ensureIn(st, it.id);
+      r.imgUrl = Spirits.legacyPollinationsUrl(it, (r.variant || 0));
+      r.imgAt = Date.now();
+      r.imgFrozen = true;
+      r._imgErr = ""; r._imgErrAt = 0;
+      n++;
+    }
+    Spirits.save(st);
+    toast("已按 v164c 之前的旧设定重铺 " + n + " 只立绘，正在加载（缓存命中即原图）…");
+    if (rerender) rerender();
+  }
+
   // 🖌 全部重画（沁灵页与全部沁灵页共用）
   function bindRedrawAll(list, rerender) {
     const redrawAll = $("#spRedrawAll");
-    if (!redrawAll) return;
-    redrawAll.onclick = async () => {
-      const st0 = Spirits.load();
-      const n = list.filter((it) => st0[it.id] && st0[it.id].imgUrl).length;
-      if (!n) { toast("还没有立绘可重画"); return; }
-      const yes = await confirmModal("要重画全部 " + n + " 只沁灵吗？",
-        "已有的立绘（含进化史里的旧图）都会作废、按最新形象设定重画，消耗 " + n + " 次出图额度（每只 1 张）。想只重画某一尊，进它的详情页点「🔁 换形象」。",
-        "重画 " + n + " 张", true);
-      if (!yes) return;
-      const st = Spirits.load();
-      list.forEach((it) => {
-        const r = Spirits.ensureIn(st, it.id);
-        r.imgUrl = ""; r.imgAt = 0; r.face = null; r._imgErr = ""; r._imgErrAt = 0; r.imgHistory = []; r.lookStale = false;
-      });
-      Spirits.save(st);
-      toast("开始重画 " + n + " 只沁灵…");
-      rerender();
-    };
+    if (redrawAll) {
+      redrawAll.onclick = async () => {
+        const st0 = Spirits.load();
+        const n = list.filter((it) => st0[it.id] && st0[it.id].imgUrl).length;
+        if (!n) { toast("还没有立绘可重画"); return; }
+        const yes = await confirmModal("要重画全部 " + n + " 只沁灵吗？",
+          "已有的立绘（含进化史里的旧图）都会作废、按最新形象设定重画，消耗 " + n + " 次出图额度（每只 1 张）。想只重画某一尊，进它的详情页点「🔁 换形象」。",
+          "重画 " + n + " 张", true);
+        if (!yes) return;
+        const st = Spirits.load();
+        list.forEach((it) => {
+          const r = Spirits.ensureIn(st, it.id);
+          r.imgUrl = ""; r.imgAt = 0; r.face = null; r._imgErr = ""; r._imgErrAt = 0; r.imgHistory = []; r.lookStale = false; r.imgFrozen = 0;
+        });
+        Spirits.save(st);
+        toast("开始重画 " + n + " 只沁灵…");
+        rerender();
+      };
+    }
+    const recover = $("#spRecoverOld");
+    if (recover) {
+      recover.onclick = async () => {
+        const yes = await confirmModal("恢复到 v164c 之前的旧立绘？",
+          "用旧版出图设定（v164c 加比例锁定之前）重铺全部 " + list.length + " 只立绘。只影响显示，不花额度；若 pollinations 还缓存着旧图就是原图，否则会按旧 prompt 重新生成一张相近的。",
+          "恢复旧立绘", true);
+        if (yes) await recoverOldPortraits(list, rerender);
+      };
+    }
   }
 
   /* ============================================================
@@ -4894,7 +4940,7 @@
       r4.lookAsked = 1;
       delete r4.setupPending;
       // 确认后重画：清掉旧立绘 / 旧 CG（CG 的 key 里有外观种子与服务商，显式清掉最稳）
-      r4.imgUrl = ""; r4.imgAt = 0; r4.face = null; r4._imgErr = ""; r4._imgErrAt = 0;
+      r4.imgUrl = ""; r4.imgAt = 0; r4.face = null; r4._imgErr = ""; r4._imgErrAt = 0; r4.imgFrozen = 0;
       r4.cgUrl = ""; r4.cgKey = ""; r4.cgStage = 0;
       Spirits.save(s4);
       close();
@@ -4928,7 +4974,7 @@
         if (!r5.look) r5.look = { ver: 1, hairc: "auto", feats: [], pers: "", base: "", ai: true, profile: "", at: Date.now() };
         r5.lookAsked = 1;
         delete r5.setupPending;
-        r5.imgUrl = ""; r5.imgAt = 0; r5.face = null; r5._imgErr = ""; r5._imgErrAt = 0;
+        r5.imgUrl = ""; r5.imgAt = 0; r5.face = null; r5._imgErr = ""; r5._imgErrAt = 0; r5.imgFrozen = 0;
         Spirits.save(s5);
         close();
         toast(spiritName(item, Spirits.load()) + "：先按自动的来，之后随时能改 ✨");
@@ -6159,7 +6205,7 @@
         done();
         Spirits.setImageCfg(next);
         const st = Spirits.load();
-        Object.keys(st).forEach((k) => { st[k].imgUrl = ""; st[k].imgAt = 0; st[k]._imgErr = ""; st[k]._imgErrAt = 0; });
+        Object.keys(st).forEach((k) => { st[k].imgUrl = ""; st[k].imgAt = 0; st[k]._imgErr = ""; st[k]._imgErrAt = 0; st[k].imgFrozen = 0; });
         Spirits.save(st);
         toast("已切换：" + Spirits.PROVIDERS[chosen].label + " · " + Spirits.STYLE_PRESETS[chosenStyle].label + "（正在重画 " + n + " 张）");
         renderSettings();
@@ -8639,6 +8685,7 @@ else if (h.indexOf("#/night/") === 0) {                                         
         if (!r || typeof r !== "object") return;
         if (r.imgUrl || (r.imgHistory || []).length || r.face || r.cgUrl || r.look) touched++;
         r.imgUrl = "";
+        r.imgFrozen = 0;
         r.imgAt = 0;
         r.face = null;
         r.imgHistory = [];        // 进化史里的旧图也一起清掉
