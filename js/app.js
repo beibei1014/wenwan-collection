@@ -3624,6 +3624,7 @@
   /* ---------- 契合度推进 + 剧情生成 ---------- */
   let _roomBusy = false;
   let _brokenSrcs = new Set();   // v164f：详情页收集到的「加载失败」图片 src，供🧹清理使用
+  let _sdKeyHandler = null;   // v164g：详情页左右切换的键盘监听（重渲染时先移除旧的，避免叠加）
 
   // v164f：把详情页里加载失败的图（进化史 / CG / 节令插画 / 主立绘）标记出来，换成「图已失效」占位，并记录 src 供清理
   function bindBrokenImgCleanup(root) {
@@ -4091,6 +4092,17 @@
     } catch (e) { /* 静默：任何异常都不该让日记消失 */ }
   }
 
+  /* ---------- 详情页上/下一只导航（v164g） ---------- */
+  function spiritNavHtml(idx, prevIt, nextIt, total, store) {
+  const prevLabel = prevIt ? esc(spiritName(prevIt, store)) : "到头了";
+  const nextLabel = nextIt ? esc(spiritName(nextIt, store)) : "到头了";
+  return '<div class="sd-nav" style="display:flex;align-items:center;gap:8px;margin:10px 0 14px">' +
+    '<button type="button" class="sd-nav-btn" id="sdPrev" style="flex:1;min-width:0;padding:8px 10px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;font-size:13px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"' + (prevIt ? "" : " disabled") + ">← " + prevLabel + "</button>" +
+    '<span style="font-size:12px;color:var(--text-2);white-space:nowrap;padding:0 4px">第 ' + (idx + 1) + ' / ' + total + ' 只</span>' +
+    '<button type="button" class="sd-nav-btn" id="sdNext" style="flex:1;min-width:0;padding:8px 10px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;font-size:13px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"' + (nextIt ? "" : " disabled") + ">" + nextLabel + " →</button>" +
+    "</div>";
+}
+
   /* ---------- 沁灵独立详情页 ---------- */
   function renderSpiritDetailPage(id) {
     const it = spiritItemById(id);
@@ -4130,7 +4142,22 @@
     const artInner = rec.imgUrl
       ? spiritImgHtml(it, rec, 240, "spirit-img big")
       : '<div class="sk sk-art"></div><div class="sd-gen-hint" style="margin-top:8px">正在画它的立绘…（约 15-20 秒）</div>';
-    let h = '<div class="sd-top"><div class="sd-art" id="sdArt">' + artInner + "</div>" +
+    // v164g：详情页上下切换（不用返回列表就能挨着看沁灵）
+    const _allItems = spiritItems();
+    const _curIdx = _allItems.findIndex((x) => String(x.id) === String(id));
+    const _prevIt = _curIdx > 0 ? _allItems[_curIdx - 1] : null;
+    const _nextIt = (_curIdx >= 0 && _curIdx < _allItems.length - 1) ? _allItems[_curIdx + 1] : null;
+    // 键盘左右键切换；在输入框里不触发；离开详情页（hash 不以 #/spirit/ 开头）则该监听不生效
+    if (_sdKeyHandler) { document.removeEventListener("keydown", _sdKeyHandler); _sdKeyHandler = null; }
+    _sdKeyHandler = (e) => {
+      if (!location.hash || location.hash.indexOf("#/spirit/") !== 0) return;
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "ArrowLeft" && _prevIt) location.hash = "#/spirit/" + encodeURIComponent(_prevIt.id);
+      else if (e.key === "ArrowRight" && _nextIt) location.hash = "#/spirit/" + encodeURIComponent(_nextIt.id);
+    };
+    document.addEventListener("keydown", _sdKeyHandler);
+    let h = spiritNavHtml(_curIdx, _prevIt, _nextIt, _allItems.length, store) + '<div class="sd-top"><div class="sd-art" id="sdArt">' + artInner + "</div>" +
       '<div class="sd-name">' + esc(spiritName(it, store)) + '<span class="spirit-stage big">' + si.icon + " " + esc(si.name) + "</span></div>" +
       '<div class="sd-title">' + esc(p.title || "") + "</div>" +
       '<div class="sd-title" style="margin-top:4px">' +
@@ -4410,6 +4437,8 @@
       await recoverOldPortraits([it], renderSpiritDetailPage);
     };
     const cl = $("#sdCleanup"); if (cl) cl.onclick = () => cleanupBrokenImages(it);
+    const pv = $("#sdPrev"); if (pv && _prevIt) pv.onclick = () => { location.hash = "#/spirit/" + encodeURIComponent(_prevIt.id); };
+    const nx = $("#sdNext"); if (nx && _nextIt) nx.onclick = () => { location.hash = "#/spirit/" + encodeURIComponent(_nextIt.id); };
     const su = $("#sdSetup"); if (su) su.onclick = () => showSpiritSetupModal(it);   // v127：设定向导
     // v156：翻页式日记本 —— 一次摊开一篇，上一篇 / 下一篇（或左右滑动）翻
     const dBook = $("#sdDiaryBook");
