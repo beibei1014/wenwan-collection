@@ -4,7 +4,8 @@
    · 「已收集」只认元数据 hasImg（像素不在本机 → missing，不是 locked）
    · 第四态 missing 的 class / 文案与 locked 可区分
    · pruneForQuota：CG 最后丢、从旧到新丢、保底留最新 3 张缩略图；cgs 元数据永不丢
-   · 主线 CG 规格 512 / q0.72（v125 的 768 不动）
+   · 主线 CG 规格 1024 / q0.85、缩略图 512 / q0.8（v164i 由 512/0.72、384/0.72 抬高）
+   · v125 单张 CG：CG_IMG_SIZE 1280 只进云端，localStorage 兜底 CG_IMG_SIZE_LOCAL 768
    用法： node docs/_test_cg.js [--verbose]
 */
 "use strict";
@@ -35,6 +36,11 @@ function extractFn(src, name) {
     else if (src[j] === "}") { depth--; if (depth === 0) break; }
   }
   return src.slice(m.index, j + 1);
+}
+/* 从 app.js 源码里读一个数值常量（避免测试里再抄一份数字，抄了就对不上真值） */
+function constOf(src, name) {
+  const m = new RegExp("const\\s+" + name + "\\s*=\\s*([0-9]+(?:\\.[0-9]+)?)\\s*;").exec(src);
+  return m ? Number(m[1]) : NaN;
 }
 
 (async function main() {
@@ -210,6 +216,8 @@ function extractFn(src, name) {
       "CG_MAIN_SIZE", "CG_MAIN_Q", "CG_THUMB_SIZE", "CG_THUMB_Q",
       src + "\n; return { cgRecStore, cgAlbumProgress, cgAlbumSlots, commitMainlineCg, markMainlineCgFailed };");
     let shrinkCalls = [];
+    const C_MAIN = constOf(appSrc, "CG_MAIN_SIZE"), C_MAIN_Q = constOf(appSrc, "CG_MAIN_Q");
+    const C_THUMB = constOf(appSrc, "CG_THUMB_SIZE"), C_THUMB_Q = constOf(appSrc, "CG_THUMB_Q");
     const mk = factory(
       S,
       (s, max, q) => { shrinkCalls.push([max, q]); return Promise.resolve("data:image/jpeg;base64," + THUMB_MARK + "@" + max + "q" + q); },
@@ -218,7 +226,7 @@ function extractFn(src, name) {
       () => Promise.resolve(true),
       () => { },
       console,
-      512, 0.72, 384, 0.72
+      C_MAIN, C_MAIN_Q, C_THUMB, C_THUMB_Q
     );
     // 先造一只沁灵，保证 Spirits.load/ensureIn 有东西
     S.save({ it0: { stage: 1, bornAt: 1, persona: { name: "小0" } } });
@@ -226,8 +234,8 @@ function extractFn(src, name) {
     const r = await mk.commitMainlineCg(item, "CG-01",
       { b64: "AAAA" }, { title: "开沁之夜", caption: "「灯还亮着，你把我翻了个面。」", vol: 1, volName: "卷一 · 醒", chapter: 1, key: "k1", shot: "p" });
     ok(r.ok === true && r.fresh === true, "commitMainlineCg 首次收集成功");
-    ok(shrinkCalls.some((c) => c[0] === 512 && c[1] === 0.72), "大图按 512 / q0.72 压");
-    ok(shrinkCalls.some((c) => c[0] === 384 && c[1] === 0.72), "缩略图按 384 / q0.72 压");
+    ok(shrinkCalls.some((c) => c[0] === C_MAIN && c[1] === C_MAIN_Q), "大图按 " + C_MAIN + " / q" + C_MAIN_Q + " 压");
+    ok(shrinkCalls.some((c) => c[0] === C_THUMB && c[1] === C_THUMB_Q), "缩略图按 " + C_THUMB + " / q" + C_THUMB_Q + " 压");
     const st = S.load();
     ok(st.it0.cgs["CG-01"].hasImg === true, "元数据写进主 store");
     ok(!!st.it0.cgs["CG-01"].caption, "题词存进元数据");
@@ -249,16 +257,18 @@ function extractFn(src, name) {
     ok(S.load().it0.cgs["CG-01"].hasImg === true, "已收集的不会被 failed 降级");
   }
 
-  /* ========== 8. 规格常量 & v125 未被动 ========== */
-  section("8. 规格：主线 512/q0.72，v125 的 768 不动");
+  /* ========== 8. 规格常量 & localStorage 兜底档 ========== */
+  section("8. 规格：主线 1024/q0.85 + 缩略图 512/q0.8；v125 单张 1280 云端 / 768 本地");
   {
-    ok(/const CG_MAIN_SIZE = 512;/.test(appSrc), "CG_MAIN_SIZE = 512");
-    ok(/const CG_MAIN_Q = 0\.72;/.test(appSrc), "CG_MAIN_Q = 0.72");
-    ok(/const CG_THUMB_SIZE = 384;/.test(appSrc), "CG_THUMB_SIZE = 384");
-    ok(/const CG_THUMB_Q = 0\.72;/.test(appSrc), "CG_THUMB_Q = 0.72");
-    ok(/const CG_IMG_SIZE = 768;/.test(appSrc), "🔴 v125 的 CG_IMG_SIZE = 768 未被改");
-    ok((appSrc.match(/CG_IMG_SIZE, 0\.86/g) || []).length === 6,
-      "v125 的 3 条 CG 写入路径（各 2 处调用）仍是 768/0.86");
+    ok(/const CG_MAIN_SIZE = 1024;/.test(appSrc), "CG_MAIN_SIZE = 1024");
+    ok(/const CG_MAIN_Q = 0\.85;/.test(appSrc), "CG_MAIN_Q = 0.85");
+    ok(/const CG_THUMB_SIZE = 512;/.test(appSrc), "CG_THUMB_SIZE = 512");
+    ok(/const CG_THUMB_Q = 0\.8;/.test(appSrc), "CG_THUMB_Q = 0.8");
+    ok(/const CG_IMG_SIZE = 1280;/.test(appSrc), "🔴 v125 单张 CG_IMG_SIZE = 1280（v164i 由 768 抬高）");
+    ok(/const CG_IMG_SIZE_LOCAL = 768;/.test(appSrc), "CG_IMG_SIZE_LOCAL = 768（落 localStorage 的兜底长边）");
+    ok((appSrc.match(/CG_IMG_SIZE, 0\.9, CG_IMG_SIZE_LOCAL, 0\.86/g) || []).length === 3,
+      "v125 的 3 条 CG 写入路径都走「1280/q0.9 云端 + ≤768/q0.86 本地」");
+    ok(appSrc.indexOf("CG_IMG_SIZE, 0.86") < 0, "⛔ 没有「大图 data URI 直落 localStorage」的旧写法残留");
   }
 
   const pass = summary();

@@ -2559,7 +2559,7 @@
        ④ 再往后找**第一个宽度局部极小**= 脖子（有脖子就切在脖子，没有就用头高兜底）
        ⑤ 正方形取景 = 头框长边 ×1.12，横向对准头部的像素重心
      结果 {l,t,w,ar,v:2}；换算法只要把 v 提上去，老数据会自动重算。 */
-  const FACE_VER = 2;
+  const FACE_VER = 3;   // v164i：2→3。升版本号 = 全部历史存档的取景框自动重算（只重算框、不重新出图，零成本）
   function analyzeFaceBox(url) {
     return new Promise((resolve) => {
       const img = new Image();
@@ -2644,12 +2644,19 @@
     });
   }
   // 卡片缩略图：正方形小框，里面按取景参数放大 + 偏移，正好框住脑袋
+  // v164i：放大倍数**钳制**。取景框算偏（或图本身就小）时 size/f.w 会飙到很大 → 头被放得只剩局部。
+  //   倍数 ≥3× 直接判定取景失败，走 CSS .face 的 scale(2) 顶对齐兜底；1.2×~3× 之间才允许精确裁切。
   function spiritThumbHtml(item, rec, size) {
     const f = rec && rec.face;
-    const ok = !!(f && f.w > 0 && f.ar > 0);
+    let ok = !!(f && f.w > 0 && f.ar > 0);
+    let wr = 0;
+    if (ok) {
+      const raw = size / f.w;
+      if (!(raw > 0) || raw >= size * 3) ok = false;                 // 原始倍数 ≥3× → 取景不可信，弃用
+      else wr = Math.max(Math.round(raw), Math.round(size * 1.2)); // 下限 1.2×，上限由上面的判定保证
+    }
     let extra = "";
     if (ok) {
-      const wr = Math.round(size / f.w);
       extra = "position:absolute;left:" + (-Math.round(f.l * wr)) + "px;top:" + (-Math.round((f.t * wr) / f.ar)) +
         "px;width:" + wr + "px;height:auto";
     }
@@ -2694,11 +2701,16 @@
   }
 
   /* ---------- v97：走 API 通道真正出图（POST 拿图） ---------- */
-  // 统一的存档尺寸：**所有路径都用同一档**（首出/换形象/换设定/深沁），避免"缩略图与立绘清晰度不一致"
-  const SPIRIT_IMG_SIZE = 512;
-  // v125：单张突破 CG（rec.cgUrl）是横版插画，存大一点（长边 768）才看得清细节。
-  // v163：**主线 8 张 CG 不走这里** —— 它们用 CG_MAIN_SIZE=512 存进 IndexedDB，见下方 commitMainlineCg。
-  const CG_IMG_SIZE = 768;
+  // v164i 不变式：**大图只进 Supabase，localStorage 只放小图。**
+  //   根因：这段压缩原本是死代码（只存在于 res.url 分支，而方舟 CDN 无 CORS 头 → 静默失败 → 用户看的是 1728px 原图）；
+  //   v164h 让 ark 改回 b64 后压缩真的生效 → 存进库的是 512 小图 → 清晰度掉一档。
+  //   现在：登录用户永远看到 1024 清晰图；未登录 / 离线 / 传云失败才落 512 小图（保护 localStorage 配额）。
+  const SPIRIT_IMG_SIZE_LARGE = 1024;   // 大图长边 —— 只传云端，登录用户看到的清晰度
+  const SPIRIT_IMG_SIZE = 512;          // localStorage 兜底小图长边（云端传不上去时用）
+  // v125：单张突破 CG（rec.cgUrl）是横版插画，存大一点才看得清细节。
+  // v163：**主线 8 张 CG 不走这里** —— 它们用 CG_MAIN_SIZE 存进 IndexedDB，见下方 commitMainlineCg。
+  const CG_IMG_SIZE = 1280;             // v164i：768→1280（云端那份）
+  const CG_IMG_SIZE_LOCAL = 768;        // v164i：落 localStorage 的兜底长边（云端传不上去时；保护配额）
   // 把出图结果压成小图存本地（火山方舟返回的 URL 只有 24 小时有效，所以 b64 一律压成 data URI 长期保存）
   function shrinkToDataUri(src, max, quality) {
     return new Promise((resolve) => {
@@ -2748,13 +2760,13 @@
    *   · 像素（data URI）→ Spirits.cgPutPixels() → IndexedDB（库 ww_cg）
    *   · 元数据（title/caption/vol/chapter/hasImg/thumb）→ rec.cgs[id] → 主 store
    * 🔴 「已收集」只认元数据 hasImg；像素不在本机 = missing（第四态），不是 locked。
-   * 规格：主线 CG 大图长边 512 / q0.72；缩略图长边 384 / q0.72（美术规范 §B1/§A9）。
-   * ⚠️ 只作用于**主线 8 张**，v125 的单张突破 CG（CG_IMG_SIZE=768 那条路）一行不动。
+   * 规格：主线 CG 大图长边 1024 / q0.85；缩略图长边 512 / q0.8（v164i 由 512/0.72、384/0.72 抬高；像素进 IndexedDB，不占 localStorage）。
+   * ⚠️ 只作用于**主线 8 张**，v125 的单张突破 CG（CG_IMG_SIZE 那条路）走另一套规格。
    * ============================================================ */
-  const CG_MAIN_SIZE = 512;      // 主线 CG 大图长边（8 张 ≈ 0.44–0.76MB）
-  const CG_MAIN_Q = 0.72;
-  const CG_THUMB_SIZE = 384;     // 相册缩略图长边（宫格只加载它，禁止把 512 塞进 116px 格子）
-  const CG_THUMB_Q = 0.72;
+  const CG_MAIN_SIZE = 1024;     // 主线 CG 大图长边（8 张 ≈ 1.6–2.8MB）
+  const CG_MAIN_Q = 0.85;
+  const CG_THUMB_SIZE = 512;     // 相册缩略图长边（宫格只加载它，禁止把 1024 塞进 116px 格子）
+  const CG_THUMB_Q = 0.8;
 
   // 取这只沁灵的最新记录 + flush 闭包（避免「改了旧对象又被 load 覆盖」的经典坑）
   function cgRecStore(item) {
@@ -2859,35 +2871,47 @@
       return (up && up.url) || "";
     } catch (e) { return ""; }
   }
+  /* v164i：图像落库不变式（**唯一入口**，别在别处再写一遍「压缩 + 上传」的组合）
+   *   一张刚生成的图（b64 data URI 或外链）→ 先按 bigMax/bigQ 压出「大图」
+   *   → 传自家云存储换一个**永久 URL**（不占 localStorage、跨设备稳、清晰度保底 1024）
+   *   → 传不上去（未登录 / 离线 / 无权限）才落一份 ≤ localMax 的**小图** data URI 兜底。
+   *   ⛔ 绝不把大图 data URI 写进 localStorage：几张就能把 5MB 配额撑爆。
+   *   返回 { url, cloud }：cloud=true 表示已上云（永久、不占本地）。 */
+  async function imageToStoreUrl(src, bigMax, bigQ, localMax, localQ) {
+    if (!src) return { url: "", cloud: false };
+    const isData = /^data:/i.test(src);
+    let big = "";
+    try { big = isData ? ((await shrinkToDataUri(src, bigMax, bigQ)) || src) : ((await urlToDataUri(src, bigMax, bigQ)) || ""); }
+    catch (e) { big = ""; }
+    // 外链读不到像素（对方没给跨域头）→ 保持原样，这是 v164h 之前的既有行为
+    if (!big) return { url: isData ? "" : src, cloud: false };
+    const cloud = await spiritUploadPermanent(big);
+    if (cloud) return { url: cloud, cloud: true };
+    try { return { url: (await shrinkToDataUri(big, localMax, localQ)) || "", cloud: false }; }
+    catch (e) { return { url: "", cloud: false }; }
+  }
   async function saveSpiritImage(item, rec, res, stage) {
-    let url = res.url || "";
-    let permanent = false;   // v164h：最终 URL 是否永久有效（云存储 URL / data URI）
-    if (res.b64) {
-      const small = await shrinkToDataUri("data:image/png;base64," + res.b64, SPIRIT_IMG_SIZE, 0.86);
-      const local = small || ("data:image/png;base64," + res.b64);
-      // v164h：先试着换成自家云存储的永久 URL（localStorage 不膨胀、同步负载小）；失败再用 data URI（也永久，只是占本地）
-      const cloud = await spiritUploadPermanent(local);
-      if (cloud) { url = cloud; permanent = true; } else { url = local; }
-    } else if (url) {
-      // 外链先尽量转成本地图（不然 20 小时后会被当成过期 → 又重出一遍）
-      const local = await urlToDataUri(url, SPIRIT_IMG_SIZE, 0.86);
-      if (local) {
-        const cloud = await spiritUploadPermanent(local);
-        if (cloud) { url = cloud; permanent = true; } else { url = local; }
-      }
-    }
+    // v164i：大图（1024/q0.92）只往云端传；传不上去才落 512/q0.86 小图 data URI 兜底
+    const out = res.b64
+      ? await imageToStoreUrl("data:image/png;base64," + res.b64, SPIRIT_IMG_SIZE_LARGE, 0.92, SPIRIT_IMG_SIZE, 0.86)
+      : ((res.url || "") ? await imageToStoreUrl(res.url, SPIRIT_IMG_SIZE_LARGE, 0.92, SPIRIT_IMG_SIZE, 0.86)
+        : { url: "", cloud: false });
+    let url = out.url;
+    let permanent = out.cloud;   // v164h：最终 URL 是否永久有效（云存储 URL / data URI）
     if (!url) return "";
     // v164h：永久图一律冻结 —— spiritImgStale 永不判过期，修掉「方舟外链 20 小时过期 → 自动重出 = 天天烧钱」。
     //   手动「重画立绘/换形象」走 saveSpiritImage 会覆盖 imgUrl（仍是永久图），不受影响。
     if (permanent || /^data:/i.test(url)) rec.imgFrozen = true;
     const hist = Array.isArray(rec.imgHistory) ? rec.imgHistory : [];
     const last = hist[hist.length - 1];
-    // v164h：入史条目若是 data URI，先压成 256 小图（历史格子本来就只有指甲盖大），
-    //   防止 8 条 × ~100KB 的整图 data URI 撑爆 localStorage；云 URL / 普通外链体积小，原样入史。
+    // v164h：入史条目若是 data URI，先压成小图（历史格子本来就只有指甲盖大），
+    //   防止整图 data URI 撑爆 localStorage；云 URL / 普通外链体积小，原样入史。
+    // v164i：256/0.72 放宽到 512/0.8；且**无云端**时历史条目本身就是 data URI，
+    //   8 条大会撑爆 localStorage → 只留最近 3 条（有云端 URL 时仍留 8 条）。
     let histUrl = url;
-    if (/^data:/i.test(url)) histUrl = (await shrinkToDataUri(url, 256, 0.72)) || url;
+    if (/^data:/i.test(url)) histUrl = (await shrinkToDataUri(url, 512, 0.8)) || url;
     if (!(last && last.url === histUrl)) hist.push({ stage: stage || rec.stage || 1, url: histUrl, at: Date.now() });
-    rec.imgHistory = hist.slice(-8);
+    rec.imgHistory = hist.slice(/^https?:/i.test(url) ? -8 : -3);
     rec.imgUrl = url;
     rec.imgAt = Date.now();
     rec.imgErr = "";
@@ -3711,9 +3735,10 @@
           const cgPrompt = Spirits.storyCgPrompt(spiritSp(a), spiritSp(b), q.level, room.name);
           // 横版 CG（用户要求）：长边 = CG_IMG_SIZE，比立绘大一点，横构图看得清
           const cg = await Spirits.generateCustom(cgPrompt, { seedKey: Rooms.pairKey(q.a, q.b) + "#cg" + q.level, variant: 0, landscape: true });
-          const cgUrl = cg.b64
-            ? await shrinkToDataUri("data:image/png;base64," + cg.b64, CG_IMG_SIZE, 0.86)
-            : ((await urlToDataUri(cg.url, CG_IMG_SIZE, 0.86)) || cg.url);
+          // v164i：房间剧情 CG 同样落 localStorage → 也遵守「大图只进云端」不变式
+          //   （大图 1280/q0.9 传云端；传不上去才落 ≤768 的 data URI）
+          const cgUrl = (await imageToStoreUrl(cg.b64 ? "data:image/png;base64," + cg.b64 : cg.url,
+            CG_IMG_SIZE, 0.9, CG_IMG_SIZE_LOCAL, 0.86)).url;
           if (cgUrl) {
             Rooms.setStoryImage(q.a, q.b, q.level, cgUrl);
             try { localStorage.setItem("ww_gen_total", String(Number(localStorage.getItem("ww_gen_total") || "0") + 1)); } catch (e2) { /* 忽略 */ }
@@ -3945,9 +3970,9 @@
         try {
           const res = await Spirits.generateCustom(Spirits.promptForCg(it, null, stage, ap),
             { seedKey: it.id + "#cg" + stage, variant: rec.variant || 0, ref: rec.imgUrl || "", landscape: true });
-          const url = res.b64
-            ? await shrinkToDataUri("data:image/png;base64," + res.b64, CG_IMG_SIZE, 0.86)
-            : ((await urlToDataUri(res.url, CG_IMG_SIZE, 0.86)) || res.url);
+          // v164i：大图（1280/q0.9）只进云端；传不上去才落 ≤768 的 data URI（别撑爆 localStorage）
+          const url = (await imageToStoreUrl(res.b64 ? "data:image/png;base64," + res.b64 : res.url,
+            CG_IMG_SIZE, 0.9, CG_IMG_SIZE_LOCAL, 0.86)).url;
           if (url) {
             const s2 = Spirits.load();
             const r2 = Spirits.ensureIn(s2, it.id);
@@ -4557,9 +4582,9 @@
         const lk1 = Spirits.lookOf(it, r1);
         const prompt = Spirits.festCgPrompt(it, null, r1.stage || 1, ap1, lk1, fx0);
         const cgRes = await Spirits.generateCustom(prompt, { landscape: true, ref: r1.imgUrl || "", seedKey: "festcg|" + id + "|" + dk, variant: 0 });
-        const cgUrl2 = cgRes.b64
-          ? await shrinkToDataUri("data:image/png;base64," + cgRes.b64, CG_IMG_SIZE, 0.86)
-          : ((await urlToDataUri(cgRes.url, CG_IMG_SIZE, 0.86)) || cgRes.url);
+        // v164i：同上 —— 大图只进云端，传不上去才落 ≤768 的 data URI
+        const cgUrl2 = (await imageToStoreUrl(cgRes.b64 ? "data:image/png;base64," + cgRes.b64 : cgRes.url,
+          CG_IMG_SIZE, 0.9, CG_IMG_SIZE_LOCAL, 0.86)).url;
         const st5 = Spirits.load();
         const r5 = Spirits.ensureIn(st5, id);
         r5.fests = r5.fests || {};

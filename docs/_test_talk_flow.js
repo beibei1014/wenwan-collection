@@ -161,6 +161,9 @@ function play(added, opts) {
     $: (sel) => known[sel] || null,
     view, topbarTitle: { textContent: "", style: {} }, btnBack: { style: {} }, btnSettings: { style: {} },
     esc: (s) => (s == null ? "" : String(s)),
+    // v164f 起 msgHtml 会把「23:52 —— 」这类旧时间戳前缀换成当前时间 → 沙箱必须提供 fmtTime
+    //   （v164f 之前这个桩不存在，v164f 之后不补就会 ReferenceError）
+    fmtTime: (ts) => { const d = new Date(ts || 0); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); },
     meAvatarHtml: () => '<span class="me-av"></span>',
     bindSpiritImgFallback: () => {},
   };
