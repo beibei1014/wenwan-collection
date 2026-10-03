@@ -8617,11 +8617,18 @@
         ' · 日记与剧情会照这个写</div></div><span style="color:var(--text-2)">›</span></button>';
       // v165：一键出全套 BG（21 张场景背景；已出好的不复用不出图，失败可续）
       const bgAll = Object.keys(Spirits.BG_CATALOG || {});
-      const bgHave = bgAll.filter((k) => bgUrlOf(k)).length;
+      // v165：静态图（assets/bg/*.jpg）视为「已出好」⇒ 只有**无 src 且没出过**的才要画
+      const bgStatic = bgAll.filter((k) => !!(Spirits.bgByKey(k) || {}).src).length;
+      const bgDone = bgAll.filter((k) => !!bgUrlOf(k)).length;
+      const bgTodo = bgAll.length - bgDone;
       html += '<button class="setting-item" id="btnBgAll"><div>' +
-        '<div class="t">🎴 一键出全套 BG（' + bgAll.length + ' 张，约 ¥0.6）</div>' +
-        '<div class="d">为剧情场景生成永久背景图（云端保存、永不过期）。已出好的不会重出，中途失败可再点一次接着画。' +
-        '当前进度：' + bgHave + ' / ' + bgAll.length + '</div></div><span style="color:var(--text-2)">›</span></button>';
+        (bgTodo
+          ? '<div class="t">🎴 一键出全套 BG（还差 ' + bgTodo + ' 张，约 ¥' + (bgTodo * BG_UNIT).toFixed(2) + '）</div>' +
+            '<div class="d">为剧情场景生成永久背景图（云端保存、永不过期）。已出好的不会重出，中途失败可再点一次接着画。' +
+            '当前进度：' + bgDone + ' / ' + bgAll.length + '（其中 ' + bgStatic + ' 张已随版本内置）</div>'
+          : '<div class="t">🎴 BG 场景背景（' + bgAll.length + ' 张已随版本内置）</div>' +
+            '<div class="d">' + bgAll.length + ' 张已随版本内置，无需出图，也不会消耗额度。</div>') +
+        '</div><span style="color:var(--text-2)">›</span></button>';
     }
 
     html += '<div class="section-title">🎖️ 我的称号</div>';
@@ -8734,7 +8741,14 @@
       const all = Object.keys(Spirits.BG_CATALOG || {});
       const have = all.filter((k) => bgUrlOf(k)).length;
       const todo = all.length - have;
-      if (!todo) { toast("全套 " + all.length + " 张 BG 都出好了 ✅"); return; }
+      // v165：静态图已覆盖全套 ⇒ 直接告知「已随版本内置」，⛔ 不再弹确认框、不触发出图
+      if (!todo) {
+        const builtin = all.filter((k) => !!(Spirits.bgByKey(k) || {}).src).length;
+        toast(builtin === all.length
+          ? all.length + " 张 BG 已随版本内置，无需出图 ✅"
+          : "全套 " + all.length + " 张 BG 都出好了 ✅");
+        return;
+      }
       const cost = (todo * BG_UNIT).toFixed(2);
       const yn = await confirmModal("一键出全套 BG",
         "将生成 " + todo + " 张背景图（全套 " + all.length + " 张，已有 " + have + " 张直接复用，不重复计费），约 ¥" + cost +

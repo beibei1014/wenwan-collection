@@ -147,19 +147,35 @@ function newS() { const c = H.makeContext(); H.loadFile(c.ctx, SPIRITS_SRC); ret
       ok(gen === 1 && r[0] === "https://cdn/bg/BG-06.jpg" && r[1] === r[0], "并发去重：同 key 同时在飞只出一张（generate 仅 1 次）");
     }
     // 3F 默认存储（ww_bg 形态 {url, at}）+ 二次命中不再出图 + ⛔ 不碰 ww_spirits
+    // v165：BG-05 现在带静态 src，ensureBg 会直接命中静态图、⛔ 不出图不写库 —— 这正是新口径。
+    //   故本用例改用一个**无 src 的临时 key**（模拟「未来新增的、还没出过的 BG」）来验证写库路径。
     {
       const { S, c } = newS();
-      const deps = { generate: () => ({ b64: "QUJD" }), toStore: () => ({ url: "https://cdn/bg/BG-05.jpg", cloud: true }) };
+      S.BG_CATALOG["BG-05"] = { key: "BG-05", name: "临时无静态图", prompt: "p" };   // ⛔ 无 src
+      const deps = { get: () => "", generate: () => ({ b64: "QUJD" }), toStore: () => ({ url: "https://cdn/bg/BG-05.jpg", cloud: true }) };
       const u1 = await S.ensureBg("BG-05", deps);
       const raw = JSON.parse(c.store.getItem("ww_bg") || "{}");
       ok(!!raw["BG-05"] && raw["BG-05"].url === "https://cdn/bg/BG-05.jpg" && typeof raw["BG-05"].at === "number",
-        "默认写入 ww_bg 形态 { url, at }");
-      ok(S.bgGet("BG-05") === "https://cdn/bg/BG-05.jpg", "bgGet 命中 ww_bg");
+        "默认写入 ww_bg 形态 { url, at }（无 src 的 key 走真出图路径）");
+      ok(S.bgGet("BG-05") === "https://cdn/bg/BG-05.jpg", "bgGet 优先命中 ww_bg");
       let g2 = 0;
       const u2 = await S.ensureBg("BG-05", { get: (k) => S.bgGet(k), set: () => {}, generate: () => { g2++; return { b64: "x" }; }, toStore: () => ({ url: "y", cloud: true }) });
       ok(u2 === u1 && g2 === 0, "第二次 ensureBg：命中 ww_bg，不再出图");
       ok(c.store.getItem("ww_spirits") === null, "⛔ 只写 ww_bg，绝不碰 ww_spirits");
-      ok(typeof S.bgSeedKey("BG-05") === "string" && S.bgLoadAll()["BG-05"].url === u1, "bgLoadAll 可读出 ww_bg");
+      ok(typeof S.bgSeedKey("BG-05") === "string" && S.bgLoadAll()["BG-05"] && S.bgLoadAll()["BG-05"].url === u1, "bgLoadAll 可读出 ww_bg");
+    }
+    // 3G v165：静态 src 视为「已出好」—— 命中即直返，⛔ 不出图、不写库
+    {
+      const { S, c } = newS();
+      let gen = 0, wrote = 0;
+      const deps = {
+        get: (k) => S.bgGet(k), set: () => { wrote++; return true; },
+        generate: () => { gen++; return { b64: "X" }; }, toStore: () => ({ url: "http://cloud/y.jpg", cloud: true }),
+      };
+      const u = await S.ensureBg("BG-11", deps);
+      ok(u === "assets/bg/BG-11.jpg" && gen === 0 && wrote === 0,
+        "v165：静态图命中 → 直返 src，⛔ generate=0 / 不写 ww_bg（离线·无 key·无网均安全）");
+      ok(c.store.getItem("ww_bg") === null, "⛔ 静态命中时完全不落库（连空对象都不写）");
     }
   }
 

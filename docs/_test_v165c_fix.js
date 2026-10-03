@@ -276,6 +276,44 @@ const readApp = () => fs.readFileSync(path.join(ROOT, APP_SRC), "utf8");
     ok(!/再陪\s*' \+ si\.toNext \+ " 天"/.test(app), "C4：⛔ 界面不再出现「再陪 N 天」");
   }
 
+  /* ============ 8. C2 BG 静态资产回落 ============ */
+  section("8. C2 · BG 静态图内置（assets/bg/*.jpg）：bgGet 回落 + ensureBg 绝不出图");
+  {
+    const { S } = newS();
+    const keys = Object.keys(S.BG_CATALOG || {});
+    ok(S.BG_STATIC_DIR === "assets/bg/", "BG_STATIC_DIR === \"assets/bg/\"（实际 " + JSON.stringify(S.BG_STATIC_DIR) + "）");
+    ok(keys.length === 21 && keys.every((k) => S.BG_CATALOG[k].src === S.BG_STATIC_DIR + k + ".jpg"),
+      "21/21 条都有 src = assets/bg/<key>.jpg");
+    ok(keys.every((k) => S.bgGet(k) === "assets/bg/" + k + ".jpg"), "bgGet 21/21 回落到静态 src（视为已出好）");
+    // ensureBg 命中静态 ⇒ 绝不调 deps.generate（⛔ 必须 await，否则断言会晚于汇总输出）
+    let gen = 0, wrote = 0;
+    const deps = {
+      get: (k) => S.bgGet(k), set: () => { wrote++; return true; },
+      generate: () => { gen++; return { b64: "X" }; }, toStore: () => ({ url: "http://cloud/y.jpg", cloud: true }),
+    };
+    const u = await S.ensureBg("BG-07", deps);
+    ok(u === "assets/bg/BG-07.jpg" && gen === 0 && wrote === 0,
+      "ensureBg 命中静态图：返回 src 且 ⛔ generate=0 / 不写库（离线/无 key/无网均安全）");
+    // 无 src 的 key 仍能走真出图（口径没有被写死）
+    S.BG_CATALOG["BG-99"] = { key: "BG-99", name: "测试", prompt: "p" };
+    let g2 = 0;
+    const u2 = await S.ensureBg("BG-99", {
+      get: () => "", set: () => true,
+      generate: () => { g2++; return { b64: "Y" }; }, toStore: () => ({ url: "http://cloud/z.jpg", cloud: true }),
+    });
+    ok(g2 === 1 && u2 === "http://cloud/z.jpg", "无 src 的 key 仍走真出图（未被写死，generate=1）");
+    delete S.BG_CATALOG["BG-99"];
+    // app.js 侧：静态图计入「已出好」+ 全内置时给提示
+    const app8 = readApp();
+    ok(/Spirits\.bgByKey\(k\) \|\| \{\}\)\.src/.test(app8), "C2：设置页按「有 src」统计已内置张数");
+    ok(/已随版本内置，无需出图/.test(app8), "C2：全都有静态图时提示「已随版本内置，无需出图」");
+    ok(/还差 ' \+ bgTodo \+ ' 张/.test(app8), "C2：待出张数与金额按实际待出数动态算");
+    // 静态图文件确实在仓库里
+    const fsx = require("fs");
+    const missing = keys.filter((k) => !fsx.existsSync(path.join(ROOT, "assets", "bg", k + ".jpg")));
+    ok(missing.length === 0, "assets/bg/ 下 21 张静态图全部存在（缺 " + missing.length + " 张）");
+  }
+
   console.log("\n----------------------------------------");
   console.log("通过断言 " + PASS + " 项，失败 " + FAIL + " 项");
   if (FAIL) { console.log("失败清单："); FAILURES.forEach((f) => console.log("  - " + f)); }
