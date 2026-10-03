@@ -372,7 +372,7 @@
   function ensureIn(store, id) {
     if (!store[id]) {
       // 新生：性别留空，等「挂瓷开沁」那一刻由 born() 掷一次（男女 3:1）
-      store[id] = { persona: null, variant: 0, imgUrl: "", letters: [], chats: [], lastLetterDay: "", stage: 1, imgHistory: [], gender: "", bornAt: 0 };
+      store[id] = { persona: null, variant: 0, imgUrl: "", letters: [], chats: [], lastLetterDay: "", stage: 1, imgHistory: [], gender: "", bornAt: 0, flags: { stance: "UNSET", bondLv: 1, scattered: false } };
       return store[id];
     }
     const rec = store[id];
@@ -381,6 +381,7 @@
     // 老记录（v110 之前开沁的）没有 gender：按**旧规则**（hash(串id+外观种子)）定下来，
     // 这样它已经画好的立绘和界面显示的人设不会打架；新沁灵一律走 born() 的 3:1 随机
     if (rec.gender !== "boy" && rec.gender !== "girl") rec.gender = legacyGender(id, rec.appearanceSeed || 0);
+    if (!rec.flags || typeof rec.flags !== "object") rec.flags = { stance: "UNSET", bondLv: 1, scattered: false };
     return rec;
   }
   // 性别：出生时掷一次，比例 男:女 = 3:1（用户要求）
@@ -4138,6 +4139,149 @@
     return w;
   }
 
+  /* ---------- 多结局 flag 系统（v164n：可判定存档数据 + 岁除判定纯函数） ----------
+     数据模型（设计 docs/v164n-多结局flag系统.md，本处只落地，不写剧情）：
+       · 周目级状态落 ww_story（扁平键值，与 mainIds/mainStar5 同对象，类比 gift_store）：
+           FORK_STANCE(enum UNSET/DECIDE/LET/MIXED) / KEY_CHOICES(int 0..3) /
+           KEY_TOTAL(常量镜像=3) / JOINT_PREP(enum NONE/PARTIAL/FULL)
+       · 逐串状态落 rec.flags（与 bond/stage/marks 同层，**不进 rec.marks**，避开其字典序裁剪 bug）：
+           stance(enum UNSET/DECIDE/LET) / bondLv(int 1..8，岁除前由 bondLevel(rec) 缓存) /
+           scattered(bool，派生)
+     判定常量集中配置（铁律2：不硬编码）；改阈值只改 ENDING_CFG，逻辑不变。 */
+  const ENDING_CFG = {
+    SHIELD_MIN: 5,          // 通意：DECIDE 串 bondLv < 5 即「亲密度不足」→ 散
+    HE_BOND: 6,             // 同心：全员 bondLv >= 6 视为「高亲密度」
+    KEY_TOTAL: 3,           // 关键选择总数（ch7/ch11/ch19 三个 H3 挡关门）
+    HE_ALLOW_DECIDED: false // 设计裁定：纯 DECIDE 但全员存活高亲是否算 HE（默认否，严守不变量 I2）
+  };
+
+  // 周目级多结局 flag 默认值（写入 ww_story 时兜底；不持久化）
+  function endingStoryDefaults(w) {
+    w = w || {};
+    if (!w.FORK_STANCE) w.FORK_STANCE = "UNSET";
+    if (w.KEY_CHOICES == null) w.KEY_CHOICES = 0;
+    if (w.KEY_TOTAL == null) w.KEY_TOTAL = ENDING_CFG.KEY_TOTAL;
+    if (!w.JOINT_PREP) w.JOINT_PREP = "NONE";
+    if (!w.at) w.at = "";
+    return w;
+  }
+
+  // 读周目级多结局 flag（缺省给带默认值的对象，永不 null）
+  function getEndingStory() { return endingStoryDefaults(readStory()); }
+
+  // 写周目级多结局 flag 单键（只动 ww_story，不进 rec）
+  function setEndingStoryKey(key, value) {
+    const w = readStory(); endingStoryDefaults(w);
+    w[key] = value; w.at = todayKey(); writeStory(w); return w;
+  }
+
+  // 便捷写入入口（供后续 UI/剧情调用；本任务不接 UI）
+  function setForkStance(v) {                       // 'UNSET'|'DECIDE'|'LET'|'MIXED'
+    if (["UNSET", "DECIDE", "LET", "MIXED"].indexOf(v) < 0) return getEndingStory();
+    return setEndingStoryKey("FORK_STANCE", v);
+  }
+  function addKeyChoice() {                         // 每「护对」一次 +1（只增不回退）
+    const w = readStory(); endingStoryDefaults(w);
+    w.KEY_CHOICES = Math.min(ENDING_CFG.KEY_TOTAL, (Number(w.KEY_CHOICES) || 0) + 1);
+    w.at = todayKey(); writeStory(w); return w;
+  }
+  function setKeyChoices(n) {                       // 直接设置（调试/回放用）
+    const v = Math.max(0, Math.min(ENDING_CFG.KEY_TOTAL, Number(n) || 0));
+    return setEndingStoryKey("KEY_CHOICES", v);
+  }
+  function setJointPrep(v) {                        // 'NONE'|'PARTIAL'|'FULL'，只升不降
+    const order = { NONE: 0, PARTIAL: 1, FULL: 2 };
+    if (order[v] == null) return getEndingStory();
+    const w = readStory(); endingStoryDefaults(w);
+    if ((order[v] || 0) >= (order[w.JOINT_PREP] || 0)) { w.JOINT_PREP = v; w.at = todayKey(); writeStory(w); }
+    return w;
+  }
+
+  // 逐串 stance 入口：写 rec.flags[spiritId].stance（'DECIDE'|'LET'；UNSET 由缺省承载）。
+  // 与编剧埋的选择点对齐：玩家选了 DECIDE 选项即 setStance(id, 'DECIDE')（本任务不接 UI）。
+  function setStance(spiritId, stance) {
+    if (stance !== "DECIDE" && stance !== "LET") return false;
+    const store = load();
+    const rec = ensureIn(store, String(spiritId));
+    if (!rec.flags || typeof rec.flags !== "object") rec.flags = { stance: "UNSET", bondLv: 1, scattered: false };
+    rec.flags.stance = stance;
+    save(store);
+    return true;
+  }
+
+  // 读取某只逐串 flag（带默认值，不抛）
+  function endingFlagsOf(spiritId) {
+    const store = load();
+    const rec = store[String(spiritId)];
+    const f = rec && rec.flags && typeof rec.flags === "object" ? rec.flags : {};
+    return { stance: f.stance || "UNSET", bondLv: Number(f.bondLv) || 1, scattered: !!f.scattered };
+  }
+
+  /* 岁除判定纯函数（设计 §三）：相同 ww_story + 相同逐串 flags → 永远相同结局。
+     输入：
+       story   —— 周目级 ww_story（含 FORK_STANCE/KEY_CHOICES/JOINT_PREP/KEY_TOTAL）
+       spirits —— 逐串 flag 数组，每元素 { stance, bondLv }（scattered 由本函数派生，输入无需带）
+     输出： '大团圆' | 'HE' | 'NE' | 'BE'
+     不变量：BE 仅当 ∃ 串 DECIDE && bondLv<SHIELD_MIN；系统绝不主动杀。 */
+  function evaluateEnding(story, spirits) {
+    const SHIELD_MIN = ENDING_CFG.SHIELD_MIN;
+    const HE_BOND = ENDING_CFG.HE_BOND;
+    const KEY_TOTAL = ENDING_CFG.KEY_TOTAL;
+    const HE_ALLOW_DECIDED = ENDING_CFG.HE_ALLOW_DECIDED;
+    const s = story || {};
+    const list = Array.isArray(spirits) ? spirits : [];
+    let anyScattered = false, letCount = 0, decideCount = 0;
+    let allHighBond = list.length > 0;
+    for (let i = 0; i < list.length; i++) {
+      const sp = list[i] || {};
+      const stance = sp.stance;
+      const bondLv = Number(sp.bondLv) || 1;
+      // 逐串散判定：仅 DECIDE + 亲密度不足 → 散（铁律 I4：系统绝不主动杀）
+      if (stance === "DECIDE" && bondLv < SHIELD_MIN) anyScattered = true;
+      if (stance === "LET") letCount++;
+      else if (stance === "DECIDE") decideCount++;
+      if (bondLv < HE_BOND) allHighBond = false;
+    }
+    // 裁定链（全覆盖，末行兜底 NE）
+    if (anyScattered) return "BE";
+    const dominantLet = (s.FORK_STANCE === "LET") || (letCount >= decideCount);
+    const keysRight = (Number(s.KEY_CHOICES) || 0) >= KEY_TOTAL;
+    const jointFull = (s.JOINT_PREP === "FULL");
+    if (dominantLet && allHighBond && keysRight && jointFull) return "大团圆";
+    const heOk = HE_ALLOW_DECIDED
+      ? (allHighBond && keysRight)
+      : (dominantLet && allHighBond && keysRight);
+    if (heOk) return "HE";
+    return "NE";
+  }
+
+  /* 岁除判定总入口（设计 §5.4）：读 ww_story + 收集在册串、缓存 bondLv、跑纯函数、写回 scattered。
+     供 ch26「都好好的」演出调用；本任务不接 UI。
+     收集范围取「store 中全部已初始化 rec」（后续可收紧为「在册且参与岁除」集合）。 */
+  function resolveEnding() {
+    const w = getEndingStory();
+    const store = load();
+    const ids = Object.keys(store);
+    const spirits = [], recs = [];
+    for (let i = 0; i < ids.length; i++) {
+      const rec = store[ids[i]];
+      if (!rec || typeof rec !== "object") continue;
+      if (!rec.flags || typeof rec.flags !== "object") rec.flags = { stance: "UNSET", bondLv: 1, scattered: false };
+      const bondLv = (rec.flags.bondLv != null) ? Number(rec.flags.bondLv) : bondLevel(Number(rec.bond) || 0).lv;
+      rec.flags.bondLv = bondLv;
+      const stance = rec.flags.stance || "UNSET";
+      spirits.push({ stance: stance, bondLv: bondLv });
+      recs.push(rec);
+    }
+    const ending = evaluateEnding(w, spirits);
+    for (let i = 0; i < recs.length; i++) {
+      const sp = spirits[i];
+      recs[i].flags.scattered = !!(sp && sp.stance === "DECIDE" && sp.bondLv < ENDING_CFG.SHIELD_MIN);
+    }
+    save(store);
+    return { ending: ending, story: w, spirits: spirits };
+  }
+
   /* ---------- soloEnv：单串 env（主线 12 章 / 单串事件） ---------- */
   function soloEnv(item, rec, ctx) {
     const now = Date.now();
@@ -6434,6 +6578,9 @@
     // v163：条件系统（env 契约 / 胎性 / 亲密度兜底 / 主串）
     soloEnv, tiXingOf, 胎性Of: tiXingOf, tiXingLabel, TIXING_ZH, normTiXing, bondOf,
     storyMainId, mainSetOf, setMainStory, readStory, writeStory, setMainItems,
+    // v164n：多结局 flag 系统（可判定存档数据 + 岁除判定纯函数）
+    ENDING_CFG, evaluateEnding, resolveEnding, setStance, endingFlagsOf,
+    getEndingStory, setForkStance, addKeyChoice, setKeyChoices, setJointPrep,
     WHEN_KEYS, whenOK, whenNeed, thMember,
     pruneForQuota,
     // v163：CG 资产库（像素在 IndexedDB / 元数据在主 store；「已收集」只认元数据）
