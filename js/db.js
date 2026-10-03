@@ -482,6 +482,26 @@
   }
   /* gift_store 合并策略（v165 §七-15）：按 giftKey 取 max（防 A/B 两台同时加库存互相覆盖）；
      gifted（发放去重）取较新日期；at 取较大时间戳。纯函数，不改入参。 */
+  // daily 台账合并（v165 每日任务改造设计 §4/§七-7）：取 day 较新的整份；同 day 则 acts 逐键取 max、claimed 逐键取 or。
+  function normGiftDaily(x) {
+    const d = (x && typeof x === "object") ? x : {};
+    return {
+      day: String(d.day || ""),
+      acts: Object.assign({}, (d.acts && typeof d.acts === "object") ? d.acts : {}),
+      claimed: Object.assign({}, (d.claimed && typeof d.claimed === "object") ? d.claimed : {}),
+    };
+  }
+  function mergeGiftDaily(a, b) {
+    if (!a && !b) return normGiftDaily(null);
+    if (!a) return normGiftDaily(b);
+    if (!b) return normGiftDaily(a);
+    const dayA = String(a.day || ""), dayB = String(b.day || "");
+    if (dayA !== dayB) return normGiftDaily(dayA > dayB ? a : b);   // 取较新 day 的整份（YYYY-MM-DD 字符串序==时间序）
+    const out = { day: dayA, acts: {}, claimed: {} };
+    [a.acts, b.acts].forEach((m) => { if (m && typeof m === "object") Object.keys(m).forEach((k) => { out.acts[k] = Math.max(Number(out.acts[k]) || 0, Number(m[k]) || 0); }); });
+    [a.claimed, b.claimed].forEach((m) => { if (m && typeof m === "object") Object.keys(m).forEach((k) => { if (out.claimed[k] == null || String(m[k]) > String(out.claimed[k])) out.claimed[k] = m[k]; }); });
+    return out;
+  }
   function mergeGiftStores(a, b) {
     const A = (a && typeof a === "object") ? a : {};
     const B = (b && typeof b === "object") ? b : {};
@@ -495,6 +515,7 @@
         });
       });
     });
+    out.daily = mergeGiftDaily(A.daily, B.daily);   // v165：daily 台账并入 gift_store.data（⛔ 不另起新表）
     return out;
   }
 

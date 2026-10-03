@@ -212,75 +212,125 @@
     return a;
   }
 
-  function dailyTasks(items) {
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const todayEnd = todayStart + 86400000;
-
-    const todayNew = items.filter((i) => {
-      const ts = i.createdAt;
-      return ts && ts >= todayStart && ts < todayEnd;
-    }).length;
-    const todayEdited = items.filter((i) => {
-      const ts = i.updatedAt;
-      return ts && ts >= todayStart && ts < todayEnd;
-    }).length;
-    const todayFinished = items.filter((i) => {
-      const ts = i.finishedAt;
-      return ts && ts >= todayStart && ts < todayEnd;
-    }).length;
-    const todayGifted = items.filter((i) => {
-      const ts = i.giftedAt;
-      return ts && ts >= todayStart && ts < todayEnd;
-    }).length;
-
-    // 全局统计（用于各种达成型任务）
-    const withPhotos = items.filter((i) => (i.photos || []).length > 0).length;
-    const withPrice = items.filter((i) => i.price != null && i.price !== "").length;
-    const withShop = items.filter((i) => i.shop && i.shop.trim()).length;
-    const withNote = items.filter((i) => i.note && i.note.trim()).length;
-    const playing = items.filter((i) => i.playStatus === "playing").length;
-    const puzzleDone = items.filter((i) => i.playStatus === "puzzle_done").length;
-    const catCount = new Set(items.map((i) => i.category).filter(Boolean)).size;
-    const beadCount = items.filter((i) => /菩提|金刚|凤眼|星月/.test((i.name || "") + (i.species || ""))).length;
-    const crystal = items.filter((i) => (i.category || "") === "水晶").length;
-    const accessories = items.filter((i) => (i.category || "") === "动漫周边").length;
-    const longCompanion = items.some((i) => DB.daysWith(i) >= 30);
-    const noBuyToday = todayNew === 0; // 今天没有入手新宝贝
-
-    // 任务池：当日型（每天随机挑 2 个）+ 达成型（每天随机挑 2 个）
-    const todayPool = [
-      { icon: "📦", title: "今日新收", desc: "收藏一件新宝贝", done: todayNew > 0, target: 1, xp: 15 },
-      { icon: "✏️", title: "今日打理", desc: "编辑整理一件宝贝", done: todayEdited > 0, target: 1, xp: 10 },
-      { icon: "🧩", title: "今日拼图", desc: "完成一幅拼图", done: todayFinished > 0, target: 1, xp: 30 },
-      { icon: "🎁", title: "今日送出", desc: "送出一件宝贝", done: todayGifted > 0, target: 1, xp: 20 },
-      { icon: "🧘", title: "今日清心", desc: "今天没有入手新宝贝", done: noBuyToday, target: 1, xp: 10 },
-    ];
-    const achievePool = [
-      { icon: "🤲", title: "盘玩进行时", desc: "有宝贝处于「在盘玩」状态", done: playing > 0, target: 1, xp: 15 },
-      { icon: "🧩", title: "拼图小成", desc: "累计完成一幅拼图", done: puzzleDone > 0, target: 1, xp: 20 },
-      { icon: "📸", title: "拍照留念", desc: "给宝贝拍过照片", done: withPhotos > 0, target: 1, xp: 10 },
-      { icon: "💰", title: "记录价值", desc: "为宝贝记录过价格", done: withPrice > 0, target: 1, xp: 10 },
-      { icon: "🏪", title: "店铺记忆", desc: "记录过购买店铺", done: withShop > 0, target: 1, xp: 10 },
-      { icon: "📝", title: "备注大师", desc: "给宝贝写过备注", done: withNote > 0, target: 1, xp: 10 },
-      { icon: "🗃️", title: "盒子多多", desc: "覆盖 2 个收藏盒子", done: catCount >= 2, target: 1, xp: 15 },
-      { icon: "📿", title: "菩提有缘", desc: "收藏 3 件菩提类宝贝", done: beadCount >= 3, target: 1, xp: 20 },
-      { icon: "🔮", title: "水晶之约", desc: "收藏一件水晶宝贝", done: crystal > 0, target: 1, xp: 15 },
-      { icon: "🎨", title: "周边收藏", desc: "收藏一件动漫周边", done: accessories > 0, target: 1, xp: 15 },
-      { icon: "⏰", title: "长久陪伴", desc: "有宝贝陪伴超 30 天", done: longCompanion, target: 1, xp: 20 },
-    ];
-
-    // 种子 = 年月日（如 20260903），保证当天固定、次日变化
-    const seed = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
-    const pickedToday = seededShuffle(todayPool, seed).slice(0, 2);
-    const pickedAchieve = seededShuffle(achievePool, seed + 7919).slice(0, 2);
-
-    const tasks = pickedToday.concat(pickedAchieve);
-    // 保持展示顺序稳定：未完成的在前、已完成的在后
+  /* ---------- 每日任务 · 台账（v165 每日任务改造；玩家级，本地优先） ----------
+     🔴 只动库存：领奖发礼物（addGift），⛔ 绝不调 addBond/giveGift —— 亲密度唯一入口是玩家「递一件」。
+     台账挂 localStorage `ww_daily`：{day, acts, claimed, tasks, days}（每日任务改造设计 §5.1）。 */
+  const DAILY_KEY = "ww_daily";
+  const DAILY_CFG = {
+    COUNT: 5,            // 每日固定 5 条（用户要求，⛔ 不多不少）
+    REWARD_KIND: "gift", // 奖励形态：礼物
+    REWARD_N: 1,         // 每任务 1 件
+    KEEP_XP: true,       // 保留少量 XP（否则既有等级/成就断粮）
+    XP_PER: 10,          // 每任务 XP（team-lead 拍板 10）
+    BACKFILL: false,     // ⛔ 不补做
+    DAILY_MAX_GIFT: 5,   // 每日礼物上限（=任务数；与送礼「全局 ≤2/日」分开计）
+  };
+  // 5 条固定菩提根任务（大纲 §13.2 正式案 / 本设计 §3.2）。`key` = 达成信号。
+  //   ⚠️ `care`（照料三式）与 `look`（看纹）信号未接 → 按 §七-10 用最近既有信号顶替：
+  //      care → play、look → greet（⛔ 不改任务名）。均属菩提根，池内 0 处他类别词。
+  const DAILY_TEMPLATES = [
+    { id: "jingshou",  key: "greet", icon: "🫧", title: "净手", desc: "把手洗净了，再进这道门。",           cls: "ware",  gifts: ["ware_cup", "ware_ink"] },
+    { id: "peizuo",    key: "play",  icon: "🍵", title: "陪坐", desc: "坐下，什么都不用说。",               cls: "human", gifts: ["human_tea", "human_snack"], want: "care" },
+    { id: "kanwen",    key: "greet", icon: "🔎", title: "看纹", desc: "看看它身上那道纹，今天走到哪儿了。", cls: "odd",   gifts: ["odd_glass", "odd_shell"], want: "look" },
+    { id: "shoudeng",  key: "night", icon: "🏮", title: "守灯", desc: "把这盏灯，守到有人回来。",           cls: "cloth", gifts: ["cloth_pa", "cloth_stone"] },
+    { id: "yingsheng", key: "reply", icon: "🔔", title: "应声", desc: "那头一喊，你就应一声。",             cls: "sound", gifts: ["sound_bell", "sound_drum"] },
+  ];
+  function dailyDefaults() { return { day: "", acts: {}, claimed: {}, tasks: [], days: 0 }; }
+  function normDailyObj(d) {
+    if (!d || typeof d !== "object") return dailyDefaults();
+    return {
+      day: String(d.day || ""),
+      acts: (d.acts && typeof d.acts === "object") ? d.acts : {},
+      claimed: (d.claimed && typeof d.claimed === "object") ? d.claimed : {},
+      tasks: Array.isArray(d.tasks) ? d.tasks : [],
+      days: Math.max(0, Math.floor(Number(d.days) || 0)),
+    };
+  }
+  function loadDaily() { try { const raw = localStorage.getItem(DAILY_KEY); return normDailyObj(raw ? JSON.parse(raw) : {}); } catch (e) { return dailyDefaults(); } }
+  function saveDaily(o) { try { localStorage.setItem(DAILY_KEY, JSON.stringify(normDailyObj(o || {}))); return true; } catch (e) { return false; } }
+  // 跨日：清空 acts/claimed/tasks（保留 days 累计）；⛔ 不补做
+  function ensureDaily(d) {
+    const tk = todayKey();
+    if (d.day !== tk) { d.day = tk; d.acts = {}; d.claimed = {}; d.tasks = []; }
+    return d;
+  }
+  // 记一次行动（当日每键只记 1 次）
+  function markDaily(actionKey) {
+    const k = String(actionKey || "");
+    if (!k) return false;
+    const d = ensureDaily(loadDaily());
+    if (d.acts[k]) { saveDaily(d); return false; }
+    d.acts[k] = 1;
+    saveDaily(d);
+    try { window.dispatchEvent(new CustomEvent("ww:daily-changed")); } catch (e) { /* 忽略 */ }
+    return true;
+  }
+  // 日期种子：YYYYMMDD（当天固定、跨设备一致，沿用既有 mulberry32）
+  function dailySeedNum(dayKey) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dayKey || ""));
+    if (m) return Number(m[1]) * 10000 + Number(m[2]) * 100 + Number(m[3]);
+    const n = new Date();
+    return n.getFullYear() * 10000 + (n.getMonth() + 1) * 100 + n.getDate();
+  }
+  function strHash(str) { let h = 0; const x = String(str || ""); for (let i = 0; i < x.length; i++) h = (h * 31 + x.charCodeAt(i)) | 0; return h >>> 0; }
+  // 某任务当日发哪件礼物（2 候选取 1，日期种子决定 → 当天固定、跨设备一致）
+  function rewardGiftOf(tpl, dayKey) {
+    const arr = (tpl && tpl.gifts && tpl.gifts.length) ? tpl.gifts : [];
+    if (!arr.length) return "";
+    if (arr.length === 1) return arr[0];
+    const seed = (dailySeedNum(dayKey) ^ strHash(tpl && tpl.id)) >>> 0;
+    return seededShuffle(arr, seed)[0];
+  }
+  function giftNameSafe(key) {
+    try { return (typeof Spirits !== "undefined" && Spirits && Spirits.giftNameOf) ? Spirits.giftNameOf(key) : String(key || ""); }
+    catch (e) { return String(key || ""); }
+  }
+  // 当日 5 条任务（含 done；种子固定）—— 返回形状向后兼容 app.js（icon/title/desc/done/xp）
+  function buildDailyTasks() {
+    const day = todayKey();
+    const d = ensureDaily(loadDaily());
+    const tasks = DAILY_TEMPLATES.map((tpl) => {
+      const gk = rewardGiftOf(tpl, day);
+      return {
+        id: tpl.id, key: tpl.key, want: tpl.want || tpl.key, icon: tpl.icon,
+        title: tpl.title, desc: tpl.desc, target: 1,
+        done: !!d.acts[tpl.key], progress: d.acts[tpl.key] ? 1 : 0,
+        xp: DAILY_CFG.KEEP_XP ? DAILY_CFG.XP_PER : 0,
+        giftKey: gk, giftName: giftNameSafe(gk), claimed: !!d.claimed[tpl.id],
+      };
+    });
+    d.tasks = tasks.map((t) => ({ id: t.id, key: t.key, giftKey: t.giftKey, done: t.done }));
+    saveDaily(d);
     tasks.sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1));
-    tasks.forEach((t) => { t.progress = t.done ? 1 : 0; });
     return tasks;
   }
+  // 任务领奖：只发礼物到 ww_gifts（🔴 ⛔ 不碰亲密度：不调 addBond / giveGift）
+  function claimTask(task) {
+    const t = task || {};
+    const id = String(t.id || "");
+    const tpl = DAILY_TEMPLATES.filter((x) => x.id === id)[0] || null;
+    if (!id || !tpl) return { ok: false, reason: "no_task" };
+    const key = String(t.key || tpl.key);
+    const day = todayKey();
+    const d = ensureDaily(loadDaily());
+    if (!d.acts[key]) { saveDaily(d); return { ok: false, reason: "undone" }; }   // 未完成不可领
+    if (d.claimed[id]) { saveDaily(d); return { ok: false, reason: "claimed" }; } // ⛔ 不可重复领
+    const giftKey = String(t.giftKey || rewardGiftOf(tpl, day));
+    const firstClaimToday = Object.keys(d.claimed).length === 0;
+    if (typeof Spirits !== "undefined" && Spirits && Spirits.loadGifts && Spirits.addGift && Spirits.saveGifts) {
+      const gifts = Spirits.loadGifts();
+      Spirits.addGift(gifts, giftKey, DAILY_CFG.REWARD_N);
+      Spirits.saveGifts(gifts);
+    }
+    d.claimed[id] = day;
+    if (firstClaimToday) d.days = Math.max(0, Math.floor(Number(d.days) || 0)) + 1; // 当日首次领奖记 1 天（⛔ 无惩罚）
+    saveDaily(d);
+    try { window.dispatchEvent(new CustomEvent("ww:daily-changed")); } catch (e) { /* 忽略 */ }
+    return { ok: true, reason: "ok", giftKey: giftKey, giftName: giftNameSafe(giftKey), rewardN: DAILY_CFG.REWARD_N };
+  }
+
+  // 每日任务（对外入口，兼容旧签名；任务已固定为 5 条菩提根日常）
+  function dailyTasks(items) { return buildDailyTasks(); }
 
   /* ---------- 隐藏任务：不买挑战 ---------- */
   function noBuyChallenge(items) {
@@ -407,5 +457,7 @@
     return result;
   }
 
-  window.Game = { computeXp, getLevel, dailyTasks, noBuyChallenge, boxProgress, daysSinceLastBuy, drawRecommendation, isDrawable, playPlan, bestStreak, currentStreak, todayKey, normDays };
+  window.Game = { computeXp, getLevel, dailyTasks, noBuyChallenge, boxProgress, daysSinceLastBuy, drawRecommendation, isDrawable, playPlan, bestStreak, currentStreak, todayKey, normDays,
+    // v165 每日任务改造（菩提根 5 条 + ww_daily 台账；领奖只发礼物）
+    DAILY_CFG, DAILY_TEMPLATES, loadDaily, saveDaily, markDaily, claimTask, rewardGiftOf, buildDailyTasks };
 })();
