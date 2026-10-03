@@ -32,8 +32,21 @@ function newS() { const c = H.makeContext(); H.loadFile(c.ctx, "js/spirits.js");
     ok(S.BG_CATALOG["BG-19"].name.indexOf("星月坛") >= 0, "BG-19 名含「星月坛」");
     ok(S.BG_CATALOG["BG-21"].name.indexOf("雪夜") >= 0, "BG-21 名含「雪夜」");
     ok(!/DENSITY|密集恐惧/i.test(JSON.stringify(S.BG_CATALOG)), "⛔ 不含 DENSITY / 密集恐惧 类约束");
-    ok(/空镜无人/.test(S.BG_PROMPT_TAIL) && /16:9/.test(S.BG_PROMPT_TAIL) && /立绘/.test(S.BG_PROMPT_TAIL),
-      "prompt 装配后缀含 空镜无人 / 横版 16:9 / 留立绘位");
+    // v165 收尾：prompt 换正式英文正文（BG_STYLE 前缀 + 英文正文，规范 §1.1/§2.2）
+    ok(typeof S.BG_STYLE === "string"
+      && /empty scene, no people/.test(S.BG_STYLE)
+      && /16:9/.test(S.BG_STYLE)
+      && /WIDE LANDSCAPE HORIZONTAL COMPOSITION/.test(S.BG_STYLE),
+      "BG_STYLE 前缀含 empty scene, no people / 16:9 / 横版声明");
+    ok(keys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_STYLE) === 0), "每条 prompt 均以 BG_STYLE 前缀开头");
+    ok(keys.every((k) => /no people, empty scene/.test(S.BG_CATALOG[k].prompt)), "21/21 条 prompt 含 no people, empty scene（空镜无人）");
+    // v165 收尾：三段式 —— 尾部再拼 NEG_STYLE（规范 §1.3/§1.5/§2.2 权威）
+    ok(typeof S.NEG_STYLE === "string" && /strictly no Japanese elements/.test(S.NEG_STYLE) && /no modern or Western clothing/.test(S.NEG_STYLE),
+      "NEG_STYLE 负面位存在（复用既有常量）");
+    ok(keys.every((k) => S.BG_CATALOG[k].prompt.slice(-S.NEG_STYLE.length) === S.NEG_STYLE), "21/21 条 prompt 以 NEG_STYLE 收尾（三段式拼装）");
+    ok(keys.every((k) => (S.BG_CATALOG[k].prompt.split(S.NEG_STYLE).length - 1) === 1), "NEG_STYLE 每条恰好出现 1 次（不重复拼接）");
+    ok(keys.every((k) => !/[\u4e00-\u9fff]/.test(S.BG_CATALOG[k].prompt)), "prompt 正文无中文残留");
+    ok(keys.every((k) => !/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(S.BG_CATALOG[k].prompt)), "prompt 正文无 emoji");
     ok(S.BG_KEY === "ww_bg", "存储键 = ww_bg（新键，⛔ 与 ww_spirits 无关）");
   }
 
@@ -77,8 +90,8 @@ function newS() { const c = H.makeContext(); H.loadFile(c.ctx, "js/spirits.js");
       ok(!!genArgs && genArgs.o.seedKey === "bg:BG-02" && genArgs.o.variant === 0 && genArgs.o.landscape === true,
         "generate 入参 seedKey=bg:BG-02 / variant:0 / landscape:true");
       ok(!!genArgs && genArgs.p === S.BG_CATALOG["BG-02"].prompt, "generate 用 catalog 里的 prompt");
-      ok(!!toArgs && toArgs.bigMax === 1600 && toArgs.bigQ === 0.85, "压缩规格：大图长边 1600 / q0.85");
-      ok(!!toArgs && toArgs.localMax === 1280 && toArgs.localQ === 0.8, "回落规格：本地 1280 / q0.8");
+      ok(!!toArgs && toArgs.bigMax === 1280 && toArgs.bigQ === 0.88, "压缩规格：云端长边 1280 / q0.88（规范 §5）");
+      ok(!!toArgs && toArgs.localMax === 768 && toArgs.localQ === 0.86, "兜底规格：本地长边 768 / q0.86（规范 §5）");
     }
     // 3C 失败回退：未上云 → 落 data URI 仍写库（永久）
     {

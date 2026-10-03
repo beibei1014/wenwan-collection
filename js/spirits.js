@@ -3089,7 +3089,7 @@
   /* ---------- v165 心迹轨（恋爱向，逐串；本批只做数据与纯函数，⛔ 不接 UI/结局） ---------- */
   const HEART_MARKS = [0, 40, 100, 190, 300];     // v165 §七-11 里程碑
   // 心迹档位名（v164l §1.3：0 无 / 微澜 / 动心 / 倾心 / 相许）；索引 = lv（0-based），0 位为「无（未启线）」
-  const HEART_LV_NAMES = ["未起头", "微澜", "动心", "倾心", "相许"];
+  const HEART_LV_NAMES = ["", "微澜", "动心", "倾心", "相许"];
   function heartLevel(n) {
     const v = Math.max(0, Math.min(HEART_CFG.MAX, Math.floor(Number(n) || 0)));
     let i = 0; for (let k = 0; k < HEART_MARKS.length; k++) if (v >= HEART_MARKS[k]) i = k;
@@ -3120,41 +3120,49 @@
    * v165 · BG 场景背景系统（新全局系统）
    * ---------------------------------------------------------
    * · BG_CATALOG：BG-01 ~ BG-21，共 21 条（name/画面来自大纲 §八 8.1）。
-   *   prompt 目前用**中文描述直接装配**作占位；美术规范
-   *   docs/v165-BG与CG出图规范.md 到位后只替换 prompt 字符串，结构不动。
-   *   ⛔ 不含「密集恐惧 / DENSITY」类约束（主理人已删该硬约束）。
+   *   每条 prompt = **BG_STYLE 前缀 + 该 BG 的英文正文**，正文取自
+   *   docs/v165-BG与CG出图规范.md §1.1 / §2.2（纯英文、无中文残留、无 emoji）。
+   *   ⛔ 不含「密集恐惧 / DENSITY LOCK」类约束（主理人已删该硬约束；
+   *      成排门灯 BG-11、密点纹样 BG-19 都照常画）。
    * · ww_bg（localStorage，新键）：{ "BG-01": { url, at }, ... }
    *   url 必须**永久**（Supabase Storage 永久 URL 或 data URI）——永不过期、永不重出。
    * · ensureBg(key, deps)：命中直返；未命中去重出图 → 压缩 → 传云 → 落库。
    *   为可测试，绘图 / 压缩 / 上传由 deps 注入（app.js 侧接真实现）。
    * ========================================================= */
   const BG_KEY = "ww_bg";
-  // 装配占位 prompt 的公共后缀：古风空镜、横版、留立绘位（⛔ 无密度类约束）
-  const BG_PROMPT_TAIL = "中国古风，古色古香的江南人家，空镜头画面里没有任何人物（空镜无人），"
-    + "横版宽幅构图 16:9，画面左右两侧与下方留出人物立绘站位、中央留白，"
-    + "柔和电影感光效，细腻手绘质感，2D 动画场景背景插画，无文字，无水印";
+  // BG 统一前缀（规范 §1.1「统一模板」）：古风空镜 · 无人 · 横版 16:9（⛔ 无密度锁定词）
+  const BG_STYLE = "2D hand-drawn background key art in traditional Chinese gufeng style, ancient Chinese "
+    + "courtyard and alley setting, painterly flat-color illustration with soft cel shading, "
+    + "silk, lacquer and weathered-wood material texture, classical Chinese color palette, "
+    + "cinematic directional lighting with clear light source, atmospheric depth and haze, "
+    + "WIDE LANDSCAPE HORIZONTAL COMPOSITION, 16:9 cinematic framing, empty scene, no people, "
+    + "no figures, no characters, generous clean negative space, no text, no letters, no watermark, "
+    + "no logo, single continuous scene, no split panels, no collage, "
+    + "no modern elements, no Western elements, no Japanese elements";
+  // 逐条 prompt = BG_STYLE + ", " + 英文正文 + ", " + NEG_STYLE（正文均含 "no people, empty scene"）
+  // BG 实际请求档 = cgSizeFor("ark") 首位 2304×1728(4:3)；渲染端 .scenebg 用 cover 裁切，构图须保证中央 16:9 安全框内可用。
   const BG_CATALOG = {
-    "BG-01": { key: "BG-01", name: "巷口石阶 · 晨雾", prompt: "清晨的深巷口，一级级旧石阶探进薄雾里，最下面几级被年年月月踩得发亮；两侧青灰的院墙，墙头探出几枝湿漉漉的枝叶；冷灰蓝的晨雾漫上来，光很淡。" },
-    "BG-02": { key: "BG-02", name: "门内院子 · 晌午", prompt: "正午的旧式小院，青石板地面扫得干干净净，院子中央一张旧石桌，旁边晾着一竹竿刚洗过的粗布衣；檐下的影子短短的，晌午暖光铺满整个院子。" },
-    "BG-03": { key: "BG-03", name: "门口 · 傍晚", prompt: "从院子里朝门外望，两扇斑驳的木门敞着，门外一条空空的青石板路伸向远处，路尽头天色正一点点压下来；傍晚的暖灰光线，门框里外明暗分明。" },
-    "BG-04": { key: "BG-04", name: "院里 · 夜", prompt: "月色下的旧式小院，清冷的月光斜照在廊角，地面扫过的痕迹隐约可见，廊下挂着一盏昏黄的灯，灯影落在地上；整体冷蓝色调，安静。" },
-    "BG-05": { key: "BG-05", name: "巷子尽头 · 雾", prompt: "清晨薄雾里的巷子尽头，雾很浓，远远的几道人影只剩模糊的轮廓，看不清是谁；青灰的墙，湿冷的地面。" },
-    "BG-06": { key: "BG-06", name: "廊下 · 雨", prompt: "下雨天，长长的廊下，檐角的雨水连成一条条线垂下来，地面被打湿，映着灰绿的天光；廊柱与栏杆的木头被雨浸得发暗。" },
-    "BG-07": { key: "BG-07", name: "院中石桌 · 黄昏", prompt: "黄昏的金色斜光洒在旧院里的石桌上，桌面空空荡荡，只摆着一只旧茶碗；桌边没有人，余晖把桌影拉得很长。" },
-    "BG-08": { key: "BG-08", name: "巷子 · 秋", prompt: "秋天的小巷，两侧是斑驳的旧院墙，几片落叶散在青石板上，斜斜的秋日光穿过墙面；色调偏黄。" },
-    "BG-09": { key: "BG-09", name: "挂榜处 · 院门内", prompt: "院子门内侧的墙边，一面刨得发亮的旧木牌立在那里，牌面上一行行刻着小字的名字，旁边摆着一本摊开的册子；冷白的白天光从上方落下来。" },
-    "BG-10": { key: "BG-10", name: "雪夜院中", prompt: "下雪的深夜，旧式小院的院墙上积了一层雪，院里几个模糊的背影站在雪地里看不太清；青白的雪夜光线，雪花静静地落。" },
-    "BG-11": { key: "BG-11", name: "别家门第 · 门外", prompt: "气派的旧式宅第门前，高高的大石阶，门上装着沉甸甸的铜门环，门外两排整整齐齐的门灯一路排开；黄昏时分，灯还没全亮。" },
-    "BG-12": { key: "BG-12", name: "收旧物的铺子 · 内", prompt: "收旧物的老铺子内部，一排排老旧的物件架子上堆满旧物，架边挂着册子，一柱光从高高的天窗直直落下来；铺子里光线很暗，只有那一柱亮。" },
-    "BG-13": { key: "BG-13", name: "坡地 · 黄昏", prompt: "城外的坡地，一条向上又向远的路通向天边，路的两侧是荒草，远远几个人各走各的、越走越远；黄昏的霞色染红了半边天。" },
-    "BG-14": { key: "BG-14", name: "空屋 · 积尘", prompt: "空了很久的老屋子，家具上落着厚厚的灰，桌角有被翻动过的痕迹，灰尘在午后斜射的光里浮着；门半开着。" },
-    "BG-15": { key: "BG-15", name: "灯下账桌", prompt: "夜里的一张旧账桌，桌上摆着一盏暖黄的油灯、一本摊开的册子和一支搁在砚边的毛笔；暖黄灯光只照亮桌面这一小块，周围是暗的。" },
-    "BG-16": { key: "BG-16", name: "天劫 · 夜空", prompt: "大片深沉的夜空，一道巨大的裂痕自天顶压下来，裂缝里透出刺目的冷白光，云被撕裂开来；压迫感极强，夜、冷白。" },
-    "BG-17": { key: "BG-17", name: "铺门外 · 街市一角", prompt: "白天的老街一角，铺门外挂着招牌，街角人来人往、远处升起淡淡的炊烟，青砖墙面；明快的日间光线。" },
-    "BG-18": { key: "BG-18", name: "院内 · 晨", prompt: "天刚亮的旧式小院，地上还浮着一层薄薄的水汽，青石板湿漉漉的，院里的一切看着都是新的；清晨的暖白光，安静。" },
-    "BG-19": { key: "BG-19", name: "星月坛 · 内", prompt: "一座巨大的旧坛内部，坛面上布满了细密交错的暗色密点纹样，坛正中供着一团紧紧抱在一起、看不清是什么的东西；坛内光线很暗，只有顶部漏下一线天光，压迫感十足。" },
-    "BG-20": { key: "BG-20", name: "巷尾 · 夜", prompt: "深夜的巷子尾端，墙头上一道道黑影，院墙有被翻越过的痕迹，月光下的空巷寂静无人；冷灰色调。" },
-    "BG-21": { key: "BG-21", name: "院门外 · 雪夜对峙", prompt: "雪夜里的院门内与外，门里门外两方的人影隔着一道门槛遥遥对望，雪一直在落；青白的雪光，气氛紧绷。" },
+    "BG-01": { key: "BG-01", name: "巷口石阶 · 晨雾", prompt: BG_STYLE + ", " + "an ancient Chinese alley entrance at first light, worn stone steps descending into dense morning mist, the lowest steps polished shiny from years of footfall, alley walls dissolving into pale grey fog on both sides, cool grey-blue palette, soft diffuse dawn light from above and slightly behind, no hard shadows, mist pooling across the lower frame, wide horizontal composition with the steps low and centred and open fog-filled air above, generous clean empty space on the left and right for character placement, no people, empty scene, " + NEG_STYLE },
+    "BG-02": { key: "BG-02", name: "门内院子 · 晌午", prompt: BG_STYLE + ", " + "a quiet ancient Chinese courtyard seen from inside at midday, a small stone table and stools at the side, freshly swept earth floor, cloth drying on a bamboo rack along one wall, tiled eaves and wooden door frames, warm noon sunlight pooling on the ground with soft leaf shadows, warm gold and jade palette, light from high above and slightly to one side, wide horizontal composition with the courtyard floor low and broad and clear open space left and right for character figures to stand, no people, empty scene, " + NEG_STYLE },
+    "BG-03": { key: "BG-03", name: "门口 · 傍晚", prompt: BG_STYLE + ", " + "view from inside an ancient Chinese courtyard toward the open street gate at dusk, empty stone-paved lane beyond the threshold, distant sky pressing low with heavy dusk clouds, warm grey and muted amber palette, low warm light entering through the gateway from outside, the interior falling into gentle shadow, wide horizontal composition looking out through the door opening with the empty threshold low and centred, clear open space on both sides for character placement, no people, empty scene, " + NEG_STYLE },
+    "BG-04": { key: "BG-04", name: "院里 · 夜", prompt: BG_STYLE + ", " + "an ancient Chinese courtyard at night, moonlight falling across the corner of a covered walkway, swept earth floor, a single oil lamp glowing under the eaves, tiled roofs and wooden pillars, cool blue night palette with one warm lamp accent, cold moonlight from high above and a small warm light source to one side, deep blue shadows, wide horizontal composition with the lamp and walkway at the side and the open courtyard low and centred, clear open space left and right for character figures, no people, empty scene, " + NEG_STYLE },
+    "BG-05": { key: "BG-05", name: "巷子尽头 · 雾", prompt: BG_STYLE + ", " + "the far end of an ancient Chinese alley in thin early morning fog, a narrow lane between high grey-brick walls receding into white haze, faint blurred dark shapes dissolving into the mist far away reading as distant objects rather than people, cool desaturated grey palette, soft flat foggy light from the white sky above, low contrast, wide horizontal composition with the lane vanishing point slightly off-centre and the mist filling the upper frame, open empty space on the left and right for character placement, no people, empty scene, " + NEG_STYLE },
+    "BG-06": { key: "BG-06", name: "廊下 · 雨", prompt: BG_STYLE + ", " + "under the eaves of an ancient Chinese covered corridor in steady rain, rainwater falling as continuous threads from the roof edge, wet slicked stone floor with shallow reflections, wooden pillars and tiled roof, muted grey-green palette, dim overcast light from the open courtyard beyond the rain curtain, cool diffuse low contrast, wide horizontal composition with the falling rain curtain across the frame and the wet floor low and centred, clear dry open space left and right for character placement, no people, empty scene, " + NEG_STYLE },
+    "BG-07": { key: "BG-07", name: "院中石桌 · 黄昏", prompt: BG_STYLE + ", " + "an ancient Chinese courtyard with a single round stone table and one stone stool at golden hour, the tabletop completely bare, swept earth floor, tiled roof edge and a tree branch framing the top, low golden sun raking from one side casting long soft shadows, warm amber and honey palette, wide horizontal composition with the empty table low and slightly off-centre and open glowing sky above, generous clear space on the left and right for character placement, one place setting but nobody seated, no people, empty scene, " + NEG_STYLE },
+    "BG-08": { key: "BG-08", name: "巷子 · 秋", prompt: BG_STYLE + ", " + "an ancient Chinese alley in autumn afternoon, grey-brick courtyard walls on both sides, a few fallen golden leaves scattered on the stone path, bare branches overhanging the top of the frame, warm russet and straw palette, low slanting golden autumn sun from one side casting long thin shadows across the lane, wide horizontal composition with the lane receding and the walls framing both edges, clear open space on the left and right for character placement, no people, empty scene, " + NEG_STYLE },
+    "BG-09": { key: "BG-09", name: "挂榜处 · 院门内", prompt: BG_STYLE + ", " + "an ancient Chinese courtyard just inside the gate used as an announcement spot, a large wooden board and an open ledger book set on a stand, rows of faint vertical name marks inked on the board, spare and solemn, cool pale daylight palette, flat cool light from the open sky above with one soft directional source from the side, wide horizontal composition with the board reading as the focal point slightly above centre and the standing ground low and clear, open space on both sides for character placement, no people, empty scene, no readable letters, " + NEG_STYLE },
+    "BG-10": { key: "BG-10", name: "雪夜院中", prompt: BG_STYLE + ", " + "an ancient Chinese courtyard at night in falling snow, snow piled on the tiled roofs and courtyard walls, the swept ground covered in fresh white snow with a clean untouched surface, bare branches catching snow, cold blue-white night palette, dim blue moonlight from above and a faint warm lamp glow at the eaves, wide horizontal composition with the snowy courtyard floor low and broad and the roofs and sky above, clear open space on the left and right for character placement, no people, empty scene, " + NEG_STYLE },
+    "BG-11": { key: "BG-11", name: "别家门第 · 门外", prompt: BG_STYLE + ", " + "the grand gateway of a wealthy ancient Chinese family seen from the street at dusk, imposing lacquered double doors, a tall stone threshold and steps, brass door rings and lintel carvings, a long row of paired door lanterns glowing evenly along the facade, warm dusk palette with rich red-brown and amber, warm lantern light from both sides meeting the fading blue sky above, wide horizontal composition with the doors centred and the steps low and the lantern line crossing the frame, clear open space at the foot of the steps for character placement, no people, empty scene, " + NEG_STYLE },
+    "BG-12": { key: "BG-12", name: "收旧物的铺子 · 内", prompt: BG_STYLE + ", " + "the interior of an ancient Chinese antique-and-secondhand shop, tall shelves crowded with old objects, jars, boxes and rolled scrolls, an open ledger and ink brush on a low counter, a single shaft of dusty light falling from a high window, dark amber and umber palette, one strong directional light column from above cutting through the gloom, everything else in deep shadow, wide horizontal composition with the light shaft slightly off-centre and the shelves framing both sides, clear dark floor space in the lower frame for character placement, no people, empty scene, " + NEG_STYLE },
+    "BG-13": { key: "BG-13", name: "坡地 · 黄昏", prompt: BG_STYLE + ", " + "an open hillside with a path winding upward and away into the distance at dusk, long grass and low scrub, bare earth trail, layered hills fading on the horizon, warm dusk palette of rose and violet and deep gold, low warm light from the horizon behind the hills, long shadows stretching toward the viewer, wide horizontal composition with the path leading up from the lower frame to a high horizon and a vast open sky above, clear empty ground in the lower frame for character placement, no people, empty scene, " + NEG_STYLE },
+    "BG-14": { key: "BG-14", name: "空屋 · 积尘", prompt: BG_STYLE + ", " + "the interior of a long-abandoned ancient Chinese room, bare wooden furniture, a dusty bed frame, cobwebs, a fallen stool and scattered disturbed objects, fine dust floating in the air, everything covered in a grey film, muted sepia and grey palette, soft afternoon light entering from one side through a paper window, visible dust motes in the beam, wide horizontal composition with the disturbed corner slightly off-centre and the empty floor low and broad, clear open floor for character placement, no people, empty scene, " + NEG_STYLE },
+    "BG-15": { key: "BG-15", name: "灯下账桌", prompt: BG_STYLE + ", " + "a close view of an ancient Chinese accounting desk at night, a low wooden table with one lit oil lamp, an open ledger book with faint tally marks and a writing brush resting on a stand, an abacus to the side, a cup of cold tea, warm amber and deep brown palette, one warm lamp as the single light source from one side throwing long shadows, the rest of the room in darkness, wide horizontal composition with the desk low and centred and the lamp glow pooling on the ledger, clear dark space at the near edge for character placement, no people, empty scene, no readable letters, " + NEG_STYLE },
+    "BG-16": { key: "BG-16", name: "天劫 · 夜空", prompt: BG_STYLE + ", " + "a vast night sky over an ancient Chinese roofscape, dark clouds churning low, a single jagged crack of cold white light splitting the heavens and pressing down toward the ground, faint distant rooftops along the bottom, cold blue-black and pale white palette, one intense cold light source from the crack above and behind, everything else in deep night, wide horizontal composition with the sky filling the upper four fifths and the rooftops as a thin band at the very bottom, clear open dark lower frame for character placement, no people, empty scene, " + NEG_STYLE },
+    "BG-17": { key: "BG-17", name: "铺门外 · 街市一角", prompt: BG_STYLE + ", " + "a corner of an ancient Chinese market street in daytime, wooden shop fronts with hanging cloth signs and banners, stacked goods and baskets by the doors, a narrow lane curving away, distant rooftops and a thin drift of far smoke on the horizon, warm daylight palette of ochre and jade and faded red, bright even daylight from a high sun with soft shadows, wide horizontal composition with the shop front slightly off-centre and the lane leading the eye away, clear open ground in the lower frame for character placement, no people, empty scene, no figures in the foreground, " + NEG_STYLE },
+    "BG-18": { key: "BG-18", name: "院内 · 晨", prompt: BG_STYLE + ", " + "an ancient Chinese courtyard at the first light of morning, thin mist rising off the damp swept ground, water droplets on the eaves, tiled roofs and a wooden door frame catching the first warm light, a clean quiet scene that feels newly made, fresh warm-white and pale jade palette, soft low warm morning sun from one side with gentle mist glow, wide horizontal composition with the courtyard floor low and clear and the sky pale above, generous open space on the left and right for character placement, no people, empty scene, " + NEG_STYLE },
+    "BG-19": { key: "BG-19", name: "星月坛 · 内", prompt: BG_STYLE + ", " + "the interior of a mysterious ancient Chinese altar hall, a raised circular stone altar in the centre covered in a dense pattern of countless small carved dots, on the altar rests a single tightly huddled bundle-like offering wrapped close, cold stone walls rising into darkness, one thin blade of pale daylight falling from a narrow skylight far above, dark ink-blue and cold grey palette, one cold beam of light as the only source from directly above, oppressive deep shadow all around, wide horizontal composition with the altar slightly off-centre and the light beam cutting the darkness, clear dark floor space in the lower frame for character placement, no people, empty scene, " + NEG_STYLE },
+    "BG-20": { key: "BG-20", name: "巷尾 · 夜", prompt: BG_STYLE + ", " + "the dark dead-end of an ancient Chinese alley at deep night, high courtyard walls, one section of the wall visibly disturbed and pushed askew, a bare moonlit lane, cold grey and blue palette, pale moonlight from above throwing hard shadows, everything low contrast and cold, wide horizontal composition with the lane receding and the disturbed wall at one side, clear open moonlit ground in the lower frame for character placement, no people, empty scene, " + NEG_STYLE },
+    "BG-21": { key: "BG-21", name: "院门外 · 雪夜对峙", prompt: BG_STYLE + ", " + "the outside of an ancient Chinese courtyard gate at night in heavy falling snow, closed lacquered doors with brass rings, a stone step and a threshold, snow piling on the ground and the roof edge, fresh footprints in the snow leading up to the gate from the front and stopping there, cold blue-white palette, dim moonlight through the snowfall and a faint warm light seeping from under the doors, wide horizontal composition with the gate centred and the snowy ground low and broad, clear open snow in the foreground for character placement, no people, empty scene, " + NEG_STYLE },
   };
   // 章节 → BG key 映射（先做卷一 ch1–ch5；后续可扩）
   const BG_CHAPTER_MAP = {
@@ -3202,7 +3210,7 @@
         const res = await d.generate(cat.prompt, { seedKey: bgSeedKey(k), variant: 0, landscape: true });
         const src = (res && res.b64) ? ("data:image/png;base64," + res.b64) : ((res && res.url) || "");
         if (!src) return "";
-        const out = await d.toStore(src, 1600, 0.85, 1280, 0.8);   // 大图 1600/0.85 上云；回落 1280/0.8 data URI
+        const out = await d.toStore(src, 1280, 0.88, 768, 0.86);   // 云端长边 1280/q0.88；本地兜底 768/q0.86（规范 §5）
         const url = (out && out.url) || "";
         if (!url) return "";
         set(k, url);                                  // 永久 URL（云 / data URI）→ ww_bg
@@ -6961,7 +6969,7 @@
     GIFT_REACTIONS, GIFT_REACTION_FALLBACK, giftReactionOf, GIFT_COPY,
     GIFT_LOG_KEY, loadGiftDay, giftGivenToday, noteGiftGiven,
     // v165：BG 场景背景系统（全局 21 张；ww_bg 永久 URL；ensureBg 并发去重）
-    BG_KEY, BG_CATALOG, BG_CHAPTER_MAP, BG_PROMPT_TAIL, bgByKey, bgSeedKey, bgForChapter, bgLoadAll, bgGet, bgPut, ensureBg,
+    BG_KEY, BG_CATALOG, BG_CHAPTER_MAP, BG_STYLE, NEG_STYLE, bgByKey, bgSeedKey, bgForChapter, bgLoadAll, bgGet, bgPut, ensureBg,
     HEART_MARKS, HEART_LV_NAMES, heartLevel, addHeart,
     harmedOf, setHarmed,
     fmt, greetVars,

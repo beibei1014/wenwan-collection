@@ -297,8 +297,8 @@ section("10. 心迹档位名 + 送礼反应台词（占位）+ 防物化红线")
 {
   const { S } = newSpirits();
   ok(Array.isArray(S.HEART_LV_NAMES) && S.HEART_LV_NAMES.length === 5, "HEART_LV_NAMES 五档");
-  ok(S.heartLevel(0).name === "未起头" && S.heartLevel(40).name === "微澜" && S.heartLevel(100).name === "动心" && S.heartLevel(190).name === "倾心" && S.heartLevel(300).name === "相许",
-    "heartLevel 档名 = 未起头/微澜/动心/倾心/相许");
+  ok(S.heartLevel(0).name === "" && S.heartLevel(40).name === "微澜" && S.heartLevel(100).name === "动心" && S.heartLevel(190).name === "倾心" && S.heartLevel(300).name === "相许",
+    "heartLevel 档名 = lv0 无档名(不上屏,空串)/微澜/动心/倾心/相许");
   if (typeof S.giftReactionOf === "function") {
     ok(S.giftReactionOf({ look: { pers: "cool" } }, true) === "……还行。", "cool 命中 = 三字内短句");
     const hi = S.giftReactionOf({ look: { pers: "gentle" } }, true), mi = S.giftReactionOf({ look: { pers: "gentle" } }, false);
