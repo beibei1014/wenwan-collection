@@ -266,8 +266,12 @@ function constOf(src, name) {
     ok(/const CG_THUMB_Q = 0\.8;/.test(appSrc), "CG_THUMB_Q = 0.8");
     ok(/const CG_IMG_SIZE = 1280;/.test(appSrc), "🔴 v125 单张 CG_IMG_SIZE = 1280（v164i 由 768 抬高）");
     ok(/const CG_IMG_SIZE_LOCAL = 768;/.test(appSrc), "CG_IMG_SIZE_LOCAL = 768（落 localStorage 的兜底长边）");
-    ok((appSrc.match(/CG_IMG_SIZE, 0\.9, CG_IMG_SIZE_LOCAL, 0\.86/g) || []).length === 3,
-      "v125 的 3 条 CG 写入路径都走「1280/q0.9 云端 + ≤768/q0.86 本地」");
+    // v165-R2：原来「突破 CG / 节令 CG / 房间剧情 CG」三条**各自**落库（3 处），
+    //   现在三条线共用唯一入口 drawCgFromBrief → 收敛成 1 处（⛔ 且都不再自动触发）。
+    const cgHits = appSrc.match(/CG_IMG_SIZE, 0\.9, CG_IMG_SIZE_LOCAL, 0\.86/g) || [];
+    ok(cgHits.length === 1,
+      "v165-R2 · 三条 CG 线（蜕形化形 / 节令 / 双人事件）共用 drawCgFromBrief 落库，只剩 1 处（实测 " + cgHits.length + " 处）");
+    ok(appSrc.indexOf("async function drawCgFromBrief") >= 0, "收敛后的唯一 CG 落库入口 = drawCgFromBrief");
     ok(appSrc.indexOf("CG_IMG_SIZE, 0.86") < 0, "⛔ 没有「大图 data URI 直落 localStorage」的旧写法残留");
   }
 

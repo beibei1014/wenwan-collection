@@ -1333,6 +1333,15 @@ img { display:block; }
   box-shadow:var(--shadow-1); background:var(--ph-bg, #efe9dd);
 }
 
+/* v165-R2：CG「描述先行」—— 描述编辑框（⓪ 生成 / ① 编辑确认 / ② 按描述出图） */
+.cg-brief { margin-top:2px; }
+.cg-brief-tip { font-size:12px; color:var(--text-2); line-height:1.7; margin-bottom:8px; }
+.cg-brief-ta {
+  width:100%; box-sizing:border-box; border:1px solid var(--line); border-radius:12px;
+  background:#fff; color:var(--text); font-size:13px; line-height:1.7;
+  padding:10px 12px; resize:vertical; font-family:inherit;
+}
+
 /* 选人列表 */
 .pick-list { max-height:52vh; overflow:auto; }
 .pick-row {

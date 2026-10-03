@@ -248,12 +248,15 @@ async function main() {
   }
 
   /* ---- 断言 4：源码静态检查 ---- */
-  section("断言4：三处 CG 落库都走不变式（静态检查）");
+  section("断言4：CG 落库都走不变式（静态检查）");
   {
     // 调用点跨两行写成，所以按「imageToStoreUrl( ... CG_IMG_SIZE_LOCAL」整段匹配
+    // v165-R2：原「突破 CG / 节令 CG / 房间剧情 CG」三条各自落库（3 处），
+    //   现在统一收敛到唯一入口 drawCgFromBrief（1 处），三条线共用它，且都不再自动触发。
     const hits = src.match(/imageToStoreUrl\([\s\S]{0,240}?CG_IMG_SIZE_LOCAL/g) || [];
     info("走 imageToStoreUrl 的 CG 落库点：" + hits.length + " 处");
-    ok(hits.length === 3, "突破 CG / 节令 CG / 房间剧情 CG 三处都走 imageToStoreUrl（实测 " + hits.length + " 处）");
+    ok(hits.length === 1, "v165-R2 · 三条 CG 线共用 drawCgFromBrief 落库，只剩 1 处（实测 " + hits.length + " 处）");
+    ok(src.indexOf("async function drawCgFromBrief") >= 0, "收敛后的唯一 CG 落库入口 = drawCgFromBrief");
     ok(/CG_IMG_SIZE, 0\.9, CG_IMG_SIZE_LOCAL, 0\.86/.test(src), "CG 落库参数 = 1280/q0.9 云端 + ≤768/q0.86 本地");
     ok(src.indexOf("CG_IMG_SIZE, 0.86") < 0, "⛔ 旧的 CG_IMG_SIZE, 0.86 直落 localStorage 已清干净");
     ok(src.indexOf(", 256, 0.72") < 0, "⛔ 旧的入史 256/0.72 已清干净");

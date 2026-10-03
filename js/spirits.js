@@ -7132,6 +7132,128 @@
       (lookHard(lkA) ? (", " + nmA + ": " + lookHard(lkA)) : "") +
       (lookHard(lkB) ? (", " + nmB + ": " + lookHard(lkB)) : "");
   }
+
+  /* ============================================================
+   * v165-R2 · CG「描述先行」三段式（用户裁定：先看描述，OK 了再出图）
+   *   旧流程：进页面 → 直接拼英文 prompt → **自动**出图。用户看不到要画什么，画歪只能重烧额度。
+   *   新流程：⓪ **中文画面描述**（走文字通道 textChat，⛔ 只烧文本、绝不烧出图额度）
+   *           ① 界面展示 + **可编辑**，用户确认 / 改
+   *           ② 从确认后的描述**提取出图关键词** → 装配英文 prompt → **手动**点按钮才出图（横版 cgLadderFor）
+   *   存储（⛔ 绝不碰 rec.marks / rec.cgs 资产库禁区）：
+   *     · 蜕形 / 化形专属 CG → rec.cgBrief    · 节令 CG → rec.fests[dk].brief
+   *     · 双人事件 CG       → Rooms.setStoryBrief（slot.brief）
+   *   世界观判据：描述只写画面上看得见的东西；「游戏怎么做的」（模型名 / 额度 / hex / 按钮名）一律不写。
+   * ============================================================ */
+  const CG_BRIEF_CFG = { tokens: 460, kwTokens: 300, minLen: 24, maxLen: 460 };
+
+  const CG_BRIEF_SYS = "你在为一个文玩收藏 App 写一张 CG 插画的**中文画面描述**。"
+    + "沁灵是主人盘到挂瓷的手串开沁化成的小人，住在中国古代的院子与房间里，彼此是一家人。"
+    + "只写画面上看得见的东西：谁在场、穿什么（按给定的服饰意象）、在什么场景、做什么动作、什么构图、什么情绪。"
+    + "⛔ 不许出现模型名、接口、额度、色值代码、按钮名、版本号这类「游戏是怎么做的」的信息。"
+    + "⛔ 不写对话台词，不写旁白式抒情；不要标题、不要引号、不要解释。"
+    + "基调温暖有人味，绝不阴森恐怖。控制在 120-220 字，直接输出描述正文。";
+
+  // 事实清单（喂给文本模型）：只给**世界观内**的素材，绝不塞实现细节
+  function cgBriefFacts(o) {
+    const x = o || {};
+    const L = [];
+    const who = (p) => {
+      const lk = (p && p.look) || {};
+      const n = p ? String(p.name || (p.item && p.item.name) || "它") : "它";
+      return "【" + n + "】服饰意象：" + (lk.outfitZh || "古风常服") + (lk.hairZh ? ("；发色意象：" + lk.hairZh) : "");
+    };
+    if (x.kind === "pair") {
+      L.push("画面里有两只：" + who(x.a) + "；" + who(x.b));
+      L.push("这是它们第 " + ((Number(x.level) || 0) + 1) + " 段故事，关系：" + (x.levelName || "正在熟络") + "；地点：" + (x.roomName || "它们的小房间"));
+      if (x.storyText) L.push("这段剧情讲的是：" + String(x.storyText).replace(/\s+/g, " ").slice(0, 150));
+      L.push("构图：横版宽幅，两只同框，房间与院子的环境占满画面两侧。");
+    } else {
+      const lk = x.look || {};
+      const sd = stageDef(Math.max(1, Number(x.stage) || 1));
+      const n = x.item ? String(x.item.name || "它") : "它";
+      L.push("画面里只有一只：" + n + "；服饰意象：" + (lk.outfitZh || "古风常服") + (lk.hairZh ? ("；发色意象：" + lk.hairZh) : ""));
+      L.push("形态：" + sd.name + "（" + (sd.sizeZh || "") + "）；称号/性格：" + ((x.persona && (x.persona.title || x.persona.name)) || "未定"));
+      if (x.festName) L.push("节令：" + x.festName + "（场景：" + (x.festScene || "当令的中式院落") + "）");
+      L.push("构图：横版宽幅，它一个人站在场景里，环境占满画面两侧，全身都在画内。");
+    }
+    return L.join("\n");
+  }
+
+  // 无 key / 调用失败时的本地模板（保证流程永远走得完，⛔ 不阻塞、不报错）
+  function cgBriefLocal(o) {
+    const x = o || {};
+    if (x.kind === "pair") {
+      const na = (x.a && (x.a.name || (x.a.item && x.a.item.name))) || "它";
+      const nb = (x.b && (x.b.name || (x.b.item && x.b.item.name))) || "它";
+      return na + "和" + nb + "并排待在" + (x.roomName || "它们的小房间") + "里，屋里是木格窗、矮桌和一盏小灯，" +
+        "午后的光斜进来落在两个人中间。它们一个靠着桌沿、一个偏着头，谁都没说话，气氛是熟人才有的松弛。" +
+        "横版构图，两只同框，房间与窗外的院子占满画面两侧，暖色调，安静有人味。";
+    }
+    const lk = x.look || {};
+    const n = (x.item && x.item.name) || "它";
+    const sd = stageDef(Math.max(1, Number(x.stage) || 1));
+    return n + "独自站在" + (x.festName ? (x.festName + "的") : "") + "中式院子里，穿着" + (lk.outfitZh || "古风常服") +
+      "，廊下挂着一盏灯，石板地上有落影。它微微侧身，视线看向画外，神情安静而笃定。" +
+      "横版构图，人站在画面偏一侧，院墙、屋檐与远处的天色占满两侧，全身都在画内，" + sd.name + "的身形比例，暖色调。";
+  }
+
+  // ⓪ 生成中文画面描述（文本模型；失败 / 无 key → 本地模板）
+  async function cgBrief(o) {
+    const x = o || {};
+    if (!getAiKey()) return cgBriefLocal(x);
+    try {
+      const txt = await aiChat([
+        { role: "system", content: CG_BRIEF_SYS },
+        { role: "user", content: cgBriefFacts(x) },
+      ], CG_BRIEF_CFG.tokens);
+      const s = String(txt || "").trim();
+      if (s.length >= CG_BRIEF_CFG.minLen) return s.slice(0, CG_BRIEF_CFG.maxLen);
+    } catch (e) { /* 回落本地模板 */ }
+    return cgBriefLocal(x);
+  }
+
+  // ② 从**确认后**的中文描述提取英文出图关键词（文本模型；失败 → 空串，由 cgPromptFromBrief 直附中文）
+  async function cgKeywords(brief, o) {
+    const b = String(brief || "").trim();
+    if (!b || !getAiKey()) return "";
+    const sys = "你把一段中文画面描述压缩成**英文出图关键词**（prompt 片段）。"
+      + "只输出一串英文短语，用逗号分隔；不要句子、不要解释、不要引号、不要换行。"
+      + "按顺序覆盖：人物与服饰、动作与姿态、场景与道具、构图与景别、光线与色调、情绪。"
+      + "⛔ 不要输出中文，不要输出任何技术参数（尺寸、模型名、色值代码）。控制在 60 个词以内。";
+    try {
+      const txt = await aiChat([
+        { role: "system", content: sys },
+        { role: "user", content: b + "\n\n(画面里有 " + (((o || {}).kind === "pair") ? "两个" : "一个") + "角色)" },
+      ], CG_BRIEF_CFG.kwTokens);
+      const s = String(txt || "").replace(/[\r\n]+/g, " ").replace(/[`"'。]/g, "").trim();
+      // 只认纯英文关键词串（含中文说明/解释的一律丢弃，回落直附中文描述）
+      if (s.length >= 20 && !/[一-龥]/.test(s)) return s.slice(0, 700);
+    } catch (e) { /* 回落 */ }
+    return "";
+  }
+
+  // 装配最终英文 prompt：CG_STYLE / 外观 / 阶段 / ANATOMY / CONSISTENCY / BG_NEG / PROPORTION LOCK **一律照带**
+  // ⚠️ 顺序：确认后的描述 + CONSISTENCY + BG_NEG 插在**比例锁定块之前** —— PROPORTION LOCK 永远压在最末尾。
+  function cgPromptFromBrief(brief, o) {
+    const x = o || {};
+    const b = String(brief || "").trim();
+    const kw = String(x.keywords || "").trim();
+    const scene = kw || b;                     // 有英文关键词就用关键词，否则直附中文描述（模型读得懂）
+    const stage = Math.max(1, Number(x.stage) || 1);
+    const sd = stageDef(stage);
+    const prop = sd.prop ? (", " + sd.prop) : "";
+    let base;
+    if (x.kind === "pair") base = storyCgPrompt(x.a, x.b, x.level, x.roomName);
+    else if (x.kind === "fest") base = festCgPrompt(x.item, null, stage, x.appearance, x.look, x.fest);
+    else base = promptForCg(x.item, null, stage, x.appearance, x.look);
+    let head = base;
+    if (prop && head.length > prop.length && head.slice(-prop.length) === prop) {
+      head = head.slice(0, head.length - prop.length);   // 先把比例锁定块摘下来
+    }
+    const mid = (scene ? (", " + scene) : "") + ", " + CONSISTENCY + ", " + BG_NEG;
+    return head + mid + prop;
+  }
+
   // 用**任意 prompt**出图（剧情 CG 用；沁灵主图仍走 generateImage）
   async function generateCustom(prompt, opts) {
     const cfg = getImageCfg();
@@ -7419,6 +7541,8 @@
     personaZh, personaZhLocal, ensureDiary, diarySlots, diaryLocal, roomStory, storyLocal,
     // v125：剧情 CG
     storyCgPrompt, promptForCg, generateCustom, CG_STYLE, CG_SIZE_BY_PROVIDER, cgSizeFor, cgLadderFor,
+    // v165-R2：CG「描述先行」三段式（⓪ 生成中文描述 → ① 用户确认/编辑 → ② 提取关键词装配 prompt → 手动出图）
+    CG_BRIEF_CFG, CG_BRIEF_SYS, cgBriefFacts, cgBriefLocal, cgBrief, cgKeywords, cgPromptFromBrief,
     // v125：阶段规则 —— 凝形/开窍只有立绘；觉醒/化形额外出 CG
     cgStages: [3, 4], needCg: function (stage) { return (Number(stage) || 1) >= 3; },
     // v155：陪伴系统（每日问候 / 亲密度 / 每日一签 / 日记回信 / 回响）—— 全本地，0 成本

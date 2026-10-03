@@ -207,6 +207,17 @@
     saveBonds(bonds);
     return slot;
   }
+  // v165-R2：给某段剧情存**画面描述**（「描述先行」的第 ⓪① 步；⛔ 不是图，不烧出图额度）
+  function setStoryBrief(a, b, level, text) {
+    const bonds = loadBonds();
+    const bd = bonds[pairKey(a, b)];
+    if (!bd) return null;
+    const slot = (bd.stories || []).filter((s) => s.level === level)[0];
+    if (!slot) return null;
+    slot.brief = String(text || "");
+    saveBonds(bonds);
+    return slot;
+  }
   function markRead(a, b, level) {
     const bonds = loadBonds();
     const bd = bonds[pairKey(a, b)];
@@ -272,6 +283,6 @@
     membersOf, roomOf, roomCounts,
     loadBonds, saveBonds, bondOf, affinityOf, levelInfo, tick, storyText, writeStory, markRead,
     unreadStories, pendingStories, storiesOfRoom, roomAffinity,
-    setStoryImage,
+    setStoryImage, setStoryBrief,
   };
 })();

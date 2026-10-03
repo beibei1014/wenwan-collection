@@ -3847,25 +3847,8 @@
         const room = Rooms.getRoom(q.roomId) || { name: "它们的小房间" };
         const txt = await Spirits.roomStory(spiritSp(a), spiritSp(b), q.level, room.name, Rooms.affinityOf(q.a, q.b));
         Rooms.writeStory(q.a, q.b, q.level, "", txt);
-        // v125：这段事件也配一张双人 CG（每段剧情只画一次，失败不阻塞）
-        try {
-          const cgPrompt = Spirits.storyCgPrompt(spiritSp(a), spiritSp(b), q.level, room.name);
-          // v165-Q：补 ref（参考图）—— 双人房间 CG 此前是唯一漏带 ref 的出图路径，
-          //   没有参考图 ⇒ 角色发色/瞳色/服饰纹样会跟已确立的形象对不上（一致性靠 ref 兜底）。
-          const _sR = Spirits.load();
-          const _rA = _sR && _sR[a.id], _rB = _sR && _sR[b.id];
-          const _cgRef = (_rA && _rA.imgUrl) || (_rB && _rB.imgUrl) || "";
-          // 横版 CG（用户要求）：长边 = CG_IMG_SIZE，比立绘大一点，横构图看得清
-          const cg = await Spirits.generateCustom(cgPrompt, { seedKey: Rooms.pairKey(q.a, q.b) + "#cg" + q.level, variant: 0, landscape: true, ref: _cgRef });
-          // v164i：房间剧情 CG 同样落 localStorage → 也遵守「大图只进云端」不变式
-          //   （大图 1280/q0.9 传云端；传不上去才落 ≤768 的 data URI）
-          const cgUrl = (await imageToStoreUrl(cg.b64 ? "data:image/png;base64," + cg.b64 : cg.url,
-            CG_IMG_SIZE, 0.9, CG_IMG_SIZE_LOCAL, 0.86)).url;
-          if (cgUrl) {
-            Rooms.setStoryImage(q.a, q.b, q.level, cgUrl);
-            try { localStorage.setItem("ww_gen_total", String(Number(localStorage.getItem("ww_gen_total") || "0") + 1)); } catch (e2) { /* 忽略 */ }
-          }
-        } catch (e) { /* CG 失败不影响剧情文字 */ }
+        // v165-R2：⛔ **双人事件 CG 不再自动出图**（这一段整块删掉了）。
+        //   现在是「描述先行」：用户在剧情弹层里 ⓪ 生成描述 → ① 改到满意 → ② 点「按这段描述出图」才画。
       }
       updateStoryDot();
       if (res.changed || pend.length) rerenderSpiritView();
@@ -4070,6 +4053,10 @@
       ensureSpiritCg([item]);
     } catch (e) { /* 静默 */ }
   }
+  // v165-R2：⛔ **CG 绝不自动出图**。这里只剩两件事：
+  //   ① 阶段不到（凝形/开窍）→ 撤掉 CG；② 形象变了 → 撤掉对不上的旧 CG。
+  //   欠图一律 `continue`（与 M 批次 `stageImgPending` 同口径）—— 新图只能由用户在 CG 卡片里
+  //   「确认描述 → 点『按这段描述出图』」手动触发。
   async function ensureSpiritCg(list) {
     if (_cgBusy) return;
     _cgBusy = true;
@@ -4079,45 +4066,108 @@
         const st0 = Spirits.load();
         const rec = Spirits.ensureIn(st0, it.id);
         const stage = Number(rec.stage) || 1;
-        if (spiritNeedsSetup(rec)) continue;         // v127：设定还没定，先不画 CG
         if (!Spirits.needCg(stage)) {
           // 早期阶段：清掉 CG（只保留立绘）
           if (rec.cgUrl || rec.cgKey) { rec.cgUrl = ""; rec.cgKey = ""; rec.cgStage = 0; Spirits.save(st0); changed = true; }
           continue;
         }
-        const key = cgKeyOf(rec);
-        if (rec.cgUrl && rec.cgKey === key) continue;
-        if (rec._cgErr && Date.now() - (rec._cgErrAt || 0) < 10 * 60 * 1000) continue;   // 刚失败过就别反复烧额度
-        const ap = Spirits.appearanceOf(it, rec.appearanceSeed || 0, rec.gender || "");
-        try {
-          const res = await Spirits.generateCustom(Spirits.promptForCg(it, null, stage, ap),
-            { seedKey: it.id + "#cg" + stage, variant: rec.variant || 0, ref: rec.imgUrl || "", landscape: true });
-          // v164i：大图（1280/q0.9）只进云端；传不上去才落 ≤768 的 data URI（别撑爆 localStorage）
-          const url = (await imageToStoreUrl(res.b64 ? "data:image/png;base64," + res.b64 : res.url,
-            CG_IMG_SIZE, 0.9, CG_IMG_SIZE_LOCAL, 0.86)).url;
-          if (url) {
-            const s2 = Spirits.load();
-            const r2 = Spirits.ensureIn(s2, it.id);
-            r2.cgUrl = url;
-            r2.cgAt = Date.now();
-            r2.cgStage = stage;
-            r2.cgKey = key;
-            r2._cgErr = "";
-            bumpGenCount(r2);          // CG 也是要花钱的一张，计入额度
-            Spirits.save(s2);
-            changed = true;
-          }
-        } catch (e) {
-          const s2 = Spirits.load();
-          const r2 = Spirits.ensureIn(s2, it.id);
-          r2._cgErr = (e && e.message) || "CG 出图失败";
-          r2._cgErrAt = Date.now();
-          Spirits.save(s2);
+        // 形象变了（换外观 / 换形象 / 换服务商）→ 旧 CG 对不上了，撤掉
+        if ((rec.cgUrl || rec.cgKey) && rec.cgKey !== cgKeyOf(rec)) {
+          rec.cgUrl = ""; rec.cgKey = ""; rec.cgStage = 0; Spirits.save(st0); changed = true;
         }
+        if (!rec.cgUrl) continue;        // ⛔ 欠图：只记着，绝不自动补（出图必须用户点确认）
       }
       if (changed) rerenderSpiritView();
     } catch (e) { /* 静默 */ }
     _cgBusy = false;
+  }
+
+  /* ---------- v165-R2：CG「描述先行」—— 生成描述 / 按描述出图（两条 CG 线共用） ----------
+     ⛔ 唯一出图入口：只有用户点了「🎬 按这段描述出图」才会真的烧额度。 */
+  const _cgRedo = {};      // 已有 CG 但用户要「改描述重画」→ 临时切回描述编辑态
+  async function genCgBrief(o) {
+    try { return await Spirits.cgBrief(o); } catch (e) { return Spirits.cgBriefLocal(o); }
+  }
+  // 从**确认后**的中文描述 → 装配英文 prompt → 手动出图（横版）；返回图片 url
+  async function drawCgFromBrief(brief, o) {
+    const kw = await Spirits.cgKeywords(brief, o).catch(() => "");
+    const prompt = Spirits.cgPromptFromBrief(brief, Object.assign({}, o, { keywords: kw }));
+    const res = await Spirits.generateCustom(prompt, {
+      seedKey: (o && o.seedKey) || ("cg|" + String(brief).slice(0, 24)),
+      variant: (o && o.variant) || 0,
+      ref: (o && o.ref) || "",
+      landscape: true,                       // ⛔ CG 一律横版（cgLadderFor）
+    });
+    const url = (await imageToStoreUrl(res.b64 ? "data:image/png;base64," + res.b64 : res.url,
+      CG_IMG_SIZE, 0.9, CG_IMG_SIZE_LOCAL, 0.86)).url;
+    return { url: url, prompt: prompt };
+  }
+  // 节令 CG：描述先行弹层（⓪ 生成描述 → ① 编辑确认 → ② 手动出图）
+  function openFestCgBriefModal(item, dk, fx0) {
+    const mask = $("#modalMask"), modal = $("#modal");
+    const id = String(item.id);
+    modal.innerHTML = "<h3>🎋「" + esc(fx0.name) + "」限定插画</h3>" +
+      '<div style="font-size:12px;color:var(--text-2);text-align:center;margin-bottom:10px">' +
+      "先看要画什么 —— 描述可以改，改满意了再出图（消耗 1 次出图额度，每只沁灵每个节令只画一次）</div>" +
+      '<textarea class="cg-brief-ta" id="festCgBrief" rows="5" placeholder="点「🔤 生成画面描述」，或者自己写：它站在哪儿、穿什么、在做什么">' +
+      esc((fx0 && fx0.brief) || "") + "</textarea>" +
+      '<div style="display:flex;gap:8px;margin-top:10px">' +
+      '<button class="btn ghost" id="festCgGen" style="flex:1">🔤 生成画面描述</button>' +
+      '<button class="btn primary" id="festCgDraw" style="flex:1">🎬 按这段描述出图</button>' +
+      "</div>" +
+      '<button class="btn ghost" id="festCgClose" style="width:100%;margin-top:8px">先不画</button>';
+    mask.hidden = false; modal.hidden = false; modal.style.display = "";
+    const close = () => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; };
+    const cl = $("#festCgClose"); if (cl) cl.onclick = close;
+    mask.onclick = close;
+    const ta = $("#festCgBrief");
+    const g = $("#festCgGen");
+    if (g) g.onclick = async () => {
+      g.disabled = true; g.textContent = "正在写描述…";
+      try {
+        const rr = Spirits.load()[id] || {};
+        const br = await genCgBrief({
+          kind: "fest", item: item, stage: Number(rr.stage) || 1,
+          look: Spirits.lookOf(item, rr), persona: rr.persona || null,
+          festName: fx0.name, festScene: "",
+        });
+        if (ta) ta.value = br;
+        const s = Spirits.load(); const r = Spirits.ensureIn(s, id);
+        r.fests = r.fests || {}; if (r.fests[dk]) r.fests[dk].brief = br;
+        Spirits.save(s);
+      } catch (e) { toast("描述生成失败：" + ((e && e.message) || "请稍后再试")); }
+      g.disabled = false; g.textContent = "🔤 生成画面描述";
+    };
+    const d = $("#festCgDraw");
+    if (d) d.onclick = async () => {
+      const brief = String((ta && ta.value) || "").trim();
+      if (!brief) { toast("先写一段描述，或者点「🔤 生成画面描述」"); return; }
+      d.disabled = true; d.textContent = "正在画…（约 15-20 秒）";
+      try {
+        const s0 = Spirits.load(); const rb = Spirits.ensureIn(s0, id);
+        rb.fests = rb.fests || {}; if (rb.fests[dk]) rb.fests[dk].brief = brief;   // ① 存确认后的描述
+        Spirits.save(s0);
+        const r1 = Spirits.load()[id] || {};
+        const out = await drawCgFromBrief(brief, {                                  // ② 手动出图
+          kind: "fest", item: item, stage: Number(r1.stage) || 1,
+          appearance: Spirits.appearanceOf(item, r1.appearanceSeed || 0, r1.gender || ""),
+          look: Spirits.lookOf(item, r1), fest: (r1.fests && r1.fests[dk]) || null,
+          seedKey: "festcg|" + id + "|" + dk, variant: 0, ref: r1.imgUrl || "",
+        });
+        const s2 = Spirits.load(); const r2 = Spirits.ensureIn(s2, id);
+        r2.fests = r2.fests || {};
+        if (r2.fests[dk]) { r2.fests[dk].cgUrl = out.url || ""; r2.fests[dk].cgAt = Date.now(); }
+        r2.genCount = (Number(r2.genCount) || 0) + 1;
+        Spirits.save(s2);
+        try { localStorage.setItem("ww_gen_total", String(Number(localStorage.getItem("ww_gen_total") || "0") + 1)); } catch (e2) { /* 忽略 */ }
+        close();
+        toast("🎋「" + fx0.name + "」限定插画画好了");
+        renderSpiritDetailPage(id);
+      } catch (e) {
+        d.disabled = false; d.textContent = "🎬 重试（消耗 1 次出图额度）";
+        toast("出图失败：" + ((e && e.message) || "请稍后再试"));
+      }
+    };
   }
 
   /* ---------- 沁灵形象 / 进阶动作（v111：详情页直接调，不再依赖弹层） ----------
@@ -4743,14 +4793,24 @@
     }
     h += "</div>";
 
-    // v125：CG 插画（蜕形 / 化形才有）
+    // v125：CG 插画（蜕形 / 化形才有）· v165-R2：**描述先行**（⛔ 绝不自动出图）
     h += '<div class="sd-card"><div class="sd-card-title">🎬 CG 插画' +
       (Spirits.needCg(si.stage) ? "" : '<small style="font-weight:400;color:var(--text-2)"> · 蜕形 / 化形才有</small>') + "</div>";
-    if (rec.cgUrl) {
+    if (rec.cgUrl && !_cgRedo[id]) {
       h += '<img class="cg-thumb" id="sdCg" src="' + esc(rec.cgUrl) + '" alt="CG">' +
-        '<div class="sd-gen-hint">点图看大图 · 蜕形 / 化形的专属场景插画</div>';
+        '<div class="sd-gen-hint">点图看大图 · 蜕形 / 化形的专属场景插画 · ' +
+        '<button type="button" class="link-btn" id="sdCgRedo">✏️ 改描述重画</button></div>';
     } else if (Spirits.needCg(si.stage)) {
-      h += '<div class="room-none">' + (rec._cgErr ? ("CG 出图失败：" + esc(rec._cgErr)) : "正在画它的专属 CG…（每张 ≈ 一次出图额度）") + "</div>";
+      h += '<div class="cg-brief">' +
+        '<div class="cg-brief-tip">先看要画什么 —— 这段描述可以直接改，改满意了再出图（出图消耗 1 次额度）</div>' +
+        '<textarea class="cg-brief-ta" id="sdCgBrief" rows="5" placeholder="点「🔤 生成画面描述」，或者干脆自己写：它站在哪儿、穿什么、在做什么、什么光、什么情绪">' +
+        esc(rec.cgBrief || "") + "</textarea>" +
+        '<div style="display:flex;gap:8px;margin-top:8px">' +
+        '<button class="btn ghost" id="sdCgBriefGen" style="flex:1">🔤 生成画面描述</button>' +
+        '<button class="btn primary" id="sdCgDraw" style="flex:1">🎬 按这段描述出图</button>' +
+        "</div>" +
+        (rec._cgErr ? '<div class="sd-gen-hint">上次出图失败：' + esc(rec._cgErr) + "</div>" : "") +
+        "</div>";
     } else {
       h += '<div class="room-none">它现在还是' + esc(si.name) + '，只有立绘；深沁到「蜕形」就会解锁一张专属 CG 🎬</div>';
     }
@@ -4871,7 +4931,57 @@
     if (art) art.onclick = () => openSpiritViewer(rec.imgUrl || Spirits.localAvatarSvg(it));
     const cgEl = $("#sdCg");
     if (cgEl) cgEl.onclick = () => openSpiritViewer(rec.cgUrl || "");
-    // v158：节令限定插画 —— 点了才确认、确认了才出图（一次确认 = 一次额度）
+    const cgRedo = $("#sdCgRedo");
+    if (cgRedo) cgRedo.onclick = () => { _cgRedo[id] = true; renderSpiritDetailPage(id); };
+    // v165-R2：CG 描述先行 —— ⓪ 生成描述 / ① 编辑确认 / ② 按描述出图（⛔ 全程手动，绝不自动出图）
+    const cgBriefTa = $("#sdCgBrief");
+    const cgBriefGen = $("#sdCgBriefGen");
+    if (cgBriefGen) cgBriefGen.onclick = async () => {
+      cgBriefGen.disabled = true; cgBriefGen.textContent = "正在写描述…";
+      try {
+        const r0 = Spirits.load()[id] || {};
+        const br = await genCgBrief({
+          kind: "stage", item: it, stage: Number(r0.stage) || 1,
+          look: Spirits.lookOf(it, r0), persona: r0.persona || null,
+        });
+        if (cgBriefTa) cgBriefTa.value = br;
+        const s0 = Spirits.load(); const r1 = Spirits.ensureIn(s0, id);
+        r1.cgBrief = br; Spirits.save(s0);
+        toast("描述写好了 —— 可以改，改满意再出图");
+      } catch (e) { toast("描述生成失败：" + ((e && e.message) || "请稍后再试")); }
+      cgBriefGen.disabled = false; cgBriefGen.textContent = "🔤 生成画面描述";
+    };
+    const cgDraw = $("#sdCgDraw");
+    if (cgDraw) cgDraw.onclick = async () => {
+      const brief = String((cgBriefTa && cgBriefTa.value) || "").trim();
+      if (!brief) { toast("先写一段描述，或者点「🔤 生成画面描述」"); return; }
+      const s0 = Spirits.load(); const r0 = Spirits.ensureIn(s0, id);
+      r0.cgBrief = brief; r0._cgErr = ""; Spirits.save(s0);          // ① 先存**确认后**的描述
+      cgDraw.disabled = true; cgDraw.textContent = "正在画…（约 15-20 秒）";
+      try {
+        const r1 = Spirits.load()[id] || {};
+        const stage = Number(r1.stage) || 1;
+        const out = await drawCgFromBrief(brief, {                     // ② 提取关键词 → 装配 prompt → 手动出图
+          kind: "stage", item: it, stage: stage,
+          appearance: Spirits.appearanceOf(it, r1.appearanceSeed || 0, r1.gender || ""),
+          look: Spirits.lookOf(it, r1),
+          seedKey: "cg|" + id + "|" + stage, variant: r1.variant || 0, ref: r1.imgUrl || "",
+        });
+        const s2 = Spirits.load(); const r2 = Spirits.ensureIn(s2, id);
+        r2.cgUrl = out.url || ""; r2.cgAt = Date.now(); r2.cgStage = stage; r2.cgKey = cgKeyOf(r2);
+        bumpGenCount(r2);                       // CG 也是要花钱的一张，计入额度
+        Spirits.save(s2);
+        delete _cgRedo[id];
+        toast("🎬 CG 画好了");
+        renderSpiritDetailPage(id);
+      } catch (e) {
+        const s3 = Spirits.load(); const r3 = Spirits.ensureIn(s3, id);
+        r3._cgErr = (e && e.message) || "CG 出图失败"; Spirits.save(s3);
+        cgDraw.disabled = false; cgDraw.textContent = "🎬 重试（消耗 1 次出图额度）";
+        toast("出图失败：" + ((e && e.message) || "请稍后再试"));
+      }
+    };
+    // v158：节令限定插画 · v165-R2：同样走「描述先行」（⛔ 不再只确认额度就出图）
     const festCgBtn = $("#sdFestCg");
     if (festCgBtn) festCgBtn.onclick = async () => {
       if (festCgBtn.disabled) return;
@@ -4880,35 +4990,7 @@
       const fx0 = (r0.fests && r0.fests[dk]) || null;
       if (!fx0) return;
       if (fx0.cgUrl) { openSpiritViewer(fx0.cgUrl); return; }
-      const yes = await confirmModal("画一张「" + fx0.name + "」限定插画？",
-        "按它现在的形象 + " + fx0.name + " 的节令场景，画一张横版插画，消耗 1 次出图额度。每只沁灵每个节令只画一次，画好后就一直留着。",
-        "画这张（1 次额度）", true);
-      if (!yes) return;
-      festCgBtn.disabled = true;
-      festCgBtn.textContent = "正在画…（约 15-20 秒）";
-      try {
-        const r1 = Spirits.load()[id] || {};
-        const ap1 = Spirits.appearanceOf(it, r1.appearanceSeed || 0, r1.gender || "");
-        const lk1 = Spirits.lookOf(it, r1);
-        const prompt = Spirits.festCgPrompt(it, null, r1.stage || 1, ap1, lk1, fx0);
-        const cgRes = await Spirits.generateCustom(prompt, { landscape: true, ref: r1.imgUrl || "", seedKey: "festcg|" + id + "|" + dk, variant: 0 });
-        // v164i：同上 —— 大图只进云端，传不上去才落 ≤768 的 data URI
-        const cgUrl2 = (await imageToStoreUrl(cgRes.b64 ? "data:image/png;base64," + cgRes.b64 : cgRes.url,
-          CG_IMG_SIZE, 0.9, CG_IMG_SIZE_LOCAL, 0.86)).url;
-        const st5 = Spirits.load();
-        const r5 = Spirits.ensureIn(st5, id);
-        r5.fests = r5.fests || {};
-        if (r5.fests[dk]) { r5.fests[dk].cgUrl = cgUrl2 || ""; r5.fests[dk].cgAt = Date.now(); }
-        r5.genCount = (Number(r5.genCount) || 0) + 1;
-        Spirits.save(st5);
-        try { localStorage.setItem("ww_gen_total", String(Number(localStorage.getItem("ww_gen_total") || "0") + 1)); } catch (e2) { /* 忽略 */ }
-        toast("🎋「" + fx0.name + "」限定插画画好了");
-        renderSpiritDetailPage(id);
-      } catch (e) {
-        festCgBtn.disabled = false;
-        festCgBtn.textContent = "🎬 重试（消耗 1 次出图额度）";
-        toast("出图失败：" + ((e && e.message) || "请稍后再试"));
-      }
+      openFestCgBriefModal(it, dk, fx0);
     };
     // v161：主线章节 —— 点一章进对话页跟它聊（进页面即推进，回来这里重新算）
     view.querySelectorAll(".chap-item[data-chap]").forEach((el) => {
@@ -6083,11 +6165,60 @@
       esc((a ? nameOf(a, store) : "?") + " × " + (b ? nameOf(b, store) : "?")) + " · 第 " + (level + 1) + " 段</div>" +
       (st.img ? '<img class="story-cg" src="' + esc(st.img) + '" alt="事件 CG">' : "") +
       '<div class="story-text">' + esc(st.text).replace(/\n/g, "<br>") + "</div>" +
+      // v165-R2：双人事件 CG 也走「描述先行」（⛔ 绝不自动出图）
+      (!st.img ? ('<div class="cg-brief" style="text-align:left">' +
+        '<div class="cg-brief-tip">想给这段配一张 CG？先看看要画什么，描述可以改，改满意了再出图（消耗 1 次额度）</div>' +
+        '<textarea class="cg-brief-ta" id="stCgBrief" rows="4" placeholder="点「🔤 生成画面描述」，或者自己写">' +
+        esc(st.brief || "") + "</textarea>" +
+        '<div style="display:flex;gap:8px;margin-top:8px">' +
+        '<button class="btn ghost" id="stCgGen" style="flex:1">🔤 生成画面描述</button>' +
+        '<button class="btn primary" id="stCgDraw" style="flex:1">🎬 按这段描述出图</button>' +
+        "</div></div>") : "") +
       '<button class="btn primary" id="storyOk" style="width:100%;margin-top:14px">看完了</button>';
     mask.hidden = false;
     modal.hidden = false;
     modal.style.display = "";
     const done = () => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; };
+    const spA = a ? spiritSp(a) : null, spB = b ? spiritSp(b) : null;
+    const stTa = $("#stCgBrief");
+    const stGen = $("#stCgGen");
+    if (stGen) stGen.onclick = async () => {
+      stGen.disabled = true; stGen.textContent = "正在写描述…";
+      try {
+        const br = await genCgBrief({
+          kind: "pair", a: spA, b: spB, level: level, roomName: room.name, storyText: st.text,
+        });
+        if (stTa) stTa.value = br;
+        Rooms.setStoryBrief(parts[0], parts[1], level, br);
+      } catch (e) { toast("描述生成失败：" + ((e && e.message) || "请稍后再试")); }
+      stGen.disabled = false; stGen.textContent = "🔤 生成画面描述";
+    };
+    const stDraw = $("#stCgDraw");
+    if (stDraw) stDraw.onclick = async () => {
+      const brief = String((stTa && stTa.value) || "").trim();
+      if (!brief) { toast("先写一段描述，或者点「🔤 生成画面描述」"); return; }
+      Rooms.setStoryBrief(parts[0], parts[1], level, brief);      // ① 存确认后的描述
+      stDraw.disabled = true; stDraw.textContent = "正在画…（约 15-20 秒）";
+      try {
+        const sS = Spirits.load();
+        const _rA = sS && sS[parts[0]], _rB = sS && sS[parts[1]];
+        const out = await drawCgFromBrief(brief, {                // ② 手动出图（横版 + ref）
+          kind: "pair", a: spA, b: spB, level: level, roomName: room.name,
+          stage: Math.max(Number((_rA && _rA.stage) || 1), Number((_rB && _rB.stage) || 1)),
+          seedKey: Rooms.pairKey(parts[0], parts[1]) + "#cg" + level, variant: 0,
+          ref: ((_rA && _rA.imgUrl) || (_rB && _rB.imgUrl) || ""),
+        });
+        if (out.url) {
+          Rooms.setStoryImage(parts[0], parts[1], level, out.url);
+          try { localStorage.setItem("ww_gen_total", String(Number(localStorage.getItem("ww_gen_total") || "0") + 1)); } catch (e2) { /* 忽略 */ }
+          toast("🎬 事件 CG 画好了");
+          showStoryModal(pairKey, level);
+        }
+      } catch (e) {
+        stDraw.disabled = false; stDraw.textContent = "🎬 重试（消耗 1 次出图额度）";
+        toast("出图失败：" + ((e && e.message) || "请稍后再试"));
+      }
+    };
     $("#storyOk").onclick = () => {
       Rooms.markRead(parts[0], parts[1], level);
       done();
