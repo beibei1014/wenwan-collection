@@ -11,10 +11,11 @@
    纪律：跑在「改动后源码」上必须全绿。 */
 "use strict";
 const H = require("./_harness.js");
+const SPIRITS_SRC = process.env.SPIRITS_SRC || "js/spirits.js";   // 负向对照：SPIRITS_SRC=docs/_spirits_prev.js
 let PASS = 0, FAIL = 0; const FAILURES = [];
 function ok(c, m) { if (c) PASS++; else { FAIL++; FAILURES.push(m); console.log("  ✗ " + m); } }
 function section(t) { console.log("\n=== " + t + " ==="); }
-function newS() { const c = H.makeContext(); H.loadFile(c.ctx, "js/spirits.js"); return { S: c.sandbox.Spirits, c: c }; }
+function newS() { const c = H.makeContext(); H.loadFile(c.ctx, SPIRITS_SRC); return { S: c.sandbox.Spirits, c: c }; }
 
 (async function main() {
   /* ============ 1. BG_CATALOG ============ */
@@ -40,11 +41,23 @@ function newS() { const c = H.makeContext(); H.loadFile(c.ctx, "js/spirits.js");
       "BG_STYLE 前缀含 empty scene, no people / 16:9 / 横版声明");
     ok(keys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_STYLE) === 0), "每条 prompt 均以 BG_STYLE 前缀开头");
     ok(keys.every((k) => /no people, empty scene/.test(S.BG_CATALOG[k].prompt)), "21/21 条 prompt 含 no people, empty scene（空镜无人）");
-    // v165 收尾：三段式 —— 尾部再拼 NEG_STYLE（规范 §1.3/§1.5/§2.2 权威）
+    // v165 返工：三段式 —— 尾部再拼 **BG_NEG**（场景专用，⛔ 不含人物向词；立绘仍用 NEG_STYLE）
     ok(typeof S.NEG_STYLE === "string" && /strictly no Japanese elements/.test(S.NEG_STYLE) && /no modern or Western clothing/.test(S.NEG_STYLE),
-      "NEG_STYLE 负面位存在（复用既有常量）");
-    ok(keys.every((k) => S.BG_CATALOG[k].prompt.slice(-S.NEG_STYLE.length) === S.NEG_STYLE), "21/21 条 prompt 以 NEG_STYLE 收尾（三段式拼装）");
-    ok(keys.every((k) => (S.BG_CATALOG[k].prompt.split(S.NEG_STYLE).length - 1) === 1), "NEG_STYLE 每条恰好出现 1 次（不重复拼接）");
+      "NEG_STYLE 负面位仍在（立绘/CG 专用，本次未动）");
+    ok(typeof S.BG_NEG === "string" && /strictly no Japanese elements/.test(S.BG_NEG) && /no modern or Western clothing/.test(S.BG_NEG),
+      "BG_NEG 场景专用负向存在（禁日式 + 禁现代/西式）");
+    ok(/horror/.test(S.BG_NEG) && /eerie/.test(S.BG_NEG) && /creepy/.test(S.BG_NEG) && /ominous/.test(S.BG_NEG)
+      && /haunted/.test(S.BG_NEG) && /gloomy/.test(S.BG_NEG) && /murky/.test(S.BG_NEG)
+      && /desaturated/.test(S.BG_NEG) && /vignette/.test(S.BG_NEG),
+      "BG_NEG 含 horror/eerie/creepy/ominous/haunted/gloomy/murky/desaturated/vignette 全集（用户实测「太诡异」返工）");
+    ok(!/gentle neutral expressions/.test(S.BG_NEG) && !/hanfu/.test(S.BG_NEG),
+      "⛔ BG_NEG 已剔除人物向词（gentle neutral expressions / hanfu-inspired costume）");
+    ok(keys.every((k) => S.BG_CATALOG[k].prompt.slice(-(S.BG_NEG || "").length) === S.BG_NEG), "21/21 条 prompt 以 BG_NEG 收尾（三段式拼装）");
+    ok(keys.every((k) => (S.BG_CATALOG[k].prompt.split(S.BG_NEG || "\u0000").length - 1) === 1), "BG_NEG 每条恰好出现 1 次（不重复拼接）");
+    ok(keys.every((k) => !/hanfu/i.test(S.BG_CATALOG[k].prompt)), "21/21 条 BG prompt 无 hanfu 人物向污染");
+    ok(keys.every((k) => !/cinematic directional lighting|atmospheric depth and haze/.test(S.BG_CATALOG[k].prompt)),
+      "⛔ BG prompt 已删旧版阴森向锚（cinematic directional lighting / atmospheric depth and haze）");
+    ok(/warm bright|cozy lived-in|calm serene|reassuring/.test(S.BG_STYLE), "BG_STYLE 含「暖亮/宜居/安定可亲」正面锚");
     ok(keys.every((k) => !/[\u4e00-\u9fff]/.test(S.BG_CATALOG[k].prompt)), "prompt 正文无中文残留");
     ok(keys.every((k) => !/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(S.BG_CATALOG[k].prompt)), "prompt 正文无 emoji");
     ok(S.BG_KEY === "ww_bg", "存储键 = ww_bg（新键，⛔ 与 ww_spirits 无关）");
