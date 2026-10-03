@@ -262,7 +262,7 @@ section("8. whenOK 新键（bond/stage/growth/room/gifted/tixing/isMain/canBreak
   const rec = { stage: 3, bond: 130, look: { pers: "calm" } };
   const env = S.soloEnv(item, rec, { dayNo: 60, idleDays: 3, plays: 30, roomCount: 2, members: 5 });
   ok(env.bond === 130 && env.bondLv === 4, "soloEnv bond/bondLv 正确（130 → 第 5 档）");
-  ok(env.bondName === "同心", "soloEnv bondName = 同心（新档位名）");
+  ok(env.bondName === "通意", "soloEnv bondName = 通意（v165 八档表：bond=130 属「通意」；旧六档此处为「同心」）");
   ok(env.stage === 3 && env.growth === 30 * 3 + 60, "soloEnv growth = plays*3 + days");
   ok(env.tixing === "木" && env.room === 2 && env.members === 5 && env.gifted === 0, "soloEnv 胎性/room/members/gifted");
   ok(env.isMain === false, "无主串 → isMain=false");
@@ -377,8 +377,8 @@ section("12. greetVars / fmt 新占位符（含中文 {胎性}）");
   const rec = { stage: 3, bond: 130, persona: { name: "阿金" } };
   const v = S.greetVars(item, rec, { dayNo: 20, plays: 5, roomCount: 3 });
   ["bondlv", "bond", "species", "tixing", "room", "胎性"].forEach((k) => ok(v[k] !== undefined, "greetVars 有 " + k));
-  ok(v.bondlv === "同心" && v["胎性"] === "木胎" && v.tixing === "木胎" && v.species === "金刚菩提" && v.room === "3",
-    "greetVars 新字段取值正确（bonLv=同心 / 胎性=木胎 / room=3）");
+  ok(v.bondlv === "通意" && v["胎性"] === "木胎" && v.tixing === "木胎" && v.species === "金刚菩提" && v.room === "3",
+    "greetVars 新字段取值正确（bonLv=通意 / 胎性=木胎 / room=3）");
   ok(S.greetVars(item, rec, { dayNo: 20 }).room === "", "ctx 没给 roomCount 时 room 为空串（fmt 会抹掉占位符，不留残渣）");
   // 走真 fmt 路径：greetingOf / townEvents 都过 fmt
   const g = S.greetingOf(item, rec, { dayNo: 20, plays: 5, roomCount: 3 });

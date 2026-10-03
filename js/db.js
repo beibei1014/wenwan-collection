@@ -460,6 +460,44 @@
     return true;
   }
 
+  /* ---------- 礼物库存/发放跨设备同步（gift_store：形态同 spirit_store，整库一行/user_id，last-write-wins） ---------- */
+  async function getGiftStore() {
+    const sb = getSupabase();
+    const user = (await sb.auth.getUser()).data.user;
+    if (!user) throw new Error("未登录");
+    const { data, error } = await sb.from("gift_store").select("data, updated_at").eq("user_id", user.id).maybeSingle();
+    if (error) throw error;
+    return data || null;
+  }
+  async function putGiftStore(data) {
+    const sb = getSupabase();
+    const user = (await sb.auth.getUser()).data.user;
+    if (!user) throw new Error("未登录");
+    const { error } = await sb.from("gift_store").upsert(
+      { user_id: user.id, data: data || {}, updated_at: new Date().toISOString() },
+      { onConflict: "user_id" }
+    );
+    if (error) throw error;
+    return true;
+  }
+  /* gift_store 合并策略（v165 §七-15）：按 giftKey 取 max（防 A/B 两台同时加库存互相覆盖）；
+     gifted（发放去重）取较新日期；at 取较大时间戳。纯函数，不改入参。 */
+  function mergeGiftStores(a, b) {
+    const A = (a && typeof a === "object") ? a : {};
+    const B = (b && typeof b === "object") ? b : {};
+    const out = { v: Math.max(Number(A.v) || 1, Number(B.v) || 1), gifts: {}, gifted: {}, at: Math.max(Number(A.at) || 0, Number(B.at) || 0) };
+    ["gifts", "gifted"].forEach((field) => {
+      [A[field], B[field]].forEach((m) => {
+        if (!m || typeof m !== "object") return;
+        Object.keys(m).forEach((k) => {
+          if (field === "gifts") out.gifts[k] = Math.max(Number(out.gifts[k]) || 0, Number(m[k]) || 0);
+          else if (out.gifted[k] == null || String(m[k]) > String(out.gifted[k])) out.gifted[k] = m[k];
+        });
+      });
+    });
+    return out;
+  }
+
   window.DB = {
     getSupabase,
     getSession, signUp, signIn, signOut, updatePassword, onAuthChange,
@@ -469,6 +507,7 @@
     exportBackup, importBackup,
     fileToPhoto, daysWith, formatDays, uid,
     getSpiritStore, putSpiritStore,
+    getGiftStore, putGiftStore, mergeGiftStores,
     onNetChange, getNet: () => NET,          // 网络状态（给界面显示「网络不稳/正在重试」）
   };
 })();

@@ -373,6 +373,7 @@
     if (!store[id]) {
       // 新生：性别留空，等「挂瓷开沁」那一刻由 born() 掷一次（男女 3:1）
       store[id] = { persona: null, variant: 0, imgUrl: "", letters: [], chats: [], lastLetterDay: "", stage: 1, imgHistory: [], gender: "", bornAt: 0, flags: { stance: "UNSET", bondLv: 1, scattered: false } };
+      normRecV165(store[id]);
       return store[id];
     }
     const rec = store[id];
@@ -382,6 +383,7 @@
     // 这样它已经画好的立绘和界面显示的人设不会打架；新沁灵一律走 born() 的 3:1 随机
     if (rec.gender !== "boy" && rec.gender !== "girl") rec.gender = legacyGender(id, rec.appearanceSeed || 0);
     if (!rec.flags || typeof rec.flags !== "object") rec.flags = { stance: "UNSET", bondLv: 1, scattered: false };
+    normRecV165(rec);
     return rec;
   }
   // 性别：出生时掷一次，比例 男:女 = 3:1（用户要求）
@@ -2801,15 +2803,32 @@
   }
 
   /* ---------- ② 亲密度（羁绊值；本地结算，只在打开时补差分） ---------- */
+  // v165：羁绊 8 档（照面0 / 眼熟12 / 相熟30 / 同室55 / 通意90 / 同心140 / 相知200 / 沁透280）
+  //   ⚠️ 由旧 6 档升级：rec.bond 是绝对值，本表只改阈值、不改结构 → 老用户不掉档，只是提前到达同档。
   const BOND_LEVELS = [
     { n: 0, name: "照面", icon: "🌱" },
-    { n: 10, name: "眼熟", icon: "🌿" },
+    { n: 12, name: "眼熟", icon: "🌿" },
     { n: 30, name: "相熟", icon: "🍃" },
-    { n: 60, name: "通意", icon: "💛" },
-    { n: 120, name: "同心", icon: "💞" },
-    { n: 240, name: "沁透", icon: "🪢" },
+    { n: 55, name: "同室", icon: "🏮" },
+    { n: 90, name: "通意", icon: "💛" },
+    { n: 140, name: "同心", icon: "💞" },
+    { n: 200, name: "相知", icon: "🪷" },
+    { n: 280, name: "沁透", icon: "🪢" },
   ];
-  const BOND_CALL_AT = 60;      // 到「通意」它会想改口叫你的名字
+  const BOND_YOU_LV = 4;        // 档 4「同室」起 → 称「你」
+  const BOND_NICK_LV = 7;       // 档 7「相知」起 → 称昵称 {nick}
+  // v165：BOND_CALL_AT 由 60 → 90（对齐新「通意」）。⚠️ 旧「单档改口」语义已被 callFor 的三档取代，
+  //   此值仅供既有 UI（bondLevel().canCall / 详情页改口提示）向后兼容；⛔ 新路径一律走 callFor。
+  const BOND_CALL_AT = 90;
+  // v165：岁除滋养贡献（v165 §5.2 表②，只读派生；按 1-based 档位取）0/8/18/30/46/64/86/110
+  const BOND_VAL = { 1: 0, 2: 8, 3: 18, 4: 30, 5: 46, 6: 64, 7: 86, 8: 110 };
+  // v165 §5.4：亲密度 / 送礼 / 照料 / 心意 / 恋爱 / 受伤 —— 集中配置（⛔ 不许在别处散落硬编码）
+  const BOND_CFG = { PER_DAY: 1, PLAY_DAILY: 2, LOOKBACK: 90 };   // 陪伴/共修（第二批接入 settleBond）
+  const GIFT_CFG = { BOND: 4, BOND_HIT: 6, DAILY_GLOBAL: 2, DAILY_PER: 1, QUALIFY_LV: 3 };
+  const CARE_CFG = { EACH: 2, DAILY_MAX: 6 };                     // 照料三式（第二批接 UI）
+  const HEART_CFG = { MAX: 300, FREEZE_DAYS: 30 };
+  const LOVE_CFG = { STAGE_MIN: 4, BOND_LV_MIN: 7 };
+  const HARM_CFG = { BOND_SLOW: 0.5 };                            // 可选（待定夺）：带伤期间获取 ×0.5；本批只登记不启用
   function bondLevel(n) {
     const v = Math.max(0, Math.floor(Number(n) || 0));
     let i = 0;
@@ -2817,7 +2836,7 @@
     const cur = BOND_LEVELS[i], next = BOND_LEVELS[i + 1] || null;
     const top = next ? next.n : cur.n;
     return {
-      value: v, lv: i, name: cur.name, icon: cur.icon,
+      value: v, lv: i, lv1: i + 1, name: cur.name, icon: cur.icon,   // lv=0-based(兼容旧码) / lv1=1-based(新码一律用 lv1)
       next: next ? next.name : "", nextIcon: next ? next.icon : "",
       canCall: v >= BOND_CALL_AT, isMax: !next,
       pct: next ? Math.min(100, Math.round(((v - cur.n) / (top - cur.n)) * 100)) : 100,
@@ -2846,6 +2865,182 @@
   function addBond(rec, n) { rec.bond = Math.min(99999, (Number(rec.bond) || 0) + Math.max(0, Number(n) || 0)); }
   // 它现在怎么称呼你（没改口就是「主人」）
   function callOf(rec) { return (rec && rec.nickCall) ? String(rec.nickCall) : "主人"; }
+
+  // v165：八档称呼（v165 §七 称呼表；回落链 lovecall → {nick} → 「你」→「主人」）
+  //   1-3 档「主人」／4-6 档「你」／7-8 档昵称；lovecall 非空最高优先（恋爱专属，逐串）。
+  //   7-8 档昵称：逐串 rec.nickCall（既有）优先 → 全局玩家昵称（参数 nickname / ww_owner.name）→「你」。
+  //   ⛔ {nick} 未填一律回落「你」，绝不回落「主人」。占位符全 ASCII。
+  function callFor(rec, nickname) {
+    const r = rec || {};
+    const lc = String(r.lovecall || "").trim();
+    if (lc) return lc;
+    const lv1 = bondLevel(Number(r.bond) || 0).lv1;
+    if (lv1 >= BOND_NICK_LV) {
+      let nick = String(r.nickCall || "").trim();
+      if (!nick) {
+        if (nickname != null) nick = String(nickname).trim();
+        else { try { nick = String((getOwner() || {}).name || "").trim(); } catch (e) { nick = ""; } }
+      }
+      return nick || "你";
+    }
+    if (lv1 >= BOND_YOU_LV) return "你";
+    return "主人";
+  }
+  // 该串当前档位对应的岁除滋养贡献（只读，v165 §4.2）
+  function nurtureOf(rec) { const lv1 = bondLevel(Number((rec || {}).bond) || 0).lv1; return Number(BOND_VAL[lv1]) || 0; }
+
+  /* ---------- v165 送礼系统（数据层与纯函数；⛔ 本批不接 UI） ---------- */
+  // 6 类礼物（v165 §3.2）。物品清单为**占位**（物名待文案/美术补；⛔ 不杜撰正式素材）。
+  const GIFT_CLASSES = ["cloth", "sound", "ware", "odd", "tough", "human"];  // 织物/声响/器物/奇异/坚韧/人情
+  const GIFT_CATALOG = {
+    "cloth_pa":    { cls: "cloth", name: "一块旧帕" },
+    "cloth_stone": { cls: "cloth", name: "一枚暖石" },
+    "sound_bell":  { cls: "sound", name: "一只铜铃" },
+    "sound_drum":  { cls: "sound", name: "一只小拨鼓" },
+    "ware_cup":    { cls: "ware",  name: "半盏旧茶则" },
+    "ware_ink":    { cls: "ware",  name: "一方素砚" },
+    "odd_glass":   { cls: "odd",   name: "一枚琉璃小件" },
+    "odd_shell":   { cls: "odd",   name: "一扇贝壳" },
+    "tough_rope":  { cls: "tough", name: "一段皮绳" },
+    "tough_whet":  { cls: "tough", name: "一块磨刀石" },
+    "human_tea":   { cls: "human", name: "一盏热茶" },
+    "human_snack": { cls: "human", name: "一碟点心" },
+  };
+  // 15 人格型 → 5 组（v165 §3.2；组即偏好类）
+  const PERSONA_GROUP = {
+    gentle: "soft", sweet: "soft", sentimental: "soft", scholar: "soft",
+    lively: "motion", cheeky: "motion", heroic: "motion", wanderer: "motion",
+    cool: "plain", aloof: "plain", dignified: "plain", calm: "plain",
+    mystery: "odd", pampered: "odd",
+    wild: "wild",
+  };
+  const GROUP_GIFT = { soft: "cloth", motion: "sound", plain: "ware", odd: "odd", wild: "tough" };
+  function giftClsOf(giftKey) { const g = GIFT_CATALOG[String(giftKey || "")]; return g ? g.cls : ""; }
+  function giftNameOf(giftKey) { const g = GIFT_CATALOG[String(giftKey || "")]; return g ? g.name : String(giftKey || ""); }
+  function personaIdOf(rec) {
+    if (!rec) return "";
+    if (rec.look && rec.look.pers) return String(rec.look.pers);
+    if (rec.persona && rec.persona.id) return String(rec.persona.id);
+    return "";
+  }
+  // 该串偏好礼类（O(1)）：15 人格 → 组 → 类；未识别人格返回 ""（任何礼物都算未命中 +4）
+  function giftPrefOf(rec) {
+    const grp = PERSONA_GROUP[personaIdOf(rec)];
+    return grp ? (GROUP_GIFT[grp] || "") : "";
+  }
+  // 单遍扫描库存 → 可递清单（O(n)）；⛔ 禁 O(n²)
+  function giftListOf(gifts) {
+    const g = (gifts && typeof gifts === "object") ? gifts : {};
+    const out = [];
+    Object.keys(g).forEach((k) => {
+      const n = Math.max(0, Math.floor(Number(g[k]) || 0));
+      if (n > 0) out.push({ key: k, count: n, name: giftNameOf(k), cls: giftClsOf(k) });
+    });
+    return out;
+  }
+  // 玩家级礼物库存（localStorage，离线优先）；形态 {giftKey: count}
+  const GIFTS_KEY = "ww_gifts";
+  function loadGifts() { try { const raw = localStorage.getItem(GIFTS_KEY); const o = raw ? JSON.parse(raw) : {}; return (o && typeof o === "object") ? o : {}; } catch (e) { return {}; } }
+  function saveGifts(o) { try { localStorage.setItem(GIFTS_KEY, JSON.stringify(o || {})); return true; } catch (e) { return false; } }
+  function addGift(gifts, key, n) {
+    const g = (gifts && typeof gifts === "object") ? gifts : {};
+    const k = String(key || ""); if (!k) return g;
+    g[k] = Math.max(0, Math.floor(Number(g[k]) || 0) + (Number(n) || 1));
+    return g;
+  }
+  /* 送出（v165 §三）：判定顺序 ⛔ 先判重 → 再扣库存 → 最后写账（幂等、可重入）。
+     命中偏好 +6 / 未命中 +4（human 通用类恒 +4，不偏不倚）；同一只当日 ≤1、全局当日 ≤2；
+     同一礼物对同一只终身 1 次（命中即拦，不扣物、不加分）；未达资格（相熟 30）不扣物。
+     入参 gifts 会被扣减、rec 会被写账（与既有 settleBond 同风格）；返回结果对象（不抛）。 */
+  function giveGift(gifts, rec, giftKey, opts) {
+    opts = opts || {};
+    const key = String(giftKey || "");
+    const r = (rec && typeof rec === "object") ? rec : {};
+    const res = { ok: false, reason: "", delta: 0, hit: false, giftKey: key, bond: Number(r.bond) || 0, lv1: bondLevel(Number(r.bond) || 0).lv1 };
+    if (!key || !GIFT_CATALOG[key]) { res.reason = "no_gift"; return res; }          // 未知礼物：不消耗、不加分
+    // 1) 资格：相熟（档 3）起步
+    const bondLv = (opts.bondLv != null) ? Number(opts.bondLv) : bondLevel(Number(r.bond) || 0).lv1;
+    res.lv1 = bondLv;
+    if (bondLv < (opts.qualifyLv != null ? Number(opts.qualifyLv) : GIFT_CFG.QUALIFY_LV)) { res.reason = "locked"; return res; }
+    // 2) 判重：同一礼物对同一只终身仅 1 次（⛔ 命中即拦：不扣库存、不加分）
+    if (r.giftLog && typeof r.giftLog === "object" && r.giftLog[key] != null) { res.reason = "dup"; return res; }
+    // 3) 同一只当日上限（≤1）
+    const day = String(opts.dayKey || todayKey());
+    if (r.giftDay && String(r.giftDay) === day) { res.reason = "day_per"; return res; }
+    // 4) 全局当日上限（≤2）
+    const globalGiven = Math.max(0, Math.floor(Number(opts.globalGiven) || 0));
+    if (globalGiven >= (opts.dailyGlobal != null ? Number(opts.dailyGlobal) : GIFT_CFG.DAILY_GLOBAL)) { res.reason = "day_global"; return res; }
+    // 5) 扣库存（走不到这一步就绝不消耗）
+    const inv = (gifts && typeof gifts === "object") ? gifts : {};
+    if ((Number(inv[key]) || 0) <= 0) { res.reason = "no_stock"; return res; }
+    // 6) 写账
+    inv[key] = (Number(inv[key]) || 0) - 1;
+    if (!r.giftLog || typeof r.giftLog !== "object") r.giftLog = {};
+    r.giftLog[key] = day;
+    r.giftDay = day;
+    r.giftTotal = Math.max(0, Math.floor(Number(r.giftTotal) || 0)) + 1;
+    const pref = (opts.prefCls != null) ? String(opts.prefCls) : giftPrefOf(r);
+    const hit = !!(pref && giftClsOf(key) === pref);
+    let delta = hit ? (opts.bondHit != null ? Number(opts.bondHit) : GIFT_CFG.BOND_HIT) : (opts.bondBase != null ? Number(opts.bondBase) : GIFT_CFG.BOND);
+    if (opts.harmSlow && r.harmed) delta = delta * HARM_CFG.BOND_SLOW;   // 可选（待定夺），默认关闭
+    r.bond = Math.min(99999, (Number(r.bond) || 0) + delta);
+    res.ok = true; res.reason = "ok"; res.delta = delta; res.hit = hit;
+    res.bond = r.bond; res.lv1 = bondLevel(r.bond).lv1;
+    return res;
+  }
+
+  /* ---------- v165 心迹轨（恋爱向，逐串；本批只做数据与纯函数，⛔ 不接 UI/结局） ---------- */
+  const HEART_MARKS = [0, 40, 100, 190, 300];     // v165 §七-11 里程碑
+  function heartLevel(n) {
+    const v = Math.max(0, Math.min(HEART_CFG.MAX, Math.floor(Number(n) || 0)));
+    let i = 0; for (let k = 0; k < HEART_MARKS.length; k++) if (v >= HEART_MARKS[k]) i = k;
+    return { value: v, lv: i, lv1: i + 1, max: HEART_CFG.MAX, atMax: v >= HEART_CFG.MAX };
+  }
+  function addHeart(rec, n, dayKey) {
+    if (!rec || typeof rec !== "object") return 0;
+    const cur = Math.max(0, Math.min(HEART_CFG.MAX, Math.floor(Number(rec.heart) || 0)));
+    const next = Math.max(0, Math.min(HEART_CFG.MAX, cur + (Number(n) || 0)));
+    rec.heart = next;
+    if (next !== cur) rec.heartAt = String(dayKey || todayKey());
+    return next;
+  }
+
+  /* ---------- v165 受伤字段（逐串；⛔ 本批只做读取与字段级写入，结局判定接入属第二批） ---------- */
+  function harmedOf(rec) {
+    const r = rec || {};
+    return { harmed: !!r.harmed, harmCause: String(r.harmCause || "") };
+  }
+  function setHarmed(rec, harmed, cause) {
+    if (!rec || typeof rec !== "object") return false;
+    rec.harmed = !!harmed;
+    rec.harmCause = harmed ? String(cause || "") : "";
+    return true;
+  }
+
+  /* ---------- v165 逐串新字段默认值（在 ensureIn 里对新建/既有两条路径兜底） ----------
+     ⛔ 全挂 rec 顶层（与 rec.bond 同层）；⛔ 不进 rec.marks（避开字典序裁剪）；⛔ 不并 rec.flags（结局 flag 专属层）。 */
+  function normRecV165(rec) {
+    if (!rec || typeof rec !== "object") return rec;
+    if (rec.giftLog == null || typeof rec.giftLog !== "object") rec.giftLog = {};
+    if (rec.giftDay == null) rec.giftDay = "";
+    if (rec.giftTotal == null) rec.giftTotal = 0;
+    if (rec.heart == null) rec.heart = 0;
+    rec.heart = Math.max(0, Math.min(HEART_CFG.MAX, Math.floor(Number(rec.heart) || 0)));
+    if (rec.heartAt == null) rec.heartAt = "";
+    if (rec.heartLog == null || typeof rec.heartLog !== "object") rec.heartLog = {};
+    if (rec.loveLine == null) rec.loveLine = false;
+    rec.loveLine = !!rec.loveLine;
+    if (rec.lovecall == null) rec.lovecall = "";
+    if (rec.lovecallOn == null) rec.lovecallOn = "";
+    if (rec.nickCall == null) rec.nickCall = "";
+    if (rec.trinket == null) rec.trinket = "";
+    if (rec.bondLvSeen == null) rec.bondLvSeen = 1;
+    rec.bondLvSeen = Math.max(1, Math.min(8, Math.floor(Number(rec.bondLvSeen) || 1)));
+    if (rec.harmed == null) rec.harmed = false;
+    rec.harmed = !!rec.harmed;
+    if (rec.harmCause == null) rec.harmCause = "";
+    return rec;
+  }
 
   /* ---------- ③ 每日一签（本地签库；一尊一天一支） ---------- */
   const SIGNS = [
@@ -6555,6 +6750,13 @@
     cgStages: [3, 4], needCg: function (stage) { return (Number(stage) || 1) >= 3; },
     // v155：陪伴系统（每日问候 / 亲密度 / 每日一签 / 日记回信 / 回响）—— 全本地，0 成本
     BOND_LEVELS, BOND_CALL_AT, bondLevel, settleBond, addBond, callOf,
+    // v165：羁绊八档升级 + 称呼 + 送礼 + 心迹 + 受伤（数据层与纯函数；⛔ 本批不接 UI）
+    BOND_VAL, BOND_CFG, GIFT_CFG, CARE_CFG, HEART_CFG, LOVE_CFG, HARM_CFG, BOND_YOU_LV, BOND_NICK_LV,
+    callFor, nurtureOf, normRecV165,
+    GIFTS_KEY, loadGifts, saveGifts, addGift, giftListOf, giftClsOf, giftNameOf, giftPrefOf, personaIdOf,
+    GIFT_CATALOG, GIFT_CLASSES, giveGift,
+    HEART_MARKS, heartLevel, addHeart,
+    harmedOf, setHarmed,
     fmt, greetVars,
     GREET, greetingOf, ensureGreet,
     SIGNS, signOf, ensureSign,
