@@ -2787,6 +2787,26 @@
       .replace(/\{call\}/g, v.call).replace(/\{name\}/g, v.name).replace(/\{year\}/g, v.year || "");
     return s.replace(/\{([^{}]+)\}/g, (m, k) => (v[k] != null && v[k] !== "") ? String(v[k]) : m);
   }
+  // v165 批次3A-4：{ta} = 本节点 rset 的键所对应的行当名；无 rset 时回落「那只」（⛔ 绝不写「它」）
+  // 由 chapWalk / chapTalkChoose 在进入节点前写入（模块级瞬时值，不进存档）
+  let _chapTa = "";
+  function chapTaSet(rset) {
+    let k = "";
+    if (rset && typeof rset === "object") { for (const kk in rset) { k = kk; break; } }
+    _chapTa = k ? chapTaNameOf(k) : "";
+    return _chapTa;
+  }
+  function chapTaGet() { return _chapTa || "那只"; }
+  // persona id → 行当名（取该 persona 在册那只的名字；缺则回落「那只」）
+  function chapTaNameOf(pid) {
+    const rec = chapRecByPersona(String(pid || ""), load());
+    if (rec) {
+      const nm = (rec.persona && rec.persona.name) || "";
+      if (nm) return nm;
+    }
+    return "那只";
+  }
+
   function greetVars(item, rec, ctx) {
     const bond = bondOf(rec, ctx);
     const bl = bondLevel(bond);
@@ -2807,6 +2827,8 @@
       room: (ctx && ctx.roomCount != null) ? String(ctx.roomCount) : "",
       tixing: TIXING_ZH[tx] || "杂胎",
       "胎性": TIXING_ZH[tx] || "杂胎",
+      // v165 批次3A-4：{ta} 动作对象指代（行当名 / 回落「那只」）
+      ta: chapTaGet(),
     };
   }
 
@@ -6577,6 +6599,119 @@
     for (let i = 0; i < CHAP_ACTS.length; i++) if (CHAP_ACTS[i].id === id) return CHAP_ACTS[i];
     return null;
   }
+  /* ---------- v165 批次3A · 剧本 flag 载体（选项/节点的 rset / gset / fb） ----------
+     数据契约见 docs/v165-第1-9章-剧本.md §0.2 / §2：
+       · rset = { <personaId>: { <key>: <val> } }  → 逐串，落 rec.flags[key]（⛔ 不进 rec.marks）
+       · gset = { <KEY>: <val> }                   → 全局，落 ww_story[KEY]（值 "+1" ⇒ 自增）
+       · fb   = 一句话                               → 选完紧跟一行反馈（不进聊天流）
+     铁律：
+       · harmed / harmCause / starMark ⛔ 不手写字段，一律走已导出的 setHarmed / setStarMark
+         （但按 §2 契约它们同时镜像进 rec.flags，供结局判定读；⛔ 镜像只写 flags，不改 rec 顶层的
+            setHarmed/setStarMark 结果，二者由 flagMirror 保持一致）
+       · 任何写 flag 的动作都必须幂等且**不抛错**（缺 persona / 缺 rec 一律静默跳过） */
+  const CHAP_FLAG_CFG = { FORK_TALLY: true };   // 集中配置（铁律2）
+
+  // rset 的 persona 键 → 该 persona 在册的一只（casting 的最小实现，见 castOf）
+  // ⚠️ 必须传入**同一个 store 引用**：load() 每次返回新对象，返回 detached rec 会导致写盘丢失。
+  // ⛔ 找不到就返回 null，调用方静默跳过（绝不新造名字、绝不阻断进章）
+  function chapRecByPersona(pid, store) {
+    const want = String(pid || "");
+    if (!want) return null;
+    const st = store || load();
+    const keys = Object.keys(st);
+    for (let i = 0; i < keys.length; i++) {
+      const rec = st[keys[i]];
+      if (rec && personaIdOf(rec) === want) return rec;
+    }
+    return null;
+  }
+
+  // 写一条逐串 flag 到 rec.flags（⛔ 绝不进 rec.marks —— 避开 pruneForQuota 字典序裁剪）
+  // harmed / harmCause / starMark ⛔ 不手写字段：一律转走已导出的 setHarmed / setStarMark，
+  // 再把结果镜像进 rec.flags（§2 契约要求结局判定能从 flags 读到），镜像 ⛔ 不覆盖顶层真值。
+  function chapWriteRecFlag(rec, key, val) {
+    if (!rec || !key) return false;
+    const k = String(key);
+    if (k === "harmed" || k === "harmCause") {
+      const cur = harmedOf(rec);
+      const h = (k === "harmed") ? !!val : cur.harmed;
+      // val 为假 ⇒ 伤好了，cause 一并清空（与 setHarmed 语义一致）
+      const c = (k === "harmCause") ? String(val == null ? "" : val) : (h ? cur.harmCause : "");
+      setHarmed(rec, h, c);
+    } else if (k === "starMark") {
+      setStarMark(rec, !!val);
+    }
+    if (!rec.flags || typeof rec.flags !== "object") rec.flags = {};
+    rec.flags[k] = val;
+    return true;
+  }
+
+  // 落一组 rset：{ persona: {key:val} }。返回写成功的条数（⛔ 永不抛错）
+  function chapApplyRset(rset) {
+    if (!rset || typeof rset !== "object") return 0;
+    const store = load();
+    let n = 0;
+    Object.keys(rset).forEach(function (pid) {
+      const patch = rset[pid];
+      if (!patch || typeof patch !== "object") return;
+      const rec = chapRecByPersona(pid, store);
+      if (!rec) return;                      // ⛔ 缺该 persona：静默跳过
+      Object.keys(patch).forEach(function (k) { if (chapWriteRecFlag(rec, k, patch[k])) n++; });
+    });
+    if (n) save(store);
+    return n;
+  }
+
+  // 落一组 gset：{ KEY: val } → ww_story。值形如 "+1" ⇒ 自增（仅 ch7 K1a 用）
+  // FORK_STANCE ⛔ 不直接采信 gset 的字面值（可能与逐串 tally 冲突），由 chapRecomputeFork 统一重算
+  function chapApplyGset(gset) {
+    if (!gset || typeof gset !== "object") return {};
+    let w = readStory(); endingStoryDefaults(w);
+    Object.keys(gset).forEach(function (k) {
+      const v = gset[k];
+      if (k === "FORK_STANCE") return;      // 交给 tally 重算
+      if (v === "+1") {
+        // ⚠️ setKeyChoices / setJointPrep 内部会各自 readStory+writeStory，
+        //    故每步之后必须**重读**，否则下一键基于过期快照（实测 KEY_CHOICES 恒 0）
+        if (k === "KEY_CHOICES") { setKeyChoices((Number(w.KEY_CHOICES) || 0) + 1); w = readStory(); endingStoryDefaults(w); return; }
+        if (k === "JOINT_PREP") { setJointPrep(String(w.JOINT_PREP || "NONE")); w = readStory(); endingStoryDefaults(w); return; }
+        w[k] = (Number(w[k]) || 0) + 1; return;
+      }
+      if (k === "KEY_CHOICES") { setKeyChoices(Number(v) || 0); w = readStory(); endingStoryDefaults(w); return; }
+      if (k === "JOINT_PREP") { setJointPrep(String(v)); w = readStory(); endingStoryDefaults(w); return; }
+      w[k] = v;
+    });
+    w.at = todayKey(); writeStory(w);
+    return w;
+  }
+
+  // FORK_STANCE 重算（按剧本 §2：逐串 tally）
+  //   有 DECIDE 且无 LET ⇒ "DECIDE"；有 LET 且无 DECIDE ⇒ "LET"；两者皆有 ⇒ "MIXED"；全 UNSET ⇒ 保持 "UNSET"
+  function chapRecomputeFork() {
+    if (!CHAP_FLAG_CFG.FORK_TALLY) return getEndingStory();
+    const store = load();
+    let d = 0, l = 0;
+    Object.keys(store).forEach(function (id) {
+      const rec = store[id];
+      const st = rec && rec.flags ? String(rec.flags.stance || "") : "";
+      if (st === "DECIDE") d++;
+      else if (st === "LET") l++;
+    });
+    let v = "UNSET";
+    if (d > 0 && l > 0) v = "MIXED";
+    else if (d > 0) v = "DECIDE";
+    else if (l > 0) v = "LET";
+    return setForkStance(v);
+  }
+
+  // 节点级 / 选项级统一入口：先 gset 后 rset，最后重算 FORK_STANCE
+  // ⛔ 任一环出错都静默（不进章、不阻断）
+  function chapApplySets(gset, rset) {
+    if (gset) { try { chapApplyGset(gset); } catch (e) { /* 静默降级 */ } }
+    if (rset) { try { chapApplyRset(rset); } catch (e) { /* 静默降级 */ } }
+    try { chapRecomputeFork(); } catch (e) { /* 静默降级 */ }
+  }
+
   // 存储槽：rec.talk（和夜话的 rec.night 互不干扰）
   function chapSlot(rec) {
     if (!rec) return null;
@@ -6590,13 +6725,21 @@
     const txt = fmt(String(l.t), v);
     if (!txt) return null;
     const w = l.w || "sp";
-    return { w: w, name: (w === "me" || w === "sys") ? "" : v.name, text: txt, at: Date.now() };
+    // v165 批次3A-1：群像模式 —— 行级 `who` 优先，缺省回落 v.name（v163 单串行为不变）
+    return { w: w, name: (w === "me" || w === "sys") ? "" : (l.who || v.name), text: txt, at: Date.now() };
   }
   function chapChoicesOf(t, act, v) {
     if (!t || t.ended) return [];
     const nd = act && act.nodes[t.node];
     if (!nd || !nd.choices) return [];
-    return nd.choices.map(function (c) { return { t: fmt(c.t, v) }; });
+    // v165 批次3A-2：透传 rset / gset / fb（⛔ 只读不改，供 UI 预取；真正落地在 chapTalkChoose）
+    // v165 批次3A-4：每个选项用**自己的 rset** 解析 {ta}（ch3「这一步，我替{ta}定。」指的不是上一节点）
+    // ⚠️ v 是进入本函数前已构建的快照，chapTaSet 只改模块级瞬时值 ⇒ 须浅拷贝并覆写 ta
+    return nd.choices.map(function (c) {
+      const cv = c.rset ? (chapTaSet(c.rset), Object.assign({}, v, { ta: chapTaGet() })) : v;
+      return { t: fmt(c.t, cv), go: c.go || "", tone: c.tone || "", fb: c.fb || "",
+        rset: c.rset || null, gset: c.gset || null };
+    });
   }
   function chapReset(rec, id) {
     const t = chapSlot(rec);
@@ -6609,12 +6752,16 @@
     const t = chapSlot(rec);
     if (!t) return { added: [], choices: [], ending: null, ended: true };
     const act = chapActOf(t.chapId);
-    const v = greetVars(item, rec, ctx);
+    let v = greetVars(item, rec, ctx);
     const added = [];
     let guard = 0;
     while (act && guard++ < 80) {
       const nd = act.nodes[t.node];
       if (!nd) { t.ended = true; t.node = ""; break; }
+      // v165 批次3A-2：节点级 gset/rset —— 进节点即写（ch4 n2 / ch7 n1 的无条件 harmed）
+      if (nd.gset || nd.rset) chapApplySets(nd.gset, nd.rset);
+      // v165 批次3A-4：本节点带 rset ⇒ {ta} 指向该键的行当名，重建 vars 后再 fmt
+      if (nd.rset) { chapTaSet(nd.rset); v = greetVars(item, rec, ctx); }
       (nd.lines || []).forEach(function (l) {
         const m = chapLine(l, v);
         if (!m) return;
@@ -6635,6 +6782,13 @@
           const alt = nd.choices[0].go;
           if (alt && alt !== t.node) { t.node = alt; continue; }
         }
+        break;
+      }
+      // v165 批次3A-3：长连载章末 {end:true} —— 判 ended + 补 readChapter（end 与 choices 同在时以 choices 优先）
+      if (nd.end) {
+        t.ended = true; t.node = "";
+        t.at = Date.now();
+        readChapter(rec, act.i);      // 看到结尾 = 这一章读过了（与 ending 分支同口径，解锁链照旧）
         break;
       }
       if (!nd.next) { t.ended = true; t.node = ""; break; }
@@ -6669,14 +6823,25 @@
     const nd = act.nodes[t.node];
     const c = nd && nd.choices ? nd.choices[idx] : null;
     if (!c) return chapWalk(item, rec, ctx);
-    const v = greetVars(item, rec, ctx);
+    const v0 = greetVars(item, rec, ctx);
+    // v165 批次3A-4：选项文案里的 {ta} 指向该选项 rset 的键（ch3「这一步，我替{ta}定。」）
+    const v = (c.rset) ? (chapTaSet(c.rset), greetVars(item, rec, ctx)) : v0;
     const mine = { w: "me", name: "", text: fmt(c.t, v), at: Date.now() };
     t.log = (Array.isArray(t.log) ? t.log : []).concat([mine]);
     t.msgs = (Number(t.msgs) || 0) + 1;
     t.tone = c.tone || "";
     t.node = c.go || "";
+    // v165 批次3A-2：选项落地 flag —— rset→rec.flags（逐串）/ gset→ww_story（全局）/ fb→反馈行
+    // 顺序：先落 flag（供 FORK_STANCE tally 读得到 stance），再走 fb，最后 chapWalk 推进
+    chapApplySets(c.gset, c.rset);
+    if (c.fb) {
+      const fbl = { w: "sys", name: "", text: fmt(String(c.fb), v), at: Date.now() };
+      t.log = t.log.concat([fbl]);
+      t.msgs = (Number(t.msgs) || 0) + 1;
+    }
     const r = chapWalk(item, rec, ctx);
     r.added = [mine].concat(r.added);
+    r.fb = c.fb ? fmt(String(c.fb), v) : "";
     return r;
   }
   // 「再看一遍」：清掉这一章的聊天记录重开（已读标记保留）
@@ -7117,6 +7282,9 @@
     CHAPTERS, chapterState, readChapter, unreadChapterCount,
     // v161：主线「串与我」· 对话版（本地剧本 + 本地状态机，0 出图 0 模型调用）
     CHAP_ACTS, CHAP_TALK_CAP, chapActOf, chapTalkEnter, chapTalkChoose, chapTalkReplay, chapTalkBrief, chapTalkDone,
+    // v165 批次3A：剧本 flag 载体（rset / gset / fb / FORK_STANCE tally / {ta}）—— 供自测与调试面板
+    CHAP_FLAG_CFG, chapRecByPersona, chapWriteRecFlag, chapApplyRset, chapApplyGset, chapRecomputeFork, chapApplySets,
+    chapTaSet, chapTaGet, chapTaNameOf,
     // v160：夜话（跨串大剧情 · 互动对话）—— 本地剧本 + 本地状态机，0 出图 0 模型调用
     NIGHT_ACTS, NIGHT_GROUP, NIGHT_CAP, nightCast, nightActs, nightEnter, nightReplay, nightChoose, nightBrief,
     // v162：夜话 2.0 —— 多会话（全家群 / 房间群 / 双人组）+ 按条件触发的事件
