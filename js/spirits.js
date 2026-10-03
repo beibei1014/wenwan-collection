@@ -442,6 +442,40 @@
     { en: "a martial-arts style short Chinese tunic with a waist sash", zh: "短打劲装 + 束腰" },
     { en: "a brocade-trimmed Chinese robe with a jade toggle", zh: "织锦长袍 + 玉扣" },
   ];
+  /* ---------- v165：意象服饰词表（用户实测「叫莫高窟那只，服装还是汉服」） ----------
+     根因：OUTFITS 是**一池通用中式古装**，按 hashStr 随机抽 ⇒ 服装与这只沁灵的名字/品类/胎性
+     毫无关系。本表让服装**按意象走**：命中 item.name + item.species 的关键词即改写服饰。
+     ⛔ 只做「覆盖」，⛔ 不动 hashStr 本体 —— 未命中时结果与改前**逐字一致**（分布不变）。 */
+  const IMAGERY_OUTFITS = [
+    { zh: "敦煌飞天", keys: ["莫高窟", "敦煌", "石窟", "飞天", "壁画", "藻井", "彩塑"],
+      en: "Dunhuang mural style costume with flowing feitian silk ribbons, beaded necklaces and lotus motifs",
+      zhOutfit: "敦煌壁画飞天披帛 + 璎珞 + 莲瓣纹" },
+    { zh: "玉", keys: ["玉", "和田", "脂玉", "翠", "琉璃", "宝"],
+      en: "jade-toned silk robes with carved jade ornaments",
+      zhOutfit: "玉色丝袍 + 玉雕饰件" },
+    { zh: "金属", keys: ["银", "金属", "铁", "钢", "锡", "铜", "钛"],
+      en: "silver filigree vest over silk with metal-disc ornaments",
+      zhOutfit: "錾花银 vest + 金属盘扣饰件" },
+    { zh: "木", keys: ["檀", "木", "菩提", "核", "根", "椰", "橄榄"],
+      en: "wood-toned rustic silk and plain woven cloth",
+      zhOutfit: "木色粗织布衣 + 素丝" },
+    { zh: "冰雪", keys: ["雪", "冰", "霜", "寒"],
+      en: "frost-white layered silk with pale crystal beadwork",
+      zhOutfit: "霜白叠纱 + 冰晶珠饰" },
+  ];
+  // 在 OUTFITS 随机结果**之上**按意象覆盖；未命中返回 null（调用方保持原逻辑，分布不变）
+  function imageryOutfitOf(item) {
+    if (!item) return null;
+    const src = [String(item.name || ""), String(item.species || ""), String(item.category || "")].join(" ");
+    if (!src.trim()) return null;
+    for (let i = 0; i < IMAGERY_OUTFITS.length; i++) {
+      const row = IMAGERY_OUTFITS[i];
+      for (let k = 0; k < row.keys.length; k++) {
+        if (src.indexOf(row.keys[k]) >= 0) return row;
+      }
+    }
+    return null;
+  }
   const PATTERNS = [
     { en: "cloud motif", zh: "云纹" }, { en: "meander key-fret pattern", zh: "回纹" },
     { en: "rippling wave lines", zh: "水波" }, { en: "lotus scroll pattern", zh: "缠枝莲" },
@@ -539,13 +573,18 @@
     "strictly no modern or Western clothing (no jacket, no hoodie, no sweatshirt, no T-shirt, no jeans, no denim, no sportswear, no tracksuit, no suit and tie, no sneakers, no zipper coat), " +
     "no peace sign or V-sign hand gestures, no smirking or mischievous grin, no winking, no playful winks, no exaggerated cartoon expressions, " +
     "strictly no anatomy errors (no third arm, no extra hand, no extra fingers, no missing limb, no deformed or fused hands), " +
-    "use gentle neutral expressions and ancient Chinese hanfu-inspired costume";
+    // v165：⛔ 原 "ancient Chinese hanfu-inspired costume" 已泛化 —— 用户实测「叫莫高窟那只服装还是汉服」，
+    //   服装应按这只沁灵自己的意象定，不能全局锁死汉服。禁现代/西式/日式/解剖错误各段一字未动。
+    "use gentle neutral expressions and classical Chinese-inspired costume";
   // v152 全局解剖安全约束：出图模型常把手指/手臂画错（三只手、六指），每次出图都带上
   const ANATOMY = "strictly correct human anatomy, exactly two arms and two hands, five fingers per hand, " +
     "simple clear hand shapes, both hands resting naturally and unobstructed, " +
     "no extra limbs, no extra hands, no extra fingers, no hidden overlapping arms, no detached floating hand";
   // v150 全局正面风格约束：所有沁灵统一「中国古风」（用户要求：整个 App 是中国传统文玩调性）
-  const GUOFENG = "traditional Chinese gufeng (ancient Chinese dynasty) aesthetic, hanfu-inspired classical costume and hairstyle " +
+  // v165：hanfu-inspired classical costume -> classical Chinese-inspired costume；
+  //   并显式写入「服装跟随本角色自己的意象」—— 这是「莫高窟穿汉服」的根因之一。
+  const GUOFENG = "traditional Chinese gufeng (ancient Chinese dynasty) aesthetic, classical Chinese-inspired costume and hairstyle, " +
+    "the costume follows this character's own imagery, era and material, " +
     "(long flowing hair, hair buns, hairpins, braids and ponytails are all traditional and fine), " +
     "elegant ancient Chinese atmosphere, silk and brocade textures, classical Chinese color palette, no modern elements";
   // 中文说法（界面用；prompt 仍用英文原文）
@@ -603,6 +642,10 @@
     const lk = lkHint || ((item && item.id) ? (((load()[item.id] || {}).look) || {}) : {});
     const ov = userPattern(lk);
     if (ov) { out.pattern = ov.en || ov.zh; out.patternZh = ov.zh; out.patternSrc = "user"; }
+    // v165：意象服饰「同款覆盖」—— 仿 userPattern 的机制，在 hashStr 抽取**之上**生效。
+    //   ⛔ 未命中意象词时这段完全不改动 out，分布与改前逐字一致。
+    const im = imageryOutfitOf(item);
+    if (im) { out.outfit = im.en; out.outfitZh = im.zhOutfit; out.outfitSrc = "imagery"; }
     return out;
   }
   function appearanceText(ap) {
@@ -941,7 +984,8 @@
     } else if (ap.outfitZh) {
       outfitZh = ap.outfitZh;
     }
-    const outfitEn = outfitHit.length ? outfitHit.map((x) => x.en).join(", ") : "traditional hanfu attire";
+    // v165：兜底不再回落 hanfu（用户没写衣服时也不该一律汉服）
+    const outfitEn = outfitHit.length ? outfitHit.map((x) => x.en).join(", ") : "classical Chinese-inspired attire";
     // 发型：词表词；**绝不用发色兜底**
     //   （旧版没命中就退回 hairCn，于是发型栏显示成「柿红」这个颜色）
     const hairHit = _scanZh(src, _HAIR_ZH_EN);
@@ -1287,7 +1331,8 @@
       // ⚠️ 这里**不能**写 chibi / big head：那是"身形比例"，必须交给阶段描述（STAGES.look），
       //    否则深沁到蜕形/化形也还是 Q 版大头（用户实测吐槽过）。
       // v150：整体基调改为「中国古风」——用户要求所有沁灵都画成古风（汉服/古装），不要现代/日式元素。
-      text: "2D hand-drawn illustration in traditional Chinese gufeng style, ancient Chinese hanfu costume and classical styling, " +
+      // v165：ancient Chinese hanfu costume -> classical Chinese-inspired costume（不再全局锁汉服）
+      text: "2D hand-drawn illustration in traditional Chinese gufeng style, classical Chinese-inspired costume and classical styling, " +
         "big expressive eyes with white highlights, cel shading, flat coloring, clean line art, " +
         "soft elegant Chinese classical color palette, soft blush, " +
         "richly detailed traditional Chinese outfit with visible fabric folds and silk brocade texture, classical Chinese ornaments, " +
@@ -1785,7 +1830,10 @@
       "⑨【发色、瞳色、特殊特征照下方给定内容写；但**发型自由发挥**】中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），" +
       "按沁灵的性别/性格/主人写的设定来定，不要生硬套短发（主人原话写了发型就照他写的）；" +
       "发色若给的是中国传统色名（胭脂、天青、月白、秋香、藕荷、柿红、黛色等），正文里就用这个名称来写，不要改成现代色号；" +
-      "⑩【整段基调是中国古风】衣服一律写中式传统样式（汉服、长衫、褂子、襦裙、圆领袍、道袍等），禁止出现现代服装（夹克、运动服、卫衣、T恤、牛仔裤、西装等）；" +
+      "⑩【服装风格按这只沁灵自己的意象/名称/材质/胎性自定】（如玉/木/石/金属质感、石窟造像与壁画纹样、" +
+      "敦煌飞天披帛与璎珞、飘带等皆可），保持古典东方气质即可，⛔ 不必一律汉服；" +
+      "⛔ 仍绝对禁止现代/西式服装（夹克、运动服、卫衣、T恤、牛仔裤、西装等）；" +
+      "⛔ 也别把衣服写成与它自身出处无关的通用古装 —— 若它的意象/品类明显不属于中原衣冠，就顺着那个意象写；" +
       "⑪【姿态自由发挥、不要摆拍】可写一个自然的中式仪态（作揖、拱手、拂袖、团扇半遮面、低眸捻珠、执笔、捧盏、展卷等），" +
       "双手位置要简单清楚、不要遮叠手臂或复杂手势（否则出图容易画成三只手 / 多指），不要现代随意手势或 wink。";
     const NL = String.fromCharCode(10);
@@ -1793,7 +1841,12 @@
       NL + spiritGenderLine(ap0) +
       NL + "来自手串：" + ((item && item.name) || "") + (item && item.craft ? "（" + item.craft + "）" : "") +
       NL + "发色（中国传统色名）：" + (((lk && lk.hairZh) ? String(lk.hairZh).replace(/^自动 · /, "") : "") || "跟珠子主色") +
-      NL + "服装参考（**主人原话写了衣服就以原话为准**，没写才按这个）：" + (ap0.outfitZh || ap0.outfit) +
+      // v165：把「名称 / 品类 / 胎性」喂给文本模型 —— 此前这三样完全不进出图链路，
+      //   是「服装跟这只沁灵没关系」的根因之一（服装只能从通用汉服池里随机抽）。
+      NL + "它的出处/意象（服装风格要顺着这个来）：" + ((item && item.name) || "未命名") +
+      NL + "品类：" + ((item && (item.species || item.category)) || "未标注") +
+      NL + "胎性：" + tiXingLabel(item) +
+      NL + "服装参考（**主人原话写了衣服就以原话为准**；没写就按上面那只沁灵自己的意象定，⛔ 不许一律汉服）：" + (ap0.outfitZh || ap0.outfit) +
       NL + "特殊特征：" + ((lk && lk.feats && lk.feats.length) ? lk.feats.map((f) => f.zh).join("、") : ((lk && lk.noFeat) ? "普通人形" : "未指定")) +
       NL + "性格：" + ((lk && lk.pers) ? lk.pers.zh : "未指定") +
       (base ? (NL + "【主人原话·最高优先级，一字不许跑偏】" + base) : "") +
@@ -2555,15 +2608,21 @@
           + "中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），按沁灵的性别、性格和主人写的设定来定，"
           + "绝不要因为固定人设里没写发型、就生硬地套一个短发。"
           + "【发色用中国传统色名写】下方若给出「它的发色」（如胭脂、天青、月白、秋香、藕荷、黛色），正文里就用这个中国色名来写头发颜色。"
-          + "【整段基调是中国古风】服装一律写中式传统样式（汉服、长衫、褂子、襦裙、道袍、褙子等），"
-          + "绝对禁止出现任何现代服装（夹克、运动服、卫衣、T恤、牛仔裤、西装、风衣等）。"
+          + "【服装风格按这只沁灵自己的意象/名称/材质/胎性自定】（如玉/木/石/金属质感、石窟造像与壁画纹样、"
+          + "敦煌飞天披帛与璎珞、飘带等皆可），保持古典东方气质即可，⛔ 不必一律汉服；"
+          + "⛔ 若它的意象/品类明显不属于中原衣冠，就顺着那个意象写，别套通用古装；"
+          + "绝对禁止出现任何现代/西式服装（夹克、运动服、卫衣、T恤、牛仔裤、西装、风衣等）。"
           + "【最重要】主人给的设定原话描述的都是**沁灵本人**的性格/身份/气质，必须原样体现在沁灵身上；"
           + "绝对禁止把设定安到主人头上（例如主人说「洒脱的江湖侠士」＝沁灵是侠士，不是主人是侠士），也不许另编一套和原话冲突的人设。"
           + "语气温和好读，不要 Markdown、不要标题、不要分点、不要解释，直接输出正文。";
         const lkP = lookOf(item, rec);      // v153：用户从色板选的发色也要交代给模型
         const hairCn = String(lkP.hairZh || "").replace(/^自动 · /, "");
         const hairEnW = lkP.hairEn || "";
+        // v165：追加 名称/品类/胎性（同 4a，理由一致：服装此前与这只沁灵无任何关联）
         const user = "原型手串：" + (item.name || "未命名") + "；沁灵的名字：" + ((persona && persona.name) || item.name || "未命名") +
+          "；它的出处/意象（服装风格要顺着这个来）：" + (item.name || "未命名") +
+          "；品类：" + ((item && (item.species || item.category)) || "未标注") +
+          "；胎性：" + tiXingLabel(item) +
           "；珠子颜色：" + (COLOR_ZH[item.color] || "素色") +
           "；它的发色：" + (hairCn ? (hairCn + (hairEnW ? "（" + hairEnW + "）" : "")) : (hairEnW || (COLOR_ZH[item.color] || "素色"))) +
           "；软糯：" + (item.softness === "soft" ? "软糯" : item.softness === "slight" ? "微糯" : "未标注") +
@@ -6634,7 +6693,8 @@
   /* ---------- v125：CG（场景插画） ----------
      规则（用户要求）：**凝形 / 开窍只有立绘**；**蜕形 / 化形额外再出一张 CG**。
      沁灵之间达成的事件（契合度解锁的剧情）也各配一张双人 CG。都是日漫风。 */
-  const CG_STYLE = "2D hand-drawn key visual CG illustration in traditional Chinese gufeng style, ancient Chinese scene and hanfu costume, " +
+  // v165：ancient Chinese scene and hanfu costume -> classical Chinese-inspired costume（随本角色意象）
+  const CG_STYLE = "2D hand-drawn key visual CG illustration in traditional Chinese gufeng style, ancient Chinese scene and classical Chinese-inspired costume, " +
     "cel shading, soft elegant Chinese classical palette, cinematic lighting, atmospheric mood, detailed painted background with gentle bokeh, " +
     "expressive body language, warm cozy feeling, masterpiece quality, " +
     "WIDE LANDSCAPE HORIZONTAL COMPOSITION, 16:9 cinematic framing, " +
@@ -6680,7 +6740,8 @@
     const mood = CG_MOOD[Math.min(CG_MOOD.length - 1, Math.max(0, Number(level) || 0))];
     return CG_STYLE + ", " + mood + ", " +
       "scene: a cozy ancient Chinese room called \"" + (roomName || "little room") + "\", " +
-      "two ancient Chinese characters in traditional hanfu costume together in the same scene: " +
+      // v165：traditional hanfu costume -> classical Chinese-inspired costume（各自随自己意象，⛔ 不锁汉服）
+      "two ancient Chinese characters in classical Chinese-inspired costume together in the same scene: " +
       "① " + appearancePrompt(apA) + ", with " + lkA.hairEn + " hair and " + lkA.outfitEn + " outfit" + lookExtra(lkA) + " (name: " + nmA + "), " +
       "② " + appearancePrompt(apB) + ", with " + lkB.hairEn + " hair and " + lkB.outfitEn + " outfit" + lookExtra(lkB) + " (name: " + nmB + "), " +
       "they are the same two characters as before, keep their hair color, eye color, outfits and accessories consistent, " +
