@@ -3838,8 +3838,13 @@
         // v125：这段事件也配一张双人 CG（每段剧情只画一次，失败不阻塞）
         try {
           const cgPrompt = Spirits.storyCgPrompt(spiritSp(a), spiritSp(b), q.level, room.name);
+          // v165-Q：补 ref（参考图）—— 双人房间 CG 此前是唯一漏带 ref 的出图路径，
+          //   没有参考图 ⇒ 角色发色/瞳色/服饰纹样会跟已确立的形象对不上（一致性靠 ref 兜底）。
+          const _sR = Spirits.load();
+          const _rA = _sR && _sR[a.id], _rB = _sR && _sR[b.id];
+          const _cgRef = (_rA && _rA.imgUrl) || (_rB && _rB.imgUrl) || "";
           // 横版 CG（用户要求）：长边 = CG_IMG_SIZE，比立绘大一点，横构图看得清
-          const cg = await Spirits.generateCustom(cgPrompt, { seedKey: Rooms.pairKey(q.a, q.b) + "#cg" + q.level, variant: 0, landscape: true });
+          const cg = await Spirits.generateCustom(cgPrompt, { seedKey: Rooms.pairKey(q.a, q.b) + "#cg" + q.level, variant: 0, landscape: true, ref: _cgRef });
           // v164i：房间剧情 CG 同样落 localStorage → 也遵守「大图只进云端」不变式
           //   （大图 1280/q0.9 传云端；传不上去才落 ≤768 的 data URI）
           const cgUrl = (await imageToStoreUrl(cg.b64 ? "data:image/png;base64," + cg.b64 : cg.url,

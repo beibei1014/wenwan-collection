@@ -591,7 +591,13 @@
   // v152 全局解剖安全约束：出图模型常把手指/手臂画错（三只手、六指），每次出图都带上
   const ANATOMY = "strictly correct human anatomy, exactly two arms and two hands, five fingers per hand, " +
     "simple clear hand shapes, both hands resting naturally and unobstructed, " +
-    "no extra limbs, no extra hands, no extra fingers, no hidden overlapping arms, no detached floating hand";
+    "no extra limbs, no extra hands, no extra fingers, no hidden overlapping arms, no detached floating hand, " +
+    // v165-Q：道具-手绑定 —— 用户实测「三只手」：角色持伞/持物 + 广袖时模型自造第三条手臂。
+    //   语义必须是「器物由且仅由一只手握持、另一只手清晰可见」，只给正向约束不够，还要点名"袖子里伸出的手"。
+    "if the character holds any prop (umbrella, fan, cup, bag), that prop is held in exactly one hand, " +
+    "the other hand is empty, relaxed, unobstructed and fully visible, " +
+    "exactly two forearms in total, no third arm, no extra arm, no floating limb, " +
+    "no hand emerging from a sleeve that is not attached to a shoulder";
   // v150 全局正面风格约束：所有沁灵统一「中国古风」（用户要求：整个 App 是中国传统文玩调性）
   // v165：hanfu-inspired classical costume -> classical Chinese-inspired costume；
   //   并显式写入「服装跟随本角色自己的意象」—— 这是「莫高窟穿汉服」的根因之一。
@@ -691,6 +697,10 @@
   //    明确"只画一个人、不许画分格、不许写字"，见 SINGLE。
   const CONSISTENCY = "same character across all ages, keep exactly the same gender, same hair style and hair color, " +
     "same eye color, same accessory and same overall design, only grow older, " +
+    // v165-Q：服饰一致性 —— 进阶「服饰更精细更华丽」但**基色与纹样母题不变**（用户要求的一致性口径）。
+    "same outfit base colour and the same pattern motif across all stages, " +
+    "only the cut, layering and ornamentation become richer with age, " +
+    "do not change the outfit's colour family or its pattern motif, " +
     "consistent character design, do not change gender, do not change identity";
   // 只画一个人 + 不许有文字
   // ⚠️ 连 "character sheet" / "turnaround" 这种词都别出现（哪怕写成 "no character sheet"）——
@@ -713,7 +723,8 @@
       //   （模型并不会真的去数头），缺的是可执行的比例词：大头 / 短身 / 短腿 / 幼儿脸。
       look: "a tiny newborn chibi version of the character, about 4 heads tall, " +
         "oversized round head, soft chubby baby cheeks, a small childlike face with a short chin and tiny nose, " +
-        "tiny short body with short stubby arms and legs, small feet, very simple plain clothing, " +
+        "tiny short body with short stubby arms and legs, small feet, " +
+        "very simple plain single-layer clothing, no ornaments, " +
         "soft innocent round eyes, just awakened, extremely cute",
       // 🔴 比例锁定块：**压在 prompt 最末尾**（模型对末尾最敏感）。必须同时给"该是什么"和"不许是什么"。
       //   旧版的致命问题是完全没有反向约束 → 模型回落到"美型全身立绘"默认先验 ≈ 6 头身。
@@ -727,24 +738,41 @@
       look: "a small child version of the character, about 6 heads tall, " +
         "clearly taller than the newborn form but still a young child, " +
         "rounded childlike face with soft cheeks, slim but short-limbed child body, " +
-        "neat simple outfit, one small accessory, lively bright eyes, energetic pose, still cute",
+        "neat tidy outfit, one small accessory, slightly finer than the newborn form, " +
+        "lively bright eyes, energetic pose, still cute",
       prop: "PROPORTION LOCK: a 6-heads-tall young child, rounded childlike face, small torso and short legs; " +
         "no adult proportions, no mature body, no tall slender figure, no long legs, no mature jawline",
     },
     {
-      n: 3, name: "蜕形", icon: "⚡", need: 90, sizeZh: "约 8 头身（少年，变高变帅）",
-      look: "a teenage version of the character, about 8 heads tall, " +
+      n: 3, name: "蜕形", icon: "⚡", need: 90, sizeZh: "约 7 头身（少年，变高变帅）",
+      // v165-Q：⛔ 删掉 "environment behind" —— 它与风格预设 anime 的 "plain solid soft background" 打架，
+      //   模型在"场景图"与"素底立绘"之间摇摆，比例随之失控。华丽感改用**服饰**表达，不用场景表达。
+      look: "a teenage version of the character, about 7 heads tall, " +
         "slim teenage proportions, longer limbs than the child form, a more defined jawline, " +
-        "confident pose, stylish detailed outfit with subtle pattern, environment behind",
-      prop: "PROPORTION LOCK: an 8-heads-tall teenager, slim teenage build with longer arms and legs; " +
+        "confident pose, " +
+        "well-tailored outfit with a clear fabric pattern and one proper ornament (a sash or a hairpin), " +
+        "noticeably more elaborate than the child form",
+      // v165-Q：旧版只有否定句（"8 heads tall" 这类数字对扩散模型是极弱约束，模型并不会真的去数头），
+      //   补**正向可执行**的比例词：头小 / 高瘦 / 长腿 / 成人剪影 + 明确的头部占比。
+      prop: "PROPORTION LOCK: a tall teenage-to-young-adult figure, seven-head-tall body proportions (7-heads-tall), " +
+        "the head is clearly SMALL relative to the total figure height (the head's height is about one seventh of the figure), " +
+        "tall slender figure, long legs, narrow shoulders, adult body silhouette, mature elegant standing pose; " +
+        "the face may be mature and beautiful, but the head is small in proportion to the body " +
+        "(realistic adult head-to-body ratio), NOT a large head on a small body; " +
         "no baby proportions, no chibi, no oversized head, not a small child",
     },
     {
-      n: 4, name: "化形", icon: "👑", need: 180, sizeZh: "约 9 头身（化形 · 华丽服饰+场景）",
-      look: "a fully grown adult version of the same character, about 9 heads tall, " +
-        "elegantly tall adult proportions, magnificent ornate ceremonial outfit with rich glowing patterns, " +
-        "rich cinematic scene behind, elegant and beautiful, masterpiece quality",
-      prop: "PROPORTION LOCK: a fully grown adult at about 9 heads tall, elegantly tall adult proportions; " +
+      n: 4, name: "化形", icon: "👑", need: 180, sizeZh: "约 7.5 头身（化形 · 华丽服饰）",
+      // v165-Q：⛔ 同上，删掉 "rich cinematic scene behind"（场景感只属于 CG 线，立绘一律素底）。
+      look: "a fully grown adult version of the same character, about 7.5 heads tall, " +
+        "elegantly tall adult proportions, " +
+        "magnificent ceremonial outfit with layered silk, embroidery and jade ornaments, " +
+        "the most elaborate of all four forms, elegant and beautiful, masterpiece quality",
+      prop: "PROPORTION LOCK: a fully grown tall adult, seven-and-a-half-head-tall body proportions (7.5-heads-tall), " +
+        "the head is clearly SMALL relative to the total figure height (the head's height is about one seventh of the figure), " +
+        "very tall slender figure, long legs, elegant adult body silhouette, mature majestic standing pose; " +
+        "the face may be mature and beautiful, but the head is small in proportion to the body " +
+        "(realistic adult head-to-body ratio), NOT a large head on a small body; " +
         "no chibi, no baby proportions, no oversized head, no childlike face",
     },
   ];
@@ -785,7 +813,8 @@
   //   旧 rec.stage 值忽略、不再手动突破（下游读者 stageDef/needCg/when:{stage:N} 一律不变，零改造兼容）。
   const STAGE_DAYS  = [0, 0,   7,  30, 120];   // ⛔ v165 起不再参与进阶判定，仅作历史留档（保留常量避免别处引用炸）
   const STAGE_PLAYS = [0, 0,   3,   6,  10];   // 1-based；[0] 前导占位，对齐 HEAD_COUNT 长度5 —— 唯一判定口径
-  const HEAD_COUNT  = [0,   4,   6,   8,   9]; // 头身比（化形取 9）
+  const HEAD_COUNT  = [0,   4,   6,   7, 7.5]; // 头身比（v165-Q：蜕形 8->7、化形 9->7.5；
+     //   旧值 8/9 太超模，扩散模型画不出，实测退化成"成人脸 + 4~5 头身"。仍为唯一事实源）
   function stageOf(item, rec) {
     // ⛔ v165：不再读 bornAt / 不再算天数，只看 playCount
     const plays = Number(item && item.playCount) || 0;

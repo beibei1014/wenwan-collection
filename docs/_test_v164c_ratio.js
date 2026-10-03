@@ -121,7 +121,9 @@ section("F. 凝形去掉 'no accessories'（它与随机池的配饰是硬冲突
 ok(p1.indexOf("no accessories") < 0, "凝形 prompt 不得再有 'no accessories'");
 const apTxt = SP.appearancePrompt(SP.appearanceOf(item, 0));
 ok(/wearing /.test(apTxt), "前提：appearancePrompt 仍必写 'wearing …'（所以旧的 no accessories 必然矛盾）");
-ok(SP.stageDef(1).look.indexOf("very simple plain clothing") >= 0, "凝形改用「very simple plain clothing」表达朴素，不再硬禁配饰");
+// v165-Q：服饰递进后凝形表述升级为「very simple plain single-layer clothing, no ornaments」，
+//   语义不变（仍不用 "no accessories" 硬禁，避免与随机配饰冲突），只是更明确"单层素衣、无饰件"。
+ok(SP.stageDef(1).look.indexOf("very simple plain single-layer clothing") >= 0, "凝形改用「very simple plain single-layer clothing」表达朴素，不再硬禁配饰");
 
 /* ============ G. 三个出图入口都要带 ============ */
 section("G. 立绘 / 单只 CG / 节令 CG 三个入口都带比例锁定");
@@ -130,7 +132,9 @@ ok(pcg.indexOf("PROPORTION LOCK") >= 0, "单只 CG 带比例锁定块");
 ok(hcRe(4).test(pcg), "单只 CG 也复述 4 头身");
 ok(pcg.length - pcg.lastIndexOf("PROPORTION LOCK") < 400, "单只 CG 的比例锁定也在末尾");
 const pcg3 = SP.promptForCg(item, "anime", 3);
-ok(hcRe(8).test(pcg3) && /no chibi/.test(pcg3), "单只 CG 在第 3 阶走 8 头身 + 反对 chibi");
+// v165-Q：头身比由 HEAD_COUNT 单点决定（蜕形 8->7、化形 9->7.5），⛔ 不再写死 8
+ok(hcRe(SP.headCountOf(3)).test(pcg3) && /no chibi/.test(pcg3),
+   "单只 CG 在第 3 阶走 HEAD_COUNT(3)=" + SP.headCountOf(3) + " 头身 + 反对 chibi");
 const pfest = SP.festCgPrompt(item, "anime", 1, null, null, { key: "duanwu" });
 ok(pfest.indexOf("PROPORTION LOCK") >= 0, "节令 CG 带比例锁定块");
 ok(hcRe(4).test(pfest), "节令 CG 也复述 4 头身");
