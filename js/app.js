@@ -3710,7 +3710,10 @@
     else if (dot) dot.remove();
   }
 
-  /* ---------- 房间区（沁灵列表页顶部） ---------- */
+  /* ---------- 房间区（沁灵列表页顶部） ----------
+     v165：v163b 导航收敛后本函数已无调用点（房间列表不再嵌在沁灵页顶部）；
+       建房入口已移到「沁灵巷」页（renderTownPage 的 #townNewRoom → showRoomEditModal(null)）。
+       ⛔ 保留本函数与 bindRoomSection 作备用，⛔ 不要在此恢复调用（会推翻 v163b 的导航收敛）。 */
   function renderRoomsSection(list, store) {
     const rooms = Rooms.listRooms();
     const items = roomItems();
@@ -3745,6 +3748,7 @@
     if (homeless) h += '<div class="room-hint">🛏 还没入住的沁灵：' + homeless + " 只 —— 进房间点「＋ 请沁灵入住」安排入住</div>";
     return h;
   }
+  // v165：同上 —— v163b 起无调用点，仅保留备用（见 renderRoomsSection 上方注释）。
   function bindRoomSection() {
     const nb = $("#spNewRoom");
     if (nb) nb.onclick = (e) => { e.stopPropagation(); showRoomEditModal(null); };
@@ -5426,9 +5430,12 @@
     h += "</div>";
 
     // 屋子
-    h += '<div class="sd-card"><div class="sd-card-title">🏠 小镇的屋子（' + rooms.length + "）</div>";
+    // v165：用户实测「沁灵巷没有创建房间的入口了」—— 建房入口在本页就地提供（v163b 导航收敛后
+    //   renderSpiritPage 已不再渲染房间区，故这里补一个；⛔ 不恢复旧房间列表，导航收敛的意图保持不变）。
+    h += '<div class="sd-card"><div class="sd-card-title">🏠 小镇的屋子（' + rooms.length + "）" +
+      '<button type="button" class="link-btn" id="townNewRoom" style="float:right;font-size:11px">＋ 新建房间</button></div>';
     if (!rooms.length) {
-      h += '<div class="room-none">还没有屋子。回沁灵页建一间，把沁灵放进去它们就会开始熟络。</div>';
+      h += '<div class="room-none">还没有屋子。点上面「＋ 新建房间」建一间，把沁灵放进去，它们就会开始熟络。</div>';
     } else {
       h += '<div class="room-grid">';
       rooms.forEach((r) => {
@@ -5511,6 +5518,8 @@
     view.querySelectorAll("[data-room]").forEach((c) => c.addEventListener("click", () => {
       location.hash = "#/room/" + encodeURIComponent(c.dataset.room);
     }));
+    // v165：建房入口（复用房间设置弹窗，isNew 分支建完自动跳进新房间 #/room/<id>）
+    const tr = $("#townNewRoom"); if (tr) tr.onclick = () => showRoomEditModal(null);
     const te = $("#townEvents"); if (te) te.onclick = () => location.hash = "#/events";
     view.querySelectorAll(".cg-wall-thumb[data-cg]").forEach((el) => el.onclick = () => openSpiritViewer(el.dataset.cg || ""));
   }
