@@ -2890,21 +2890,21 @@
   function nurtureOf(rec) { const lv1 = bondLevel(Number((rec || {}).bond) || 0).lv1; return Number(BOND_VAL[lv1]) || 0; }
 
   /* ---------- v165 送礼系统（数据层与纯函数；⛔ 本批不接 UI） ---------- */
-  // 6 类礼物（v165 §3.2）。物品清单为**占位**（物名待文案/美术补；⛔ 不杜撰正式素材）。
+  // 6 类礼物（v165 §3.2）。name/desc 为 v165e §13.3 文案层**正式稿**（key/cls 不变；⛔ 描述无价、无买卖腔、无物化动作）。
   const GIFT_CLASSES = ["cloth", "sound", "ware", "odd", "tough", "human"];  // 织物/声响/器物/奇异/坚韧/人情
   const GIFT_CATALOG = {
-    "cloth_pa":    { cls: "cloth", name: "一块旧帕" },
-    "cloth_stone": { cls: "cloth", name: "一枚暖石" },
-    "sound_bell":  { cls: "sound", name: "一只铜铃" },
-    "sound_drum":  { cls: "sound", name: "一只小拨鼓" },
-    "ware_cup":    { cls: "ware",  name: "半盏旧茶则" },
-    "ware_ink":    { cls: "ware",  name: "一方素砚" },
-    "odd_glass":   { cls: "odd",   name: "一枚琉璃小件" },
-    "odd_shell":   { cls: "odd",   name: "一扇贝壳" },
-    "tough_rope":  { cls: "tough", name: "一段皮绳" },
-    "tough_whet":  { cls: "tough", name: "一块磨刀石" },
-    "human_tea":   { cls: "human", name: "一盏热茶" },
-    "human_snack": { cls: "human", name: "一碟点心" },
+    "cloth_pa":    { cls: "cloth", name: "一方旧帕",   desc: "洗过许多回，边角磨得软，还留着一点焐过的暖。" },
+    "cloth_stone": { cls: "cloth", name: "一枚暖手石", desc: "揣在怀里焐热的，递过来时是温的；石上有一道浅浅的手纹。" },
+    "sound_bell":  { cls: "sound", name: "一只旧铜铃", desc: "一晃就响，声不大，脆；铃舌上磨出一圈亮。" },
+    "sound_drum":  { cls: "sound", name: "一面小拨鼓", desc: "巴掌大的鼓，指头一拨，咚一声；鼓面绷得紧。" },
+    "ware_cup":    { cls: "ware",  name: "一只旧茶则", desc: "量茶用的老器物，口沿被磨得圆润。" },
+    "ware_ink":    { cls: "ware",  name: "一方素砚",   desc: "没刻花的砚，用了些年，砚池里墨痕淡淡的。" },
+    "odd_glass":   { cls: "odd",   name: "一枚琉璃小坠", desc: "光一晃，里头有道细细的彩；转个角度，彩就没了。" },
+    "odd_shell":   { cls: "odd",   name: "一枚螺壳",   desc: "贴在耳边听得见海声的那种小螺壳，壳口有一处小缺。" },
+    "tough_rope":  { cls: "tough", name: "一段旧皮绳", desc: "结实，越用越顺手；绳结上留着上一个人打的手结。" },
+    "tough_whet":  { cls: "tough", name: "一块旧磨石", desc: "什么都能磨，磨自己最慢；石面上凹下去一块。" },
+    "human_tea":   { cls: "human", name: "一盏热茶",   desc: "谁都能喝，不偏不倚；热气上来，杯口蒙一层白。" },
+    "human_snack": { cls: "human", name: "一碟点心",   desc: "新蒸的，甜的，一碟子；底上垫着一方油纸。" },
   };
   // 15 人格型 → 5 组（v165 §3.2；组即偏好类）
   const PERSONA_GROUP = {
@@ -2917,6 +2917,7 @@
   const GROUP_GIFT = { soft: "cloth", motion: "sound", plain: "ware", odd: "odd", wild: "tough" };
   function giftClsOf(giftKey) { const g = GIFT_CATALOG[String(giftKey || "")]; return g ? g.cls : ""; }
   function giftNameOf(giftKey) { const g = GIFT_CATALOG[String(giftKey || "")]; return g ? g.name : String(giftKey || ""); }
+  function giftDescOf(giftKey) { const g = GIFT_CATALOG[String(giftKey || "")]; return g ? (g.desc || "") : ""; }
   function personaIdOf(rec) {
     if (!rec) return "";
     if (rec.look && rec.look.pers) return String(rec.look.pers);
@@ -2934,7 +2935,7 @@
     const out = [];
     Object.keys(g).forEach((k) => {
       const n = Math.max(0, Math.floor(Number(g[k]) || 0));
-      if (n > 0) out.push({ key: k, count: n, name: giftNameOf(k), cls: giftClsOf(k) });
+      if (n > 0) out.push({ key: k, count: n, name: giftNameOf(k), desc: giftDescOf(k), cls: giftClsOf(k) });
     });
     return out;
   }
@@ -6753,7 +6754,7 @@
     // v165：羁绊八档升级 + 称呼 + 送礼 + 心迹 + 受伤（数据层与纯函数；⛔ 本批不接 UI）
     BOND_VAL, BOND_CFG, GIFT_CFG, CARE_CFG, HEART_CFG, LOVE_CFG, HARM_CFG, BOND_YOU_LV, BOND_NICK_LV,
     callFor, nurtureOf, normRecV165,
-    GIFTS_KEY, loadGifts, saveGifts, addGift, giftListOf, giftClsOf, giftNameOf, giftPrefOf, personaIdOf,
+    GIFTS_KEY, loadGifts, saveGifts, addGift, giftListOf, giftClsOf, giftNameOf, giftDescOf, giftPrefOf, personaIdOf,
     GIFT_CATALOG, GIFT_CLASSES, giveGift,
     HEART_MARKS, heartLevel, addHeart,
     harmedOf, setHarmed,

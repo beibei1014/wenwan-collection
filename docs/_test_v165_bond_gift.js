@@ -218,6 +218,22 @@ section("7. db.js：mergeGiftStores（按 giftKey 取 max）+ gift_store 读写�
   }
 }
 
+/* ============ 8. GIFT_CATALOG 正式物名 + desc（v165e §13.3） ============ */
+section("8. GIFT_CATALOG 正式物名 + desc（v165e §13.3）");
+{
+  const { S } = newSpirits();
+  const keys = Object.keys(S.GIFT_CATALOG);
+  ok(keys.length === 12, "12 件礼物（6 类 × 2）");
+  ok(keys.every((k) => /^[a-z_]+$/.test(k)), "key 全 ASCII（无中文 key）");
+  ok(keys.every((k) => S.GIFT_CATALOG[k].name && S.GIFT_CATALOG[k].desc), "每件皆有 name 与 desc");
+  ok(S.giftNameOf("cloth_pa") === "一方旧帕" && S.giftDescOf("cloth_pa").indexOf("焐过的暖") >= 0, "cloth_pa = 一方旧帕 / 描述正确");
+  ok(S.giftNameOf("human_snack") === "一碟点心" && S.giftNameOf("tough_whet") === "一块旧磨石", "human_snack/tough_whet 名称正确");
+  ok(typeof S.giftDescOf === "function" && S.giftDescOf("ware_ink").length > 0, "giftDescOf 可用");
+  const it = S.giftListOf({ cloth_pa: 2 })[0];
+  ok(it && it.name === "一方旧帕" && it.desc && it.cls === "cloth", "giftListOf 带 name/desc/cls");
+  ok(S.giftClsOf("cloth_pa") === "cloth" && S.giftClsOf("sound_bell") === "sound" && S.giftClsOf("human_tea") === "human", "key→cls 不变");
+}
+
 console.log("\n----------------------------------------");
 console.log("通过断言 " + PASS + " 项，失败 " + FAIL + " 项");
 if (FAIL) { console.log("失败清单："); FAILURES.forEach((f) => console.log("  - " + f)); }
