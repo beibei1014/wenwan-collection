@@ -723,31 +723,35 @@
     "a teenage version of the character, about 8 heads tall, slim teenage proportions, longer limbs, a more defined jawline, confident pose, stylish detailed outfit with subtle pattern, environment behind",
     "a fully grown adult version of the same character, about 9 heads tall, magnificent ornate ceremonial outfit with rich glowing patterns, rich cinematic scene behind, elegant and beautiful, masterpiece quality",
   ];
-  // v163b：四阶段进阶 =「挂瓷后天数 ∧ 盘玩次数」双条件派生（取较慢者）；旧 rec.stage 值忽略、不再手动突破
-  //   （下游读者 stageDef/needCg/when:{stage:N} 一律不变，零改造兼容）
-  const STAGE_DAYS  = [0, 0,   7,  30, 120];   // 1-based；[0] 前导占位（对齐 HEAD_COUNT 长度5），[1] 凝形起点（0）
-  const STAGE_PLAYS = [0, 0,   5,  20,  60];   // 1-based；[0] 前导占位，与 STAGE_DAYS 同索引
+  // v165：四阶段进阶 = **只认盘玩次数**（挂瓷后每盘一次算一次），⛔ 不再认天数。
+  //   旧 v163b 口径是「挂瓷后天数 ∧ 盘玩次数」双条件取慢者，化形要 120 天 ∧ 60 次
+  //   → 用户实测「卡在凝形，没有进阶按钮」，实际是双条件永远升不上去。本版按用户新口径改：
+  //   开窍 = 盘 3 次 / 蜕形 = 盘 6 次 / 化形 = 盘 10 次（不限天数）。
+  //   旧 rec.stage 值忽略、不再手动突破（下游读者 stageDef/needCg/when:{stage:N} 一律不变，零改造兼容）。
+  const STAGE_DAYS  = [0, 0,   7,  30, 120];   // ⛔ v165 起不再参与进阶判定，仅作历史留档（保留常量避免别处引用炸）
+  const STAGE_PLAYS = [0, 0,   3,   6,  10];   // 1-based；[0] 前导占位，对齐 HEAD_COUNT 长度5 —— 唯一判定口径
   const HEAD_COUNT  = [0,   4,   6,   8,   9]; // 头身比（化形取 9）
-  function stageOf(item, rec, now) {
-    const days  = dayNoOf(rec && rec.bornAt, now);   // 挂瓷后自然日；未挂瓷 = 0
+  function stageOf(item, rec) {
+    // ⛔ v165：不再读 bornAt / 不再算天数，只看 playCount
     const plays = Number(item && item.playCount) || 0;
     let s = 1;
     for (let k = 2; k <= 4; k++) {
-      if (days >= STAGE_DAYS[k] && plays >= STAGE_PLAYS[k]) s = k;  // 双条件取较慢者：任一不满足即停
+      if (plays >= STAGE_PLAYS[k]) s = k;   // 盘够次数就进阶，无天数门槛
       else break;
     }
     return s;
   }
   function headCountOf(stage) { return HEAD_COUNT[Math.min(4, Math.max(1, Number(stage) || 1))]; }
   function stageOrnate(stage) { return Number(stage) === 4; }   // 化形（终阶）：更华丽服饰 + 场景
-  function stageProgress(item, rec, now) {
-    const s = stageOf(item, rec, now);
-    if (s >= 4) return { isMax: true, pct: 100, toNextDays: 0, toNextPlays: 0, bottleneck: "" };
-    const dNeed = STAGE_DAYS[s + 1], pNeed = STAGE_PLAYS[s + 1];
-    const days = dayNoOf(rec && rec.bornAt, now), plays = Number(item && item.playCount) || 0;
-    const dRem = Math.max(0, dNeed - days), pRem = Math.max(0, pNeed - plays);
-    const pct = Math.min(100, Math.round(Math.min(days / dNeed, plays / pNeed) * 100));
-    return { pct: pct, toNextDays: dRem, toNextPlays: pRem, bottleneck: dRem >= pRem ? "days" : "plays" };
+  function stageProgress(item, rec) {
+    // v165：⛔ 不再返回天数余量（toNextDays 恒 0，仅为兼容旧调用方保留字段）；bottleneck 恒 "plays"
+    const s = stageOf(item, rec);
+    if (s >= 4) return { isMax: true, pct: 100, toNextDays: 0, toNextPlays: 0, bottleneck: "plays" };
+    const pNeed = STAGE_PLAYS[s + 1];
+    const plays = Number(item && item.playCount) || 0;
+    const pRem = Math.max(0, pNeed - plays);
+    const pct = Math.min(100, Math.round((plays / pNeed) * 100));
+    return { pct: pct, toNextDays: 0, toNextPlays: pRem, bottleneck: "plays" };
   }
 
   /* ---------- v163b：事件卡（瞬时弹出 + 事件回顾）—— 见 docs/v163-互动系统设计.md 【C+.2】 ---------- */
@@ -1141,22 +1145,22 @@
     const next = STAGES[cur] || null;               // 下一形态（cur=4 时为 null）
     const canBreak = false;                          // v163b：阶段不再手动突破，恒 false
     const plays = Number(item && item.playCount) || 0;
-    const d = Number(days) || 0;
+    // v165：⛔ 原 `const d = Number(days) || 0;` 随天数门槛一起移除（days 仍传参给 growthOf）
     if (!next) {
       return {
         stage: cur, name: def.name, icon: def.icon, growth: growth, need: def.need, next: "", nextIcon: "",
         canBreak: false, isMax: true, pct: 100, toNext: 0,
       };
     }
-    const dNeed = STAGE_DAYS[cur + 1], pNeed = STAGE_PLAYS[cur + 1];   // v163b：双条件门槛
-    const dRem = Math.max(0, dNeed - d), pRem = Math.max(0, pNeed - plays);
-    const pct = Math.min(100, Math.round(Math.min(d / dNeed, plays / pNeed) * 100));
-    const bottleneck = dRem >= pRem ? "days" : "plays";
-    const toNext = bottleneck === "days" ? dRem : pRem;
+    // v165：⛔ 删天数门槛，只按盘玩次数；need = 下一阶所需盘玩次数；bottleneck 恒 "plays"
+    //   （growth 仍是 plays*3 + days，仅作展示/when 条件用，不参与本阶判定，故 ⛔ 不改 growthOf）
+    const pNeed = STAGE_PLAYS[cur + 1];
+    const pRem = Math.max(0, pNeed - plays);
+    const pct = Math.min(100, Math.round((plays / pNeed) * 100));
     return {
       stage: cur, name: def.name, icon: def.icon, growth: growth,
-      need: Math.max(dNeed, pNeed), next: next.name, nextIcon: next.icon,
-      canBreak: false, isMax: false, pct: pct, toNext: toNext, bottleneck: bottleneck,
+      need: pNeed, next: next.name, nextIcon: next.icon,
+      canBreak: false, isMax: false, pct: pct, toNext: pRem, bottleneck: "plays",
     };
   }
 

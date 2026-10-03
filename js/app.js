@@ -3198,7 +3198,7 @@
         '<div class="spirit-line">' + esc((p && p.line) || "") + "</div>" +
         (si.isMax ? '<div class="spirit-prog max">已是化形 · 巅峰形态 👑</div>'
           : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
-            '<span class="spirit-prog-txt">距下一阶：再陪 ' + si.toNext + " 天" + (si.bottleneck === "plays" ? " · 再盘 " + si.toNext + " 次" : "") + "</span></div>") +
+            '<span class="spirit-prog-txt">距下一阶：再盘 ' + si.toNext + " 次</span></div>") +
         '<div class="spirit-tags">' + ((p && p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
         (idle != null ? '<span class="spirit-trait idle">' + idle + " 天没盘</span>" : "") + "</div>" +
         "</div></div>";
@@ -3528,7 +3528,7 @@
         '<div class="spirit-line">' + esc((p && p.line) || "") + "</div>" +
         (si.isMax ? '<div class="spirit-prog max">已是化形 · 巅峰形态 👑</div>'
           : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
-            '<span class="spirit-prog-txt">' + si.growth + " / " + si.need + " → " + esc(si.next) + "</span></div>") +
+            '<span class="spirit-prog-txt">再盘 ' + si.toNext + " 次 → " + esc(si.next) + "</span></div>") +
         '<div class="spirit-tags">' + ((p && p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
         (idle != null ? '<span class="spirit-trait idle">' + idle + " 天没盘</span>" : "") + "</div>" +
         "</div></div>";
@@ -4553,7 +4553,7 @@
     h += '<div class="sd-card"><div class="sd-card-title">🌱 成长</div>' +
       (si.isMax ? '<div class="spirit-prog max">已是化形 · 巅峰形态 👑</div>'
         : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
-          '<span class="spirit-prog-txt">' + si.growth + " / " + si.need + " → " + esc(si.next) + "（再 " + si.toNext + " 点可深沁）</span></div>") +
+          '<span class="spirit-prog-txt">再盘 ' + si.toNext + " 次可到下一阶：" + esc(si.next) + "</span></div>") +
       // v120：把"会长大"写在界面上（用户问过"不会一直都是 Q 版吧"）
       '<div class="sd-growth-line">📏 现在：' + esc(Spirits.stageDef(si.stage).sizeZh || "") +
       (si.isMax ? " · 已经是最成熟的形态了" : " → 深沁后：" + esc(Spirits.stageDef(si.stage + 1).sizeZh || "")) + "</div>" +
