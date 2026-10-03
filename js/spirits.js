@@ -3179,6 +3179,19 @@
     return true;
   }
 
+  /* ---------- v165 星痕字段（逐串；与 harmed 同款，⛔ 只做读取与字段级写入） ----------
+     starMark = 「心上的星痕」标记位：标记这只沁灵身上留下了星痕（与受伤 harmed 是两回事，
+     ⛔ 本批不参与任何判定，仅作为可读写的标记位，供后续剧情/结局接入）。 */
+  function starMarkOf(rec) {
+    const r = rec || {};
+    return { starMark: !!r.starMark };
+  }
+  function setStarMark(rec, v) {
+    if (!rec || typeof rec !== "object") return false;
+    rec.starMark = !!v;
+    return true;
+  }
+
   /* =========================================================
    * v165 · BG 场景背景系统（新全局系统）
    * ---------------------------------------------------------
@@ -3323,6 +3336,9 @@
     if (rec.harmed == null) rec.harmed = false;
     rec.harmed = !!rec.harmed;
     if (rec.harmCause == null) rec.harmCause = "";
+    // v165：星痕字段（⛔ 不进 marks/flags，顶层字段）
+    if (rec.starMark == null) rec.starMark = false;
+    rec.starMark = !!rec.starMark;
     return rec;
   }
 
@@ -7050,7 +7066,7 @@
     // v165：BG 场景背景系统（全局 21 张；ww_bg 永久 URL；ensureBg 并发去重）
     BG_KEY, BG_CATALOG, BG_CHAPTER_MAP, BG_STYLE, BG_NEG, NEG_STYLE, bgByKey, bgSeedKey, bgForChapter, bgLoadAll, bgGet, bgPut, ensureBg,
     HEART_MARKS, HEART_LV_NAMES, heartLevel, addHeart,
-    harmedOf, setHarmed,
+    harmedOf, setHarmed, starMarkOf, setStarMark,
     fmt, greetVars,
     GREET, greetingOf, ensureGreet,
     SIGNS, signOf, ensureSign,

@@ -2987,6 +2987,10 @@
     rec.imgHistory = hist.slice(/^https?:/i.test(url) ? -8 : -3);
     rec.imgUrl = url;
     rec.imgAt = Date.now();
+    // v165：记下「这张立绘是第几阶的」—— 程序据此判断阶段上涨后要不要出新本阶立绘
+    //   （此前无此字段，阶段涨了立绘也永远冻结复用，看着像「进阶了但没变」）。
+    rec.imgStage = stage || rec.stage || 1;
+    rec._stageImgErr = ""; rec._stageImgErrAt = 0;
     rec.imgErr = "";
     rec._imgErr = "";   // ⚠️ 必须清掉：出图成功却留着旧错误 → 列表页会一直弹那条早就过期的红字（v105 笔误成 imgErr，v108 修）
     rec.face = await analyzeFaceBox(url);   // 顺手算出"头像取景"，缩略图就不用等下一轮
@@ -2995,12 +2999,21 @@
     return url;
   }
   // 判断是否需要重新出图：**data URI 是永久的，永不重出**；只有 http(s) 链接（方舟 24h 过期）才要续期
-  function spiritImgStale(rec) {
+  function spiritImgStale(rec, item) {
+    // v165：阶段上涨 ⇒ 本阶立绘未出。**优先于**下面的永久图判断（否则冻结图永不再出）。
+    //   ⛔ imgStage == null（旧存档 / 从未记过）一律不触发 —— 否则全量用户会被一次性重画烧额度。
+    if (item && rec && rec.imgStage != null
+      && rec.imgStage < Spirits.stageOf(item, rec, Date.now())) return true;
     const u = rec && rec.imgUrl;
     if (!u) return true;
     if (rec.imgFrozen) return false;                       // 已冻结的免密钥立绘：prompt 再变也不重出，永久有效
     if (/^data:/.test(u)) return false;                    // 本地存好的图 → 永久有效
     return (Date.now() - (rec.imgAt || 0)) > 20 * 3600 * 1000;   // 外链 → 20 小时后续期
+  }
+  // v165：本阶立绘是否还欠着一张（详情页提示 + 按钮文案用；⛔ 纯读，不触发出图）
+  function stageImgPending(rec, item) {
+    if (!item || !rec || rec.imgStage == null) return false;
+    return rec.imgStage < Spirits.stageOf(item, rec, Date.now());
   }
   // 逐个补形象：API 通道需要 POST 出图 → 缓存到本地沁灵记录里
   let _imgBusy = false;
@@ -3040,10 +3053,15 @@
       const cur = Spirits.load();
       for (const it of (list || [])) {
         const r = Spirits.ensureIn(cur, it.id);
-        if (r.imgFrozen || r.imgUrl) continue;
-        r.imgUrl = Spirits.pollinationsUrl(it, (r.variant || 0));
+        // v165：阶段涨了就重算 URL（免密钥通道按 prompt 取图，换阶=换 prompt=换图，⛔ 不花任何钱）
+        const curStage = Spirits.stageOf(it, r, Date.now());
+        const stageUp = stageImgPending(r, it);
+        if (!stageUp && (r.imgFrozen || r.imgUrl)) continue;
+        r.imgUrl = Spirits.pollinationsUrl(it, (r.variant || 0), null, curStage,
+          Spirits.appearanceOf(it, r.appearanceSeed || 0, r.gender || ""));
         r.imgAt = Date.now();
         r.imgFrozen = true;
+        r.imgStage = curStage;
         changed = true;
       }
       if (changed) Spirits.save(cur);
@@ -3057,17 +3075,26 @@
         const st = Spirits.load();
         const rec = Spirits.ensureIn(st, it.id);
         if (spiritNeedsSetup(rec)) continue;         // v127：等用户先确认设定（发色/特征/性格）
-        if (!spiritImgStale(rec)) continue;          // 已经是本地存好的图 → 不再烧额度
+        // v165：本阶立绘是否还欠着一张（阶段涨了 & 旧图不是本阶的）
+        const derivedStage = Spirits.stageOf(it, rec, Date.now());
+        const stageUp = stageImgPending(rec, it);
+        if (!stageUp && !spiritImgStale(rec, it)) continue;   // 已经是本地存好的图 → 不再烧额度
         // 刚失败过就别反复重试（配置错的时候会在每次进页面时白烧额度）
-        if (rec._imgErr && Date.now() - (rec._imgErrAt || 0) < 10 * 60 * 1000) continue;
+        // ⛔ 阶段补画同样要冷却，否则出图失败会在每次进页面时无限重试烧额度
+        if (stageUp) {
+          if (rec._stageImgErr && Date.now() - (rec._stageImgErrAt || 0) < 10 * 60 * 1000) continue;
+        } else if (rec._imgErr && Date.now() - (rec._imgErrAt || 0) < 10 * 60 * 1000) continue;
         _genInFlight[it.id] = true;
         try {
-          const r = await Spirits.generateImage(it, rec.variant || 0, null, rec.stage || 1, { appearanceSeed: rec.appearanceSeed || 0, gender: rec.gender || "" });
+          // v165：阶段补画把旧图当参考图传过去 → 保证是同一个人，不会换脸/变性
+          const refImg = stageUp ? (rec.imgUrl || "") : "";
+          const r = await Spirits.generateImage(it, rec.variant || 0, null, derivedStage,
+            { appearanceSeed: rec.appearanceSeed || 0, gender: rec.gender || "", ref: refImg });
           // ⚠️ 出图要好几秒，期间 CG/取景/日记可能已经写过存档 →
           //    必须**重新 load** 再写（否则会把并发任务的结果覆盖掉，CG 会被白白重画一次）
           const st2 = Spirits.load();
           const rec2 = Spirits.ensureIn(st2, it.id);
-          await saveSpiritImage(it, rec2, r, rec2.stage || 1);
+          await saveSpiritImage(it, rec2, r, derivedStage);
           Spirits.save(st2);
           changed = true;
           if (r.autoFixed) toast("已自动修正：" + r.autoFixed);
@@ -3077,6 +3104,7 @@
           const rec2 = Spirits.ensureIn(st2, it.id);
           rec2._imgErr = msg;
           rec2._imgErrAt = Date.now();     // 保留旧图（不清 imgUrl），只记下错误与时间
+          if (stageUp) { rec2._stageImgErr = msg; rec2._stageImgErrAt = Date.now(); }   // v165：本阶补画失败（详情页会给「点此补画」）
           changed = true;
           Spirits.save(st2);
         } finally {
@@ -4560,6 +4588,9 @@
       // v111：深沁/换形象/换外观设定直接放在详情页 —— 生成完就在上面看到新立绘（不用再钻弹层）
       // v112：形象细节升级后（照人物设定画的），这里会提示"按新设定重画"
       '<div class="sd-actions2">' +
+      // v165：用户要「到了下一阶要出新的立绘」—— 给一个显式入口：按当前阶重画本阶立绘
+      //   （⛔ 阶段本身不手动推进，rec.stage 仍由 stageOf 派生，这里只是重画本阶）
+      '<button class="btn ghost" id="sdAdvance">' + (si.isMax ? "👑 重画本阶立绘" : "🌱 进阶 · 重画本阶立绘") + '</button>' +
       '<button class="btn ghost" id="sdBreak">🔁 重画立绘</button>' +
       (rec.lookStale
         ? '<button class="btn primary" id="sdNewLook">✨ 按新设定重画</button>'
@@ -4570,6 +4601,8 @@
       '<button class="btn ghost" id="sdCleanup">🧹 清理失效图</button>' +
       "</div>" +
       (rec.lookStale ? '<div class="sd-stale">🆕 它还想再细致些 —— 点「✨ 按新设定重画」，照「人物设定」重新画一遍。</div>' : "") +
+      // v165：本阶立绘欠着时的可点补画入口（⛔ 出图失败不抛错，改成这一行）
+      (stageImgPending(rec, it) ? '<div class="sd-stale" id="sdStageImgTip">🖼 本阶立绘还没画出来 · <button type="button" class="link-btn" id="sdStageImgFix">点此补画</button></div>' : "") +
       '<div class="sd-gen">已为它画过 ' + (Number(rec.genCount) || 1) + " 张</div>" +
       (hist.length > 1 ? '<div class="spirit-hist">' + hist.map((x) => {
         const d = Spirits.stageDef(x.stage);
@@ -4719,7 +4752,7 @@
       refresh: refresh,
       refreshTop: refreshTop,
       busy: (on, text) => {
-        ["#sdBreak", "#sdNewLook", "#sdReRoll"].forEach((sel) => {
+        ["#sdAdvance", "#sdBreak", "#sdNewLook", "#sdReRoll"].forEach((sel) => {
           const b = $(sel);
           if (!b) return;
           if (on) { b.disabled = true; if (sel === "#sdNewLook") { b.dataset.old = b.textContent; b.textContent = text || "处理中…"; } }
@@ -4727,6 +4760,9 @@
         });
       },
     };
+    // v165：#sdAdvance 与 #sdBreak 同体（spiritBreak 内部已按 stageOf 现算阶重画）
+    const adv = $("#sdAdvance"); if (adv) adv.onclick = () => spiritBreak(it, host);
+    const sif = $("#sdStageImgFix"); if (sif) sif.onclick = () => spiritBreak(it, host);
     const bk = $("#sdBreak"); if (bk) bk.onclick = () => spiritBreak(it, host);
     const nl = $("#sdNewLook"); if (nl) nl.onclick = () => spiritNewLook(it, host);
     const rr = $("#sdReRoll"); if (rr) rr.onclick = () => spiritReRoll(it, host);
