@@ -722,8 +722,8 @@
   ];
   // v163b：四阶段进阶 =「挂瓷后天数 ∧ 盘玩次数」双条件派生（取较慢者）；旧 rec.stage 值忽略、不再手动突破
   //   （下游读者 stageDef/needCg/when:{stage:N} 一律不变，零改造兼容）
-  const STAGE_DAYS  = [0,   7,  30, 120];   // 1-based；[0] 占位（挂瓷后天数下限）
-  const STAGE_PLAYS = [0,   5,  20,  60];   // 盘玩次数下限
+  const STAGE_DAYS  = [0, 0,   7,  30, 120];   // 1-based；[0] 前导占位（对齐 HEAD_COUNT 长度5），[1] 凝形起点（0）
+  const STAGE_PLAYS = [0, 0,   5,  20,  60];   // 1-based；[0] 前导占位，与 STAGE_DAYS 同索引
   const HEAD_COUNT  = [0,   4,   6,   8,   9]; // 头身比（化形取 9）
   function stageOf(item, rec, now) {
     const days  = dayNoOf(rec && rec.bornAt, now);   // 挂瓷后自然日；未挂瓷 = 0
