@@ -405,8 +405,9 @@
         rec.personaZhKey = "";
       }
     }
-    // v163b：阶段由「挂瓷后天数 ∧ 盘玩次数」派生（取代旧手动突破值）
-    rec.stage = stageOf(item, rec, Date.now());
+    // v165-M：⛔ 删掉这里的自动派生 —— rec.stage 现在是「已确认阶」，只由用户点按钮抬。
+    //   （旧逻辑每次 load 都把它拉回可达阶 ⇒ 用户的手动确认会被静默覆盖。）
+    //   可达阶请用 stageOf(item, rec) 现算；⛔ 老存档的 rec.stage 不清除、不强行对齐（以用户点过为准）。
     // v163b：开沁里程碑事件（瞬时卡 + 回顾）
     recordEvent(rec, { type: "milestone", title: "挂瓷开沁", summary: "它第一次睁开眼，认得你了", linked: [item.id], at: Date.now(), icon: "✨" });
     save(store);

@@ -262,15 +262,30 @@ const readApp = () => fs.readFileSync(path.join(ROOT, APP_SRC), "utf8");
     ok(!/还没有屋子。回沁灵页建一间/.test(app), "C3：空态文案不再指向「回沁灵页」");
     ok(/还没有屋子。点上面/.test(app), "C3：空态文案改为就地引导");
     ok(/id="sdAdvance"/.test(app), "C6：详情页有 #sdAdvance 按钮");
-    ok(/进阶 · 重画本阶立绘/.test(app) && /重画本阶立绘/.test(app), "C6：#sdAdvance 文案随阶动态（进阶/化形两态）");
+    // v165-M：#sdAdvance 不再承担「进阶」（进阶已独立成 #sdConfirmStage，且必须用户手点），
+    //   它只画本阶立绘 ⇒ 文案固定为「🖼 画本阶立绘」，不再随阶两态变化。
+    ok(/画本阶立绘/.test(app), "C6→M：#sdAdvance 只画本阶立绘（不再叫「进阶」）");
     ok(/rec\.imgStage = stage \|\| rec\.stage \|\| 1;/.test(app), "C6：saveSpiritImage 写入 rec.imgStage");
     ok(/function stageImgPending/.test(app), "C6：stageImgPending 判定函数存在");
-    ok(/imgStage != null/.test(app) && /< Spirits\.stageOf\(item, rec, Date\.now\(\)\)/.test(app),
-      "C6：阶段补画判定 = imgStage < stageOf（且 imgStage 为 null 时不触发）");
+    // v165-M：补画判定改与**已确认阶**比较（rec.stage），不再跟可达阶 stageOf 比
+    //   —— 用户没点「进阶」之前，本阶立绘不算欠着，系统也不许自动出图。
+    ok(/rec\.imgStage == null/.test(app) && /imgStage < confirmed/.test(app),
+      "C6→M：阶段补画判定 = imgStage < 已确认阶（且 imgStage 为 null 时不触发）");
     ok(/id="sdStageImgFix"/.test(app) && /本阶立绘还没画出来/.test(app), "C6：本阶立绘欠图时有可点补画入口");
     // ⛔ 本次改动不得引入任何与「阶段补画」相关的定时器
     //   （app.js 里本来就有两个与本改动无关的 setInterval：离线重试 2470 / 沁灵同步 9083 —— 不断言它们）
     ok(!/setInterval\s*\([^)]*imgStage/.test(app), "⛔ 无 imgStage 相关 setInterval");
+    /* ---- v165-M：进阶与出进阶立绘**全部手动**（用户裁定） ---- */
+    ok(/function confirmStage/.test(app), "M：confirmStage 存在（唯一允许写 rec.stage 的入口）");
+    ok(/id="sdConfirmStage"/.test(app) && /可以进阶了 · 点此进阶/.test(app), "M：详情页有「✨ 可以进阶了 · 点此进阶」按钮");
+    // ⛔ 全仓不得再有任何「自动把 rec.stage 拉回可达阶」的写法
+    ok(!/rec\.stage = Spirits\.stageOf/.test(app), "⛔ app.js 无自动写 rec.stage 的路径");
+    const spiSrc = fs.readFileSync(path.join(ROOT, "js/spirits.js"), "utf8");
+    ok(!/rec\.stage = stageOf\(/.test(spiSrc), "⛔ spirits.js 无自动写 rec.stage 的路径（normRecV165 已拆）");
+    // ⛔ 本阶立绘欠着时，自动补图循环必须 continue（绝不自动出图）
+    ok(/if \(stageImgPending\(rec, it\)\) continue;/.test(app), "⛔ 本阶欠图时自动补图循环直接跳过（绝不自动出图）");
+    // ⛔ spiritImgStale 不得再因「阶数涨了」判 stale（否则等同自动出图）
+    ok(!/rec\.imgStage < Spirits\.stageOf/.test(app), "⛔ spiritImgStale 不再因阶数上涨判 stale");
     ok(!/setTimeout\s*\([^)]*imgStage/.test(app), "⛔ 无 imgStage 相关 setTimeout");
     ok(!/imgStage[^;\n]*setTimeout|setTimeout[^;\n]*imgStage/.test(app), "⛔ imgStage 与定时器无任何耦合");
     ok(!/再陪\s*' \+ si\.toNext \+ " 天"/.test(app), "C4：⛔ 界面不再出现「再陪 N 天」");

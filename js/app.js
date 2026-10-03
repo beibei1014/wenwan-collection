@@ -3000,10 +3000,9 @@
   }
   // 判断是否需要重新出图：**data URI 是永久的，永不重出**；只有 http(s) 链接（方舟 24h 过期）才要续期
   function spiritImgStale(rec, item) {
-    // v165：阶段上涨 ⇒ 本阶立绘未出。**优先于**下面的永久图判断（否则冻结图永不再出）。
-    //   ⛔ imgStage == null（旧存档 / 从未记过）一律不触发 —— 否则全量用户会被一次性重画烧额度。
-    if (item && rec && rec.imgStage != null
-      && rec.imgStage < Spirits.stageOf(item, rec, Date.now())) return true;
+    // v165-M：⛔ 删掉「阶段涨了 ⇒ 自动重出」这条。用户裁定：**进阶与出进阶立绘都必须手动**，
+    //   系统绝不因为阶数涨了就自动出图（原逻辑会在进页面/定时器里偷偷烧额度）。
+    //   现在只有「外链过期」与「还没图」两种情形会走自动续期；本阶立绘欠着 ⇒ 只显示可点按钮。
     const u = rec && rec.imgUrl;
     if (!u) return true;
     if (rec.imgFrozen) return false;                       // 已冻结的免密钥立绘：prompt 再变也不重出，永久有效
@@ -3012,8 +3011,24 @@
   }
   // v165：本阶立绘是否还欠着一张（详情页提示 + 按钮文案用；⛔ 纯读，不触发出图）
   function stageImgPending(rec, item) {
+    // v165-M：与**已确认阶**比较（不再跟可达阶比）—— 用户没点「进阶」之前，本阶立绘不算欠着。
     if (!item || !rec || rec.imgStage == null) return false;
-    return rec.imgStage < Spirits.stageOf(item, rec, Date.now());
+    const confirmed = Math.max(1, Number(rec.stage) || 1);
+    return rec.imgStage < confirmed;
+  }
+  // v165-M：**唯一**允许写 rec.stage 的地方 —— 用户点「✨ 可以进阶了 · 点此进阶」
+  //   ⛔ 除此以外任何路径都不许写 rec.stage（可达阶一律用 Spirits.stageOf 现算，不落库）。
+  function confirmStage(item) {
+    if (!item) return false;
+    const s = Spirits.load();
+    const r = Spirits.ensureIn(s, item.id);
+    const reach = Spirits.stageOf(item, r, Date.now());     // 可达阶（只认盘玩次数）
+    const confirmed = Math.max(1, Number(r.stage) || 1);    // 已确认阶
+    if (reach <= confirmed) { toast("还没到下一阶 —— 再盘一些日子。"); return false; }
+    r.stage = reach;
+    Spirits.save(s);
+    toast("✨ 进阶到「" + Spirits.stageDef(reach).name + "」了！本阶立绘还没画 —— 点「🖼 画本阶立绘」再画。");
+    return true;
   }
   // 逐个补形象：API 通道需要 POST 出图 → 缓存到本地沁灵记录里
   let _imgBusy = false;
@@ -3054,7 +3069,7 @@
       for (const it of (list || [])) {
         const r = Spirits.ensureIn(cur, it.id);
         // v165：阶段涨了就重算 URL（免密钥通道按 prompt 取图，换阶=换 prompt=换图，⛔ 不花任何钱）
-        const curStage = Spirits.stageOf(it, r, Date.now());
+        const curStage = Math.min(4, Math.max(1, Number(r.stage) || 1));   // v165-M：已确认阶
         const stageUp = stageImgPending(r, it);
         if (!stageUp && (r.imgFrozen || r.imgUrl)) continue;
         r.imgUrl = Spirits.pollinationsUrl(it, (r.variant || 0), null, curStage,
@@ -3076,14 +3091,11 @@
         const rec = Spirits.ensureIn(st, it.id);
         if (spiritNeedsSetup(rec)) continue;         // v127：等用户先确认设定（发色/特征/性格）
         // v165：本阶立绘是否还欠着一张（阶段涨了 & 旧图不是本阶的）
-        const derivedStage = Spirits.stageOf(it, rec, Date.now());
-        const stageUp = stageImgPending(rec, it);
-        if (!stageUp && !spiritImgStale(rec, it)) continue;   // 已经是本地存好的图 → 不再烧额度
+        // v165-M：⛔ 本阶立绘欠着时**绝不自动出图** —— 只等用户点「🖼 画本阶立绘」
+        if (stageImgPending(rec, it)) continue;
+        if (!spiritImgStale(rec, it)) continue;   // 已经是本地存好的图 → 不再烧额度
         // 刚失败过就别反复重试（配置错的时候会在每次进页面时白烧额度）
-        // ⛔ 阶段补画同样要冷却，否则出图失败会在每次进页面时无限重试烧额度
-        if (stageUp) {
-          if (rec._stageImgErr && Date.now() - (rec._stageImgErrAt || 0) < 10 * 60 * 1000) continue;
-        } else if (rec._imgErr && Date.now() - (rec._imgErrAt || 0) < 10 * 60 * 1000) continue;
+        if (rec._imgErr && Date.now() - (rec._imgErrAt || 0) < 10 * 60 * 1000) continue;
         _genInFlight[it.id] = true;
         try {
           // v165：阶段补画把旧图当参考图传过去 → 保证是同一个人，不会换脸/变性
@@ -3156,8 +3168,8 @@
       return;
     }
 
-    // v163b：显示层按「挂瓷后天数 ∧ 盘玩次数」派生阶段（不改存储语义）
-    list.forEach((it) => { const r = store[it.id] || {}; r.stage = Spirits.stageOf(it, r, Date.now()); });
+    // v165-M：⛔ 这里不再自动写 r.stage —— rec.stage 语义改为「已确认阶」，
+    //   唯一写点是用户点「✨ 可以进阶了 · 点此进阶」（见 confirmStage）。可达阶一律用 Spirits.stageOf 现算。
 
     let html = "";
     // 统计条（沿用 #/spirits）
@@ -3330,7 +3342,7 @@
       '<div class="album-head-sub">主线走到关键处，会留下一张</div></div></div>';
     list.forEach((it) => {
       const rec = store[it.id] || {};
-      rec.stage = Spirits.stageOf(it, rec, Date.now());
+      // v165-M：⛔ 同上，不自动抬 rec.stage（已确认阶只由用户点按钮抬）
       const ids = Spirits.cgCollectedIds(rec);
       const ctx = { dayNo: Math.max(1, DB.daysWith(it)), plays: Number(it.playCount) || 0, idleDays: 0, members: 1 };
       const states = Spirits.chapterState(rec, ctx, roomCountOf(rec));
@@ -3505,8 +3517,8 @@
       return;
     }
     const tk = Spirits.todayKey();
-    // v163b：显示层按「挂瓷后天数 ∧ 盘玩次数」派生阶段（不改存储语义）
-    list.forEach((it) => { const r = store[it.id] || {}; r.stage = Spirits.stageOf(it, r, Date.now()); });
+    // v165-M：⛔ 这里不再自动写 r.stage —— rec.stage 语义改为「已确认阶」，
+    //   唯一写点是用户点「✨ 可以进阶了 · 点此进阶」（见 confirmStage）。可达阶一律用 Spirits.stageOf 现算。
     // v126 第 4 期：图鉴页头统计（与「今日任务」「成就殿堂」同一套排版）——按形态统计收集进度
     const stageCount = [0, 0, 0, 0];
     let cgCount = 0, diaryCount = 0;
@@ -4197,7 +4209,8 @@
     if (!(await gateLookConfirm(item))) return;
     const s0 = Spirits.load();
     const r0 = Spirits.ensureIn(s0, item.id);
-    const st = Spirits.stageOf(item, r0, Date.now());   // 当前派生阶段（不再推进）
+    // v165-M：按**已确认阶**画（用户没点「进阶」之前，本阶 = 已确认阶；⛔ 不再用可达阶）
+    const st = Math.min(4, Math.max(1, Number(r0.stage) || 1));
     if (_imgBusy || _genInFlight[item.id]) { toast("正在出图，稍等一下～"); return; }
     _imgBusy = true; _genInFlight[item.id] = true;
     if (h.busy) h.busy(true, "重画中…");
@@ -4443,8 +4456,7 @@
     const store = Spirits.load();
     const rec = Spirits.ensureIn(store, id);
     _brokenSrcs = new Set();   // v164f：每次进详情页重置「失效图」收集（供🧹清理）
-    // v163b：显示层按「挂瓷后天数 ∧ 盘玩次数」派生阶段（不改存储语义）
-    rec.stage = Spirits.stageOf(it, rec, Date.now());
+    // v165-M：⛔ 进详情页也不再自动抬 rec.stage（可进阶只展示按钮，等用户点）
     // v155：进详情页先本地结算陪伴数据（今日问候 / 亲密度 / 今日一签 / 回响信），一次 save
     //   —— 全本地，0 出图、0 模型调用
     const cpCtx = diaryCtx(it, rec);
@@ -4583,10 +4595,18 @@
       '<div class="sd-bead-sub">陪伴 ' + DB.daysWith(it) + " 天 · 盘玩 " + (it.playCount || 0) + " 次</div>" +
       '<button class="btn ghost" id="sdGoBead" style="margin-top:8px;font-size:12px">查看手串详情</button></div></div></div>';
 
+    // v165-M：可达阶（stageOf，只认盘玩次数）> 已确认阶（rec.stage）⇒ 给「✨ 可以进阶了」按钮，
+    //   ⛔ 不再自动进阶、也不再写"自动已进阶"；未达标才显示原来的进度条。
+    const reachStage = Spirits.stageOf(it, rec, Date.now());
+    const confirmedStage = Math.max(1, Number(rec.stage) || 1);
+    const canAdvance = reachStage > confirmedStage;
     h += '<div class="sd-card"><div class="sd-card-title">🌱 成长</div>' +
-      (si.isMax ? '<div class="spirit-prog max">已是化形 · 巅峰形态 👑</div>'
-        : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
-          '<span class="spirit-prog-txt">再盘 ' + si.toNext + " 次可到下一阶：" + esc(si.next) + "</span></div>") +
+      (canAdvance
+        ? '<div class="spirit-prog ok">✨ 可以进阶了（已盘到「' + esc(Spirits.stageDef(reachStage).name) + '」的份上了）</div>' +
+          '<button class="btn primary" id="sdConfirmStage">✨ 可以进阶了 · 点此进阶</button>'
+        : (si.isMax ? '<div class="spirit-prog max">已是化形 · 巅峰形态 👑</div>'
+          : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
+            '<span class="spirit-prog-txt">再盘 ' + si.toNext + " 次可到下一阶：" + esc(si.next) + "</span></div>")) +
       // v120：把"会长大"写在界面上（用户问过"不会一直都是 Q 版吧"）
       '<div class="sd-growth-line">📏 现在：' + esc(Spirits.stageDef(si.stage).sizeZh || "") +
       (si.isMax ? " · 已经是最成熟的形态了" : " → 深沁后：" + esc(Spirits.stageDef(si.stage + 1).sizeZh || "")) + "</div>" +
@@ -4595,7 +4615,8 @@
       '<div class="sd-actions2">' +
       // v165：用户要「到了下一阶要出新的立绘」—— 给一个显式入口：按当前阶重画本阶立绘
       //   （⛔ 阶段本身不手动推进，rec.stage 仍由 stageOf 派生，这里只是重画本阶）
-      '<button class="btn ghost" id="sdAdvance">' + (si.isMax ? "👑 重画本阶立绘" : "🌱 进阶 · 重画本阶立绘") + '</button>' +
+      // v165-M：⛔ 按钮不再叫「进阶」（进阶已独立成 #sdConfirmStage）—— 这里只画本阶立绘
+      '<button class="btn ghost" id="sdAdvance">🖼 画本阶立绘</button>' +
       '<button class="btn ghost" id="sdBreak">🔁 重画立绘</button>' +
       (rec.lookStale
         ? '<button class="btn primary" id="sdNewLook">✨ 按新设定重画</button>'
@@ -4607,7 +4628,7 @@
       "</div>" +
       (rec.lookStale ? '<div class="sd-stale">🆕 它还想再细致些 —— 点「✨ 按新设定重画」，照「人物设定」重新画一遍。</div>' : "") +
       // v165：本阶立绘欠着时的可点补画入口（⛔ 出图失败不抛错，改成这一行）
-      (stageImgPending(rec, it) ? '<div class="sd-stale" id="sdStageImgTip">🖼 本阶立绘还没画出来 · <button type="button" class="link-btn" id="sdStageImgFix">点此补画</button></div>' : "") +
+      (stageImgPending(rec, it) ? '<div class="sd-stale" id="sdStageImgTip">🖼 本阶立绘还没画出来 · <button type="button" class="link-btn" id="sdStageImgFix">点此画本阶立绘</button></div>' : "") +
       '<div class="sd-gen">已为它画过 ' + (Number(rec.genCount) || 1) + " 张</div>" +
       (hist.length > 1 ? '<div class="spirit-hist">' + hist.map((x) => {
         const d = Spirits.stageDef(x.stage);
@@ -4767,6 +4788,8 @@
     };
     // v165：#sdAdvance 与 #sdBreak 同体（spiritBreak 内部已按 stageOf 现算阶重画）
     const adv = $("#sdAdvance"); if (adv) adv.onclick = () => spiritBreak(it, host);
+    // v165-M：进阶 = 用户手动确认，⛔ 绝不自动出图（出图走「🖼 画本阶立绘」）
+    const cs = $("#sdConfirmStage"); if (cs) cs.onclick = () => { if (confirmStage(it)) renderSpiritDetailPage(id); };
     const sif = $("#sdStageImgFix"); if (sif) sif.onclick = () => spiritBreak(it, host);
     const bk = $("#sdBreak"); if (bk) bk.onclick = () => spiritBreak(it, host);
     const nl = $("#sdNewLook"); if (nl) nl.onclick = () => spiritNewLook(it, host);
