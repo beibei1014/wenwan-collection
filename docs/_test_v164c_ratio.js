@@ -129,15 +129,18 @@ ok(SP.stageDef(1).look.indexOf("very simple plain single-layer clothing") >= 0, 
 section("G. 立绘 / 单只 CG / 节令 CG 三个入口都带比例锁定");
 const pcg = SP.promptForCg(item, "anime", 1);
 ok(pcg.indexOf("PROPORTION LOCK") >= 0, "单只 CG 带比例锁定块");
-ok(hcRe(4).test(pcg), "单只 CG 也复述 4 头身");
+ok(hcRe(SP.headCountOf(1)).test(pcg), "单只 CG 也复述 " + SP.headCountOf(1) + " 头身（⛔ 动态读 HEAD_COUNT，不写死）");
 ok(pcg.length - pcg.lastIndexOf("PROPORTION LOCK") < 400, "单只 CG 的比例锁定也在末尾");
+// v165-R1：头身比由 HEAD_COUNT 单点决定（蜕形 8 / 化形 9），⛔ 3/4 阶一律动态读，不写死数字
 const pcg3 = SP.promptForCg(item, "anime", 3);
-// v165-Q：头身比由 HEAD_COUNT 单点决定（蜕形 8->7、化形 9->7.5），⛔ 不再写死 8
 ok(hcRe(SP.headCountOf(3)).test(pcg3) && /no chibi/.test(pcg3),
    "单只 CG 在第 3 阶走 HEAD_COUNT(3)=" + SP.headCountOf(3) + " 头身 + 反对 chibi");
+const pcg4 = SP.promptForCg(item, "anime", 4);
+ok(hcRe(SP.headCountOf(4)).test(pcg4) && /no chibi/.test(pcg4),
+   "单只 CG 在第 4 阶走 HEAD_COUNT(4)=" + SP.headCountOf(4) + " 头身 + 反对 chibi");
 const pfest = SP.festCgPrompt(item, "anime", 1, null, null, { key: "duanwu" });
 ok(pfest.indexOf("PROPORTION LOCK") >= 0, "节令 CG 带比例锁定块");
-ok(hcRe(4).test(pfest), "节令 CG 也复述 4 头身");
+ok(hcRe(SP.headCountOf(1)).test(pfest), "节令 CG 也复述 " + SP.headCountOf(1) + " 头身（⛔ 动态读）");
 
 /* ============ H. 四阶互不相同，且与界面显示的数字一致 ============ */
 section("H. 四阶锚点互不相同 + 与 HEAD_COUNT / sizeZh（界面文案）一致");
@@ -156,6 +159,50 @@ ok(anchors[0].indexOf("chibi") >= 0 && anchors[3].indexOf("no chibi") >= 0,
 section("I. 负向对照闸门（旧版 commit 9665c8e 应当在这里失败）");
 const HAS_PROP = [1, 2, 3, 4].every((s) => typeof SP.stageDef(s).prop === "string" && SP.stageDef(s).prop);
 ok(HAS_PROP, "STAGES 四阶都带 prop 字段（旧版没有 → 负向对照在此失败，且 A/C/G/H 段会成片失败）");
+
+/* ============ J. v165-R1：8/9 头身回归 + 执行手段四件套 ============
+   用户验收图实测约 5–5.5 头身（我们写的 7 根本没执行）。三个真凶：
+     ① 裙摆从肩盖到脚，宽袍把腰腿遮死 → 轮廓不可读，比例无从谈起
+     ② 头发+猫耳体积巨大，头区占画面近 1/3
+     ③ 可爱系先验没压住
+   故：数字回到 8/9，执行手段补「正向数字锚 + 时装画锚词 / 强负向 / 轮廓保护句 / 头发体积句」。 */
+section("J. v165-R1 · 8/9 头身回归 + 执行手段四件套");
+ok(JSON.stringify(SP.HEAD_COUNT) === JSON.stringify([0, 4, 6, 8, 9]),
+   "HEAD_COUNT == [0,4,6,8,9]（实际 " + JSON.stringify(SP.HEAD_COUNT) + "）");
+
+const NEG7 = ["no chibi", "no big head", "no oversized head", "no short legs",
+  "no small body", "no stubby limbs", "no toddler body"];
+[3, 4].forEach((s) => {
+  const pr = propOf(s), hc = SP.headCountOf(s);
+  const ord = { 8: "eighth", 9: "ninth" };
+  ok(pr.indexOf("one " + ord[hc] + " of the total figure height") >= 0,
+     "阶段" + s + " 有正向数字锚（one " + ord[hc] + " of the total figure height）");
+  ok(pr.indexOf("fashion-illustration proportions") >= 0 &&
+     pr.indexOf("runway-model silhouette") >= 0 &&
+     pr.indexOf("elongated elegant figure") >= 0,
+     "阶段" + s + " 带时装画锚词（fashion-illustration / runway-model / elongated elegant）");
+  ok(NEG7.every((n) => pr.indexOf(n) >= 0),
+     "阶段" + s + " 强负向七件套齐全（缺：" + NEG7.filter((n) => pr.indexOf(n) < 0).join("/") + "）");
+  ok(pr.indexOf("must not hide the body silhouette") >= 0 &&
+     /legs'\s*length\s*(stays|stay)\s*visually readable/.test(pr) &&
+     pr.indexOf("head to feet") >= 0,
+     "阶段" + s + " 有轮廓保护句（袍子不得糊掉身形 / 腿长可读 / 全身入画）");
+  ok(pr.indexOf("must not visually enlarge the head") >= 0,
+     "阶段" + s + " 有头发体积句（长发不得在视觉上撑大头）");
+});
+// 开窍（6 头身）同样被宽袍坑 —— 轮廓句 / 头发句 / 强负向都要补上
+const pr2 = propOf(2);
+ok(pr2.indexOf("must not hide the body silhouette") >= 0 && pr2.indexOf("head to feet") >= 0,
+   "阶段 2（开窍）也补了轮廓保护句");
+ok(pr2.indexOf("must not visually enlarge the head") >= 0, "阶段 2（开窍）也补了头发体积句");
+ok(NEG7.filter((n) => pr2.indexOf(n) >= 0).length >= 4, "阶段 2（开窍）也补了强负向");
+
+// ⛔ 强负向只能写在阶段内 —— 全局 NEG_STYLE 一旦出现 no chibi，凝形的大头 Q 版就被打死
+ok(SP.NEG_STYLE.indexOf("no chibi") < 0 && SP.NEG_STYLE.indexOf("no big head") < 0,
+   "全局 NEG_STYLE ⛔ 不得出现 no chibi / no big head（凝形靠大头吃饭）");
+// 立绘走竖版梯子、CG 走横版梯子（R1-4 查证：generateCustom 只在 landscape 时才用 cgLadderFor）
+ok(SP.SIZE_BY_PROVIDER.ark[0] === "1728x2304", "立绘首选仍是竖版 1728x2304（画布不用改）");
+ok(SP.CG_SIZE_BY_PROVIDER.ark[0] === "2304x1728", "CG 首选仍是横版 2304x1728");
 
 const passed = summary();
 process.exit(passed ? 0 : 1);
