@@ -4740,43 +4740,11 @@
     }
     h += "</div>";
 
-    // v161：📖 主线 · 串与我 —— 改成「聊天」形式：点一章进去跟它聊，每章 2 个结尾（全本地 0 成本）
-    const chapList = Spirits.chapterState(rec, cpCtx, roomCountOf(rec));
-    const chapTalk = Spirits.chapTalkBrief(rec);
-    const chapRead = chapList.filter((ch) => ch.read).length;
-    const chapUnread = chapList.filter((ch) => ch.unlocked && !ch.read).length;
-    h += '<div class="sd-card"><div class="sd-card-title">📖 主线 · 串与我' +
-      '<small style="font-weight:400;color:var(--text-2);font-size:11px"> 你和它之间的故事 · 已看 ' + chapRead + "/" + chapList.length + "</small></div>" +
-      '<div class="chap-prog"><i style="width:' + Math.round((chapRead / Math.max(1, chapList.length)) * 100) + '%"></i></div>';
-    let lastVol = 0;
-    h += '<div class="chap-list">';
-    chapList.forEach((ch) => {
-      if (ch.vol !== lastVol) {
-        lastVol = ch.vol;
-        h += '<div class="chap-vol">' + esc(ch.volName) + "</div>";
-      }
-      if (!ch.unlocked) {
-        h += '<div class="chap-item locked"><span class="chap-ico">🔒</span>' +
-          '<div class="chap-body"><div class="chap-title">' + esc(ch.title) + "</div>" +
-          '<div class="chap-need">' + esc(ch.need || "还没解锁") + "</div></div></div>";
-        return;
-      }
-      const cur = !!(chapTalk && !chapTalk.ended && chapTalk.chapId === ("c" + (ch.i + 1)));
-      const lastLine = cur && chapTalk.last ? chapTalk.last : null;
-      const sub = lastLine
-        ? ((lastLine.w === "me" ? "我：" : "") + String(lastLine.text || ""))
-        : (ch.read ? "点开可以再聊一遍" : "它有话想跟你说");
-      const badge = cur ? '<span class="nt-badge on">聊到一半</span>'
-        : (ch.read ? '<span class="chap-done">已聊完</span>' : '<span class="chap-new">新</span>');
-      h += '<div class="chap-item talk' + (ch.read ? "" : " unread") + '" data-chap="' + ch.i + '">' +
-        '<span class="chap-ico">' + esc(ch.icon) + "</span>" +
-        '<div class="chap-body"><div class="chap-title">' + esc(ch.title) + badge + "</div>" +
-        '<div class="chap-sub">' + esc(sub) + "</div></div>" +
-        '<span class="chap-arrow">›</span></div>';
-    });
-    h += "</div>";
-    if (chapUnread) h += '<div class="chap-hint">📖 有 ' + chapUnread + " 章新的 —— 点进去跟它聊聊，你说什么会影响结尾</div>";
-    h += "</div>";
+    /* v165-N3：⛔ 详情页里进入**旧 8 章主线**的入口已按用户裁定取消
+       （原话：「以前的主线剧情，就是从每个沁灵的详情页进入那个，取消。全面用新的剧情来取代，走独立的入口。」）
+       ⛔ 只删入口：`CHAP_SCRIPTS` / `CHAPTERS` / `chapterState` / `rec.chapters` / `rec.talk`
+         数据与方法**全部原样保留**（CG 相册仍按索引消费 chapterState），一行没动。
+       新 9 章《沁灵纪》走**独立入口**：首页「📖 沁灵纪 · 主线」→ #/main。 */
 
     // v157：🎞 回忆册 —— 它陪你的时间线（本地推导，0 出图；可一键合成竖版长图）
     const memos = Spirits.memoirOf(it, rec);
@@ -4992,12 +4960,8 @@
       if (fx0.cgUrl) { openSpiritViewer(fx0.cgUrl); return; }
       openFestCgBriefModal(it, dk, fx0);
     };
-    // v161：主线章节 —— 点一章进对话页跟它聊（进页面即推进，回来这里重新算）
-    view.querySelectorAll(".chap-item[data-chap]").forEach((el) => {
-      el.onclick = () => {
-        location.hash = "#/talk/" + encodeURIComponent(id) + "/" + Number(el.dataset.chap);
-      };
-    });
+    // v165-N3：旧 8 章的章节列表点击跳转已随入口一并取消（数据保留）。
+    //   新 9 章用 data-main 承载章号，见 renderMainPage。
     // v158：节令插画点开看大图
     view.querySelectorAll(".ft-cgimg").forEach((el) => {
       el.onclick = () => openSpiritViewer(el.dataset.cg || el.src || "");
@@ -5938,7 +5902,8 @@
       }
       if (m.w === "me") return '<div class="nt-row me"><div class="nt-av nt-av-me">' + meAvatarHtml() + "</div>" +
         '<div class="nt-bub me">' + esc(m.text) + "</div></div>";
-      return '<div class="nt-row"><div class="nt-av">' + o.av(m.w) + "</div>" +
+      // v165-N3：群像剧本的站位在 m.slot（L/C/R/B），旧剧本没有 ⇒ 回落 m.w，⛔ 老行为零变化
+      return '<div class="nt-row"><div class="nt-av">' + o.av(m.slot || m.w, m) + "</div>" +
         '<div class="nt-col"><div class="nt-name">' + esc(m.name || o.nameOf(m.w) || "") + "</div>" +
         '<div class="nt-bub">' + esc(m.text) + "</div></div></div>";
     };
@@ -6042,7 +6007,108 @@
     step();
   }
 
-  /* ---------- v161：主线「串与我」· 对话页（单串，一章一聊） ---------- */
+  /* ---------- v165-N3：《沁灵纪》第 1–9 章 · **独立入口**（⛔ 不挂在某一只的详情页） ----------
+     用户裁定：「以前的主线剧情，就是从每个沁灵的详情页进入那个，取消。全面用新的剧情来取代，走独立的入口。」
+     · 入口放在**首页**（宝贝列表上方的大卡片，一眼能找到），路由 #/main
+     · 章节对话页 #/maintalk/<i>；状态全在 ww_story（全局一条），⛔ 不进任何一只的 rec
+     · 旧 8 章 CHAP_SCRIPTS / CHAPTERS 数据原样保留，只是入口取消了 */
+  function mainStoryCtx() {
+    // 全局天数：新主线是「一门人的故事」，不是某一只的 —— 取你陪得最久那只的天数
+    let maxDay = 1;
+    try {
+      (allItems || []).forEach(function (x) {
+        const d = Math.max(1, DB.daysWith(x) || 1);
+        if (d > maxDay) maxDay = d;
+      });
+    } catch (e) { /* 静默 */ }
+    return { dayNo: maxDay };
+  }
+  function mainCastThumb(m) {
+    try {
+      const pid = (m && m.ps && m.ps[0]) ? String(m.ps[0]) : "";
+      if (!pid) return "";
+      const cast = Spirits.castOf() || {};
+      const c = cast[pid];
+      if (!c || !c.id) return "";
+      const it = spiritItemById(c.id);
+      if (!it) return "";
+      return spiritThumbHtml(it, Spirits.load()[c.id] || {}, 30);
+    } catch (e) { return ""; }
+  }
+  function renderMainPage() {
+    topbarTitle.textContent = "沁灵纪 · 主线";
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+    const ctx = mainStoryCtx();
+    const list = Spirits.mainChapterState(ctx);
+    const read = list.filter((c) => c.read).length;
+    const unread = Spirits.mainUnreadCount(ctx);
+    const brief = Spirits.mainTalkBrief();
+    let h = '<div class="main-head">' +
+      '<div class="main-head-icon">📖</div>' +
+      '<div class="main-head-meta"><div class="main-head-title">沁灵纪 · 主线</div>' +
+      '<div class="main-head-sub">九章 · 已看 ' + read + "/" + list.length +
+      (Spirits.MAIN_STORY_OPEN ? "" : " · 正文装帧中") + "</div></div></div>" +
+      '<div class="chap-prog"><i style="width:' + Math.round((read / Math.max(1, list.length)) * 100) + '%"></i></div>';
+    h += '<div class="chap-list">';
+    list.forEach((ch) => {
+      if (!ch.unlocked) {
+        h += '<div class="chap-item locked"><span class="chap-ico">🔒</span>' +
+          '<div class="chap-body"><div class="chap-title">' + esc(ch.title) + "</div>" +
+          '<div class="chap-need">' + esc(ch.need || "还没到时候") + "</div></div></div>";
+        return;
+      }
+      const cur = !!(brief && !brief.ended && brief.chapId === ("m" + (ch.i + 1)));
+      const lastLine = cur && brief.last ? brief.last : null;
+      const sub = lastLine
+        ? ((lastLine.w === "me" ? "我：" : "") + String(lastLine.text || ""))
+        : (ch.read ? "点开可以再看一遍" : (ch.sub || ("第 " + ch.day + " 天 · 该发生了")));
+      const badge = cur ? '<span class="nt-badge on">看到一半</span>'
+        : (ch.read ? '<span class="chap-done">已看完</span>' : '<span class="chap-new">新</span>');
+      h += '<div class="chap-item talk' + (ch.read ? "" : " unread") + '" data-main="' + ch.i + '">' +
+        '<span class="chap-ico">' + esc(ch.icon) + "</span>" +
+        '<div class="chap-body"><div class="chap-title">' + esc(ch.title) + badge + "</div>" +
+        '<div class="chap-sub">' + esc(sub) + "</div></div>" +
+        '<span class="chap-arrow">›</span></div>';
+    });
+    h += "</div>";
+    if (unread) h += '<div class="chap-hint">📖 有 ' + unread + " 章新的 —— 你说的每一句都会记下来，影响后面的结局</div>";
+    else if (!Spirits.MAIN_STORY_OPEN) h += '<div class="chap-hint">九章正文正在装帧 —— 入口先放在这儿，装好就能从第一章读起。</div>';
+    view.innerHTML = h;
+    view.querySelectorAll(".chap-item[data-main]").forEach((el) => {
+      el.onclick = () => { location.hash = "#/maintalk/" + Number(el.dataset.main); };
+    });
+    window.scrollTo(0, 0);
+  }
+  function renderMainTalkPage(chIdx) {
+    const i = Math.max(0, Number(chIdx) || 0);
+    const ctx = mainStoryCtx();
+    const list = Spirits.mainChapterState(ctx);
+    const ch = list[i];
+    if (!ch || !ch.unlocked) { location.hash = "#/main"; return; }
+    const back = "#/main";
+    return renderTalkPage({
+      title: ch.title,
+      headAv: '<span class="main-av">📖</span>',
+      headName: "沁灵纪 · 第 " + (i + 1) + " 章",
+      headSub: ch.icon + " 第 " + ch.day + " 天 · " + (ch.sub || ""),
+      listLabel: "回到主线", listHash: back,
+      bg: Spirits.bgForChapter("ch" + (i + 1)),   // 章节 → BG key（⛔ 未出图 = 渐变兜底，不出图）
+      av: (w, m) => mainCastThumb(m) || '<span class="main-av">📿</span>',
+      nameOf: () => "",                            // 群像剧本：说话人名字由行级 who 给（chapLine 已写进 m.name）
+      endTag: "第 " + (i + 1) + " 章 · 完",
+      endingExtra: () => (i === list.length - 1)
+        ? '<div class="nt-end-final">🪢 九章走完了一遍。剩下的日子，就是每天在，每天亮一点。</div>' : "",
+      backLabel: "回到主线", backHash: back,
+      enter: () => Spirits.mainTalkEnter(ctx, i),
+      choose: (k) => Spirits.mainTalkChoose(ctx, k),
+      replay: () => Spirits.mainTalkReplay(ctx, i),
+    });
+  }
+
+  /* ---------- v161：主线「串与我」· 对话页（单串，一章一聊） ----------
+     v165-N3：⛔ **入口已按用户裁定取消**（不再挂在沁灵详情页）。
+     函数与它依赖的 CHAP_SCRIPTS / CHAPTERS / chapTalk* 全部原样保留 —— 用户没让删数据。 */
   function renderChapTalkPage(spiritId, chIdx) {
     const i = Math.max(0, Number(chIdx) || 0);
     const it = spiritItems().filter((x) => String(x.id) === String(spiritId))[0];
@@ -7365,6 +7431,27 @@
     const planHtml = renderPlayPlanSection();
     if (planHtml) html += planHtml;
 
+    // ===== v165-N3：《沁灵纪 · 主线》独立入口（用户裁定：取消详情页里的旧 8 章入口，改用这个） =====
+    {
+      const _mCtx = mainStoryCtx();
+      const _mList = Spirits.mainChapterState(_mCtx);
+      const _mRead = _mList.filter((c) => c.read).length;
+      const _mUnread = Spirits.mainUnreadCount(_mCtx);
+      const _mNext = _mList.filter((c) => !c.read)[0] || null;
+      html += '<button class="main-entry" id="mainEntry">' +
+        '<span class="main-entry-ico">📖</span>' +
+        '<span class="main-entry-body">' +
+        '<span class="main-entry-title">沁灵纪 · 主线' +
+        (_mUnread ? '<span class="main-entry-dot">' + _mUnread + "</span>" : "") + "</span>" +
+        '<span class="main-entry-sub">' +
+        (Spirits.MAIN_STORY_OPEN
+          ? (_mNext ? ("下一章 · " + esc(_mNext.title) + "（第 " + _mNext.day + " 天）") : "九章都看完了")
+          : "九章正文装帧中 · 入口先放这儿") +
+        " · 已看 " + _mRead + "/" + _mList.length +
+        "</span></span>" +
+        '<span class="main-entry-arrow">›</span></button>';
+    }
+
     html += '<div style="display:flex;gap:8px;margin-bottom:12px">' +
       '<button class="batch-entry" id="btnBatch" style="flex:1">🗂 批量录入</button>' +
       '<button class="batch-entry" id="btnShareMode" style="flex:1;background:linear-gradient(135deg,#b8860b,#a06b2c)">📤 多选</button>' +
@@ -7614,6 +7701,9 @@
       const plan = document.querySelector(".plan-card");
       if (plan) plan.scrollIntoView({ behavior: "smooth", block: "center" });
     };
+    // v165-N3：《沁灵纪 · 主线》独立入口 → #/main
+    const me = $("#mainEntry");
+    if (me) me.onclick = () => { location.hash = "#/main"; };
     // 折叠筛选面板（展开态持久化，点击筛选 chip 不收起）
     const ft = $("#filterToggle");
     if (ft) ft.onclick = () => {
@@ -9093,9 +9183,10 @@ else if (h.indexOf("#/night/") === 0) {                                         
       else renderThreadPage(seg[0]);
     }
     
-    else if (h.indexOf("#/talk/") === 0) {                                                        // v161：主线 · 串与我（对话页）
-      const tp = h.slice(7).split("/");
-      renderChapTalkPage(decodeURIComponent(tp[0]), Number(tp[1]) || 0);
+    else if (h === "#/main") renderMainPage();                                                   // v165-N3：沁灵纪 · 主线（独立入口 · 9 章）
+    else if (h.indexOf("#/maintalk/") === 0) renderMainTalkPage(Number(h.slice(11)) || 0);        // v165-N3：新 9 章对话页
+    else if (h.indexOf("#/talk/") === 0) {                                                        // v161：旧 8 章（⛔ 入口已取消，直接回沁灵页）
+      location.hash = "#/spirit/" + h.slice(7).split("/")[0];
     }
     else if (h === "#/fav") renderFavPage();
     else if (h.startsWith("#/box/")) renderBoxPage(decodeURIComponent(h.slice(6)));
@@ -9199,10 +9290,12 @@ else if (h.indexOf("#/night/") === 0) {                                         
       return;
     }
     if (h === "#/night") { location.hash = _nightFrom || "#/spirit"; return; } // 夜话列表 → 进来的那一页
-    if (h.indexOf("#/talk/") === 0) {                                          // v161：主线对话 → 回到这一串
+    if (h.indexOf("#/talk/") === 0) {                                          // v165-N3：旧 8 章入口已取消 → 回到这一串
       location.hash = "#/spirit/" + h.slice(7).split("/")[0];
       return;
     }
+    if (h.indexOf("#/maintalk/") === 0) { location.hash = "#/main"; return; }   // v165-N3：章节对话 → 主线列表
+    if (h === "#/main") { location.hash = "#/"; return; }                       // v165-N3：主线列表 → 首页
     if (h === "#/spirits") { location.hash = "#/spirit"; return; }        // 全部沁灵 → 回到小房间
     if (h === "#/settings" || h === "#/profile" || h === "#/new" || h === "#/cat" || h === "#/stats" || h === "#/quest" || h === "#/spirit") { location.hash = "#/"; return; }
     if (h.startsWith("#/box/")) { location.hash = "#/cat"; return; }

@@ -1333,6 +1333,29 @@ img { display:block; }
   box-shadow:var(--shadow-1); background:var(--ph-bg, #efe9dd);
 }
 
+/* v165-N3：《沁灵纪 · 主线》独立入口（首页大卡片 + 章节页头）—— ⛔ 不再挂在某一只的详情页 */
+.main-entry {
+  display:flex; align-items:center; gap:12px; width:100%; margin-bottom:12px;
+  padding:14px 14px; border:1px solid var(--line); border-radius:16px;
+  background:linear-gradient(135deg,#fffaf0,#f6efe1); box-shadow:var(--shadow-1);
+  cursor:pointer; text-align:left; font-family:inherit;
+}
+.main-entry-ico { font-size:26px; line-height:1; flex:none; }
+.main-entry-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.main-entry-title { font-size:15px; font-weight:700; color:var(--text); display:flex; align-items:center; gap:6px; }
+.main-entry-dot {
+  min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:#c0392b; color:#fff;
+  font-size:11px; font-weight:700; line-height:18px; text-align:center;
+}
+.main-entry-sub { font-size:12px; color:var(--text-2); line-height:1.5; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.main-entry-arrow { flex:none; font-size:20px; color:var(--text-2); }
+.main-head { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+.main-head-icon { font-size:30px; line-height:1; }
+.main-head-meta { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.main-head-title { font-size:16px; font-weight:700; color:var(--text); }
+.main-head-sub { font-size:12px; color:var(--text-2); }
+.main-av { display:inline-block; width:30px; height:30px; line-height:30px; text-align:center; font-size:18px; }
+
 /* v165-R2：CG「描述先行」—— 描述编辑框（⓪ 生成 / ① 编辑确认 / ② 按描述出图） */
 .cg-brief { margin-top:2px; }
 .cg-brief-tip { font-size:12px; color:var(--text-2); line-height:1.7; margin-bottom:8px; }

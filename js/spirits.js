@@ -6913,10 +6913,11 @@
     return t;
   }
   // 从当前节点一路往下，把新消息攒起来，停在「等你回」或者「章末结尾」
-  function chapWalk(item, rec, ctx) {
+  // v165-N3：可选第 4 参 actOf —— 新 9 章（MAIN_ACTS）复用本机；不传 ⇒ 仍走 chapActOf（⛔ 旧 8 章零变化）
+  function chapWalk(item, rec, ctx, actOf) {
     const t = chapSlot(rec);
     if (!t) return { added: [], choices: [], ending: null, ended: true };
-    const act = chapActOf(t.chapId);
+    const act = (actOf || chapActOf)(t.chapId);
     let v = greetVars(item, rec, ctx);
     const added = [];
     let guard = 0;
@@ -6983,9 +6984,10 @@
     return chapWalk(item, rec, ctx);
   }
   // 回一句 → 接着往下
-  function chapTalkChoose(item, rec, ctx, idx) {
+  // v165-N3：可选第 5 参 actOf（同上，供 MAIN_ACTS 复用）
+  function chapTalkChoose(item, rec, ctx, idx, actOf) {
     const t = rec && rec.talk;
-    const act = chapActOf(t && t.chapId);
+    const act = (actOf || chapActOf)(t && t.chapId);
     if (!t || !act || t.ended) return { added: [], choices: [], ending: (t && t.ending) || null, ended: true };
     const nd = act.nodes[t.node];
     const c = nd && nd.choices ? nd.choices[idx] : null;
@@ -7032,6 +7034,154 @@
   function chapTalkDone(rec, i) {
     const t = rec && rec.talk;
     return !!(t && t.done && t.done["c" + (Number(i) + 1)]);
+  }
+
+  /* ============================================================
+   * v165-N3 · 主线《沁灵纪》第 1–9 章 —— **独立入口**（⛔ 不再挂在某一只的详情页）
+   *   用户裁定：「以前的主线剧情，就是从每个沁灵的详情页进入那个，取消。全面用新的剧情来取代，走独立的入口。」
+   *   ⛔ 旧 8 章 CHAP_SCRIPTS / CHAPTERS **原样保留**（只取消入口，不删数据、不改行为）。
+   *   新 9 章走独立常量：MAIN_CHAPTERS（元数据 9 条）+ MAIN_SCRIPTS（正文，N2 批次机械抽取装入）
+   *   状态：ww_story.mainTalk（聊天进度）+ ww_story.mainChapters（已读）—— **全局一条，不进 rec**
+   *   天数锚点取自 docs/v165-第1-9章-剧本.md §4 各章章首（⛔ 硬编码，岁除是日历事件）
+   * ============================================================ */
+  // v165-N3：正文装帧开关 —— N2 批次把 9 章正文机械抽取装入后置 true。
+  //   ⛔ 集中配置（铁律），禁止在界面里散落硬编码；关闭时入口显示「还没装帧」而不是空页。
+  const MAIN_STORY_OPEN = false;
+  const MAIN_CHAPTERS = [
+    // title：列表显示名（md 章首原名含 {ta}，如《{ta}想往前走》；{ta} 要等进章才知道指谁，
+    //         所以列表用去掉占位符的显示名，避免显示成「那只想往前走」）
+    { day: 1,   icon: "🚪",  title: "来客",                    sub: "三息之后，最底下那一级石阶先亮起来" },
+    { day: 7,   icon: "👣",  title: "认得出你",                sub: "这一门静不下来，各有各的动静" },
+    { day: 20,  icon: "🌗",  title: "岔口",                    sub: "这一步，谁定" },
+    { day: 45,  icon: "📜",  title: "小岁除 · 第一张榜",       sub: "名字，一个一个写" },
+    { day: 62,  icon: "🔥",  title: "想往前走",                sub: "它想借一段力" },
+    { day: 78,  icon: "🌊",  title: "不同意",                  sub: "还差一颗" },
+    { day: 95,  icon: "🛡",  title: "挡关",                    sub: "这一道关，你替谁顶" },
+    { day: 108, icon: "🌑",  title: "不知道是谁顶的",          sub: "影子浅了" },
+    { day: 120, icon: "❄️", title: "岁除一 · 榜上有人比你远",  sub: "数了两遍" },
+  ];
+  /* v165-N2 批次：这里将放入从 docs/v165-第1-9章-剧本.md §4 **机械抽取**的 CH01..CH09
+     （⛔ 禁手打、禁改字；抽取纪律与六条校验见 N2）。N3 阶段正文未装帧，故为空数组。 */
+  const MAIN_SCRIPTS = [];
+  const MAIN_ACTS = MAIN_CHAPTERS.map(function (c, i) {
+    return {
+      id: "m" + (i + 1), i: i, day: c.day, icon: c.icon, title: c.title, sub: c.sub || "",
+      nodes: MAIN_SCRIPTS[i] || {},
+    };
+  });
+  function mainActOf(id) {
+    for (let i = 0; i < MAIN_ACTS.length; i++) if (MAIN_ACTS[i].id === id) return MAIN_ACTS[i];
+    return null;
+  }
+  // 已读表：ww_story.mainChapters（⛔ 全局一条，不进 rec）
+  function mainReadMap() {
+    const w = readStory();
+    if (!w.mainChapters || typeof w.mainChapters !== "object") w.mainChapters = {};
+    return w.mainChapters;
+  }
+  function mainReadChapter(i) {
+    const w = readStory();
+    w.mainChapters = (w.mainChapters && typeof w.mainChapters === "object") ? w.mainChapters : {};
+    if (w.mainChapters[i] && w.mainChapters[i].at) return false;
+    w.mainChapters[i] = { at: Date.now() };
+    writeStory(w);
+    return true;
+  }
+  // 章节列表状态：解锁链 = 上一章读过 ∧ 陪伴天数 ≥ 本章锚点（⛔ 与旧 8 章的 rec 解锁链完全隔离）
+  function mainChapterState(ctx) {
+    const days = Math.max(1, (ctx && ctx.dayNo) || 1);
+    const read = mainReadMap();
+    const out = [];
+    let prevRead = true;
+    for (let i = 0; i < MAIN_CHAPTERS.length; i++) {
+      const c = MAIN_CHAPTERS[i];
+      const daysOk = days >= c.day;
+      const unlocked = !!MAIN_STORY_OPEN && prevRead && daysOk;
+      let need = "";
+      if (!MAIN_STORY_OPEN) need = "正文还没装帧";
+      else if (!daysOk) need = "第 " + c.day + " 天才发生";
+      else if (!prevRead) need = "先看完上一章";
+      out.push({
+        i: i, icon: c.icon, title: c.title, sub: c.sub || "", day: c.day,
+        unlocked: unlocked, read: !!(read[i] && read[i].at), need: need,
+      });
+      prevRead = unlocked ? !!(read[i] && read[i].at) : false;
+    }
+    return out;
+  }
+  function mainUnreadCount(ctx) {
+    return mainChapterState(ctx).filter((c) => c.unlocked && !c.read).length;
+  }
+  /* ---------- 新 9 章的对话推进：复用 chapWalk / chapTalkChoose，只换「剧本表」 ----------
+     ⚠️ chapWalk / chapTalkChoose 原本写死 chapActOf，这里给它们加了一个可选的第 4/5 参 actOf，
+        旧调用点不传 → 仍走 chapActOf，⛔ 旧 8 章行为零变化。
+     存储槽：ww_story.mainTalk（结构同 rec.talk）；已读走 ww_story.mainChapters。 */
+  // 群像剧本没有"某一只"，但 greetVars 要读 item.color 之类 —— 传空对象占位（⛔ 绝不传 null，会炸）
+  const MAIN_STUB_ITEM = {};
+  function mainShim() {
+    const w = readStory();
+    if (!w.mainTalk || typeof w.mainTalk !== "object") w.mainTalk = {};
+    if (!w.mainChapters || typeof w.mainChapters !== "object") w.mainChapters = {};
+    return w;
+  }
+  function mainFlush(w) {
+    writeStory(w);
+  }
+  // 进入第 i 章（0-based）
+  function mainTalkEnter(ctx, i) {
+    const w = mainShim();
+    const id = "m" + (Number(i) + 1);
+    const act = mainActOf(id);
+    if (!act) return { added: [], choices: [], ending: null, ended: true };
+    castOf();                                   // v165 批次3A-5：进章抽一次出场表（内部全静默）
+    const shim = { talk: w.mainTalk, chapters: w.mainChapters };
+    const t0 = w.mainTalk;
+    if (t0 && t0.chapId === id && Array.isArray(t0.log) && t0.log.length) {
+      const r = {
+        added: [],
+        choices: t0.ended ? [] : chapChoicesOf(t0, act, greetVars(MAIN_STUB_ITEM, {}, ctx)),
+        ending: t0.ending || null,
+        ended: !!t0.ended,
+      };
+      r.log = (Array.isArray(t0.log) ? t0.log : []).slice();
+      return r;
+    }
+    chapReset(shim, id);
+    const r = chapWalk(MAIN_STUB_ITEM, shim, ctx, mainActOf);
+    w.mainChapters = shim.chapters;
+    mainFlush(w);
+    r.log = (Array.isArray(shim.talk && shim.talk.log) ? shim.talk.log : []).slice();
+    return r;
+  }
+  function mainTalkChoose(ctx, idx) {
+    const w = mainShim();
+    const shim = { talk: w.mainTalk, chapters: w.mainChapters };
+    const r = chapTalkChoose(MAIN_STUB_ITEM, shim, ctx, idx, mainActOf);
+    w.mainChapters = shim.chapters;
+    mainFlush(w);
+    r.log = (Array.isArray(shim.talk && shim.talk.log) ? shim.talk.log : []).slice();
+    return r;
+  }
+  function mainTalkReplay(ctx, i) {
+    const w = mainShim();
+    const shim = { talk: w.mainTalk, chapters: w.mainChapters };
+    chapReset(shim, "m" + (Number(i) + 1));
+    const r = chapWalk(MAIN_STUB_ITEM, shim, ctx, mainActOf);
+    w.mainChapters = shim.chapters;
+    mainFlush(w);
+    r.log = (Array.isArray(shim.talk && shim.talk.log) ? shim.talk.log : []).slice();
+    return r;
+  }
+  function mainTalkBrief() {
+    const w = mainShim();
+    const t = w.mainTalk || null;
+    if (!t || !t.chapId) return null;
+    const log = Array.isArray(t.log) ? t.log : [];
+    return {
+      chapId: t.chapId, ended: !!t.ended,
+      last: log.length ? log[log.length - 1] : null,
+      ending: t.ending || null, msgs: Number(t.msgs) || 0,
+    };
   }
 
 
@@ -7583,6 +7733,10 @@
     chapAtOf, chapBgOf, chapAsset,
     // v165 批次3A-8：主线 1–9 章天数锚点（⛔ 硬编码，岁除按日历事件）
     MAIN_DAY_ANCHOR,
+    // v165-N3：新 9 章《沁灵纪》**独立入口**（⛔ 旧 8 章 CHAP_SCRIPTS / CHAPTERS 原样保留，只取消入口）
+    MAIN_STORY_OPEN, MAIN_CHAPTERS, MAIN_SCRIPTS, MAIN_ACTS, mainActOf,
+    mainChapterState, mainUnreadCount, mainReadChapter, mainReadMap,
+    mainTalkEnter, mainTalkChoose, mainTalkReplay, mainTalkBrief,
     // v160：夜话（跨串大剧情 · 互动对话）—— 本地剧本 + 本地状态机，0 出图 0 模型调用
     NIGHT_ACTS, NIGHT_GROUP, NIGHT_CAP, nightCast, nightActs, nightEnter, nightReplay, nightChoose, nightBrief,
     // v162：夜话 2.0 —— 多会话（全家群 / 房间群 / 双人组）+ 按条件触发的事件
