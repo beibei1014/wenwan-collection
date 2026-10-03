@@ -2890,6 +2890,79 @@
     try { return { url: (await shrinkToDataUri(big, localMax, localQ)) || "", cloud: false }; }
     catch (e) { return { url: "", cloud: false }; }
   }
+  const BG_UNIT = 0.6 / 21;   // v165：单张 BG 成本 ≈ ¥0.0286（全套 21 张 ≈ ¥0.6）
+  /* ============================================================
+   * v165 · BG 场景背景系统（app 侧接线 / 批量入口）
+   * ------------------------------------------------------------
+   * 数据层在 Spirits：BG_CATALOG / bgGet / bgPut / ensureBg（见 spirits.js）。
+   * 这里只做两件事：
+   *   ① ensureBg(key) —— 把真出图管线（generateCustom + imageToStoreUrl）注入给 Spirits.ensureBg；
+   *   ② generateAllBg() —— 一键批量（逐张进度、失败可续，已出好的跳过、不重复计费）。
+   * 🔴 永久 URL 保证：imageToStoreUrl 先传云 → 永久云 URL；未登录/离线/失败 → 回退 data URI（也永久）。
+   * ⛔ 并发去重 / 命中直返 都在 Spirits.ensureBg 里，app 侧不重复实现。
+   * ============================================================ */
+  function bgUrlOf(key) { try { return Spirits.bgGet(key) || ""; } catch (e) { return ""; } }
+  function ensureBg(key) {
+    return Spirits.ensureBg(key, {
+      get: (k) => { try { return Spirits.bgGet(k) || ""; } catch (e) { return ""; } },
+      set: (k, u) => { try { return Spirits.bgPut(k, u); } catch (e) { return false; } },
+      generate: (prompt, opts) => Spirits.generateCustom(prompt, opts),
+      toStore: (src, bigMax, bigQ, localMax, localQ) => imageToStoreUrl(src, bigMax, bigQ, localMax, localQ),
+    });
+  }
+  // 剧情页背景选图：优先选「已经出好图」的那张，都没有 → 返回 ""（走纯色/渐变兜底，⛔ 绝不出图、绝不阻塞）
+  function sceneBgUrl(keys) {
+    if (!Array.isArray(keys) || !keys.length) return "";
+    for (let i = 0; i < keys.length; i++) { const u = bgUrlOf(keys[i]); if (u) return u; }
+    return "";
+  }
+  let _bgBatchBusy = false;
+  // 一键出全套：只画「还没出好」的（失败可续）；host.progress(done,total,name) / 返回 {done,fail}
+  async function generateAllBg(host) {
+    if (_bgBatchBusy) return { done: 0, fail: 0 };
+    const h = host || {};
+    const all = Object.keys(Spirits.BG_CATALOG || {});
+    const todo = all.filter((k) => !bgUrlOf(k));
+    if (!todo.length) return { done: 0, fail: 0 };
+    _bgBatchBusy = true;
+    let done = 0, fail = 0;
+    try {
+      if (h.progress) h.progress(0, todo.length, "");
+      for (const k of todo) {
+        if (h.progress) h.progress(done, todo.length, (Spirits.BG_CATALOG[k] || {}).name || k);
+        try { const u = await ensureBg(k); if (u) done++; else fail++; }
+        catch (e) { fail++; }
+      }
+      if (h.progress) h.progress(done, todo.length, "");
+    } finally { _bgBatchBusy = false; }
+    return { done, fail };
+  }
+  // 批量出图的进度弹层（逐张进度 + 完成后可关闭 / 失败可续）
+  function showBgBatchModal() {
+    const mask = $("#modalMask"), modal = $("#modal");
+    if (!mask || !modal) return { setProg() {}, finish() {} };
+    modal.innerHTML = "<h3>🎴 一键出全套 BG</h3>" +
+      '<div id="bgProg" style="font-size:13px;color:var(--text-2);text-align:center;margin:12px 0;line-height:1.9">准备中…</div>' +
+      '<div class="room-track big"><i id="bgProgBar" style="width:0%"></i></div>' +
+      '<button class="btn primary" id="bgProgOk" style="width:100%;margin-top:16px" disabled>出图中…</button>';
+    mask.hidden = false; modal.hidden = false; modal.style.display = "";
+    const close = () => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; };
+    mask.onclick = null;
+    return {
+      setProg: (d, t, nm) => {
+        const el = $("#bgProg"), bar = $("#bgProgBar");
+        if (el) el.innerHTML = "已完成 <b>" + d + " / " + t + "</b> 张" + (nm ? "<br>正在画：" + esc(nm) : "");
+        if (bar) bar.style.width = Math.round((t ? d / t : 0) * 100) + "%";
+      },
+      finish: (d, f) => {
+        const el = $("#bgProg"), bar = $("#bgProgBar"), ok = $("#bgProgOk");
+        if (el) el.innerHTML = "🎴 全套 BG 完成：成功 <b>" + d + "</b> 张" +
+          (f ? "，失败 " + f + " 张（点关闭后可再点一次续画）" : "") + "。";
+        if (bar) bar.style.width = "100%";
+        if (ok) { ok.disabled = false; ok.textContent = "关闭"; ok.onclick = () => { close(); try { renderSettings(); } catch (e) { /* 忽略 */ } }; }
+      },
+    };
+  }
   async function saveSpiritImage(item, rec, res, stage) {
     // v164i：大图（1024/q0.92）只往云端传；传不上去才落 512/q0.86 小图 data URI 兜底
     const out = res.b64
@@ -4161,6 +4234,169 @@
 }
 
   /* ---------- 沁灵独立详情页 ---------- */
+  /* =========================================================
+   * v165 · 心迹区（详情页）：心迹条 + 羁绊条 + 照料三式 + 「递一件给它」
+   *   口径：⛔ 面向玩家的正文不出现数值/字段名/「好感度」；数值只作辅助小字。
+   *   送礼与照料提升的是「羁绊」(rec.bond)；心迹条展示「心意轨」(rec.heart，恋爱向，本批只读展示)。
+   *   ⛔ 防物化红线（设计 §3.5）：按钮「递一件给它」；⛔ 不写占有/控制/物件化动作。
+   * ========================================================= */
+  function fillTa(tpl, name) { return String(tpl == null ? "" : tpl).replace(/\{ta\}/g, name || "它"); }
+  // 心迹条在「当前档 → 下一档」区间内的百分比（末档 100%）
+  const XT_HEART_MARKS = [0, 40, 100, 190, 300];
+  function xtHeartPct(v) {
+    const val = Math.max(0, Math.min(300, Math.floor(Number(v) || 0)));
+    let lo = XT_HEART_MARKS[0], hi = XT_HEART_MARKS[XT_HEART_MARKS.length - 1];
+    for (let i = 0; i < XT_HEART_MARKS.length; i++) { if (val >= XT_HEART_MARKS[i]) { lo = XT_HEART_MARKS[i]; hi = XT_HEART_MARKS[i + 1] != null ? XT_HEART_MARKS[i + 1] : XT_HEART_MARKS[i]; } }
+    if (hi <= lo) return 100;
+    return Math.max(4, Math.min(100, Math.round(((val - lo) / (hi - lo)) * 100)));
+  }
+  const XT_CLS_ZH = { cloth: "织物", sound: "声响", ware: "器物", odd: "奇异", tough: "坚韧", human: "人情" };
+  // 心迹区整块 HTML（纯拼接，供 renderSpiritDetailPage 调用；亦便于布局自测）
+  function heartCardHtml(it, rec, store) {
+    const name = spiritName(it, store);
+    const hlv = Spirits.heartLevel(Number(rec.heart) || 0);
+    const bl = Spirits.bondLevel(Number(rec.bond) || 0);
+    const today = Spirits.todayKey();
+    const cfg = Spirits.GIFT_CFG || {};
+    const acts = Spirits.CARE_ACTS || [];
+    const careDone = Spirits.careDoneOf(rec, today);
+    const givenN = (String(rec.giftDay || "") === today) ? Math.max(1, Math.floor(Number(rec.giftDayN) || 1)) : 0;
+    const globalGiven = Spirits.giftGivenToday(today);
+    const globalMax = cfg.DAILY_GLOBAL || 2;
+    const qualify = bl.lv1 >= (cfg.QUALIFY_LV || 3);
+
+    let h = '<div class="sd-card xt-card" id="sdHeart">';
+    h += '<div class="sd-card-title">🌸 心迹</div>';
+    // 心迹条（恋爱向；⛔ 不出现数值）
+    h += '<div class="xt-row"><span class="xt-label">心迹</span>' +
+      '<span class="xt-track"><i style="width:' + (hlv.atMax ? 100 : xtHeartPct(hlv.value)) + '%"></i></span>' +
+      '<span class="xt-lv">' + esc(hlv.name || "") + '</span></div>';
+    // 羁绊条（照料 / 递一件 提升的是它；⛔ 不出现数值）
+    h += '<div class="xt-row"><span class="xt-label">羁绊</span>' +
+      '<span class="xt-track bond"><i id="xtBondFill" style="width:' + bl.pct + '%"></i></span>' +
+      '<span class="xt-lv">' + esc(bl.name) + '</span></div>';
+    h += '<div class="xt-hint">心迹慢，看的是它对你那点另外的意思；羁绊靠日子，是你们处出来的熟。两条各走各的。</div>';
+    // 照料三式
+    h += '<div class="xt-sec">照料三式<span class="xt-sec-sub">今日 ' + careDone + '/' + acts.length + '</span></div>';
+    h += '<div class="xt-care">' + acts.map((a) => {
+      const done = String(((rec.careKinds || {})[a.id]) || "") === today;
+      return '<button type="button" class="xt-care-btn' + (done ? " done" : "") + '" data-care="' + esc(a.id) + '"' + (done ? " disabled" : "") + '>' +
+        '<span class="xt-care-name">' + esc(a.name) + '</span>' +
+        '<span class="xt-care-tag">' + (done ? "今天做过了" : "＋2") + '</span></button>';
+    }).join("") + '</div>';
+    if (careDone >= acts.length) h += '<div class="xt-sub">今天照料得够了，明天再来。</div>';
+    // 递一件给它
+    h += '<button type="button" class="btn primary xt-gift-btn" id="xtGiftOpen"' + (qualify ? "" : " disabled") + '>' +
+      '<span class="xt-gift-ico">🎁</span>' + esc(Spirits.GIFT_COPY.open) + '</button>';
+    h += '<div class="xt-sub">今日已递 ' + globalGiven + '/' + globalMax +
+      (givenN >= 1 ? '（今天已经给过它 ' + givenN + ' 件）' : "") + '</div>';
+    if (!qualify) h += '<div class="xt-hint">' + esc(fillTa(Spirits.GIFT_COPY.qualifying, name)) + '</div>';
+    h += '</div>';
+    return h;
+  }
+  // 一个只读的反馈弹层（送出 / 照料）：反应句 + 辅助小字，单按钮关闭
+  function showActModal(title, quote, subHtml) {
+    const mask = $("#modalMask"), modal = $("#modal");
+    modal.innerHTML = "<h3>" + esc(title) + "</h3>" +
+      (quote ? '<div class="xt-quote">「' + esc(quote) + '」</div>' : "") +
+      (subHtml ? '<div class="xt-quote-sub">' + subHtml + "</div>" : "") +
+      "<div style='display:flex;margin-top:14px'><button class='btn primary' id='mOk' style='flex:1'>搁下了</button></div>";
+    mask.hidden = false; modal.hidden = false; modal.style.display = "";
+    return new Promise((resolve) => {
+      const done = () => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; resolve(true); };
+      $("#mOk").onclick = done; mask.onclick = done;
+    });
+  }
+  // 照料一次
+  async function spiritCareDo(it, kind, host) {
+    const store = Spirits.load();
+    const rec = Spirits.ensureIn(store, it.id);
+    const r = Spirits.careAct(rec, kind);
+    if (!r.ok) {
+      if (r.reason === "day_per") toast("这一式今天已经做过了。");
+      else if (r.reason === "day_max") toast("今天照料得够了，明天再来。");
+      else toast("这个先做不了。");
+      return;
+    }
+    Spirits.save(store);
+    const def = Spirits.careActOf(kind) || {};
+    const acts = Spirits.CARE_ACTS || [];
+    await showActModal("照料", def.line || "", "羁绊 <b>+" + r.delta + "</b> · 今天照料了 " + Spirits.careDoneOf(rec) + "/" + acts.length);
+    host.refresh();
+  }
+  // 选礼抽屉 → 二次确认 → 送出 → 反应台词
+  function openGiftDrawer(it, host) {
+    const store = Spirits.load();
+    const rec = Spirits.ensureIn(store, it.id);
+    const name = spiritName(it, store);
+    const today = Spirits.todayKey();
+    const cfg = Spirits.GIFT_CFG || {};
+    const globalMax = cfg.DAILY_GLOBAL || 2;
+    const mask = $("#modalMask"), modal = $("#modal");
+    const close = () => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; };
+    const paint = () => {
+      const list = Spirits.giftListOf(Spirits.loadGifts());
+      const globalGiven = Spirits.giftGivenToday(today);
+      const prefCls = Spirits.giftPrefOf(rec);
+      let body;
+      if (!list.length) {
+        body = '<div class="room-none">' + esc(Spirits.GIFT_COPY.emptyStock) + "</div>";
+      } else {
+        body = '<div class="gd-grid">' + list.map((g) => {
+          const held = !!(rec.giftLog && rec.giftLog[g.key] != null);
+          const hit = !!(prefCls && g.cls === prefCls);
+          const disabled = held || globalGiven >= globalMax;
+          const cls = esc(XT_CLS_ZH[g.cls] || "") + (hit ? " · 偏好" : "");
+          const note = held ? esc(fillTa(Spirits.GIFT_COPY.alreadyHeld, name)) : (hit ? esc(fillTa(Spirits.GIFT_COPY.hitNote, name)) : "");
+          return '<button type="button" class="gd-item' + (held ? " held" : "") + (hit ? " hit" : "") + '" data-gift="' + esc(g.key) + '"' + (disabled ? " disabled" : "") + '>' +
+            '<span class="gd-name">' + esc(g.name) + '</span>' +
+            '<span class="gd-cls">' + cls + "</span>" +
+            (note ? '<span class="gd-note">' + note + "</span>" : "") +
+            '<span class="gd-cnt">×' + g.count + "</span></button>";
+        }).join("") + "</div>";
+      }
+      const foot = '<div class="gd-foot">今日已递 ' + globalGiven + "/" + globalMax +
+        (globalGiven >= globalMax ? " · " + esc(Spirits.GIFT_COPY.dayFull) : "") + "</div>";
+      modal.innerHTML = "<h3>" + esc(name) + " · 手边的东西</h3>" + body + foot +
+        "<div style='display:flex;margin-top:12px'><button class='btn ghost' id='mCancel' style='flex:1'>先不递</button></div>";
+      mask.hidden = false; modal.hidden = false; modal.style.display = "";
+      $("#mCancel").onclick = close;
+      mask.onclick = close;
+      modal.querySelectorAll(".gd-item").forEach((b) => {
+        if (b.disabled) return;
+        b.onclick = () => { const k = b.dataset.gift; close(); doGive(k); };
+      });
+    };
+    const doGive = async (giftKey) => {
+      const hstore = Spirits.load();
+      const hrec = Spirits.ensureIn(hstore, it.id);
+      const g = Spirits.GIFT_CATALOG[giftKey] || {};
+      const ok = await confirmModal("递一件给它？", "把「" + (g.name || "这件东西") + "」递过去。递出去就收不回来了。", "递过去");
+      if (!ok) { paint(); return; }
+      const globalGiven = Spirits.giftGivenToday(today);
+      const gifts = Spirits.loadGifts();
+      const res = Spirits.giveGift(gifts, hrec, giftKey, { dayKey: today, globalGiven: globalGiven });
+      if (!res.ok) {
+        if (res.reason === "day_global") toast(Spirits.GIFT_COPY.dayFull);
+        else if (res.reason === "day_per") toast("今天给它的够多了。");
+        else if (res.reason === "dup") toast(fillTa(Spirits.GIFT_COPY.alreadyHeld, name));
+        else if (res.reason === "locked") toast(fillTa(Spirits.GIFT_COPY.qualifying, name));
+        else if (res.reason === "no_stock") toast(Spirits.GIFT_COPY.emptyStock);
+        else toast("这件事没成。");
+        return;
+      }
+      Spirits.saveGifts(gifts);
+      Spirits.noteGiftGiven(it.id, giftKey, today);
+      Spirits.save(hstore);
+      const react = Spirits.giftReactionOf(hrec, res.hit);
+      const sub = "羁绊 <b>+" + res.delta + "</b>" + (res.second ? "（同一只第二件，折半了）" : "") +
+        " · 今日已递 " + Spirits.giftGivenToday(today) + "/" + globalMax;
+      await showActModal("递过去了", react, sub);
+      host.refresh();
+    };
+    paint();
+  }
+
   function renderSpiritDetailPage(id) {
     const it = spiritItemById(id);
     if (!it) { location.hash = "#/spirit"; return; }
@@ -4257,6 +4493,9 @@
         ? '<div class="cp-echo">✦ 下一封回响：' + esc(nxEcho.label) + "（还有 " + nxEcho.days + " 天）</div>"
         : '<div class="cp-echo">✦ 回响都写完了 —— 每一枚纪念日它都留了信给你</div>') +
       "</div>";
+
+    // v165：🌸 心迹区（心迹条 + 羁绊条 + 照料三式 + 「递一件给它」）
+    h += heartCardHtml(it, rec, store);
 
     // v158：🎋 节令 —— 传统节日当天它有一句专属的话；限定插画手动确认才画（点了才花额度）
     const fests = Spirits.festList(rec);
@@ -4497,6 +4736,9 @@
     const pv = $("#sdPrev"); if (pv && _prevIt) pv.onclick = () => { location.hash = "#/spirit/" + encodeURIComponent(_prevIt.id); };
     const nx = $("#sdNext"); if (nx && _nextIt) nx.onclick = () => { location.hash = "#/spirit/" + encodeURIComponent(_nextIt.id); };
     const su = $("#sdSetup"); if (su) su.onclick = () => showSpiritSetupModal(it);   // v127：设定向导
+    // v165：心迹区 —— 照料三式 + 「递一件给它」
+    view.querySelectorAll(".xt-care-btn").forEach((b) => { if (!b.disabled) b.onclick = () => spiritCareDo(it, b.dataset.care, host); });
+    const xtg = $("#xtGiftOpen"); if (xtg && !xtg.disabled) xtg.onclick = () => openGiftDrawer(it, host);
     // v156：翻页式日记本 —— 一次摊开一篇，上一篇 / 下一篇（或左右滑动）翻
     const dBook = $("#sdDiaryBook");
     if (dBook && diary.length) {
@@ -5513,7 +5755,12 @@
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
     let r = o.enter();
+    // v165：剧情页背景图层 —— 取章节映射里「已出图」的那张；没有就纯色/渐变兜底（⛔ 不阻塞、不出图）
+    //   ⚠️ 用 typeof 守卫：renderTalkPage 会被单测以「抽函数 + 沙箱」方式隔离运行，此时 sceneBgUrl 不在作用域
+    let _bgUrl = "";
+    try { if (typeof sceneBgUrl === "function") _bgUrl = sceneBgUrl(o.bg); } catch (e) { _bgUrl = ""; }
     view.innerHTML = '<div class="nt-chat">' +
+      '<div class="scenebg' + (_bgUrl ? "" : " noimg") + '" id="sceneBgLayer"></div>' +
       '<div class="nt-chat-head">' +
       '<div class="nt-head-av">' + o.headAv + "</div>" +
       '<div class="nt-head-meta"><b>' + esc(o.headName) + "</b><span>" + esc(o.headSub) + "</span></div>" +
@@ -5521,6 +5768,9 @@
       "</div>" +
       '<div class="nt-body" id="ntBody"></div>' +
       '<div class="nt-foot" id="ntFoot"></div></div>';
+    // 背景图 URL 走 JS 设值，避免把 base64/带参数的长 URL 拼进 HTML 属性里出错
+    const _sbl = $("#sceneBgLayer");
+    if (_sbl && _bgUrl) _sbl.style.backgroundImage = "url(" + JSON.stringify(_bgUrl) + ")";
     bindSpiritImgFallback(view);
 
     const body = $("#ntBody"), foot = $("#ntFoot");
@@ -5663,6 +5913,7 @@
       headName: nm,
       headSub: act.icon + " " + act.volName + " · 第 " + (i + 1) + " 章",
       listLabel: "回到它", listHash: back,
+      bg: Spirits.bgForChapter("ch" + (i + 1)),   // v165：章节 → BG key 映射（卷一 ch1–ch5；未覆盖 = 渐变兜底）
       av: () => spiritThumbHtml(it, rc0, 30),
       nameOf: () => nm,
       endTag: "第 " + (i + 1) + " 章 · 完",
@@ -8319,6 +8570,13 @@
         '<div class="d">当前：' + esc(ow.name || "未填昵称") + " · " + (ow.gender === "boy" ? "男生（用「他」）" : "女生（用「她」）") +
         " · " + (ow.avatar ? "已设头像" : "未设头像（群里显示「我」）") +
         ' · 日记与剧情会照这个写</div></div><span style="color:var(--text-2)">›</span></button>';
+      // v165：一键出全套 BG（21 张场景背景；已出好的不复用不出图，失败可续）
+      const bgAll = Object.keys(Spirits.BG_CATALOG || {});
+      const bgHave = bgAll.filter((k) => bgUrlOf(k)).length;
+      html += '<button class="setting-item" id="btnBgAll"><div>' +
+        '<div class="t">🎴 一键出全套 BG（' + bgAll.length + ' 张，约 ¥0.6）</div>' +
+        '<div class="d">为剧情场景生成永久背景图（云端保存、永不过期）。已出好的不会重出，中途失败可再点一次接着画。' +
+        '当前进度：' + bgHave + ' / ' + bgAll.length + '</div></div><span style="color:var(--text-2)">›</span></button>';
     }
 
     html += '<div class="section-title">🎖️ 我的称号</div>';
@@ -8425,6 +8683,23 @@
     if (txtBtn) txtBtn.onclick = () => showTextCfgModal();
     const ownBtn = $("#btnOwner");
     if (ownBtn) ownBtn.onclick = () => showOwnerModal();
+    // v165：一键出全套 BG（成本确认 → 进度弹层 → 失败可续）
+    const bgBtn = $("#btnBgAll");
+    if (bgBtn) bgBtn.onclick = async () => {
+      const all = Object.keys(Spirits.BG_CATALOG || {});
+      const have = all.filter((k) => bgUrlOf(k)).length;
+      const todo = all.length - have;
+      if (!todo) { toast("全套 " + all.length + " 张 BG 都出好了 ✅"); return; }
+      const cost = (todo * BG_UNIT).toFixed(2);
+      const yn = await confirmModal("一键出全套 BG",
+        "将生成 " + todo + " 张背景图（全套 " + all.length + " 张，已有 " + have + " 张直接复用，不重复计费），约 ¥" + cost +
+        "。中途失败可以再点一次接着画，已出好的不会重出。开始吗？", "开始出图", false);
+      if (!yn) return;
+      const ui = showBgBatchModal();
+      const res = await generateAllBg({ progress: (d, t, nm) => ui.setProg(d, t, nm) });
+      ui.finish(res.done, res.fail);
+      toast("BG 出图完成：成功 " + res.done + " 张" + (res.fail ? "，失败 " + res.fail + " 张" : ""));
+    };
 
     // 主题选择（v113 已取消：皮肤固定为「文玩手账」）
 
