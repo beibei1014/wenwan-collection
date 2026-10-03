@@ -369,11 +369,11 @@
       try { window.dispatchEvent(new CustomEvent("ww:storage-full", { detail: { key: STORE_KEY } })); } catch (e3) { /* 忽略 */ }
     }
   }
-  function ensureIn(store, id) {
+  function ensureIn(store, id, item) {     // v165：item 可选，仅用于 normRecV165 补 imgStage
     if (!store[id]) {
       // 新生：性别留空，等「挂瓷开沁」那一刻由 born() 掷一次（男女 3:1）
       store[id] = { persona: null, variant: 0, imgUrl: "", letters: [], chats: [], lastLetterDay: "", stage: 1, imgHistory: [], gender: "", bornAt: 0, flags: { stance: "UNSET", bondLv: null, scattered: false } };
-      normRecV165(store[id]);
+      normRecV165(store[id], item);
       return store[id];
     }
     const rec = store[id];
@@ -383,7 +383,7 @@
     // 这样它已经画好的立绘和界面显示的人设不会打架；新沁灵一律走 born() 的 3:1 随机
     if (rec.gender !== "boy" && rec.gender !== "girl") rec.gender = legacyGender(id, rec.appearanceSeed || 0);
     if (!rec.flags || typeof rec.flags !== "object") rec.flags = { stance: "UNSET", bondLv: null, scattered: false };
-    normRecV165(rec);
+    normRecV165(rec, item);
     return rec;
   }
   // 性别：出生时掷一次，比例 男:女 = 3:1（用户要求）
@@ -393,7 +393,7 @@
   // 挂瓷开沁：给这只沁灵"定性别"，之后不可更改（重复调用不会改性别）
   function born(item) {
     const store = load();
-    const rec = ensureIn(store, item.id);
+    const rec = ensureIn(store, item.id, item);
     let isNew = false, gender = rec.gender;
     if (!rec.bornAt) {
       rec.bornAt = Date.now();
@@ -443,35 +443,47 @@
     { en: "a brocade-trimmed Chinese robe with a jade toggle", zh: "织锦长袍 + 玉扣" },
   ];
   /* ---------- v165：意象服饰词表（用户实测「叫莫高窟那只，服装还是汉服」） ----------
-     根因：OUTFITS 是**一池通用中式古装**，按 hashStr 随机抽 ⇒ 服装与这只沁灵的名字/品类/胎性
-     毫无关系。本表让服装**按意象走**：命中 item.name + item.species 的关键词即改写服饰。
-     ⛔ 只做「覆盖」，⛔ 不动 hashStr 本体 —— 未命中时结果与改前**逐字一致**（分布不变）。 */
+     根因：OUTFITS 是**一池通用中式古装**，按 hashStr 随机抽 ⇒ 服装与这只沁灵的名字毫无关系。
+     本表让服装**按意象走**：命中 **item.name** 的关键词即改写服饰。
+
+     ⚠️ v165 修正（主理人实测发现）：原先把 item.species / item.category 也送进匹配，
+       而木组关键词含「根 / 菩提」⇒ species="菩提根" 会**抢先命中**木组，导致主角团那批
+       菩提根串被统一压成同一种木色 —— 等于换个方式又锁死了一次。
+       ⇒ **意象只认名称，⛔ 品类/材质大类不参与图像侧意象匹配**；
+         item.species 仍然照旧喂给文本模型写人设（那条线一行未动）。
+     ⛔ 只做「覆盖」，⛔ 不动 hashStr 本体 —— 未命中时结果与改前**逐字一致**（分布不变）。
+
+     词表顺序 = **语义优先级**（数组下标小 = 优先级高）：
+       1 敦煌飞天 → 2 冰雪 → 3 玉 → 4 金属 → 5 木（泛组，垫底）
+     「雪月」必须落冰雪（不能被泛组抢走），同理其它具体意象一律优先于木。 */
   const IMAGERY_OUTFITS = [
     { zh: "敦煌飞天", keys: ["莫高窟", "敦煌", "石窟", "飞天", "壁画", "藻井", "彩塑"],
       en: "Dunhuang mural style costume with flowing feitian silk ribbons, beaded necklaces and lotus motifs",
       zhOutfit: "敦煌壁画飞天披帛 + 璎珞 + 莲瓣纹" },
+    { zh: "冰雪", keys: ["雪", "冰", "霜", "寒"],
+      en: "frost-white layered silk with pale crystal beadwork",
+      zhOutfit: "霜白叠纱 + 冰晶珠饰" },
     { zh: "玉", keys: ["玉", "和田", "脂玉", "翠", "琉璃", "宝"],
       en: "jade-toned silk robes with carved jade ornaments",
       zhOutfit: "玉色丝袍 + 玉雕饰件" },
     { zh: "金属", keys: ["银", "金属", "铁", "钢", "锡", "铜", "钛"],
       en: "silver filigree vest over silk with metal-disc ornaments",
       zhOutfit: "錾花银 vest + 金属盘扣饰件" },
+    // ⛔ 泛组垫底：只在名称**真的**提到木/菩提/根时才生效（品类不算）
     { zh: "木", keys: ["檀", "木", "菩提", "核", "根", "椰", "橄榄"],
       en: "wood-toned rustic silk and plain woven cloth",
       zhOutfit: "木色粗织布衣 + 素丝" },
-    { zh: "冰雪", keys: ["雪", "冰", "霜", "寒"],
-      en: "frost-white layered silk with pale crystal beadwork",
-      zhOutfit: "霜白叠纱 + 冰晶珠饰" },
   ];
   // 在 OUTFITS 随机结果**之上**按意象覆盖；未命中返回 null（调用方保持原逻辑，分布不变）
+  // ⚠️ v165 修正：⛔ 只扫 item.name —— ⛔ 不再把 species / category 送进来（见上）
   function imageryOutfitOf(item) {
     if (!item) return null;
-    const src = [String(item.name || ""), String(item.species || ""), String(item.category || "")].join(" ");
-    if (!src.trim()) return null;
+    const nm = String(item.name || "");
+    if (!nm.trim()) return null;
     for (let i = 0; i < IMAGERY_OUTFITS.length; i++) {
       const row = IMAGERY_OUTFITS[i];
       for (let k = 0; k < row.keys.length; k++) {
-        if (src.indexOf(row.keys[k]) >= 0) return row;
+        if (nm.indexOf(row.keys[k]) >= 0) return row;
       }
     }
     return null;
@@ -2216,7 +2228,7 @@
   /* ---------- 性格：AI 优先，失败/无 key 用本地模板（结果缓存） ---------- */
   async function persona(item, force) {
     const store = load();
-    const rec = ensureIn(store, item.id);
+    const rec = ensureIn(store, item.id, item);
     if (!force && rec.persona) return rec.persona;
     let p = null;
     if (getAiKey()) {
@@ -2574,7 +2586,7 @@
   }
   async function personaZh(item, ap, persona, stage, days, plays, force) {
     const store = load();
-    const rec = ensureIn(store, item.id);
+    const rec = ensureIn(store, item.id, item);
     const lk0 = rec.look || {};
     // v164：用户**亲手确认过**的人设（look.persona）就是最终稿 —— 原样返回，不再叫 AI 重写。
     //   理由：用户流程是「我写设定 → AI 扩写 → 我确认 → 出图」，那这段确认稿必须
@@ -2740,7 +2752,7 @@
     if (added) {
       rec.diary = list.slice(-DIARY_MAX);
       const store = load();
-      const r2 = ensureIn(store, item.id);
+      const r2 = ensureIn(store, item.id, item);
       r2.diary = rec.diary;
       if (rep) r2.replyAcked = rep.at;      // v155：这条回信已经被回应过了
       save(store);
@@ -2751,7 +2763,7 @@
       rec.diary = list.slice(-DIARY_MAX);
       rec.diaryAt = Date.now();
       const store = load();
-      ensureIn(store, item.id).diary = rec.diary;
+      ensureIn(store, item.id, item).diary = rec.diary;
       store[item.id].diaryAt = rec.diaryAt;
       if (rep) store[item.id].replyAcked = rep.at;
       save(store);
@@ -3313,7 +3325,9 @@
 
   /* ---------- v165 逐串新字段默认值（在 ensureIn 里对新建/既有两条路径兜底） ----------
      ⛔ 全挂 rec 顶层（与 rec.bond 同层）；⛔ 不进 rec.marks（避开字典序裁剪）；⛔ 不并 rec.flags（结局 flag 专属层）。 */
-  function normRecV165(rec) {
+  // v165：item 为**可选**。只为算 stageOf 补 imgStage 用 —— 拿不到就退回 rec.stage
+  //   （app.js 各渲染路径已先把 rec.stage 刷成 stageOf 派生值，见 renderSpiritPage 等）。
+  function normRecV165(rec, item) {
     if (!rec || typeof rec !== "object") return rec;
     if (rec.giftLog == null || typeof rec.giftLog !== "object") rec.giftLog = {};
     if (rec.giftDay == null) rec.giftDay = "";
@@ -3339,6 +3353,13 @@
     // v165：星痕字段（⛔ 不进 marks/flags，顶层字段）
     if (rec.starMark == null) rec.starMark = false;
     rec.starMark = !!rec.starMark;
+    // v165：老存档补 imgStage（记录「当前这张立绘属第几阶」）。
+    //   ⛔ **只补字段，绝不出图** —— 补字段与触发出图必须分离，否则老用户会被批量重画烧额度。
+    //   有了它，stageImgPending 才能对老存档生效（此前 imgStage 恒 null ⇒ 永远进不了自动升阶出图）。
+    if (rec.imgStage == null) {
+      rec.imgStage = item ? stageOf(item, rec, Date.now()) : (Number(rec.stage) || 1);
+    }
+    rec.imgStage = Math.min(4, Math.max(1, Math.floor(Number(rec.imgStage) || 1)));
     return rec;
   }
 
@@ -7060,6 +7081,7 @@
     callFor, nurtureOf, normRecV165,
     GIFTS_KEY, loadGifts, saveGifts, addGift, giftListOf, giftClsOf, giftNameOf, giftDescOf, giftPrefOf, personaIdOf,
     GIFT_CATALOG, GIFT_CLASSES, giveGift,
+    IMAGERY_OUTFITS, imageryOutfitOf,   // v165 修正：导出以便单测（此前未导出）
     CARE_ACTS, careAct, careDoneOf, careActOf,
     GIFT_REACTIONS, GIFT_REACTION_FALLBACK, giftReactionOf, GIFT_COPY,
     GIFT_LOG_KEY, loadGiftDay, giftGivenToday, noteGiftGiven,

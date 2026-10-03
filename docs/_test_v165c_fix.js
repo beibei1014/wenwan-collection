@@ -161,6 +161,78 @@ const readApp = () => fs.readFileSync(path.join(ROOT, APP_SRC), "utf8");
     ok(allInPool, "未命中意象词表者：12/12 只的 outfit 均落在 OUTFITS 池内（分布不变）");
     ok(typeof S.appearanceOf === "function", "appearanceOf 可用");
   }
+  section("5b. C5 修正 · 意象只认 item.name（⛔ species 不参与图像侧匹配）+ 语义优先级 + 导出");
+  {
+    const { S } = newS();
+    const hasIm = typeof S.imageryOutfitOf === "function";   // 负向对照友好：旧源码没这函数时判 FAIL 而非崩
+    ok(hasIm, "imageryOutfitOf 已导出（此前未导出，无法单测）");
+    ok(Array.isArray(S.IMAGERY_OUTFITS) && S.IMAGERY_OUTFITS.length >= 5, "IMAGERY_OUTFITS 已导出");
+    const imOf = (o) => (hasIm ? S.imageryOutfitOf(o) : null);
+    // ① 主理人点名的三个 case（都带 species=菩提根）
+    ok(/frost-white/.test(S.appearanceOf({ id: "c1", name: "雪月", species: "菩提根", playCount: 1 }, 0, "boy").outfit),
+      "雪月 + 菩提根 ⇒ frost-white（⛔ 不得 wood-toned）");
+    ok(!/wood-toned/.test(S.appearanceOf({ id: "c2", name: "雪月", species: "菩提根", playCount: 1 }, 0, "boy").outfit),
+      "⛔ 雪月 未被木组抢走");
+    const star = S.appearanceOf({ id: "c3", name: "星月坛", species: "菩提根", playCount: 1 }, 0, "boy");
+    ok(!star.outfitSrc, "星月坛 + 菩提根 ⇒ 不命中（⛔ 品类不参与匹配），落回 OUTFITS 池");
+    ok(imOf({ name: "星月坛", species: "菩提根" }) === null, "imageryOutfitOf('星月坛'+菩提根) === null");
+    ok(/Dunhuang mural style costume/.test(S.appearanceOf({ id: "c4", name: "莫高窟", species: "菩提根", playCount: 1 }, 0, "boy").outfit),
+      "莫高窟 + 菩提根 ⇒ Dunhuang（名称优先于品类）");
+    // ② 语义优先级：具体意象组必须排在泛组（木）之前
+    const order = (S.IMAGERY_OUTFITS || []).map((r) => r.zh);
+    const iGeneric = order.indexOf("木");
+    ok(iGeneric === order.length - 1, "木（泛组）排在词表最后（实际位置 " + iGeneric + "/" + (order.length - 1) + "）");
+    ["敦煌飞天", "冰雪", "玉", "金属"].forEach((z) => {
+      ok(order.indexOf(z) >= 0 && order.indexOf(z) < iGeneric, "具体意象组「" + z + "」优先级高于泛组「木」");
+    });
+    // ③ ⛔ species / category 单独出现时一律不命中（只有 name 能触发）
+    ok(imOf({ name: "", species: "菩提根" }) === null, "⛔ name 为空、species=菩提根 ⇒ 不命中");
+    ok(imOf({ species: "小叶紫檀" }) === null, "⛔ 只有 species 没有 name ⇒ 不命中");
+    ok(imOf({ name: "星月坛", category: "菩提" }) === null, "⛔ category 不参与匹配");
+    // ④ 7 个普通菩提根串名：⛔ 不得被统一压成同一材质
+    const seven = ["星月坛", "花间酒", "砚池", "青梧", "云隐", "拾光", "缠枝"];
+    const src7 = fs.readFileSync(path.join(ROOT, SPIRITS_SRC), "utf8");
+    const allKeys = [];
+    const tblBlk = (src7.match(/const IMAGERY_OUTFITS = \[([\s\S]*?)\n\s*\];/) || [])[1] || "";
+    (tblBlk.match(/keys:\s*\[([^\]]*)\]/g) || []).forEach((g) =>
+      (g.match(/"([^"]+)"/g) || []).forEach((w) => allKeys.push(w.replace(/"/g, ""))));
+    const clean = seven.filter((n) => !allKeys.some((k) => n.indexOf(k) >= 0));
+    ok(clean.length === seven.length, "这 7 个名字自证不含任何意象关键词（实际干净 " + clean.length + "/7）");
+    const got = seven.map((n, i) => S.appearanceOf({ id: "s7_" + i, name: n, species: "菩提根", category: "菩提", playCount: 2 }, 0, "boy").outfit);
+    ok(new Set(got).size > 1, "7 只菩提根串 outfit 未被统一压成同一材质（实得 " + new Set(got).size + " 种）");
+    ok(got.every((o) => !/Dunhuang|jade-toned|silver filigree|frost-white|wood-toned/.test(o)),
+      "7 只普通串均未误挂意象服饰（⛔ 不会被品类带偏）");
+  }
+  section("5c. 任务2 · normRecV165 给老存档补 imgStage（只补字段，绝不出图）");
+  {
+    const { S } = newS();
+    ok(S.normRecV165.length >= 1, "normRecV165 存在");
+    [[0, 1], [2, 1], [3, 2], [6, 3], [10, 4]].forEach(([plays, want]) => {
+      const legacy = { imgUrl: "data:image/png;base64,OLD", imgAt: 1, flags: {} };   // 老存档：无 imgStage
+      S.normRecV165(legacy, { id: "old" + plays, playCount: plays });
+      ok(legacy.imgStage === want, "老存档 plays=" + plays + " ⇒ imgStage=" + want + "（实际 " + legacy.imgStage + "）");
+    });
+    const r2 = { stage: 3, imgUrl: "x" };
+    S.normRecV165(r2);
+    ok(r2.imgStage === 3, "无 item 时退回 rec.stage（=3）");
+    // ⛔ 只补字段：imgUrl / imgAt 不得被改动，也不得触发任何出图副作用
+    const legacy3 = { imgUrl: "data:image/png;base64,KEEP", imgAt: 12345 };
+
+    S.normRecV165(legacy3, { id: "s", playCount: 10 });
+    ok(legacy3.imgUrl === "data:image/png;base64,KEEP" && legacy3.imgAt === 12345,
+      "⛔ 补 imgStage 不改动 imgUrl/imgAt（⛔ 未触发出图）");
+    const added = Object.keys(legacy3).filter((k) => !(k in { imgUrl: 1, imgAt: 1 }));
+    ok(added.length > 0 && added.every((k) => typeof legacy3[k] !== "function"),
+      "新增字段全是纯数据、无函数副作用（新增 " + added.length + " 个：" + added.join(",") + "）");
+    ok(added.indexOf("imgStage") >= 0, "其中确实包含 imgStage");
+    const srcN = fs.readFileSync(path.join(ROOT, SPIRITS_SRC), "utf8");
+    const normBlk = (srcN.match(/function normRecV165\([\s\S]*?\n  \}/) || [""])[0];
+    ok(!/generateImage|pollinationsUrl|ensureBg|save\(/.test(normBlk), "⛔ normRecV165 函数体内无任何出图/落库调用");
+    // 幂等：已有 imgStage 不被覆盖
+    const r3 = { imgStage: 2, stage: 4 };
+    S.normRecV165(r3, { id: "x", playCount: 10 });
+    ok(r3.imgStage === 2, "已有 imgStage=2 时不被覆盖（幂等）");
+  }
 
   /* ============ 6. C1 BG 文案 ============ */
   section("6. C1 · BG：21 条仍以 BG_STYLE 开头 / 含 no people, empty scene / 无人物向词");
