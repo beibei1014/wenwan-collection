@@ -3795,6 +3795,10 @@
     { vol: 4, volName: "卷四 · 长成", stage: 4, days: 0, icon: "👑", title: "我是你手边最亮的那颗" },
     { vol: 4, volName: "卷四 · 长成", stage: 4, days: 60, icon: "🪢", title: "以后也这样陪着你" },
   ];
+  /* v165 批次3A-8：主线 1–9 章的**天数锚点**（取自剧本 §4 各章章首，⛔ 硬编码不换成 {days}）
+     理由：岁除是一年四次的日历事件，固定锚点才让倒计时与二周目「按日子等事件」成立。
+     本表只提供锚点；章节正文的挂载与触发条件由主线章节表（CHAP_ACTS 扩展）承担。 */
+  const MAIN_DAY_ANCHOR = [20, 45, 62, 78, 95, 108, 120];   // ch3..ch9（ch1/ch2 沿用上表 0/3）
   // 每一章的状态（解锁 / 已读 / 还差什么）
   // v163：新增 bond / plays / idle / room / anyOf 支持（**缺省 = 不限制**，老 8 章行为不变）
   //   room 由 **app 层**用 rec.roomId + Rooms.membersOf() 算好传入 —— 不把 Rooms 依赖写进 spirits.js
@@ -6712,6 +6716,101 @@
     try { chapRecomputeFork(); } catch (e) { /* 静默降级 */ }
   }
 
+  /* ---------- v165 批次3A · casting（进章时做一次，出场表） ----------
+     规则（主理人钉死，四条）：
+       1. 7 个主角 persona 各取 1 只
+       2. 同 persona 多只 → 取**亲密度最高**；并列 → 取 rec 数组**索引最小**（入藏最早）
+       3. 缺该 persona → 取**最接近型**并**复用其名**；⛔ 绝不新造名字、⛔ 不报错、⛔ 不阻断进章
+       4. 结果缓存 ww_story.cast，**同一年内不重抽**（回环点才重抽）
+     ⛔ 任何异常路径都返回「能用的尽量少的结果」，绝不抛错。 */
+  const CHAP_CAST_CFG = {
+    MAIN: ["dignified", "scholar", "cool", "gentle", "lively", "mystery", "sweet"], // 主角 7 型（§5.2）
+    CACHE_KEY: "cast", CACHE_YEAR: "castYear",
+  };
+  // 主角 persona → 该型的代表行当名（缺型回落时**复用其名**，⛔ 不新造）
+  const CHAP_CAST_NAME = {
+    dignified: "最老的那只", scholar: "记账的那只", cool: "不爱说话的那只",
+    gentle: "安静的那只", lively: "最吵的那只", mystery: "知道点什么的", sweet: "最小的",
+  };
+
+  function castYear() { try { return new Date().getFullYear(); } catch (e) { return 0; } }
+
+  // 同 persona 多只的择优：亲密度最高；并列取索引最小（Object.keys 序 = 入藏序）
+  function castPick(entries, pid) {
+    let best = null, bestBond = -1;
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      if (e.pid !== pid) continue;
+      const b = Number(e.rec && e.rec.bond) || 0;
+      if (b > bestBond) { bestBond = b; best = e; }   // 严格 > ⇒ 并列保留先到者（索引最小）
+    }
+    return best;
+  }
+  // 缺型 → 同组（PERSONA_GROUP）里挑一个在册的，取该组第一个在册 persona
+  function castNearest(entries, pid) {
+    const grp = PERSONA_GROUP[pid];
+    if (!grp) return null;
+    const inMain = CHAP_CAST_CFG.MAIN;
+    for (let i = 0; i < inMain.length; i++) {
+      const q = inMain[i];
+      if (q === pid) continue;
+      if (PERSONA_GROUP[q] !== grp) continue;      // 必须同组
+      const hit = castPick(entries, q);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  // 构造出场表：{ <persona>: {name, id, who, near} }；⛔ 永不抛错
+  function castBuild() {
+    const store = load();
+    const entries = [];
+    Object.keys(store).forEach(function (id) {
+      const rec = store[id];
+      const pid = personaIdOf(rec);
+      if (!pid) return;
+      entries.push({ id: id, pid: pid, rec: rec, bond: Number(rec.bond) || 0 });
+    });
+    const out = {};
+    CHAP_CAST_CFG.MAIN.forEach(function (pid) {
+      let hit = castPick(entries, pid);
+      let near = false;
+      if (!hit) { hit = castNearest(entries, pid); near = !!hit; }   // 缺型 → 最接近型
+      if (!hit) return;                                                // 连近似都没有 ⇒ 该角色不出场
+      out[pid] = {
+        name: CHAP_CAST_NAME[pid] || pid,   // ⛔ 复用该 persona 的行当名，绝不新造
+        id: hit.id, pid: pid, near: near,
+      };
+    });
+    return out;
+  }
+  // 读出场表（带年内缓存）；⛔ 任何失败都返回空表并静默
+  function castOf(opts) {
+    const o = opts || {};
+    const force = !!o.force;
+    try {
+      const w = readStory(); endingStoryDefaults(w);
+      const y = castYear();
+      if (!force && w[CHAP_CAST_CFG.CACHE_YEAR] === y && w[CHAP_CAST_CFG.CACHE_KEY] &&
+          typeof w[CHAP_CAST_CFG.CACHE_KEY] === "object") {
+        return w[CHAP_CAST_CFG.CACHE_KEY];
+      }
+      const cast = castBuild();
+      w[CHAP_CAST_CFG.CACHE_KEY] = cast;
+      w[CHAP_CAST_CFG.CACHE_YEAR] = y;
+      w.at = todayKey(); writeStory(w);
+      return cast;
+    } catch (e) { return {}; }
+  }
+
+  /* ---------- v165 批次3A · 演出层字段读取（⛔ 任何缺失一律静默降级） ---------- */
+  // 站位：缺省 "C"（中前＝说话者）；非法值回落 "C"
+  const CHAP_AT_ZH = { L: "左", C: "中", R: "右", B: "后" };
+  function chapAtOf(v) { const k = String(v || "C"); return CHAP_AT_ZH[k] ? k : "C"; }
+  // 背景：⛔ 只读 bgGet（命中静态即直返），⛔ 绝不调 ensureBg（那会触发出图 API 与费用）
+  function chapBgOf(key) { try { return bgGet(key) || ""; } catch (e) { return ""; } }
+  // 音频/特效：缺失一律空串（上层静音降级），⛔ 不抛错不阻塞
+  function chapAsset(v) { const s = String(v || ""); return s; }
+
   // 存储槽：rec.talk（和夜话的 rec.night 互不干扰）
   function chapSlot(rec) {
     if (!rec) return null;
@@ -6726,7 +6825,18 @@
     if (!txt) return null;
     const w = l.w || "sp";
     // v165 批次3A-1：群像模式 —— 行级 `who` 优先，缺省回落 v.name（v163 单串行为不变）
-    return { w: w, name: (w === "me" || w === "sys") ? "" : (l.who || v.name), text: txt, at: Date.now() };
+    const out = { w: w, name: (w === "me" || w === "sys") ? "" : (l.who || v.name), text: txt, at: Date.now() };
+    // v165 批次3A-6：演出层字段（⛔ 全部可选，缺失即静默降级，绝不阻塞进章）
+    // ⚠️ 站位**不复用 at**：消息封套的 at 是时间戳（chapLine 一直在写），覆盖它会破坏既有读法。
+    //    剧本字段 at（站位）落到 slot，UI 层读 m.slot。
+    if (l.ps) out.ps = l.ps;                       // 人格型数组（立绘/配色取型）
+    if (l.at) out.slot = chapAtOf(l.at);           // 站位 L/C/R/B（非法值回落 C）
+    if (l.bg) out.bg = l.bg;                       // 背景 key（⛔ 上层只读 bgGet，不调 ensureBg）
+    if (l.fx) out.fx = chapAsset(l.fx);            // 演出效果
+    if (l.sfx) out.sfx = chapAsset(l.sfx);          // 音效（缺失静音降级）
+    if (l.bgm) out.bgm = chapAsset(l.bgm);          // 音乐（缺失静音降级）
+    if (l.cg) out.cg = chapAsset(l.cg);             // 全屏 CG
+    return out;
   }
   function chapChoicesOf(t, act, v) {
     if (!t || t.ended) return [];
@@ -6802,6 +6912,8 @@
   function chapTalkEnter(item, rec, ctx, i) {
     if (!rec) return { added: [], choices: [], ending: null, ended: true };
     const id = "c" + (Number(i) + 1);
+    // v165 批次3A-5：进章时做一次 casting（⛔ 内部全静默，⛔ 绝不阻断进章；同一年内走缓存不重抽）
+    castOf();
     const t0 = rec && rec.talk;
     if (t0 && t0.chapId === id && Array.isArray(t0.log) && t0.log.length) {
       const act = chapActOf(id);
@@ -7285,6 +7397,11 @@
     // v165 批次3A：剧本 flag 载体（rset / gset / fb / FORK_STANCE tally / {ta}）—— 供自测与调试面板
     CHAP_FLAG_CFG, chapRecByPersona, chapWriteRecFlag, chapApplyRset, chapApplyGset, chapRecomputeFork, chapApplySets,
     chapTaSet, chapTaGet, chapTaNameOf,
+    // v165 批次3A P1：casting（出场表）+ 演出层字段读取
+    CHAP_CAST_CFG, CHAP_CAST_NAME, CHAP_AT_ZH, castOf, castBuild, castPick, castNearest,
+    chapAtOf, chapBgOf, chapAsset,
+    // v165 批次3A-8：主线 1–9 章天数锚点（⛔ 硬编码，岁除按日历事件）
+    MAIN_DAY_ANCHOR,
     // v160：夜话（跨串大剧情 · 互动对话）—— 本地剧本 + 本地状态机，0 出图 0 模型调用
     NIGHT_ACTS, NIGHT_GROUP, NIGHT_CAP, nightCast, nightActs, nightEnter, nightReplay, nightChoose, nightBrief,
     // v162：夜话 2.0 —— 多会话（全家群 / 房间群 / 双人组）+ 按条件触发的事件
