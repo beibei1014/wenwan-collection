@@ -2,21 +2,28 @@
    覆盖（对应 docs/v165-亲密度与送礼系统设计.md §七-20）：
      T4 八档映射边界（0/11/12/29/30/54/55/89/90/139/140/199/200/279/280）
      称呼四档回落链（lovecall 优先 / {nick} 未填回落「你」 / 高阶不回落「主人」）
-     T1 送礼判重 · T2 同一只当日上限 · 全局当日上限 · 资格锁 · 无库存 · 幂等
+     T1 送礼判重 · 单只当日上限(=2) · 第2件×0.5 · 全局当日上限 · 资格锁 · 无库存 · 幂等 · harmed×0.5
+     照料三式 careAct（各 1 次/日 · +2/次 · 合计 ≤+6）· 心迹档位名 · 反应台词（占位）
      新字段默认值 · 心迹轨 · harmed 读取
      T5 旧档（6 档时期数据）读入不报错且行为确定
      T6 marks 不受影响（本系统字段零进 marks；pruneForQuota 不裁礼物/心意字段）
      db.js：mergeGiftStores（按 giftKey 取 max）+ gift_store 读写函数存在
-   纪律：本文件在「改动前源码」上必须 FAIL（负向对照），改动后全绿 —— 见交付报告。 */
+     §8 GIFT_CATALOG 正式物名（v165e §13.3）
+     §11 🔴 bondLv **1-based** 口径（resolveEnding 缓存/派生 = lv1；边界 4/5/6/7）
+   纪律：本文件在「改动前源码」上必须 FAIL（负向对照）。做法（v165d）：
+     git show HEAD:js/spirits.js > docs/_spirits_prev.js
+     SPIRITS_SRC=docs/_spirits_prev.js node docs/_test_v165_bond_gift.js   → 必须 FAIL（§3/§9/§10/§11 相关断言） */
 "use strict";
 const fs = require("fs"), path = require("path");
 const H = require("./_harness.js");
+// v165d：支持负向对照 —— 指向旧版 spirits.js 跑同一套断言
+const SPIRITS_SRC = process.env.SPIRITS_SRC || "js/spirits.js";
 let PASS = 0, FAIL = 0; const FAILURES = [];
 function ok(c, m) { if (c) PASS++; else { FAIL++; FAILURES.push(m); console.log("  ✗ " + m); } }
 function section(t) { console.log("\n=== " + t + " ==="); }
 
 function newSpirits() {
-  const c = H.makeContext(); H.loadFile(c.ctx, "js/spirits.js");
+  const c = H.makeContext(); H.loadFile(c.ctx, SPIRITS_SRC);
   return { S: c.sandbox.Spirits, c: c };
 }
 
@@ -74,16 +81,16 @@ section("2. 称呼四档回落链（lovecall 优先 / nick 未填回落「你」
 }
 
 /* ============ 3. giveGift ============ */
-section("3. giveGift（+4/+6 · 判重 · 日限 · 资格 · 库存 · 幂等）");
+section("3. giveGift（命中+6/未命中+4 · 同一只当天第2件×0.5 · 判重 · 全局日限 · 资格 · 库存 · 幂等 · harmed）");
 {
   const { S } = newSpirits();
+  const gifts = { cloth_pa: 3, sound_bell: 2, ware_cup: 3, human_tea: 5, odd_glass: 2, tough_rope: 1, tough_whet: 1 };
   // 资格：bond=30 → 档3 达标；gentle → soft → cloth（命中）
-  const gifts = { cloth_pa: 3, sound_bell: 2, ware_cup: 2, human_tea: 5 };
   const r = { bond: 30, look: { pers: "gentle" } };
   const g1 = S.giveGift(gifts, r, "cloth_pa", { dayKey: "2026-10-03" });
-  ok(g1.ok && g1.delta === 6 && g1.hit === true, "命中偏好 → +6");
+  ok(g1.ok && g1.delta === 6 && g1.hit === true && g1.second === false, "命中偏好 → +6（首件不打折）");
   ok(gifts.cloth_pa === 2, "命中后库存 -1（3→2）");
-  ok(r.giftLog.cloth_pa === "2026-10-03" && r.giftDay === "2026-10-03" && r.giftTotal === 1, "写账 giftLog/giftDay/giftTotal");
+  ok(r.giftLog.cloth_pa === "2026-10-03" && r.giftDay === "2026-10-03" && r.giftDayN === 1 && r.giftTotal === 1, "写账 giftLog/giftDay/giftDayN/giftTotal");
   ok(r.bond === 36, "bond 30 → 36");
 
   // T1 判重：同一礼物对同一只终身 1 次（换日也不行）→ 不扣物、不加分
@@ -91,21 +98,26 @@ section("3. giveGift（+4/+6 · 判重 · 日限 · 资格 · 库存 · 幂等�
   const g2 = S.giveGift(gifts, r, "cloth_pa", { dayKey: "2026-10-09" });
   ok(!g2.ok && g2.reason === "dup" && r.bond === b0 && gifts.cloth_pa === inv0, "判重：dup 且不扣物不加分");
 
-  // T2 同一只当日上限（≤1）
+  // v165d 裁定：同一只「当天第 2 件」允许，但 ×0.5（未命中 4 → 2）
   const g3 = S.giveGift(gifts, r, "sound_bell", { dayKey: "2026-10-03" });
-  ok(!g3.ok && g3.reason === "day_per", "同一只当日第 2 件 → day_per");
+  ok(g3.ok && g3.delta === 2 && g3.second === true, "同一只当天第 2 件 → 折半 +2");
+  // 同一只当天第 3 件 → 超单只上限（=2）
+  const g3b = S.giveGift(gifts, r, "ware_cup", { dayKey: "2026-10-03" });
+  ok(!g3b.ok && g3b.reason === "day_per", "同一只当天第 3 件 → day_per（单只上限=2）");
 
-  // 次日可送：换一件（sound vs cloth 未命中）→ +4
-  const g4 = S.giveGift(gifts, r, "sound_bell", { dayKey: "2026-10-04" });
-  ok(g4.ok && g4.delta === 4 && g4.hit === false, "未命中 → +4");
+  // 次日：单只计数归零 → 首件不打折
+  const g4 = S.giveGift(gifts, r, "ware_cup", { dayKey: "2026-10-04" });
+  ok(g4.ok && g4.delta === 4 && g4.hit === false && g4.second === false, "次日首件（未命中）→ +4（不打折）");
 
-  // 全局当日上限（≤2）
+  // 全局当日上限（≤2）—— 由外部传入「当前已用件数」（giveGift 不自读全局）
   const r2 = { bond: 200, look: { pers: "cool" } };   // cool → plain → ware（命中）
   const g5 = S.giveGift(gifts, r2, "ware_cup", { dayKey: "2026-10-06", globalGiven: 2 });
   ok(!g5.ok && g5.reason === "day_global" && gifts.ware_cup === 2, "全局当日已满 → day_global 且不扣物");
+  const g5b = S.giveGift(gifts, r2, "ware_cup", { dayKey: "2026-10-06", globalGiven: 1 });
+  ok(g5b.ok && g5b.delta === 6, "全局未满（1/2）→ 命中 +6");
 
-  // 无库存
-  const g6 = S.giveGift({}, r2, "ware_cup", { dayKey: "2026-10-06", globalGiven: 0 });
+  // 无库存（新 rec + 空库存）
+  const g6 = S.giveGift({}, { bond: 200, look: { pers: "cool" } }, "ware_cup", { dayKey: "2026-10-06", globalGiven: 0 });
   ok(!g6.ok && g6.reason === "no_stock", "无库存 → no_stock");
 
   // 资格锁：bond < 30
@@ -122,18 +134,29 @@ section("3. giveGift（+4/+6 · 判重 · 日限 · 资格 · 库存 · 幂等�
   const g9 = S.giveGift({ ghost: 1 }, { bond: 90 }, "ghost", { dayKey: "2026-10-07" });
   ok(!g9.ok && g9.reason === "no_gift", "未知礼物 → no_gift");
 
-  // 幂等 / 可重入：连续同参两次，第二次 no-op
+  // 幂等 / 可重入：连续同参两次，第二次被 dup 拦（不重复扣物/加分）
   const gifts9 = { odd_glass: 2 }, r9 = { bond: 55, look: { pers: "mystery" } };   // mystery → odd → odd（命中）
   const a1 = S.giveGift(gifts9, r9, "odd_glass", { dayKey: "2026-10-08" });
   const a2 = S.giveGift(gifts9, r9, "odd_glass", { dayKey: "2026-10-08" });
-  ok(a1.ok && a1.delta === 6 && !a2.ok && gifts9.odd_glass === 1 && r9.giftTotal === 1, "幂等：第二次不重复扣物/加分");
+  ok(a1.ok && a1.delta === 6 && !a2.ok && a2.reason === "dup" && gifts9.odd_glass === 1 && r9.giftTotal === 1, "幂等：第二次不重复扣物/加分");
 
-  // 库存耗尽（正好 1 件）
-  const giftsB = { tough_rope: 1 }, rB = { bond: 55, look: { pers: "wild" } };
+  // 库存耗尽（各 1 件）
+  const giftsB = { tough_rope: 1, tough_whet: 1 }, rB = { bond: 55, look: { pers: "wild" } };
   const c1 = S.giveGift(giftsB, rB, "tough_rope", { dayKey: "2026-10-10" });
   const c2 = S.giveGift(giftsB, rB, "tough_whet", { dayKey: "2026-10-11" });
   ok(c1.ok && c1.delta === 6 && giftsB.tough_rope === 0, "命中 +6，库存归零");
-  ok(!c2.ok && c2.reason === "no_stock", "耗尽后再送同类 → no_stock");
+  ok(c2.ok && c2.delta === 6 && giftsB.tough_whet === 0, "换日换件 → 仍 +6（单只上限按天重置）");
+  const c3 = S.giveGift(giftsB, rB, "tough_whet", { dayKey: "2026-10-12" });
+  ok(!c3.ok && c3.reason === "dup", "已送过的再送 → dup（终身 1 次）");
+
+  // v165d：harmed 期间获取 ×0.5（默认启用）
+  const rh = { bond: 200, look: { pers: "cool" }, harmed: true };
+  const gh = S.giveGift({ ware_cup: 1 }, rh, "ware_cup", { dayKey: "2026-10-12" });
+  ok(gh.ok && gh.delta === 3, "带伤命中 +6 → ×0.5 = +3");
+  // 可用 opts.harmSlow=false 关掉（留开关）
+  const rh2 = { bond: 200, look: { pers: "cool" }, harmed: true };
+  const gh2 = S.giveGift({ ware_cup: 1 }, rh2, "ware_cup", { dayKey: "2026-10-12", harmSlow: false });
+  ok(gh2.ok && gh2.delta === 6, "opts.harmSlow=false → 带伤仍 +6（开关可回退）");
 }
 
 /* ============ 4. 新字段默认值 / 心迹 / harmed ============ */
@@ -142,13 +165,15 @@ section("4. 新字段默认值 · 心迹轨 · harmed 读取");
   const { S } = newSpirits();
   const store = S.load();
   const rec = S.ensureIn(store, "x1");
-  const need = ["giftLog", "giftDay", "giftTotal", "heart", "heartAt", "heartLog",
-    "loveLine", "lovecall", "lovecallOn", "nickCall", "trinket", "bondLvSeen", "harmed", "harmCause"];
+  const need = ["giftLog", "giftDay", "giftDayN", "giftTotal", "careDay", "careKinds",
+    "heart", "heartAt", "heartLog", "loveLine", "lovecall", "lovecallOn", "nickCall", "trinket",
+    "bondLvSeen", "harmed", "harmCause"];
   need.forEach((k) => ok(rec[k] !== undefined, "默认字段存在：" + k));
   ok(rec.giftLog && typeof rec.giftLog === "object" && Object.keys(rec.giftLog).length === 0, "giftLog 默认 {}");
+  ok(rec.careKinds && typeof rec.careKinds === "object" && Object.keys(rec.careKinds).length === 0, "careKinds 默认 {}");
   ok(rec.heartLog && typeof rec.heartLog === "object", "heartLog 默认 {}");
-  ok(rec.heart === 0 && rec.loveLine === false && rec.harmed === false && rec.bondLvSeen === 1, "标量默认 heart=0/loveLine=false/harmed=false/bondLvSeen=1");
-  ok(rec.giftDay === "" && rec.lovecall === "" && rec.harmCause === "", "字符串默认空串");
+  ok(rec.heart === 0 && rec.loveLine === false && rec.harmed === false && rec.bondLvSeen === 1 && rec.giftDayN === 0, "标量默认 heart=0/loveLine=false/harmed=false/bondLvSeen=1/giftDayN=0");
+  ok(rec.giftDay === "" && rec.careDay === "" && rec.lovecall === "" && rec.harmCause === "", "字符串默认空串");
 
   // 心迹轨
   ok(S.heartLevel(0).lv1 === 1 && S.heartLevel(40).lv1 === 2 && S.heartLevel(300).atMax === true, "heartLevel 里程碑 0/40/…/300");
@@ -178,7 +203,7 @@ section("5. 旧档 6 档数据读入：不报错 + 行为确定");
   ok(S.bondLevel(60).lv1 === 4 && S.bondLevel(60).name === "同室", "旧档 bond=60 现属档4「同室」（跳档，但确定）");
   ok(S.callFor(rec) === "你", "旧档 bond=60 称呼 = 你（非旧「主人」）");
   let threw = false;
-  try { S.callFor(rec); S.giftPrefOf(rec); S.nurtureOf(rec); S.giveGift({}, rec, "cloth_pa", {}); S.heartLevel(rec.heart); S.harmedOf(rec); }
+  try { S.callFor(rec); S.giftPrefOf(rec); S.nurtureOf(rec); S.giveGift({}, rec, "cloth_pa", {}); S.heartLevel(rec.heart); S.harmedOf(rec); S.careAct(rec, "clean", {}); }
   catch (e) { threw = true; }
   ok(!threw, "旧档下全部新函数不抛异常");
 }
@@ -189,12 +214,13 @@ section("6. marks 不受影响（本系统字段零进 marks；prune 不裁礼�
   const { S } = newSpirits();
   const r = { bond: 30, look: { pers: "gentle" }, marks: { c1_a: "2026-01-01" } };
   S.giveGift({ cloth_pa: 1 }, r, "cloth_pa", { dayKey: "2026-10-03" });
-  ok(Object.keys(r.marks).length === 1 && r.marks.c1_a === "2026-01-01", "giveGift 零进 rec.marks");
-  const o = { s1: { giftLog: { a: "2026-01-01" }, giftTotal: 2, heart: 10, heartLog: { m: "2026-01-01" },
+  if (typeof S.careAct === "function") S.careAct(r, "clean", { dayKey: "2026-10-03" });
+  ok(Object.keys(r.marks).length === 1 && r.marks.c1_a === "2026-01-01", "giveGift/careAct 零进 rec.marks");
+  const o = { s1: { giftLog: { a: "2026-01-01" }, giftDayN: 1, giftTotal: 2, careKinds: { clean: "2026-01-01" }, heart: 10, heartLog: { m: "2026-01-01" },
     marks: { c1: "1", c2: "2", c3: "3", c4: "4", c5: "5", c6: "6" } } };
   S.pruneForQuota(o);
-  ok(Object.keys(o.s1.giftLog).length === 1 && o.s1.giftTotal === 2 && o.s1.heart === 10 && Object.keys(o.s1.heartLog).length === 1,
-    "pruneForQuota 不裁礼物/心意字段");
+  ok(Object.keys(o.s1.giftLog).length === 1 && o.s1.giftTotal === 2 && o.s1.heart === 10 && Object.keys(o.s1.heartLog).length === 1 && Object.keys(o.s1.careKinds).length === 1,
+    "pruneForQuota 不裁礼物/心意/照料字段");
   ok(Object.keys(o.s1.marks).length <= 5, "pruneForQuota 仍按旧规则裁 marks（≤5）");
 }
 
@@ -232,6 +258,108 @@ section("8. GIFT_CATALOG 正式物名 + desc（v165e §13.3）");
   const it = S.giftListOf({ cloth_pa: 2 })[0];
   ok(it && it.name === "一方旧帕" && it.desc && it.cls === "cloth", "giftListOf 带 name/desc/cls");
   ok(S.giftClsOf("cloth_pa") === "cloth" && S.giftClsOf("sound_bell") === "sound" && S.giftClsOf("human_tea") === "human", "key→cls 不变");
+}
+
+/* ============ 9. 照料三式 careAct（v165d） ============ */
+section("9. 照料三式 careAct（擦净/静坐/理线 · 各 1 次/日 · +2/次 · 合计 ≤+6 · harmed×0.5）");
+{
+  const { S } = newSpirits();
+  ok(Array.isArray(S.CARE_ACTS) && S.CARE_ACTS.length === 3, "CARE_ACTS 三式");
+  if (typeof S.careAct === "function") {
+    ok(S.CARE_ACTS.map((a) => a.name).join("") === "擦净静坐理线", "三式名为 擦净/静坐/理线");
+    const r = { bond: 30 };
+    const a = S.careAct(r, "clean", { dayKey: "2026-10-03" });
+    ok(a.ok && a.delta === 2 && r.bond === 32, "擦净 +2");
+    ok(!S.careAct(r, "clean", { dayKey: "2026-10-03" }).ok, "同一式当日重复 → 拦");
+    S.careAct(r, "sit", { dayKey: "2026-10-03" });
+    S.careAct(r, "thread", { dayKey: "2026-10-03" });
+    ok(r.bond === 36 && S.careDoneOf(r, "2026-10-03") === 3, "三式做完 +6（合计封顶，今日 3/3）");
+    ok(!S.careAct(r, "clean", { dayKey: "2026-10-03" }).ok, "第 4 次 → 拦（day_per）");
+    const b = S.careAct(r, "clean", { dayKey: "2026-10-04" });
+    ok(b.ok && r.bond === 38, "次日重置 → 可再做");
+    ok(!S.careAct(r, "nope", {}).ok, "未知照料 → no_act 不生效");
+    // 带伤 ×0.5
+    const rh = { bond: 30, harmed: true };
+    const ah = S.careAct(rh, "clean", { dayKey: "2026-10-03" });
+    ok(ah.ok && ah.delta === 1 && rh.bond === 31, "带伤照料 +2 → ×0.5 = +1");
+    // 仅 2 式时不受 day_max 影响（合计尚未到 6 之前不会被 max 拦）
+    const rc = { bond: 0 };
+    S.careAct(rc, "clean", { dayKey: "2026-10-05" });
+    S.careAct(rc, "sit", { dayKey: "2026-10-05" });
+    ok(rc.bond === 4 && S.careDoneOf(rc, "2026-10-05") === 2, "两式 = +4（未到上限）");
+  } else {
+    ok(false, "careAct 未导出（旧版源码）");
+  }
+}
+
+/* ============ 10. 心迹档位名 + 反应台词（占位）+ 防物化红线 ============ */
+section("10. 心迹档位名 + 送礼反应台词（占位）+ 防物化红线");
+{
+  const { S } = newSpirits();
+  ok(Array.isArray(S.HEART_LV_NAMES) && S.HEART_LV_NAMES.length === 5, "HEART_LV_NAMES 五档");
+  ok(S.heartLevel(0).name === "未起头" && S.heartLevel(40).name === "微澜" && S.heartLevel(100).name === "动心" && S.heartLevel(190).name === "倾心" && S.heartLevel(300).name === "相许",
+    "heartLevel 档名 = 未起头/微澜/动心/倾心/相许");
+  if (typeof S.giftReactionOf === "function") {
+    ok(S.giftReactionOf({ look: { pers: "cool" } }, true) === "……还行。", "cool 命中 = 三字内短句");
+    const hi = S.giftReactionOf({ look: { pers: "gentle" } }, true), mi = S.giftReactionOf({ look: { pers: "gentle" } }, false);
+    ok(hi && mi && hi !== mi, "命中/未命中反应不同");
+    ok(S.giftReactionOf({ look: { pers: "unknown_x" } }, true) === S.GIFT_REACTION_FALLBACK.hit, "未登记型 → 通用兜底");
+    ok(Object.keys(S.GIFT_REACTIONS).length >= 8, "反应台词覆盖 ≥8 型（每型命中/未命中各 1）");
+    ok(S.GIFT_COPY && S.GIFT_COPY.open === "递一件给它", "⛔ 按钮字面 = 「递一件给它」");
+    // 防物化红线：全部文案不得含「好感度」「送礼」主体句 / 物件化动作
+    const allTxt = Object.keys(S.GIFT_REACTIONS).map((k) => S.GIFT_REACTIONS[k].hit + S.GIFT_REACTIONS[k].miss).join("") +
+      Object.keys(S.GIFT_COPY).map((k) => S.GIFT_COPY[k]).join("");
+    ok(allTxt.indexOf("好感度") < 0 && allTxt.indexOf("送礼") < 0, "⛔ 文案无「好感度」「送礼」");
+    ok(!/手心|攥|摩挲|上手|投喂|占有/.test(allTxt), "⛔ 文案无物件化/占有类词");
+  } else {
+    ok(false, "giftReactionOf 未导出（旧版源码）");
+  }
+}
+
+/* ============ 11. 🔴 bondLv 1-based 口径 + 玩家级当日流水 ============ */
+section("11. 🔴 bondLv 1-based（resolveEnding 派生 = lv1；边界 4/5/6/7）+ 玩家级当日送礼流水");
+{
+  // 11a. resolveEnding 派生 bondLv 必须是 1-based（旧实现用 .lv 会小 1 档）
+  const { S, c } = newSpirits();
+  c.store.setItem("ww_spirits", JSON.stringify({
+    low:  { bond: 30,  flags: { stance: "DECIDE" } },   // 相熟 = lv1 3
+    mid:  { bond: 90,  flags: { stance: "DECIDE" } },   // 通意 = lv1 5
+    high: { bond: 140, flags: { stance: "DECIDE" } },   // 同心 = lv1 6
+    top:  { bond: 200, flags: { stance: "DECIDE" } },   // 相知 = lv1 7
+  }));
+  c.store.setItem("ww_story", JSON.stringify({ FORK_STANCE: "LET", KEY_CHOICES: 3, JOINT_PREP: "FULL", KEY_TOTAL: 3 }));
+  const res = S.resolveEnding();
+  const af = S.load();
+  ok(af.low.flags.bondLv === 3, "bond=30 → bondLv=3（1-based；旧 lv 会得 2）");
+  ok(af.mid.flags.bondLv === 5, "bond=90 → bondLv=5（1-based；旧 lv=4 会被误判 <SHIELD_MIN=5 而散）");
+  ok(af.high.flags.bondLv === 6, "bond=140 → bondLv=6");
+  ok(af.top.flags.bondLv === 7, "bond=200 → bondLv=7");
+  ok(af.mid.flags.scattered === false, "通意（=5）DECIDE → 不散（≥ SHIELD_MIN）");
+  ok(af.low.flags.scattered === true, "相熟（=3）DECIDE → 散");
+  ok(res.ending === "BE", "存在 DECIDE+低亲 → BE");
+
+  // 11b. 边界 4/5/6/7 直接喂纯函数（语义：<5 散；≥6 高亲）
+  const story = { FORK_STANCE: "LET", KEY_CHOICES: 3, JOINT_PREP: "FULL" };
+  ok(S.evaluateEnding(story, [{ stance: "DECIDE", bondLv: 4 }]) === "BE", "边界 4 → BE（<5 散）");
+  ok(S.evaluateEnding(story, [{ stance: "DECIDE", bondLv: 5 }]) !== "BE", "边界 5 → 非 BE（=SHIELD_MIN 不散）");
+  ok(S.evaluateEnding({ FORK_STANCE: "LET", KEY_CHOICES: 3, JOINT_PREP: "PARTIAL" }, [{ stance: "LET", bondLv: 6 }]) === "HE", "边界 6（同心）→ HE");
+  ok(S.evaluateEnding({ FORK_STANCE: "LET", KEY_CHOICES: 3, JOINT_PREP: "PARTIAL" }, [{ stance: "LET", bondLv: 5 }]) === "NE", "边界 5（通意）未达 HE_BOND=6 → NE");
+
+  // 11c. 玩家级当日送礼流水（全局 ≤2 计数）
+  if (typeof S.giftGivenToday === "function") {
+    const { S: S2, c: c2 } = newSpirits();
+    try { c2.store.removeItem("ww_gift_log"); } catch (e) {}
+    ok(S2.giftGivenToday("2026-10-03") === 0, "初始今日已送 = 0");
+    S2.noteGiftGiven("s1", "cloth_pa", "2026-10-03");
+    S2.noteGiftGiven("s2", "sound_bell", "2026-10-03");
+    S2.noteGiftGiven("s1", "cloth_pa", "2026-10-03");   // 同 giftKey+spirit+天 → 去重
+    ok(S2.giftGivenToday("2026-10-03") === 2, "去重后同日 = 2（同一 giftKey+spirit+天 只算 1 次）");
+    ok(S2.giftGivenToday("2026-10-04") === 0, "换日归零");
+    S2.noteGiftGiven("s1", "ware_cup", "2026-10-03");   // 同只第 2 件（不同 key）另计
+    ok(S2.giftGivenToday("2026-10-03") === 3, "同只第 2 件（不同 key）另计 1");
+  } else {
+    ok(false, "giftGivenToday 未导出（旧版源码）");
+  }
 }
 
 console.log("\n----------------------------------------");

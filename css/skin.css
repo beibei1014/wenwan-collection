@@ -1279,3 +1279,69 @@ details.ft-item > .ft-text { padding: 0 10px 10px; }
 /* —— 隐藏 AI 助手浮窗（沁灵 / 夜话沉浸区，§D6） —— */
 body.route-spirit #aiFab,
 body.route-night #aiFab { display: none !important; }
+
+/* ============================================================
+   v165 · 心迹区（详情页：心迹条 / 羁绊条 / 照料三式 / 递一件给它）
+   口径：⛔ 正文不出现数值/字段名/「好感度」；数值只作辅助小字
+   ============================================================ */
+.xt-card .xt-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.xt-card .xt-label { flex: 0 0 auto; font-size: 12px; color: var(--text-2); width: 30px; }
+.xt-card .xt-track {
+  flex: 1 1 auto; height: 8px; border-radius: 999px; overflow: hidden;
+  background: color-mix(in srgb, var(--line) 65%, #fff);
+}
+.xt-card .xt-track i {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #efc9d6, #c98aa4); transition: width .5s var(--ease-out);
+}
+.xt-card .xt-track.bond i { background: linear-gradient(90deg, #e6c085, #c08a2e); }
+.xt-card .xt-lv { flex: 0 0 auto; font-size: 12px; font-weight: 700; color: #8a5a1e; min-width: 42px; text-align: right; }
+.xt-card .xt-hint { margin-top: 6px; font-size: 11px; line-height: 1.6; color: var(--text-2); }
+.xt-card .xt-sec {
+  display: flex; align-items: baseline; justify-content: space-between; margin-top: 14px;
+  font-size: 12px; font-weight: 700; color: var(--wood-2);
+}
+.xt-card .xt-sec-sub { font-weight: 400; font-size: 11px; color: var(--text-2); }
+.xt-card .xt-care { display: flex; gap: 8px; margin-top: 8px; }
+.xt-card .xt-care-btn {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 10px 6px; border-radius: 12px; cursor: pointer; font-family: inherit;
+  color: var(--wood-2); background: color-mix(in srgb, var(--card) 70%, #fff);
+  border: 1px solid var(--line); transition: transform .12s var(--ease-out);
+}
+.xt-card .xt-care-btn:active { transform: scale(.95); }
+.xt-card .xt-care-name { font-size: 13px; font-weight: 700; }
+.xt-card .xt-care-tag { font-size: 10.5px; color: #8a5a1e; }
+.xt-card .xt-care-btn.done { opacity: .5; cursor: default; }
+.xt-card .xt-care-btn.done:active { transform: none; }
+.xt-card .xt-sub { margin-top: 8px; font-size: 11px; line-height: 1.6; color: var(--text-2); }
+.xt-card .xt-gift-btn { width: 100%; margin-top: 12px; }
+.xt-card .xt-gift-ico { margin-right: 6px; }
+.xt-card .xt-gift-btn:disabled { opacity: .55; }
+
+/* 反馈弹层里的反应句（送出 / 照料） */
+.xt-quote {
+  margin: 4px 0 0; padding: 12px 14px; border-radius: 12px; font-size: 14px; line-height: 1.9;
+  color: var(--wood-2); text-align: center; background: color-mix(in srgb, var(--tape) 26%, #fff);
+  border: 1px solid color-mix(in srgb, var(--tape) 58%, var(--line) 42%);
+}
+.xt-quote-sub { margin-top: 10px; font-size: 12px; line-height: 1.7; text-align: center; color: var(--text-2); }
+.xt-quote-sub b { color: var(--wood); }
+
+/* 选礼抽屉 */
+.gd-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 6px; }
+.gd-item {
+  position: relative; display: flex; flex-direction: column; gap: 3px; text-align: left;
+  padding: 10px 10px 8px; border-radius: 12px; cursor: pointer; font-family: inherit;
+  color: var(--wood-2); background: color-mix(in srgb, var(--card) 70%, #fff);
+  border: 1px solid var(--line); transition: transform .12s var(--ease-out);
+}
+.gd-item:active { transform: scale(.97); }
+.gd-item.hit { border-color: #c08a2e; background: #fff8ec; }
+.gd-item.held, .gd-item:disabled { opacity: .5; cursor: default; }
+.gd-item.held:active, .gd-item:disabled:active { transform: none; }
+.gd-name { font-size: 13px; font-weight: 700; }
+.gd-cls { font-size: 10.5px; color: var(--text-2); }
+.gd-note { font-size: 10.5px; line-height: 1.5; color: #8a5a1e; }
+.gd-cnt { position: absolute; top: 8px; right: 10px; font-size: 11px; color: var(--text-2); }
+.gd-foot { margin-top: 12px; font-size: 11.5px; color: var(--text-2); text-align: center; }
