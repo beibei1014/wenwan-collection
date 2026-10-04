@@ -4578,6 +4578,8 @@
     }, () => renderSpiritDetailPage(id));
   }
   // v166：管理「CG」—— 进阶专属 CG + 主线 / 进阶相册里的全部 CG，逐个删
+  // v165-C：再补两类漏网的 —— 节令限定插画（rec.fests[date].cgUrl）。
+  //   （双人事件 CG 在房间页，见 openRoomCgManager。）
   function openSpiritCgManager(id) {
     const store = Spirits.load();
     const rec = Spirits.ensureIn(store, id);
@@ -4592,12 +4594,36 @@
         items.push({ kind: "cg", key: k, url: m.thumb || m.imgUrl, label: (k.indexOf("adv#") === 0 ? "进阶 CG" : "主线 CG") + " " + (m.title || k) });
       }
     });
+    // v165-C：节令限定插画
+    const fests = rec.fests || {};
+    Object.keys(fests).forEach((dk) => {
+      const fx = fests[dk];
+      if (fx && fx.cgUrl) items.push({ kind: "fest", key: dk, url: fx.cgUrl,
+        label: "节令 CG · " + (fx.emoji || "") + (fx.name || dk) + " " + (fx.date || "") });
+    });
     if (!items.length) { toast("还没有可管理的 CG"); return; }
     openDelManager("🗑 管理 CG", items, (it2) => {
       if (it2.kind === "adv") { rec.cgUrl = ""; rec.cgKey = ""; rec.cgStage = 0; }
+      else if (it2.kind === "fest") { if (rec.fests && rec.fests[it2.key]) { rec.fests[it2.key].cgUrl = ""; rec.fests[it2.key].cgAt = 0; } }
       else { delete rec.cgs[it2.key]; }
       Spirits.save(store);
     }, () => renderSpiritDetailPage(id));
+  }
+  // v165-C：管理「双人事件 CG」—— 房间内每段剧情的插画逐个删（同款删除弹层）
+  function openRoomCgManager(roomId) {
+    const store = Spirits.load();
+    const items = [];
+    Rooms.storiesOfRoom(roomId).forEach((s) => {
+      if (!(s.story && s.story.img)) return;
+      const nm = (s.pair || []).map((pid2) => { const it = spiritItemById(pid2); return it ? nameOf(it, store) : pid2; }).join(" × ");
+      items.push({ kind: "story", key: s.key, level: s.story.level, url: s.story.img,
+        label: "双人 CG · 第 " + ((s.story.level || 0) + 1) + " 段" + (nm ? " · " + nm : "") });
+    });
+    if (!items.length) { toast("这个房间还没有可管理的双人 CG"); return; }
+    openDelManager("🗑 管理双人 CG", items, (it2) => {
+      const p = String(it2.key).split("|");
+      Rooms.setStoryImage(p[0], p[1], it2.level, "");
+    }, () => renderRoomPage(roomId));
   }
   // v166：被设为「只当手串」的沁灵，详情页显示安全页（可重新开沁）
   function renderSpiritOffPage(id) {
@@ -6341,7 +6367,8 @@
       h += '<div class="sd-card"><div class="room-none">至少要有 2 只沁灵，才会开始攒契合度。</div></div>';
     }
 
-    h += '<div class="sd-card"><div class="sd-card-title">📖 剧情（' + stories.length + "）</div>";
+    h += '<div class="sd-card"><div class="sd-card-title">📖 剧情（' + stories.length + "）" +
+      (stories.some((s) => s.story && s.story.img) ? '<button class="link-btn" id="rmManageCg" style="float:right">🗑 管理双人 CG</button>' : "") + "</div>";
     if (!stories.length) h += '<div class="room-none">它们还没熟到会讲故事的程度。</div>';
     else h += stories.map((s) => {
       const a = items.find((x) => x.id === s.pair[0]), b = items.find((x) => x.id === s.pair[1]);
@@ -6360,6 +6387,7 @@
     const eb = $("#rmEdit"); if (eb) eb.onclick = () => showRoomEditModal(room);
     const ab = $("#rmAdd"); if (ab) ab.onclick = () => showSpiritPicker(room.id);
     const bk = $("#rmBack"); if (bk) bk.onclick = () => location.hash = "#/spirit";
+    const rmc = $("#rmManageCg"); if (rmc) rmc.onclick = () => openRoomCgManager(roomId);
     view.querySelectorAll("[data-sp]").forEach((el) => el.onclick = () => { location.hash = "#/spirit/" + encodeURIComponent(el.dataset.sp); });
     view.querySelectorAll("[data-story]").forEach((el) => el.onclick = () => {
       showStoryModal(el.dataset.story, +el.dataset.level);
