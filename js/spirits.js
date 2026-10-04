@@ -379,6 +379,9 @@
     const rec = store[id];
     if (rec.stage == null) rec.stage = 1;              // 老数据兼容：默认凝形
     if (!Array.isArray(rec.imgHistory)) rec.imgHistory = [];
+    if (!rec.exprs || typeof rec.exprs !== "object") rec.exprs = {};
+    // v166：把现有 base 立绘归并进 exprs.base（老档零成本迁移；表情切换条 base 永远有图）
+    if (rec.imgUrl && !rec.exprs.base) rec.exprs.base = { url: rec.imgUrl, face: rec.face || null, at: rec.imgAt || 0, frozen: !!rec.imgFrozen, stage: rec.imgStage || rec.stage || 1 };
     // 老记录（v110 之前开沁的）没有 gender：按**旧规则**（hash(串id+外观种子)）定下来，
     // 这样它已经画好的立绘和界面显示的人设不会打架；新沁灵一律走 born() 的 3:1 随机
     if (rec.gender !== "boy" && rec.gender !== "girl") rec.gender = legacyGender(id, rec.appearanceSeed || 0);
@@ -944,6 +947,35 @@
     "慵懒": "a lazy relaxed expression", "害羞": "a shy bashful look", "英气": "a spirited dashing look",
     "忧郁": "a melancholy look", "顽皮": "a playful smirk-free grin", "认真": "a focused serious look",
   };
+  // v166：立绘表情变体（base = 现有中立立绘；其余为可懒出的表情立绘）
+  //   集合与 _SMILE_ZH_EN 对齐；en 是拼进 promptFor 的「神态锚点」（base 不加，保持原中立立绘）
+  const EXPR_LIST = [
+    { key: "base",    zh: "日常", en: "" },
+    { key: "tender",  zh: "温柔", en: "a tender soft smile, gentle warm expression, relaxed posture" },
+    { key: "shy",     zh: "害羞", en: "a shy bashful look, slightly lowered eyes, flustered cute expression" },
+    { key: "dashing", zh: "英气", en: "a spirited dashing look, bright confident eyes, upright posture" },
+    { key: "aloof",   zh: "冷峻", en: "a cool stern expression, calm distant gaze, composed face" },
+    { key: "lazy",    zh: "慵懒", en: "a lazy relaxed expression, sleepy half-lidded eyes, leisurely mood" },
+    { key: "laugh",   zh: "大笑", en: "a hearty laugh, bright smiling eyes, joyful open expression" },
+  ];
+  const EXPR_BY_KEY = {};
+  EXPR_LIST.forEach((e) => { EXPR_BY_KEY[e.key] = e; });
+  // exprKey → seedOf variant 偏移（与 base/换形象 0 拉开，避免撞种子；但同串同源保证「只是表情不同」）
+  const EXPR_SALT_BASE = 100;
+  // v166：对话按情绪自动选已缓存表情 —— 扫描台词文本映射到 exprKey（只在已缓存时才用，不触发出图）
+  const _EXPR_TEXT_MAP = [
+    { key: "laugh",   re: /(哈哈|嘻嘻|嘿嘿|笑|乐|开心|高兴|好玩|有趣|逗|欢喜|雀跃)/ },
+    { key: "shy",     re: /(害羞|脸红|不好意思|赧|忸怩|悄悄|偷偷|窘|慌)/ },
+    { key: "aloof",   re: /(冷|淡|疏|漠|无谓|不屑|傲|凉)/ },
+    { key: "dashing", re: /(英气|凛|傲然|挺身|堂堂|豪气|侠|凛然)/ },
+    { key: "lazy",    re: /(懒|困|倦|乏|慵|散|闲)/ },
+    { key: "tender",  re: /(温柔|柔软|怜|惜|疼|乖|暖|柔声|轻声)/ },
+  ];
+  function exprForText(text) {
+    const t = String(text || "");
+    for (let i = 0; i < _EXPR_TEXT_MAP.length; i++) if (_EXPR_TEXT_MAP[i].re.test(t)) return _EXPR_TEXT_MAP[i].key;
+    return "";
+  }
   // v164：性别词（用户写「少年郎」以前读不到，出图性别只能靠随机）
   const _BOY_WORDS = ["少年郎", "少年", "男孩", "男童", "小哥", "少年人", "男儿", "公子", "郎君"];
   const _GIRL_WORDS = ["姑娘", "少女", "女孩", "女童", "妹子", "女子", "少女郎", "小姐", "闺秀"];
@@ -1979,6 +2011,11 @@
     if (bHard) bits.push(bHard);
     if (item.softness === "soft") bits.push(isChar ? "round soft cheeks, relaxed happy sleepy eyes" : "round blob-like silhouette, soft chewy texture");
     if (item.softness === "slight") bits.push(isChar ? "calm gentle eyes, neat tidy look" : "slightly squishy but mostly smooth silhouette");
+    // v166：立绘表情变体 —— 在 prompt 末权重高处追加神态锚点（base 不加，保持现有中立立绘）
+    if (opts && opts.expr && EXPR_BY_KEY[opts.expr] && opts.expr !== "base") {
+      const _exa = EXPR_BY_KEY[opts.expr].en;
+      if (_exa) bits.push(_exa);
+    }
     // v164c：风格预设 `st` 里全是成人/少年措辞（big expressive eyes / richly detailed outfit / full body），
     //   它是 prompt 结尾权重最高的一段，却对"几头身"零约束 —— 这正是凝形被画成少年的第二个元凶。
     //   所以**比例锁定块必须压在 `st` 之后、占据最末尾**（briefHard 只管服饰/发色/持物/神态，从不谈比例，两者不冲突）。
@@ -2007,12 +2044,16 @@
     const cfg = getImageCfg();
     const info = providerInfo(cfg);
     const ap = appearanceOf(item, (opts && opts.appearanceSeed) || 0, opts && opts.gender);
-    if (info.keyless) return { url: pollinationsUrl(item, variant, styleKey, stage, ap), kind: "url" };
+    // v166：表情变体 → 派生独立稳定种子（base/换形象用 variant；表情用 EXPR_SALT_BASE+idx），保证「同一只只是表情不同」
+    const _exprKey = (opts && opts.exprKey) || "";
+    const _exprSalt = (_exprKey && EXPR_BY_KEY[_exprKey]) ? (EXPR_SALT_BASE + EXPR_LIST.indexOf(EXPR_BY_KEY[_exprKey])) : (variant || 0);
+    const _promptOpts = Object.assign({}, opts, { expr: _exprKey });
+    if (info.keyless) return { url: pollinationsUrl(item, _exprSalt, styleKey, stage, ap), kind: "url" };
     if (!info.key) throw new Error("还没填 API Key");
     if (!info.endpoint) throw new Error("还没填接口地址");
-    const prompt = promptFor(item, styleKey || cfg.style || DEFAULT_STYLE, stage, ap);
+    const prompt = promptFor(item, styleKey || cfg.style || DEFAULT_STYLE, stage, ap, null, _promptOpts);
     const size = cfg.size || DEFAULT_SIZE;
-    const seed = seedOf(item.id, 0);   // 同一尊沁灵用固定种子 → 各形态看起来是同一个"人"在长大
+    const seed = seedOf(item.id, _exprSalt);   // 同一尊沁灵用固定种子 → 各形态看起来是同一个"人"在长大
     // 图生图参考：拿上一形态的图当参考，是"同一个角色"最可靠的做法。
     // 方舟（Seedream）确实支持；别的家先带上试一次，不支持就自动去掉并**按这家**记住。
     const pk = info.provider;
@@ -3794,7 +3835,7 @@
     guoqing: "National Day, red banners and clear autumn sunshine, peaceful festive atmosphere",
   };
   // 节令限定 CG 的 prompt（横版；点了「画一张」才调用）
-  function festCgPrompt(item, styleKey, stage, appearance, look, fest) {
+  function festCgPrompt(item, styleKey, stage, appearance, look, fest, sceneText) {
     const lkRaw = look || lookOf(item, null);
     const _ab = applyBrief(lkRaw, appearance || lkRaw.ap || appearanceOf(item, 0));   // v164：出图单优先
     const lk = _ab.lk;
@@ -3803,13 +3844,19 @@
     const st = styleOf(item, key).text;
     const scene = FEST_SCENE[(fest && fest.key) || ""] || "a traditional Chinese festive scene";
     const stageObj = stageDef(stage);
-    return CG_STYLE + ", " + appearancePrompt(ap) + ", with " + lk.hairEn + " hair and " + lk.outfitEn + " themed outfit" +
-      (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") + lookExtra(lk) + ", " +
-      stageObj.look + ", solo single character only, exactly one figure in the whole image, " +
-      "scene: " + scene + ", the character is celebrating this festival alone in this scene, " +
-      "a beautiful warm key visual for this festival moment, the wide scenery fills both sides of the character, " +
-      "no other characters, no text, no letters" + (lookHard(lk) ? (", " + lookHard(lk)) : "") +
-      (briefHard(lk) ? (", " + briefHard(lk)) : "") + ", " + st + (stageObj.prop ? (", " + stageObj.prop) : "");
+    const head = CG_STYLE + ", " + appearancePrompt(ap) + ", with " + lk.hairEn + " hair and " + lk.outfitEn + " themed outfit"
+      + (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") + lookExtra(lk) + ", " +
+      stageObj.look
+      + (lookHard(lk) ? (", " + lookHard(lk)) : "")
+      + (briefHard(lk) ? (", " + briefHard(lk)) : "")
+      + ", " + st;
+    const tail = sceneText
+      ? (", scene: " + scene + ", the same character keeps hair color, eye color, outfit and accessories consistent, full body visible from head to toe, WIDE LANDSCAPE HORIZONTAL COMPOSITION, 16:9 cinematic framing, wide scenery on both sides, generous environment around the character, not a portrait, not a vertical poster")
+      : (", solo single character only, exactly one figure in the whole image, " +
+         "scene: " + scene + ", the character is celebrating this festival alone in this scene, " +
+         "a beautiful warm key visual for this festival moment, the wide scenery fills both sides of the character, " +
+         "no other characters, no text, no letters");
+    return head + tail + (stageObj.prop ? (", " + stageObj.prop) : "") + ", " + CONSISTENCY + ", " + BG_NEG;
   }
   // 今天是不是节令；是、且没记过 → 写一条（返回新记录，否则 null）
   function ensureFest(item, rec, ctx) {
@@ -7241,7 +7288,7 @@
     "a deep bond, they understand each other without words, breathtaking magical light, petals or light particles in the air",
   ];
   // 单只沁灵的 CG（蜕形 / 化形用）
-  function promptForCg(item, styleKey, stage, appearance, look) {
+  function promptForCg(item, styleKey, stage, appearance, look, sceneText) {
     const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
     const st = styleOf(item, key).text;
     const lkRaw = look || lookOf(item, null);
@@ -7251,17 +7298,35 @@
     const color = lk.hairEn;
     const stageObj = stageDef(stage);
     const stageLook = stageObj.look;
-    return CG_STYLE + ", " + appearancePrompt(ap) + ", with " + color + " hair and " + lk.outfitEn + " themed outfit" +
-      (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") + lookExtra(lk) + ", " +
-      stageLook + ", solo single character only, exactly one figure in the whole image, " +
-      "a breathtaking key visual for a big moment: the character alone in a beautiful scene that matches its " +
-      "personality, dramatic pose and camera angle, full body visible from head to toe, " +
-      "the horizontal frame filled with the wide scenery of the scene (sky / room / distant view) on both sides of the character, " +
-      "light particles and elegant atmosphere, no other characters" + (lookHard(lk) ? (", " + lookHard(lk)) : "") +
-      (briefHard(lk) ? (", " + briefHard(lk)) : "") + ", " + st + (stageObj.prop ? (", " + stageObj.prop) : "");
+    const head = CG_STYLE + ", " + appearancePrompt(ap) + ", with " + color + " hair and " + lk.outfitEn + " themed outfit"
+      + (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") + lookExtra(lk) + ", " +
+      stageLook
+      + (lookHard(lk) ? (", " + lookHard(lk)) : "")
+      + (briefHard(lk) ? (", " + briefHard(lk)) : "")
+      + ", " + st;
+    const scene = cgSceneClause(sceneText);
+    const tail = scene
+      ? scene
+      : (", solo single character only, exactly one figure in the whole image, " +
+         "a breathtaking key visual for a big moment: the character alone in a beautiful scene that matches its " +
+         "personality, dramatic pose and camera angle, full body visible from head to toe, " +
+         "the horizontal frame filled with the wide scenery of the scene (sky / room / distant view) on both sides of the character, " +
+         "light particles and elegant atmosphere, no other characters");
+    return head + tail + ", " + CONSISTENCY + ", " + BG_NEG;
+  }
+
+  // v166-CG：场景优先辅助 —— 有 sceneText（用户确认后的「中文画面描述 / 提取的英文关键词」）时，
+  //   它就是**主场景描述**，替换掉原来那段「generic beautiful scene / dramatic pose」模板；
+  //   只保留「单人 / 全身 / 横版 / 非肖像」这类 CG 格式约束。无 sceneText 回落空串（走通用模板）。
+  function cgSceneClause(sceneText) {
+    if (!sceneText) return "";
+    return ", scene: " + sceneText +
+      ", the same character keeps hair color, eye color, outfit and accessories consistent, " +
+      "full body visible from head to toe, WIDE LANDSCAPE HORIZONTAL COMPOSITION, 16:9 cinematic framing, " +
+      "wide scenery on both sides, generous environment around the character, not a portrait, not a vertical poster";
   }
   // 两只沁灵的事件 CG（房间剧情用）
-  function storyCgPrompt(a, b, level, roomName) {
+  function storyCgPrompt(a, b, level, roomName, sceneText) {
     // v127：两人的发色/特征也走「设定向导」的结果（用户确认过的优先）
     const lkA = a.look || lookOf(a.item, a.rec || null);
     const lkB = b.look || lookOf(b.item, b.rec || null);
@@ -7280,7 +7345,7 @@
       "landscape wide shot of the whole room, the two of them standing or sitting side by side with the room around them, " +
       "keep exactly two characters in the image, no extra people, no duplicates" +
       (lookHard(lkA) ? (", " + nmA + ": " + lookHard(lkA)) : "") +
-      (lookHard(lkB) ? (", " + nmB + ": " + lookHard(lkB)) : "");
+      (lookHard(lkB) ? (", " + nmB + ": " + lookHard(lkB)) : "") + ", " + CONSISTENCY + ", " + BG_NEG;
   }
 
   /* ============================================================
@@ -7393,15 +7458,12 @@
     const sd = stageDef(stage);
     const prop = sd.prop ? (", " + sd.prop) : "";
     let base;
-    if (x.kind === "pair") base = storyCgPrompt(x.a, x.b, x.level, x.roomName);
-    else if (x.kind === "fest") base = festCgPrompt(x.item, null, stage, x.appearance, x.look, x.fest);
-    else base = promptForCg(x.item, null, stage, x.appearance, x.look);
-    let head = base;
-    if (prop && head.length > prop.length && head.slice(-prop.length) === prop) {
-      head = head.slice(0, head.length - prop.length);   // 先把比例锁定块摘下来
-    }
-    const mid = (scene ? (", " + scene) : "") + ", " + CONSISTENCY + ", " + BG_NEG;
-    return head + mid + prop;
+    if (x.kind === "pair") base = storyCgPrompt(x.a, x.b, x.level, x.roomName, scene);
+    else if (x.kind === "fest") base = festCgPrompt(x.item, null, stage, x.appearance, x.look, x.fest, scene);
+    else base = promptForCg(x.item, null, stage, x.appearance, x.look, scene);
+    // base 已以「brief/关键词」为主场景 + 外观 + 阶段 + CONSISTENCY + BG_NEG；末尾只补比例锁定块（PROPORTION LOCK 永远压最后）。
+    // ⛔ v166-CG 修复：不再把 brief 当低权重尾巴追加 —— 它现在是主场景描述。
+    return base + prop;
   }
 
   // 用**任意 prompt**出图（剧情 CG 用；沁灵主图仍走 generateImage）
@@ -7676,6 +7738,8 @@
     COLOR_ZH, HAIR_ZH, EYES_ZH, ACC_ZH, VIBE_ZH,
     TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText, listModels,
     promptFor, pollinationsUrl, legacyPollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
+    // v166：立绘表情变体（base + 6 表情；详情页切换 / 对话按情绪自动选已缓存表情）
+    EXPR_LIST, EXPR_BY_KEY, EXPR_SALT_BASE, exprForText,
     localPersona, persona, chat, letter, localChat, localLetter,
     todayKey, load, save, ensureIn, recordEvent, allEvents, drainEventPops, extractLookBrief, validateAnatomy, renderConfirmCard,
     // v164：出图单（用户确认卡 → look.brief → 真进 prompt）

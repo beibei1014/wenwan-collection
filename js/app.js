@@ -4152,7 +4152,7 @@
           kind: "fest", item: item, stage: Number(r1.stage) || 1,
           appearance: Spirits.appearanceOf(item, r1.appearanceSeed || 0, r1.gender || ""),
           look: Spirits.lookOf(item, r1), fest: (r1.fests && r1.fests[dk]) || null,
-          seedKey: "festcg|" + id + "|" + dk, variant: 0, ref: r1.imgUrl || "",
+          seedKey: "festcg|" + id + "|" + dk, variant: 0, ref: "",
         });
         const s2 = Spirits.load(); const r2 = Spirits.ensureIn(s2, id);
         r2.fests = r2.fests || {};
@@ -4933,7 +4933,7 @@
           kind: "stage", item: it, stage: stage,
           appearance: Spirits.appearanceOf(it, r1.appearanceSeed || 0, r1.gender || ""),
           look: Spirits.lookOf(it, r1),
-          seedKey: "cg|" + id + "|" + stage, variant: r1.variant || 0, ref: r1.imgUrl || "",
+          seedKey: "cg|" + id + "|" + stage, variant: r1.variant || 0, ref: "",
         });
         const s2 = Spirits.load(); const r2 = Spirits.ensureIn(s2, id);
         r2.cgUrl = out.url || ""; r2.cgAt = Date.now(); r2.cgStage = stage; r2.cgKey = cgKeyOf(r2);
@@ -6272,7 +6272,7 @@
           kind: "pair", a: spA, b: spB, level: level, roomName: room.name,
           stage: Math.max(Number((_rA && _rA.stage) || 1), Number((_rB && _rB.stage) || 1)),
           seedKey: Rooms.pairKey(parts[0], parts[1]) + "#cg" + level, variant: 0,
-          ref: ((_rA && _rA.imgUrl) || (_rB && _rB.imgUrl) || ""),
+          ref: "",
         });
         if (out.url) {
           Rooms.setStoryImage(parts[0], parts[1], level, out.url);
