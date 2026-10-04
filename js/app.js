@@ -2531,7 +2531,14 @@
   /* ---------- 🍡 沁灵（v94，v114 起标题就叫「沁灵」） ---------- */
   // 只有「已挂瓷 + 在库 + 文玩类」的串会开沁
   function spiritItems() {
-    return focusVisible(allItems).filter((i) => !i.gifted && i.playStatus === "done");
+    const st = Spirits.load();
+    return focusVisible(allItems).filter((i) => {
+      if (i.gifted) return false;
+      if (i.playStatus !== "done") return false;
+      const rec = st[i.id];            // v166：用户设「只当手串」的串不进沁灵列表 / 相册
+      if (rec && rec.spirit === false) return false;
+      return true;
+    });
   }
   // 沁灵形象：优先 AI 绘图（带缓存），失败/断网自动换成本地程序化小沁灵
   // extraStyle：缩略图的取景参数（见 analyzeFaceBox / spiritThumbHtml）
@@ -3326,63 +3333,62 @@
   }
 
   // 相册页：按沁灵分册，每只各算 N/8（不跨串求和）；格子按卷分组，未解锁防剧透
+  let _albumTab = "main";   // v166：CG 相册全局画廊当前 tab（main=主线 / adv=进阶）
   function renderAlbumPage() {
     topbarTitle.textContent = "CG 相册";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
-    const list = spiritItems();
     const store = Spirits.load();
-    if (!list.length) {
-      view.innerHTML = emptyCardHtml({ ill: "spirit", icon: "🖼", title: "还没有沁灵", sub: "挂瓷开沁后，主线走到关键处会留下 CG" });
+    const list = spiritItems();
+    // v166：全局画廊 —— 跨所有沁灵聚合 CG，顶部「主线 / 进阶」两个 tab 切换（不再按人头分组）
+    const mainCgs = [], advCgs = [];
+    list.forEach((it) => {
+      const rec = store[it.id] || {};
+      const name = spiritName(it, store);
+      Spirits.cgCollectedIds(rec).forEach((k) => {
+        const m = Spirits.cgMetaOf(rec, k);
+        if (m && m.hasImg) mainCgs.push({ ownerId: it.id, ownerName: name, id: k, meta: m });
+      });
+      Spirits.cgAdvIds(rec).forEach((k) => {
+        const m = Spirits.cgMetaOf(rec, k);
+        if (m && m.hasImg) advCgs.push({ ownerId: it.id, ownerName: name, id: k, meta: m });
+      });
+    });
+    const byAt = (a, b) => (Number(a.meta.at) || 0) - (Number(b.meta.at) || 0);
+    mainCgs.sort(byAt); advCgs.sort(byAt);
+    const cur = _albumTab === "adv" ? advCgs : mainCgs;
+
+    if (!mainCgs.length && !advCgs.length) {
+      view.innerHTML = emptyCardHtml({ ill: "spirit", icon: "🖼", title: "还没有 CG", sub: "沁灵走到关键处、或蜕形 / 化形时，会留下 CG" });
       bindSpiritImgFallback(view);
       return;
     }
-    let h = '<div class="album-head"><div class="album-head-n"><b>' + Spirits.cgCollectedCount(store[list[0].id] || {}) + '</b><span>/' + Spirits.CG_TOTAL + '</span></div>' +
+    let h = '<div class="album-head"><div class="album-head-n"><b>' + mainCgs.length + '</b><span> 张主线</span></div>' +
       '<div class="album-head-meta"><div class="album-head-title">CG 相册</div>' +
-      '<div class="album-head-sub">主线走到关键处，会留下一张</div></div></div>';
-    list.forEach((it) => {
-      const rec = store[it.id] || {};
-      // v165-M：⛔ 同上，不自动抬 rec.stage（已确认阶只由用户点按钮抬）
-      const ids = Spirits.cgCollectedIds(rec);
-      const ctx = { dayNo: Math.max(1, DB.daysWith(it)), plays: Number(it.playCount) || 0, idleDays: 0, members: 1 };
-      const states = Spirits.chapterState(rec, ctx, roomCountOf(rec));
-      h += '<div class="album-sec" data-vol="' + esc(it.id) + '">';
-      h += '<div class="album-sec-head"><span class="album-sec-name">' + esc(spiritName(it, store)) + '</span><small>' + ids.length + ' / ' + Spirits.CG_TOTAL + '</small></div>';
-      h += '<div class="album-grid">';
-      for (let i = 0; i < Spirits.CHAPTERS.length; i++) {
-        const cid = "CG-" + String(i + 1).padStart(2, "0");
-        const m = Spirits.cgMetaOf(rec, String(i));
-        const collected = !!(m && m.hasImg);
-        const unlocked = !!(states[i] && states[i].unlocked);
-        if (collected) {
-          h += '<button class="album-cell" data-cg="' + esc(m.thumb || "") + '">' +
-            (m.thumb ? '<img class="album-cell-img" src="' + esc(m.thumb) + '" alt="">' : '<span class="album-cell-need">已收集</span>') +
-            '<span class="album-cell-tag">' + String(i + 1).padStart(2, "0") + '</span></button>';
-        } else if (unlocked) {
-          h += '<div class="album-cell pending" data-cgid="' + cid + '"><span class="album-cell-need">读完这章即得</span></div>';
-        } else {
-          h += '<div class="album-cell locked" data-cgid="' + cid + '"><span class="album-cell-lock">🔒</span>' +
-            '<span class="album-cell-need">' + esc((states[i] && states[i].need) || "还没到时候") + '</span></div>';
-        }
-      }
-      // v166：进阶专属 CG（蜕形 / 化形，id 形如 adv#3）汇总进相册 —— 单列一个分区，不影响上面的主线 8 格进度
-      const advIds = Spirits.cgAdvIds(rec);
-      if (advIds.length) {
-        h += '<div class="album-adv"><div class="album-sec-head"><span class="album-sec-name">进阶专属 CG</span><small>' + advIds.length + " 张</small></div>";
-        h += '<div class="album-grid">';
-        advIds.forEach((k) => {
-          const m = Spirits.cgMetaOf(rec, k);
-          h += '<button class="album-cell" data-cg="' + esc((m && m.thumb) || "") + '" title="' + esc((m && m.caption) || "") + '">' +
-            ((m && m.thumb) ? '<img class="album-cell-img" src="' + esc(m.thumb) + '" alt="">' : '<span class="album-cell-need">已收集</span>') +
-            '<span class="album-cell-tag">' + esc((m && m.title) || "进阶") + "</span></button>";
-        });
-        h += "</div></div>";
-      }
-      h += "</div></div>";
-    });
+      '<div class="album-head-sub">每张沁灵最多 ' + Spirits.CG_TOTAL + ' 张主线 CG · 另有进阶专属 CG</div></div></div>';
+    // tab 切换
+    h += '<div style="display:flex;gap:8px;margin:12px 0">' +
+      '<button data-tab="main" style="flex:1;padding:10px 8px;border-radius:10px;border:1px solid var(--line,#e3d9c4);background:' + (_albumTab === "main" ? "var(--gold,#c9a24b)" : "transparent") + ';color:' + (_albumTab === "main" ? "#fff" : "var(--text,#3b3128)") + ';font-weight:600;font-size:14px">📜 主线 (' + mainCgs.length + ')</button>' +
+      '<button data-tab="adv" style="flex:1;padding:10px 8px;border-radius:10px;border:1px solid var(--line,#e3d9c4);background:' + (_albumTab === "adv" ? "var(--gold,#c9a24b)" : "transparent") + ';color:' + (_albumTab === "adv" ? "#fff" : "var(--text,#3b3128)") + ';font-weight:600;font-size:14px">✨ 进阶 (' + advCgs.length + ')</button>' +
+      '</div>';
+    if (!cur.length) {
+      h += '<div class="album-empty" style="padding:28px 12px;text-align:center;color:var(--text-2,#8a7f6d)">' +
+        (_albumTab === "adv" ? "还没有进阶专属 CG（蜕形 / 化形时生成）" : "主线 CG 还没收集，先去走剧情吧") + '</div>';
+    } else {
+      h += '<div class="album-grid album-grid-wide">';
+      cur.forEach((c) => {
+        const m = c.meta;
+        h += '<button class="album-cell" data-cg="' + esc(m.thumb || "") + '" title="' + esc((m && m.caption) || "") + '" style="position:relative">' +
+          (m.thumb ? '<img class="album-cell-img" src="' + esc(m.thumb) + '" alt="">' : '<span class="album-cell-need">已收集</span>') +
+          '<span class="album-cell-tag">' + esc(m.title || c.id) + '</span>' +
+          '<span class="album-cell-owner" style="position:absolute;left:6px;bottom:6px;right:6px;font-size:10px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6);text-align:left;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">' + esc(c.ownerName) + '</span></button>';
+      });
+      h += '</div>';
+    }
     h += '<button class="btn ghost" id="albumBack" style="width:100%;margin-top:14px">← 回到沁灵页</button>';
     view.innerHTML = h;
     bindSpiritImgFallback(view);
+    view.querySelectorAll(".album-tab").forEach((el) => el.onclick = () => { _albumTab = el.dataset.tab; renderAlbumPage(); });
     const bk = $("#albumBack"); if (bk) bk.onclick = () => location.hash = "#/spirit";
     view.querySelectorAll(".album-cell[data-cg]").forEach((el) => el.onclick = () => openSpiritViewer(el.dataset.cg || ""));
   }
