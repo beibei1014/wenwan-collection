@@ -7,7 +7,7 @@
  *   A 全库 0 命中（188 条原串全部消失）
  *   B 新串到位（每条 expect>0 的改后串出现次数 == expect）
  *   C 占位符一致性（old / new 的 {占位符} 多重集相同）
- *   D 结构不变（spirits.js 仅 -1 行=删日文行；app.js 0 行变化；loneLF=0）
+ *   D 行尾纪律（loneLF=0；行数等值断言已随后续批次放宽）
  *   E 关键池元素数不变（对照 _tmp 基线）
  *   F 日文残留行已删
  */
@@ -64,17 +64,17 @@ ok(cBad.length === 0, "占位符丢失：" + cBad.join(", "));
 console.log("   丢失数 = " + cBad.length + "；新增（{A}/{B}/{C} 等）：" + (cAdd.join(", ") || "无"));
 
 // D. 结构不变
-section("D. 结构不变：spirits.js 仅 -1 行；app.js 0 行；loneLF=0");
+section("D. 行尾纪律：loneLF=0（行数等值断言已随 V169/V170 批次放宽，见下）");
 const cntLines = (abs) => fs.readFileSync(abs, "latin1").split("\n").length;
 const PRE = path.join(ROOT, "docs/_tmp/_pre_v168_spirits.js");
 const PREA = path.join(ROOT, "docs/_tmp/_pre_v168_app.js");
 if (!neg && fs.existsSync(PRE) && fs.existsSync(PREA)) {
   const dSp = cntLines(SRC.O) - cntLines(PRE);
   const dApp = cntLines(SRC.A) - cntLines(PREA);
-  ok(dSp === -1, "spirits.js Δ行=" + dSp + "（应 -1：仅删 1 行日文残留）");
-  // 注：app.js 的内容校验已由 A/B 段覆盖；此处不再对 app.js 作「行数等于 V168 基线」的等值断言
-  //     —— 后续批次（V169 起）会继续改 app.js，等值断言会误红。只保留 CRLF/loneLF 校验。
-  console.log("   spirits Δ行=" + dSp + "  app Δ行=" + dApp + "（app.js 后续批次会继续改，不作等值断言）");
+  // 注：内容校验已由 A/B/C/E/F 段覆盖；此处**不再**对 spirits.js / app.js 作「行数等于 V168 基线」的等值断言
+  //     —— 后续批次（V169 改 app.js、V170 给 spirits.js 加 imgCut 默认值等）会继续合法改行数，等值断言会误红。
+  //     只保留 CRLF/loneLF 校验（行尾纪律才是这里真正要守的东西）。
+  console.log("   spirits Δ行=" + dSp + "  app Δ行=" + dApp + "（后续批次会继续改，不作等值断言）");
   [SRC.O, SRC.A].forEach((abs) => {
     const s = fs.readFileSync(abs, "latin1");
     const lone = (s.match(/\n/g) || []).length - (s.match(/\r\n/g) || []).length;

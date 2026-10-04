@@ -3652,6 +3652,8 @@
       rec.imgStage = item ? stageOf(item, rec, Date.now()) : (Number(rec.stage) || 1);
     }
     rec.imgStage = Math.min(4, Math.max(1, Math.floor(Number(rec.imgStage) || 1)));
+    // v170：透明底抠图 URL（原图 imgUrl 仍是回填/恢复的唯一来源；空 = 未抠 / 抠图失败）
+    if (rec.imgCut == null) rec.imgCut = "";
     return rec;
   }
 

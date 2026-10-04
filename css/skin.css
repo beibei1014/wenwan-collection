@@ -1144,6 +1144,12 @@ body.talk-open .view { padding: 0; max-width: none; min-height: 0; animation: no
 .talk-portrait.hide { opacity: 0; }                             /* 旁白 / 玩家：立绘淡出 */
 .talk-portrait.enter { transform: translateY(10px); opacity: 0; }   /* 首次登场 260ms 上浮 */
 
+/* v170：透明底立绘（有 imgCut 时）—— contain + 站底，⛔ 不再 cover 铺满（否则又会盖住 BG）；
+   底部预留对话框高度（min-height 132 + bottom 18 + 安全区 + 8 缓冲）= 158+safe → 立绘主体落在对话箱之上，不遮字、不切脸 */
+.talk-portrait[data-cut="1"] { bottom: calc(158px + env(safe-area-inset-bottom)); }
+.talk-portrait[data-cut="1"] img { object-fit: contain; object-position: center bottom;
+  filter: drop-shadow(0 8px 22px rgba(0,0,0,.45)); }
+
 /* 对话框：半透明 + 背景模糊（立绘透出来但被压暗，字清晰） */
 .talk-box { position: absolute; left: 16px; right: 16px;
   bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 4;

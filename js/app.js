@@ -2650,6 +2650,94 @@
       img.src = url;
     });
   }
+  /* ---------- v170：立绘抠图（透明底 PNG，连通域 flood-fill） ----------
+     与 analyzeFaceBox 同一套「四边像素 4bit 众数 = 背景色」判据，但**只删与画面四边连通**的背景：
+     人物内部的同色区域（白衣 / 高光 / 玉饰 / 挖空）必须保留 —— 这是本算法与「全局色键」的根本区别。
+     ⛔ 绝不用全局色键（会把内部同色也删成洞）。 */
+  const CUTOUT_LONG_EDGE = 1400;   // 工作分辨率长边：1728×2304 先降采样再扫，别在原图全图扫描（会卡 UI）
+  const CUTOUT_TOL = 34;           // 背景容差（与 analyzeFaceBox 的 isFg 同口径）
+  // 纯函数：直接在 RGBA 像素上算（便于单测，不依赖 canvas）——
+  //   成功 → 就地写 alpha（透明）并返回 { removed, total }；失败 → 返回 null 且**不改 d**（回落原图）。
+  function cutoutAlphaMask(d, W, H) {
+    const n = W * H;
+    if (!d || !W || !H || d.length < n * 4) return null;
+    // ① 背景色 = 四边像素的 4bit 量化众数（抗渐变 / 抗四角杂物）
+    const hist = {};
+    const addEdge = (x, y) => {
+      const i = (y * W + x) * 4;
+      const k = (d[i] >> 4) + "," + (d[i + 1] >> 4) + "," + (d[i + 2] >> 4);
+      if (!hist[k]) hist[k] = { n: 0, r: 0, g: 0, b: 0 };
+      hist[k].n++; hist[k].r += d[i]; hist[k].g += d[i + 1]; hist[k].b += d[i + 2];
+    };
+    for (let x = 0; x < W; x++) { addEdge(x, 0); addEdge(x, H - 1); }
+    for (let y = 0; y < H; y++) { addEdge(0, y); addEdge(W - 1, y); }
+    let best = null;
+    Object.keys(hist).forEach((k) => { if (!best || hist[k].n > best.n) best = hist[k]; });
+    if (!best) return null;
+    const br = best.r / best.n, bg = best.g / best.n, bb = best.b / best.n;
+    const isBg = (p) => Math.max(Math.abs(d[p * 4] - br), Math.abs(d[p * 4 + 1] - bg), Math.abs(d[p * 4 + 2] - bb)) <= CUTOUT_TOL;
+    // ② 连通域 flood-fill：种子 = 四条边上「是背景色」的像素，只向外扩散到相邻背景像素
+    const vis = new Uint8Array(n);
+    const stack = [];
+    const seed = (x, y) => {
+      if (x < 0 || y < 0 || x >= W || y >= H) return;
+      const p = y * W + x;
+      if (vis[p] || !isBg(p)) return;
+      vis[p] = 1; stack.push(p);
+    };
+    for (let x = 0; x < W; x++) { seed(x, 0); seed(x, H - 1); }
+    for (let y = 0; y < H; y++) { seed(0, y); seed(W - 1, y); }
+    while (stack.length) {
+      const p = stack.pop();
+      const x = p % W, y = (p / W) | 0;
+      seed(x - 1, y); seed(x + 1, y); seed(x, y - 1); seed(x, y + 1);
+    }
+    // ③ 去晕边：把「紧贴已删背景」的前景像素也删 1px（erode），消除抗锯齿造成的背景色渗边
+    //    ⚠️ 只扩一圈（判据用 vis 而非 del，不级联）—— 内部孤立同色区（洞）不会被误伤
+    const del = new Uint8Array(vis);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const p = y * W + x;
+        if (del[p]) continue;
+        if ((x > 0 && vis[p - 1]) || (x < W - 1 && vis[p + 1]) || (y > 0 && vis[p - W]) || (y < H - 1 && vis[p + W])) del[p] = 1;
+      }
+    }
+    // ④ 移除面积必须在 15%~85% 之间，否则判失败（⛔ 不写字段、不抛错，静默回落原图）
+    let removed = 0;
+    for (let p = 0; p < n; p++) if (del[p]) removed++;
+    const ratio = removed / n;
+    if (ratio < 0.15 || ratio > 0.85) return null;
+    // ⑤ 落 alpha（透明）
+    for (let p = 0; p < n; p++) if (del[p]) d[p * 4 + 3] = 0;
+    return { removed: removed, total: n };
+  }
+  // DOM 包装：加载图 → 降采样到长边 ≤ CUTOUT_LONG_EDGE → 抠图 → 输出 PNG data URI（带 alpha）。任何失败一律返回 ""
+  function cutoutTransparent(url) {
+    return new Promise((resolve) => {
+      if (!url) return resolve("");
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const iw = img.width || 0, ih = img.height || 0;
+          if (!iw || !ih) return resolve("");
+          const sc = Math.min(1, CUTOUT_LONG_EDGE / Math.max(iw, ih));
+          const W = Math.max(1, Math.round(iw * sc)), H = Math.max(1, Math.round(ih * sc));
+          const cv = document.createElement("canvas");
+          cv.width = W; cv.height = H;
+          const ctx = cv.getContext("2d");
+          ctx.drawImage(img, 0, 0, W, H);
+          const id = ctx.getImageData(0, 0, W, H);
+          if (!cutoutAlphaMask(id.data, W, H)) return resolve("");   // 抠失败 → ""（不写字段）
+          ctx.putImageData(id, 0, 0);
+          const out = cv.toDataURL("image/png");
+          return resolve(/^data:image\/png/i.test(out) ? out : "");
+        } catch (e) { return resolve(""); }
+      };
+      img.onerror = () => resolve("");
+      img.src = url;
+    });
+  }
   // 卡片缩略图：正方形小框，里面按取景参数放大 + 偏移，正好框住脑袋
   // v164i：放大倍数**钳制**。取景框算偏（或图本身就小）时 size/f.w 会飙到很大 → 头被放得只剩局部。
   //   倍数 ≥3× 直接判定取景失败，走 CSS .face 的 scale(2) 顶对齐兜底；1.2×~3× 之间才允许精确裁切。
@@ -2732,6 +2820,28 @@
           cv.width = w; cv.height = h;
           cv.getContext("2d").drawImage(img, 0, 0, w, h);
           resolve(cv.toDataURL("image/jpeg", quality || 0.85));
+        } catch (e) { resolve(""); }
+      };
+      img.onerror = () => resolve("");
+      img.src = src;
+    });
+  }
+  // v170：PNG 版缩图（⛔ 别用 shrinkToDataUri —— 那条输出 JPEG，会把透明底压成实底、alpha 全丢）
+  //   仅用于「抠图结果云端传不上去」时的本地兜底小图（保留 alpha，控制体积别撑爆 localStorage / 同步负载）
+  function shrinkPngToDataUri(src, max) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, max / Math.max(img.width, img.height));
+          const w = Math.max(1, Math.round(img.width * scale));
+          const h = Math.max(1, Math.round(img.height * scale));
+          const cv = document.createElement("canvas");
+          cv.width = w; cv.height = h;
+          cv.getContext("2d").drawImage(img, 0, 0, w, h);
+          const out = cv.toDataURL("image/png");
+          resolve(/^data:image\/png/i.test(out) ? out : "");
         } catch (e) { resolve(""); }
       };
       img.onerror = () => resolve("");
@@ -2896,6 +3006,60 @@
     if (cloud) return { url: cloud, cloud: true };
     try { return { url: (await shrinkToDataUri(big, localMax, localQ)) || "", cloud: false }; }
     catch (e) { return { url: "", cloud: false }; }
+  }
+  /* ---------- v170：立绘透明底抠图 → 存储 ----------
+     ⛔ 不走 imageToStoreUrl（它压成 JPEG、丢 alpha）。这里用 PNG 专用通道：
+        抠图（长边 ~1400）→ 传 Supabase Storage（命名 *.png / contentType image/png）换永久 URL；
+        传不上去（未登录 / 离线 / 失败）→ 落 ≤512 的 PNG data URI 兜底（保留 alpha）。失败一律 "" 。 */
+  async function spiritUploadPng(dataUri) {
+    try {
+      if (!dataUri || !/^data:image\/png/i.test(dataUri)) return "";
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return "";
+      if (!window.DB || typeof DB.uploadPhoto !== "function") return "";
+      const head = dataUri.indexOf(",");
+      if (head < 0) return "";
+      const bin = atob(dataUri.slice(head + 1));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const file = new File([bytes], "spirit-cut.png", { type: "image/png" });
+      const up = await DB.uploadPhoto(file);   // db.js 用 file.name 取扩展名、file.type 定 contentType → 存成 .png
+      return (up && up.url) || "";
+    } catch (e) { return ""; }
+  }
+  // 给一只 rec 算 imgCut：抠图 → 上传 → 永久 URL；失败返回 ""（⛔ 不写字段、不抛错）
+  async function makeSpiritCut(rec) {
+    try {
+      if (!rec || !rec.imgUrl) return "";
+      const png = await cutoutTransparent(rec.imgUrl);
+      if (!png) return "";
+      const cloud = await spiritUploadPng(png);
+      if (cloud) return cloud;                                   // 永久云 URL（小字符串，不占 localStorage）
+      return (await shrinkPngToDataUri(png, SPIRIT_IMG_SIZE)) || "";   // 云端失败 → 本地小图兜底（仍带 alpha）
+    } catch (e) { return ""; }
+  }
+  let _cutBusy = false;
+  const _cutTried = {};   // 本会话已尝试过的串（成功/失败都记）→ 失败不在每次渲染重试（⛔ 不写字段，故用内存 Set）
+  // v170：老档回填 —— 已有 imgUrl 但还没有 imgCut 的串，闲时补算一次。
+  //   幂等（rec.imgCut 有值即跳过）；失败静默（不写字段，回落 imgUrl）；⛔ 不重出图、⛔ 不阻塞渲染。
+  async function backfillSpiritCut(list) {
+    if (_cutBusy) return;
+    _cutBusy = true;
+    try {
+      for (const it of list) {
+        if (_cutTried[it.id]) continue;
+        const rec = Spirits.ensureIn(Spirits.load(), it.id);
+        if (!rec.imgUrl) continue;        // 没原图 → 无从抠起（也不记 tried：以后出图了再补）
+        if (rec.imgCut) { _cutTried[it.id] = 1; continue; }   // 已有 → 幂等跳过
+        _cutTried[it.id] = 1;
+        const cut = await makeSpiritCut(rec);
+        if (!cut) continue;               // 抠图/上传失败 → 不写字段
+        // ⚠️ 上面 await 过（解码 + 上传）→ 必须**重新 load**，只写 imgCut 字段，绝不 save 旧快照（会覆盖新生成的立绘/CG）
+        const st2 = Spirits.load();
+        const r2 = Spirits.ensureIn(st2, it.id);
+        if (r2.imgUrl === rec.imgUrl && !r2.imgCut) { r2.imgCut = cut; Spirits.save(st2); }
+      }
+    } catch (e) { /* 静默 */ }
+    _cutBusy = false;
   }
   const BG_UNIT = 0.03;   // v165：单张 BG ≈ ¥0.03（与项目全局口径一致；全套 21 张 ≈ ¥0.63）
   /* ============================================================
@@ -3284,6 +3448,9 @@
     ensureSpiritData(list);
     ensureSpiritLook(list).then(() => ensureSpiritImages(list)).then(() => ensureSpiritCg(list));   // v125：立绘好了再画 CG（拿立绘当参考、更像同一个人）
     ensureSpiritFaces(list);
+    // v170：闲时把已有立绘补算成透明底（幂等 / 失败静默 / 不阻塞 / ⛔ 不重出图）
+    //   ⚠️ typeof 守卫：render* 会被单测以「抽函数 + 沙箱」方式隔离运行，此时 backfillSpiritCut 不在作用域
+    if (typeof backfillSpiritCut === "function") backfillSpiritCut(list);
     ensureSpiritExtras(list);
     updateStoryDot();
     maybeOpenSpiritSetup(list);      // v127：还没定设定的，先弹一次向导（生成前让用户确认）
@@ -3622,6 +3789,9 @@
     ensureSpiritData(list);
     ensureSpiritLook(list).then(() => ensureSpiritImages(list)).then(() => ensureSpiritCg(list));
     ensureSpiritFaces(list);
+    // v170：闲时把已有立绘补算成透明底（幂等 / 失败静默 / 不阻塞 / ⛔ 不重出图）
+    //   ⚠️ typeof 守卫：render* 会被单测以「抽函数 + 沙箱」方式隔离运行，此时 backfillSpiritCut 不在作用域
+    if (typeof backfillSpiritCut === "function") backfillSpiritCut(list);
     ensureSpiritExtras(list);
     tickRooms();          // 进这一页也推进契合度/补写剧情（v114：之前只有沁灵页会推）
     maybeOpenSpiritSetup(list);      // v127
@@ -6095,8 +6265,9 @@
         boxEl.classList.remove("narration");
         const nm = (m.w === "me") ? "我" : (m.name || "");
         if (nameEl) { nameEl.textContent = nm; nameEl.hidden = !nm; }
-        let url = "";
+        let url = "", cut = false;
         try { url = o.portrait ? (o.portrait(m) || "") : ""; } catch (e) { url = ""; }   // 其它调用点不传 → 无立绘
+        try { cut = o.portraitCut ? !!o.portraitCut(m) : false; } catch (e) { cut = false; }   // v170：是否透明抠图
         const side = m.slot || "C";
         if (url) {
           if (pEl.dataset.url !== url) {
@@ -6107,7 +6278,8 @@
             pEl.classList.add("enter"); void pEl.offsetWidth; pEl.classList.remove("enter");   // 260ms 上浮
           } else { pEl.classList.remove("hide"); }
           pEl.dataset.slot = side;                                   // slot(L/C/R/B) → 站位
-        } else { pEl.classList.add("hide"); pEl.innerHTML = ""; pEl.dataset.url = ""; pEl.dataset.slot = ""; }
+          pEl.dataset.cut = cut ? "1" : "0";                         // v170：透明立绘 → contain/站底（见 CSS）
+        } else { pEl.classList.add("hide"); pEl.innerHTML = ""; pEl.dataset.url = ""; pEl.dataset.slot = ""; pEl.dataset.cut = ""; }
       }
       if (txtEl) txtEl.textContent = String(m.text || "");
       if (cueEl) cueEl.hidden = false;
@@ -6322,14 +6494,26 @@
       bg: Spirits.bgForChapter("ch" + (i + 1)),   // 章节 → BG key（⛔ 未出图 = 渐变兜底，不出图）
       av: (w, m) => mainCastThumb(m) || '<span class="main-av">📿</span>',
       // v169：当前说话人的整张立绘（行 → castOf[pid] → load()[id].imgUrl）；拿不到 = "" → 只显示 BG + 对话框，⛔ 不报错
+      // v170：优先透明抠图 rec.imgCut，无则回落原图 rec.imgUrl；⛔ 绝不返回进阶单张 CG（用户：用最新立绘，不用 CG）
       portrait: (m) => {
         try {
           const pid = (m && m.ps && m.ps[0]) ? String(m.ps[0]) : "";   // sys/me → 无 ps → ""
           if (!pid) return "";
           const c = (Spirits.castOf() || {})[pid];
           if (!c || !c.id) return "";
-          return (Spirits.load()[c.id] || {}).imgUrl || "";
+          const rec = Spirits.load()[c.id] || {};
+          return rec.imgCut || rec.imgUrl || "";
         } catch (e) { return ""; }
+      },
+      // v170：告诉 present「这张是不是透明抠图」→ 切 contain/站底（见 CSS [data-cut="1"]）。⛔ 不改 o.portrait 的字符串契约
+      portraitCut: (m) => {
+        try {
+          const pid = (m && m.ps && m.ps[0]) ? String(m.ps[0]) : "";
+          if (!pid) return false;
+          const c = (Spirits.castOf() || {})[pid];
+          if (!c || !c.id) return false;
+          return !!(Spirits.load()[c.id] || {}).imgCut;
+        } catch (e) { return false; }
       },
       nameOf: () => "",                            // 群像剧本：说话人名字由行级 who 给（chapLine 已写进 m.name）
       endTag: "第 " + (i + 1) + " 章 · 完",
@@ -6372,7 +6556,8 @@
       listLabel: "回到它", listHash: back,
       bg: Spirits.bgForChapter("ch" + (i + 1)),   // v165：章节 → BG key 映射（卷一 ch1–ch5；未覆盖 = 渐变兜底）
       av: () => spiritThumbHtml(it, rc0, 30),
-      portrait: (m) => (m && m.w === "sp") ? (rc0.imgUrl || "") : "",   // v169：单串剧本 → 该串立绘
+      portrait: (m) => (m && m.w === "sp") ? (rc0.imgCut || rc0.imgUrl || "") : "",   // v169：单串剧本 → 该串立绘；v170：优先透明抠图
+      portraitCut: (m) => !!(m && m.w === "sp" && rc0.imgCut),          // v170：是否透明抠图（切 contain/站底）
       nameOf: () => nm,
       endTag: "第 " + (i + 1) + " 章 · 完",
       endingExtra: () => (i === Spirits.CHAP_ACTS.length - 1)
