@@ -3356,6 +3356,8 @@
     });
     const byAt = (a, b) => (Number(a.meta.at) || 0) - (Number(b.meta.at) || 0);
     mainCgs.sort(byAt); advCgs.sort(byAt);
+    // v166：默认选「主线」；但若主线为空、进阶有图，自动跳到「进阶」tab（避免用户以为没图）
+    if (!_albumTab || (_albumTab === "main" && !mainCgs.length && advCgs.length)) _albumTab = (!mainCgs.length && advCgs.length) ? "adv" : "main";
     const cur = _albumTab === "adv" ? advCgs : mainCgs;
 
     if (!mainCgs.length && !advCgs.length) {
@@ -8425,7 +8427,8 @@
     if (bst) bst.onclick = () => {
       const store = Spirits.load();
       const r = Spirits.ensureIn(store, it.id);
-      r.spirit = !(r.spirit === false);   // 开沁(true) <-> 只当手串(false)
+      const _nowSpirit = !(r.spirit === false);   // 当前是否「已开沁」（true / undefined 都算开沁）
+      r.spirit = !_nowSpirit;                       // 翻转：开沁 <-> 只当手串
       Spirits.save(store);
       toast(r.spirit === false ? "已设为只当手串" : "已重新开沁");
       renderDetail(id);
