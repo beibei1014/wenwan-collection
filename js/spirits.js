@@ -227,13 +227,22 @@
   }
   function cgMetaOf(rec, id) { const c = cgsRO(rec); return (c && c[String(id)]) || null; }
   // 已收集的 id 列表（按收集时间升序）—— 判定只看 hasImg，不看像素在不在本机
+  //   v166：⛔ 只数**主线章节** CG（id 为 0..CHAPTERS.length-1 的数字），进阶专属 CG（id 形如 "adv#3"）不算进度，
+  //        否则会把它算进 CG_TOTAL 分母、把进度条撑爆；但相册展示层仍会把进阶 CG 列出来（见 app.js renderAlbumPage）。
   function cgCollectedIds(rec) {
     const c = cgsRO(rec);
     if (!c) return [];
-    return Object.keys(c).filter((k) => c[k] && c[k].hasImg)
+    return Object.keys(c).filter((k) => c[k] && c[k].hasImg && !String(k).startsWith("adv#"))
       .sort((a, b) => (Number(c[a].at) || 0) - (Number(c[b].at) || 0));
   }
   function cgCollectedCount(rec) { return cgCollectedIds(rec).length; }
+  // v166：进阶专属 CG（id 形如 "adv#3"）的 id 列表 —— 只用于相册「进阶 CG」分区展示，不计入主线进度
+  function cgAdvIds(rec) {
+    const c = cgsRO(rec);
+    if (!c) return [];
+    return Object.keys(c).filter((k) => c[k] && c[k].hasImg && String(k).startsWith("adv#"))
+      .sort((a, b) => (Number(c[a].at) || 0) - (Number(c[b].at) || 0));
+  }
   // 落一张「画成功了」的 CG：元数据进主 store，像素另存 IDB。返回 true = 首次收集
   function cgMarkCollected(rec, id, meta, thumb) {
     const c = cgsOf(rec), key = String(id), old = c[key] || {};
@@ -371,8 +380,10 @@
   }
   function ensureIn(store, id, item) {     // v165：item 可选，仅用于 normRecV165 补 imgStage
     if (!store[id]) {
-      // 新生：性别留空，等「挂瓷开沁」那一刻由 born() 掷一次（男女 3:1）
-      store[id] = { persona: null, variant: 0, imgUrl: "", letters: [], chats: [], lastLetterDay: "", stage: 1, imgHistory: [], gender: "", bornAt: 0, flags: { stance: "UNSET", bondLv: null, scattered: false } };
+      // 新生：性别**优先读设计规定值**(item.gender)；没规定才留空，等 born() 掷一次（男:女 3:1）。
+      //   ⛔ 粉黛熊=boy 这类规定性别，新生那一刻就锁死，绝不交给随机（born 见 rec.gender 已是 boy/girl 就不会再掷）。
+      const g0 = (item && (item.gender === "boy" || item.gender === "girl")) ? item.gender : "";
+      store[id] = { persona: null, variant: 0, imgUrl: "", letters: [], chats: [], lastLetterDay: "", stage: 1, imgHistory: [], gender: g0, bornAt: 0, spirit: true, flags: { stance: "UNSET", bondLv: null, scattered: false } };
       normRecV165(store[id], item);
       return store[id];
     }
@@ -382,10 +393,14 @@
     if (!rec.exprs || typeof rec.exprs !== "object") rec.exprs = {};
     // v166：把现有 base 立绘归并进 exprs.base（老档零成本迁移；表情切换条 base 永远有图）
     if (rec.imgUrl && !rec.exprs.base) rec.exprs.base = { url: rec.imgUrl, face: rec.face || null, at: rec.imgAt || 0, frozen: !!rec.imgFrozen, stage: rec.imgStage || rec.stage || 1 };
+    // v166：设计规定的性别（item.gender 写死 boy/girl）永远优先 —— 粉黛熊=男等，
+    //   不能因为 born() 随机掷过就变成女。⛔ 只在 item 明确规定了性别时才强制覆盖。
+    if (item && (item.gender === "boy" || item.gender === "girl")) rec.gender = item.gender;
     // 老记录（v110 之前开沁的）没有 gender：按**旧规则**（hash(串id+外观种子)）定下来，
     // 这样它已经画好的立绘和界面显示的人设不会打架；新沁灵一律走 born() 的 3:1 随机
-    if (rec.gender !== "boy" && rec.gender !== "girl") rec.gender = legacyGender(id, rec.appearanceSeed || 0);
+    else if (rec.gender !== "boy" && rec.gender !== "girl") rec.gender = legacyGender(id, rec.appearanceSeed || 0);
     if (!rec.flags || typeof rec.flags !== "object") rec.flags = { stance: "UNSET", bondLv: null, scattered: false };
+    if (rec.spirit == null) rec.spirit = true;   // v166：默认开沁（除非用户主动设「只当手串」）
     normRecV165(rec, item);
     return rec;
   }
@@ -979,6 +994,16 @@
   // v164：性别词（用户写「少年郎」以前读不到，出图性别只能靠随机）
   const _BOY_WORDS = ["少年郎", "少年", "男孩", "男童", "小哥", "少年人", "男儿", "公子", "郎君"];
   const _GIRL_WORDS = ["姑娘", "少女", "女孩", "女童", "妹子", "女子", "少女郎", "小姐", "闺秀"];
+  // v166：从用户写的设定文字里认出性别（少年郎→男 / 姑娘→女）。用于 4 步设定确认时把性别写回 rec.gender，
+  //   这样「粉黛熊写了少年郎」就不会因为 born() 随机掷过而画成女孩。
+  function genderFromText(text) {
+    const t = String(text || "");
+    const bw = _BOY_WORDS.filter((w) => t.indexOf(w) >= 0);
+    const gw = _GIRL_WORDS.filter((w) => t.indexOf(w) >= 0);
+    if (bw.length && !gw.length) return "boy";
+    if (gw.length && !bw.length) return "girl";
+    return "";
+  }
   // 长键优先 + 命中即"吃掉"该区间，避免「花枝」和「花」被重复算两次
   function _scanZh(text, map) {
     const src = String(text || "");
@@ -7394,6 +7419,16 @@
     + "⛔ 不写对话台词，不写旁白式抒情；不要标题、不要引号、不要解释。"
     + "基调温暖有人味，绝不阴森恐怖。控制在 120-220 字，直接输出描述正文。";
 
+  // v166：用户先写了一段「大概的 CG 意向」（可能很口语、不完整），AI 负责**润色完善**成可直接出图的描述。
+  const CG_BRIEF_SYS_INTENT = "用户在为一个文玩收藏 App 写一张 CG 插画的画面描述，他先给了一段**大概的意向**（可能口语、简略、不完整）。"
+    + "请你把这段意向**润色完善**成一段可以直接拿去出图的中文画面描述，要求："
+    + "① 严格保留用户原意里的所有关键元素（人物、穿什么、在哪、做什么动作、什么构图、什么情绪、什么道具），只在上面补细节、让画面更具体可画；"
+    + "② 写成一段连贯的中文画面描述（不是分点），120-220 字；"
+    + "③ 自然融入古风意境与光线，基调温暖有人味，绝不阴森恐怖；"
+    + "④ ⛔ 不要改用户的性别 / 人称设定，不要擅自加和用户冲突的元素（用户没提的武器、宠物、现代物一律不加）；"
+    + "⑤ ⛔ 不许出现模型名、接口、额度、色值代码、按钮名、版本号这类「游戏是怎么做的」的信息；不要标题、不要引号、不要解释。"
+    + "只输出润色后的描述正文。";
+
   // 事实清单（喂给文本模型）：只给**世界观内**的素材，绝不塞实现细节
   function cgBriefFacts(o) {
     const x = o || {};
@@ -7439,13 +7474,24 @@
   }
 
   // ⓪ 生成中文画面描述（文本模型；失败 / 无 key → 本地模板）
+  //   v166：若 o.intent 非空（用户在 textarea 先写了大概意向），则把意向交给 AI **润色完善**；
+  //         o.intent 为空则按原逻辑从精灵事实自动生成（向后兼容）。
   async function cgBrief(o) {
     const x = o || {};
     if (!getAiKey()) return cgBriefLocal(x);
+    const intent = String(x.intent || "").trim();
     try {
+      let sys, user;
+      if (intent) {
+        sys = CG_BRIEF_SYS_INTENT;
+        user = cgBriefFacts(x) + "\n\n用户的意向（请润色完善，保留原意所有关键元素）：\n" + intent;
+      } else {
+        sys = CG_BRIEF_SYS;
+        user = cgBriefFacts(x);
+      }
       const txt = await aiChat([
-        { role: "system", content: CG_BRIEF_SYS },
-        { role: "user", content: cgBriefFacts(x) },
+        { role: "system", content: sys },
+        { role: "user", content: user },
       ], CG_BRIEF_CFG.tokens);
       const s = String(txt || "").trim();
       if (s.length >= CG_BRIEF_CFG.minLen) return s.slice(0, CG_BRIEF_CFG.maxLen);
@@ -7761,7 +7807,7 @@
     STAGES, stageDef, stageInfo, growthOf, STAGE_DAYS, STAGE_PLAYS, HEAD_COUNT, stageOf, headCountOf, stageOrnate, stageProgress,
     appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
     // v127：设定向导（发色/特征/性格可确认可修改；一句基础设定 → 扩写成详细设定）
-    HAIR_COLORS, HAIR_PALETTE, hexToCnTrad, FEATURES, PERSONAS_PICK, lookOf, lookText, lookExtra, hairWordFromInput, expandProfile, profileLocal,
+    HAIR_COLORS, HAIR_PALETTE, hexToCnTrad, FEATURES, PERSONAS_PICK, lookOf, lookText, lookExtra, hairWordFromInput, expandProfile, profileLocal, genderFromText,
     COLOR_ZH, HAIR_ZH, EYES_ZH, ACC_ZH, VIBE_ZH,
     TEXT_PROVIDERS, getTextCfg, setTextCfg, textInfo, textChat, testImage, testText, listModels,
     promptFor, pollinationsUrl, legacyPollinationsUrl, generateImage, localAvatarSvg, seedOf, normModelName, pickBestModel, keyHint, isFetchFail,
@@ -7783,7 +7829,7 @@
     // v125：剧情 CG
     storyCgPrompt, promptForCg, generateCustom, CG_STYLE, CG_SIZE_BY_PROVIDER, cgSizeFor, cgLadderFor,
     // v165-R2：CG「描述先行」三段式（⓪ 生成中文描述 → ① 用户确认/编辑 → ② 提取关键词装配 prompt → 手动出图）
-    CG_BRIEF_CFG, CG_BRIEF_SYS, cgBriefFacts, cgBriefLocal, cgBrief, cgKeywords, cgPromptFromBrief,
+    CG_BRIEF_CFG, CG_BRIEF_SYS, CG_BRIEF_SYS_INTENT, cgBriefFacts, cgBriefLocal, cgBrief, cgKeywords, cgPromptFromBrief,
     // v125：阶段规则 —— 凝形/开窍只有立绘；觉醒/化形额外出 CG
     cgStages: [3, 4], needCg: function (stage) { return (Number(stage) || 1) >= 3; },
     // v155：陪伴系统（每日问候 / 亲密度 / 每日一签 / 日记回信 / 回响）—— 全本地，0 成本
@@ -7842,7 +7888,7 @@
     WHEN_KEYS, whenOK, whenNeed, thMember,
     pruneForQuota,
     // v163：CG 资产库（像素在 IndexedDB / 元数据在主 store；「已收集」只认元数据）
-    CG_DB_NAME, CG_FALLBACK_KEY, CG_TOTAL, CG_THUMB_KEEP, cgsOf, cgMetaOf, cgCollectedIds, cgCollectedCount,
+    CG_DB_NAME, CG_FALLBACK_KEY, CG_TOTAL, CG_THUMB_KEEP, cgsOf, cgMetaOf, cgCollectedIds, cgCollectedCount, cgAdvIds,
     cgMarkCollected, cgMarkFailed, cgStateOf, cgSlotOf, dropOldCgThumbs,
     CG_STATE_CLASS, CG_STATE_HINT, cgCellClass, cgCellHint,
     cgPutPixels, cgGetPixels, cgDelPixels, cgHasPixels,

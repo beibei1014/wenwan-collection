@@ -3365,6 +3365,19 @@
             '<span class="album-cell-need">' + esc((states[i] && states[i].need) || "还没到时候") + '</span></div>';
         }
       }
+      // v166：进阶专属 CG（蜕形 / 化形，id 形如 adv#3）汇总进相册 —— 单列一个分区，不影响上面的主线 8 格进度
+      const advIds = Spirits.cgAdvIds(rec);
+      if (advIds.length) {
+        h += '<div class="album-adv"><div class="album-sec-head"><span class="album-sec-name">进阶专属 CG</span><small>' + advIds.length + " 张</small></div>";
+        h += '<div class="album-grid">';
+        advIds.forEach((k) => {
+          const m = Spirits.cgMetaOf(rec, k);
+          h += '<button class="album-cell" data-cg="' + esc((m && m.thumb) || "") + '" title="' + esc((m && m.caption) || "") + '">' +
+            ((m && m.thumb) ? '<img class="album-cell-img" src="' + esc(m.thumb) + '" alt="">' : '<span class="album-cell-need">已收集</span>') +
+            '<span class="album-cell-tag">' + esc((m && m.title) || "进阶") + "</span></button>";
+        });
+        h += "</div></div>";
+      }
       h += "</div></div>";
     });
     h += '<button class="btn ghost" id="albumBack" style="width:100%;margin-top:14px">← 回到沁灵页</button>';
@@ -4065,6 +4078,7 @@
       for (const it of list) {
         const st0 = Spirits.load();
         const rec = Spirits.ensureIn(st0, it.id);
+        if (rec.spirit === false) continue;          // v166：只当手串的串不出 CG
         const stage = Number(rec.stage) || 1;
         if (!Spirits.needCg(stage)) {
           // 早期阶段：清掉 CG（只保留立绘）
@@ -4497,6 +4511,95 @@
     paint();
   }
 
+  // v166：轻量删除管理（立绘 / CG）—— 用户可手动删掉生成错的图。就地弹层，删除不可恢复但可重新生成。
+  function openDelManager(title, items, onDelete, onDone) {
+    const old = document.getElementById("wwDelMgr"); if (old) old.remove();
+    const mask = document.createElement("div");
+    mask.id = "wwDelMgr";
+    mask.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px";
+    const box = document.createElement("div");
+    box.style.cssText = "background:var(--card,#fff);max-width:520px;width:100%;max-height:84vh;overflow:auto;border-radius:14px;padding:16px;box-shadow:0 10px 40px rgba(0,0,0,.3)";
+    let cur = items.slice();
+    const paint = () => {
+      if (!cur.length) { box.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-2)">没有可删除的图片了</div>'; return; }
+      box.innerHTML = '<div style="font-weight:700;font-size:16px;margin-bottom:4px">' + title + "</div>" +
+        '<div style="color:var(--text-2);font-size:12px;margin-bottom:10px">点 🗑 删除这张（删除不可恢复，但可重新生成）</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+        cur.map((it, i) => '<div style="border:1px solid var(--line,#eee);border-radius:10px;overflow:hidden">' +
+          '<img src="' + it.url + '" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block" onerror="this.style.opacity=.2">' +
+          '<div style="padding:6px 8px;font-size:12px;color:var(--text-2)">' + esc(it.label) + "</div>" +
+          '<button data-i="' + i + '" style="width:100%;border:0;background:#e5484d;color:#fff;padding:7px;font-size:13px;cursor:pointer">🗑 删除</button>' +
+          "</div>").join("") + "</div>";
+      box.querySelectorAll("button[data-i]").forEach((b) => b.onclick = () => {
+        const idx = +b.dataset.i; const it = cur[idx];
+        onDelete(it); cur = cur.filter((_, k) => k !== idx);
+        if (onDone) onDone();   // 背后详情页即时刷新（缩略图消失）
+        paint();                // 弹层内的列表也即时刷新
+      });
+    };
+    paint();
+    const bar = document.createElement("div");
+    bar.style.cssText = "margin-top:14px;display:flex;gap:10px";
+    const done = document.createElement("button");
+    done.textContent = "完成";
+    done.style.cssText = "flex:1;padding:10px;border:0;border-radius:10px;background:var(--gold,#caa06a);color:#fff;font-size:14px;cursor:pointer";
+    done.onclick = () => { mask.remove(); };
+    bar.appendChild(done);
+    box.appendChild(bar);
+    mask.appendChild(box);
+    mask.onclick = (e) => { if (e.target === mask) mask.remove(); };
+    document.body.appendChild(mask);
+  }
+  // v166：管理「立绘」—— 当前立绘 + 进化史旧图，逐个删
+  function openSpiritImgManager(id) {
+    const store = Spirits.load();
+    const rec = Spirits.ensureIn(store, id);
+    const items = [];
+    if (rec.exprs && rec.exprs.base && rec.exprs.base.url) items.push({ kind: "base", url: rec.exprs.base.url, label: "当前立绘" });
+    (rec.imgHistory || []).forEach((h, i) => { if (h && h.url) items.push({ kind: "hist", url: h.url, label: "进化史 #" + (i + 1) }); });
+    if (!items.length) { toast("还没有可管理的立绘"); return; }
+    openDelManager("🗑 管理立绘", items, (it2) => {
+      if (it2.kind === "base") { rec.exprs.base = { url: "", face: null, at: 0, frozen: false, stage: rec.stage || 1 }; }
+      else { rec.imgHistory = (rec.imgHistory || []).filter((h) => !(h && h.url === it2.url)); }
+      Spirits.save(store);
+    }, () => renderSpiritDetailPage(id));
+  }
+  // v166：管理「CG」—— 进阶专属 CG + 主线 / 进阶相册里的全部 CG，逐个删
+  function openSpiritCgManager(id) {
+    const store = Spirits.load();
+    const rec = Spirits.ensureIn(store, id);
+    const items = [];
+    if (rec.cgUrl) items.push({ kind: "adv", url: rec.cgUrl, label: "进阶专属 CG" });
+    const cgs = rec.cgs || {};
+    Object.keys(cgs).forEach((k) => {
+      const m = cgs[k];
+      if (m && m.hasImg && (m.thumb || m.imgUrl)) items.push({ kind: "cg", key: k, url: m.thumb || m.imgUrl, label: (k.indexOf("adv#") === 0 ? "进阶 CG" : "主线 CG") + " " + (m.title || k) });
+    });
+    if (!items.length) { toast("还没有可管理的 CG"); return; }
+    openDelManager("🗑 管理 CG", items, (it2) => {
+      if (it2.kind === "adv") { rec.cgUrl = ""; rec.cgKey = ""; rec.cgStage = 0; }
+      else { delete rec.cgs[it2.key]; }
+      Spirits.save(store);
+    }, () => renderSpiritDetailPage(id));
+  }
+  // v166：被设为「只当手串」的沁灵，详情页显示安全页（可重新开沁）
+  function renderSpiritOffPage(id) {
+    const it = spiritItemById(id);
+    if (!it) { location.hash = "#/"; return; }
+    if (_sdKeyHandler) { document.removeEventListener("keydown", _sdKeyHandler); _sdKeyHandler = null; }
+    topbarTitle.textContent = "沁灵详情";
+    btnBack.style.visibility = "visible"; btnSettings.style.visibility = "hidden";
+    const store = Spirits.load();
+    const rec = Spirits.ensureIn(store, id);
+    let h = '<div class="sd-top" style="text-align:center;padding:24px">' +
+      '<div class="sd-name">' + esc(spiritName(it, store)) + '<span class="spirit-stage big">📿 手串</span></div>' +
+      '<div class="sd-card" style="margin-top:16px;text-align:left"><div class="sd-line">这只串已设为「只当手串」——不会生成立绘和 CG，也不进沁灵巷 / 沁灵列表。</div>' +
+      '<button class="btn primary" id="sdEnableSpirit" style="width:100%;margin-top:10px">✨ 让它进化成沁灵</button></div></div>';
+    view.innerHTML = h;
+    const en = $("#sdEnableSpirit");
+    if (en) en.onclick = () => { rec.spirit = true; Spirits.save(store); renderSpiritDetailPage(id); };
+  }
+
   function renderSpiritDetailPage(id) {
     const it = spiritItemById(id);
     if (!it) { location.hash = "#/spirit"; return; }
@@ -4505,6 +4608,7 @@
     btnSettings.style.visibility = "hidden";
     const store = Spirits.load();
     const rec = Spirits.ensureIn(store, id);
+    if (rec.spirit === false) { renderSpiritOffPage(id); return; }   // v166：只当手串 → 安全页
     _brokenSrcs = new Set();   // v164f：每次进详情页重置「失效图」收集（供🧹清理）
     // v165-M：⛔ 进详情页也不再自动抬 rec.stage（可进阶只展示按钮，等用户点）
     // v155：进详情页先本地结算陪伴数据（今日问候 / 亲密度 / 今日一签 / 回响信），一次 save
@@ -4531,9 +4635,14 @@
     const hist = (rec.imgHistory || []).filter((x) => x && x.url);
 
     // v126：还没出图时给一个立绘骨架屏（比空白/兜底小沁灵更像"正在画"）
-    const artInner = rec.imgUrl
-      ? spiritImgHtml(it, rec, 240, "spirit-img big")
-      : '<div class="sk sk-art"></div><div class="sd-gen-hint" style="margin-top:8px">正在画它的立绘…（约 15-20 秒）</div>';
+    // v166：生成了进阶 CG 的沁灵，**优先在详情页展示 CG**（而不是立绘）；点图看大图。没有 CG 才回落立绘。
+    const _cgShown = rec.cgUrl || "";
+    const artInner = _cgShown
+      ? '<img class="spirit-img big cg-as-art" id="sdArtCg" src="' + esc(_cgShown) + '" alt="CG">' +
+        '<div class="sd-gen-hint" style="margin-top:6px">🎬 这是它的进阶专属 CG（蜕形 / 化形场景）</div>'
+      : (rec.imgUrl
+        ? spiritImgHtml(it, rec, 240, "spirit-img big")
+        : '<div class="sk sk-art"></div><div class="sd-gen-hint" style="margin-top:8px">正在画它的立绘…（约 15-20 秒）</div>');
     // v164g：详情页上下切换（不用返回列表就能挨着看沁灵）
     const _allItems = spiritItems();
     const _curIdx = _allItems.findIndex((x) => String(x.id) === String(id));
@@ -4550,6 +4659,7 @@
     };
     document.addEventListener("keydown", _sdKeyHandler);
     let h = spiritNavHtml(_curIdx, _prevIt, _nextIt, _allItems.length, store) + '<div class="sd-top"><div class="sd-art" id="sdArt">' + artInner + "</div>" +
+      (_hasImg ? '<button type="button" class="link-btn" id="sdManageImg" style="margin-top:6px">🗑 管理立绘</button>' : "") +
       '<div class="sd-name">' + esc(spiritName(it, store)) + '<span class="spirit-stage big">' + si.icon + " " + esc(si.name) + "</span></div>" +
       '<div class="sd-title">' + esc(p.title || "") + "</div>" +
       '<div class="sd-title" style="margin-top:4px">' +
@@ -4763,7 +4873,8 @@
 
     // v125：CG 插画（蜕形 / 化形才有）· v165-R2：**描述先行**（⛔ 绝不自动出图）
     h += '<div class="sd-card"><div class="sd-card-title">🎬 CG 插画' +
-      (Spirits.needCg(si.stage) ? "" : '<small style="font-weight:400;color:var(--text-2)"> · 蜕形 / 化形才有</small>') + "</div>";
+      (Spirits.needCg(si.stage) ? "" : '<small style="font-weight:400;color:var(--text-2)"> · 蜕形 / 化形才有</small>') +
+      (_hasCg ? ' <button type="button" class="link-btn" id="sdManageCg" style="float:right">🗑 管理</button>' : "") + "</div>";
     if (rec.cgUrl && !_cgRedo[id]) {
       h += '<img class="cg-thumb" id="sdCg" src="' + esc(rec.cgUrl) + '" alt="CG">' +
         '<div class="sd-gen-hint">点图看大图 · 蜕形 / 化形的专属场景插画 · ' +
@@ -4832,6 +4943,9 @@
     const pv = $("#sdPrev"); if (pv && _prevIt) pv.onclick = () => { location.hash = "#/spirit/" + encodeURIComponent(_prevIt.id); };
     const nx = $("#sdNext"); if (nx && _nextIt) nx.onclick = () => { location.hash = "#/spirit/" + encodeURIComponent(_nextIt.id); };
     const su = $("#sdSetup"); if (su) su.onclick = () => showSpiritSetupModal(it);   // v127：设定向导
+    // v166：立绘 / CG 删除管理
+    const mi = $("#sdManageImg"); if (mi) mi.onclick = () => openSpiritImgManager(id);
+    const mc = $("#sdManageCg"); if (mc) mc.onclick = () => openSpiritCgManager(id);
     // v165：心迹区 —— 照料三式 + 「递一件给它」
     view.querySelectorAll(".xt-care-btn").forEach((b) => { if (!b.disabled) b.onclick = () => spiritCareDo(it, b.dataset.care, host); });
     const xtg = $("#xtGiftOpen"); if (xtg && !xtg.disabled) xtg.onclick = () => openGiftDrawer(it, host);
@@ -4897,6 +5011,9 @@
     }
     const art = $("#sdArt");
     if (art) art.onclick = () => openSpiritViewer(rec.imgUrl || Spirits.localAvatarSvg(it));
+    // v166：详情页若有进阶 CG，大图区展示的是 CG（sdArtCg），点它看 CG 大图而非立绘
+    const artCg = $("#sdArtCg");
+    if (artCg) artCg.onclick = () => openSpiritViewer(rec.cgUrl || "");
     const cgEl = $("#sdCg");
     if (cgEl) cgEl.onclick = () => openSpiritViewer(rec.cgUrl || "");
     const cgRedo = $("#sdCgRedo");
@@ -4911,6 +5028,8 @@
         const br = await genCgBrief({
           kind: "stage", item: it, stage: Number(r0.stage) || 1,
           look: Spirits.lookOf(it, r0), persona: r0.persona || null,
+          // v166：用户先在 textarea 写大概意向 → AI 润色完善；textarea 为空则按原逻辑自动生成
+          intent: (cgBriefTa && cgBriefTa.value || "").trim(),
         });
         if (cgBriefTa) cgBriefTa.value = br;
         const s0 = Spirits.load(); const r1 = Spirits.ensureIn(s0, id);
@@ -4937,6 +5056,12 @@
         });
         const s2 = Spirits.load(); const r2 = Spirits.ensureIn(s2, id);
         r2.cgUrl = out.url || ""; r2.cgAt = Date.now(); r2.cgStage = stage; r2.cgKey = cgKeyOf(r2);
+        // v166：进阶专属 CG 同时归档进 rec.cgs（相册「进阶 CG」分区），id 用 adv#<阶>；cgCollectedIds 已排除该前缀、不撑进度
+        Spirits.cgMarkCollected(r2, "adv#" + stage, {
+          title: "进阶专属 CG · " + Spirits.stageDef(stage).name,
+          caption: (brief || "").slice(0, 50),
+          key: cgKeyOf(r2),
+        }, out.url || "");
         bumpGenCount(r2);                       // CG 也是要花钱的一张，计入额度
         Spirits.save(s2);
         delete _cgRedo[id];
@@ -5432,6 +5557,14 @@
       // 确认后重画：清掉旧立绘 / 旧 CG（CG 的 key 里有外观种子与服务商，显式清掉最稳）
       r4.imgUrl = ""; r4.imgAt = 0; r4.face = null; r4._imgErr = ""; r4._imgErrAt = 0; r4.imgFrozen = 0;
       r4.cgUrl = ""; r4.cgKey = ""; r4.cgStage = 0;
+      // v166：设定确认后写回性别 —— 设计规定的 item.gender 优先；否则从用户写的设定文字认（少年郎→男 / 姑娘→女），
+      //   这样「粉黛熊写了少年郎」就不会因为 born() 随机掷过而画成女孩。
+      {
+        const _g = (item && (item.gender === "boy" || item.gender === "girl"))
+          ? item.gender
+          : Spirits.genderFromText([(r4.look && (r4.look.base || r4.look.profile || r4.look.persona)), r4.personaZh, (r4.persona && r4.persona.name)].join(" "));
+        if (_g) r4.gender = _g;
+      }
       Spirits.save(s4);
       close();
       toast(spiritName(item, Spirits.load()) + "：人设和出图单都定好了，这就照单画 🎨");
@@ -8268,6 +8401,16 @@
         btn.textContent = "分享";
         btn.disabled = false;
       }
+    };
+    // v166：沁灵进化开关 —— 翻转 spirit 标记
+    const bst = $("#btnSpiritToggle");
+    if (bst) bst.onclick = () => {
+      const store = Spirits.load();
+      const r = Spirits.ensureIn(store, it.id);
+      r.spirit = !(r.spirit === false);   // 开沁(true) <-> 只当手串(false)
+      Spirits.save(store);
+      toast(r.spirit === false ? "已设为只当手串" : "已重新开沁");
+      renderDetail(id);
     };
   }
 
