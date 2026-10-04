@@ -71,6 +71,8 @@ const TECH = /模型|API|额度|出图|#|hex|按钮|v1\d|prompt/i;
 
   /* ============ D. prompt 装配：固定块一律照带 + PROPORTION LOCK 在最末 ============ */
   section("D. 装配英文 prompt：CG_STYLE / ANATOMY / CONSISTENCY / BG_NEG / PROPORTION LOCK 一律照带");
+  // v165-A：比例块改走 cgPropFor(stage, shot)（去姿势化 + 景别驱动），不再是 stageDef().prop 原样。
+  const propOf = (st, text) => S.cgPropFor(st, S.shotClause(text || ""));
   const p1 = S.cgPromptFromBrief(b1, { kind: "stage", item: item, stage: 3, look: look });
   ok(p1.indexOf("PROPORTION LOCK") >= 0, "单只 CG 带 PROPORTION LOCK");
   ok(p1.indexOf("same character across all ages") >= 0, "单只 CG 带 CONSISTENCY");
@@ -78,23 +80,26 @@ const TECH = /模型|API|额度|出图|#|hex|按钮|v1\d|prompt/i;
   ok(p1.indexOf("exactly two arms and two hands") >= 0, "单只 CG 带 ANATOMY");
   ok(p1.indexOf("key visual CG illustration") >= 0 || p1.indexOf("CG illustration") >= 0, "单只 CG 带 CG_STYLE");
   ok(p1.indexOf(b1.slice(0, 12)) >= 0, "确认后的**中文描述**进了 prompt（无关键词时直附）");
-  const prop3 = S.stageDef(3).prop;
-  ok(p1.trim().endsWith(prop3.trim()), "PROPORTION LOCK 压在最末尾（不被描述/负向块挤走）");
+  const prop3 = propOf(3, b1);
+  ok(p1.trim().endsWith(prop3.trim()), "PROPORTION LOCK 压在最末尾（去姿势化的比例块）");
+  ok(p1.split("PROPORTION LOCK").length - 1 === 1, "比例块只出现一次（不重复拼装）");
+  ok(!/standing pose|confident pose/i.test(p1), "v165-A：装配出的 prompt 不含竞争姿势短语");
 
-  const p1k = S.cgPromptFromBrief(b1, { kind: "stage", item: item, stage: 3, look: look, keywords: "a red-robed boy, standing by the well, warm dusk light" });
-  ok(p1k.indexOf("a red-robed boy, standing by the well, warm dusk light") >= 0, "有英文关键词时优先用关键词");
-  ok(p1k.trim().endsWith(prop3.trim()), "带关键词时 PROPORTION LOCK 仍在最末尾");
+  const KW1 = "a red-robed boy, standing by the well, warm dusk light";
+  const p1k = S.cgPromptFromBrief(b1, { kind: "stage", item: item, stage: 3, look: look, keywords: KW1 });
+  ok(p1k.indexOf(KW1) >= 0, "有英文关键词时优先用关键词");
+  ok(p1k.trim().endsWith(propOf(3, b1 + " " + KW1).trim()), "带关键词时 PROPORTION LOCK 仍在最末尾");
 
   const p2 = S.cgPromptFromBrief(b2, {
     kind: "pair", a: { name: "花间酒", look: look, item: item }, b: { name: "青竹", look: lookB, item: itemB },
     level: 1, roomName: "南窗小间", stage: 3,
   });
   ok(p2.indexOf("花间酒") >= 0 && p2.indexOf("青竹") >= 0, "双人 CG 两只都在 prompt 里");
-  ok(p2.indexOf("PROPORTION LOCK") >= 0 && p2.trim().endsWith(prop3.trim()), "双人 CG 也带 PROPORTION LOCK 且在末尾");
+  ok(p2.indexOf("PROPORTION LOCK") >= 0 && p2.trim().endsWith(propOf(3, b2).trim()), "双人 CG 也带 PROPORTION LOCK 且在末尾");
   ok(p2.indexOf("same character across all ages") >= 0, "双人 CG 也带 CONSISTENCY");
 
   const p3 = S.cgPromptFromBrief(b3, { kind: "fest", item: item, stage: 4, look: look, fest: { key: "duanwu", name: "端午" } });
-  ok(p3.indexOf("PROPORTION LOCK") >= 0 && p3.trim().endsWith(S.stageDef(4).prop.trim()), "节令 CG 带 PROPORTION LOCK 且在末尾（化形 9 头身）");
+  ok(p3.indexOf("PROPORTION LOCK") >= 0 && p3.trim().endsWith(propOf(4, b3).trim()), "节令 CG 带 PROPORTION LOCK 且在末尾（化形 9 头身）");
   ok(p3.indexOf("no horror") >= 0, "节令 CG 带 BG_NEG");
 
   /* ============ E. ⛔ CG 绝不自动出图 ============ */
@@ -127,9 +132,11 @@ const TECH = /模型|API|额度|出图|#|hex|按钮|v1\d|prompt/i;
   ok(/setStoryImage,\s*setStoryBrief,/.test(roomsSrc), "setStoryBrief 已导出");
 
   /* ============ H. index.html 版本号 ============ */
-  section("H. index.html ?v= 已 bump");
-  ["js/spirits.js?v=20261219", "js/app.js?v=20261219", "js/rooms.js?v=20261219", "css/style.css?v=20261219"]
-    .forEach((t) => ok(htmlSrc.indexOf(t) >= 0, "index.html 含 " + t));
+  section("H. index.html ?v= 已 bump（>= 20261219，R2 基线）");
+  ["css/style.css", "js/spirits.js", "js/app.js", "js/rooms.js"].forEach((f) => {
+    const m = htmlSrc.match(new RegExp(f.replace(/[.\/]/g, "\\$&") + "\\?v=(\\d+)"));
+    ok(!!m && Number(m[1]) >= 20261219, "index.html 的 " + f + " ?v= 已 bump（" + (m && m[1]) + "）");
+  });
 
   const passed = summary();
   process.exit(passed ? 0 : 1);

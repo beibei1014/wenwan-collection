@@ -1277,9 +1277,14 @@
   }
   // v164：出图单 → prompt 末尾的硬约束（模型对靠后关键词最敏感）。
   //   中英并列：中文保真（用户原话），英文给模型更明确的指令。
-  function briefHard(lk) {
+  // v165-A：opts.noPose —— **CG 路径专用**。立绘是一张定妆照，"出图单里的姿势"就是它该有的样子；
+  //   但 CG 是"剧情里正在发生的一瞬"，姿势必须由**用户确认的画面描述**决定。
+  //   若把立绘的 pose 也塞进 CG（"OWNER-CONFIRMED … pose: 静静站着"），就会和用户写的
+  //   「右手搭在石桌边沿」抢戏 → 故 CG 调用时传 { noPose: true }。⛔ 立绘路径不传、行为不变。
+  function briefHard(lk, opts) {
     const b = (lk && lk.brief) || null;
     if (!b) return "";
+    const noPose = !!(opts && opts.noPose);
     const L = [];
     if (b.gender === "boy") L.push("this character is a BOY");
     else if (b.gender === "girl") L.push("this character is a GIRL");
@@ -1291,7 +1296,7 @@
     if (b.hairColorZh) L.push("hair color: " + b.hairColorZh + (b.hairColorHex ? " (" + b.hairColorHex + ")" : "") +
       " — keep exactly this hair color");
     if (b.hairstyleZh) L.push("hair style: " + b.hairstyleZh);
-    if (b.poseZh) L.push("pose: " + b.poseZh);
+    if (b.poseZh && !noPose) L.push("pose: " + b.poseZh);
     if (b.featsText) L.push("expression / features: " + b.featsText);
     if (b.sceneZh) L.push("scene: " + b.sceneZh);
     if (b.extraZh) L.push("owner's extra note (must obey): " + b.extraZh);
@@ -3879,6 +3884,8 @@
     guoqing: "National Day, red banners and clear autumn sunshine, peaceful festive atmosphere",
   };
   // 节令限定 CG 的 prompt（横版；点了「画一张」才调用）
+  // v165-A：① 剥姿势词（stageObj.look → stripPose）；② 出图单硬约束去 pose；③ ⛔ 不再自带比例块 ——
+  //   比例块由**唯一装配口** cgPromptFromBrief 追加 cgPropFor(stage, shot)（否则会与它重复一份）。
   function festCgPrompt(item, styleKey, stage, appearance, look, fest, sceneText, shot) {
     const lkRaw = look || lookOf(item, null);
     const _ab = applyBrief(lkRaw, appearance || lkRaw.ap || appearanceOf(item, 0));   // v164：出图单优先
@@ -3890,9 +3897,9 @@
     const stageObj = stageDef(stage);
     const head = CG_STYLE + ", " + appearancePrompt(ap) + ", with " + lk.hairEn + " hair and " + lk.outfitEn + " themed outfit"
       + (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") + lookExtra(lk) + ", " +
-      stageObj.look
+      stripPose(stageObj.look)
       + (lookHard(lk) ? (", " + lookHard(lk)) : "")
-      + (briefHard(lk) ? (", " + briefHard(lk)) : "")
+      + (briefHard(lk, { noPose: true }) ? (", " + briefHard(lk, { noPose: true })) : "")
       + ", " + st;
     const sc = sceneText || scene;
     const shotEn = shot
@@ -3904,7 +3911,7 @@
       ", the same character keeps hair color, eye color, outfit and accessories consistent, " +
       "HORIZONTAL LANDSCAPE COMPOSITION, 16:9 widescreen framing, not a portrait, not a vertical poster, " +
       "solo single character only, exactly one figure in the whole image, no other characters, no text, no letters");
-    return head + tail + (stageObj.prop ? (", " + stageObj.prop) : "") + ", " + CONSISTENCY + ", " + BG_NEG;
+    return head + tail + ", " + CONSISTENCY + ", " + BG_NEG;
   }
   // 今天是不是节令；是、且没记过 → 写一条（返回新记录，否则 null）
   function ensureFest(item, rec, ctx) {
@@ -7334,6 +7341,69 @@
     "leaning on each other like old friends, quiet and intimate, warm night light and floating dust motes",
     "a deep bond, they understand each other without words, breathtaking magical light, petals or light particles in the air",
   ];
+  /* ============================================================
+   * v165-A · CG 姿势词剥离（⛔ 只作用于 CG 装配路径；立绘 promptFor 一字不动）
+   *
+   * 根因（用户反馈）：CG 的姿势被「比例锁定块」压死 —— 用户写「右手搭在石桌边沿」，
+   *   装配出来的 prompt 里却同时有 STAGES[].look 的 "confident pose"、
+   *   STAGES[].prop 的 "mature elegant standing pose" 和 "the figure stands at full height, head to feet"、
+   *   以及立绘出图单的 "pose: …"。四股姿势指令互相打架 → 模型取平均，画出尴尬的半站半坐。
+   *
+   * 铁律：**CG 的姿势唯一来源 = 用户（确认后）的画面描述**。
+   *   · stripPose(text)               —— 剥掉文本里的姿势短语（只用于 CG 路径）
+   *   · cgPropFor(stage, shot)        —— 去姿势化的比例块；并按景别收放"全身 / 腿长"约束
+   *   · briefHard(lk, { noPose:true })—— 出图单硬约束里去掉 pose 那一项
+   * ============================================================ */
+  // 姿势短语（含修饰词）：mature elegant standing pose / mature majestic standing pose / confident pose / energetic pose / dramatic pose …
+  // 「the figure stands at full height, head to feet」= "站直"，是姿势而非构图 → 也归此列（⛔ 任何景别都删）。
+  const CG_POSE_RE = [
+    /\b(?:(?:mature|elegant|majestic|graceful|adult|natural|relaxed|classical|confident|dramatic)\s+)*standing pose\b/gi,
+    /\bconfident pose\b/gi,
+    /\benergetic pose\b/gi,
+    /\bdramatic pose(?: and camera angle)?\b/gi,
+    /\bthe figure stands at full height,\s*head to feet\b/gi,
+  ];
+  // 「全身头身比 / 时装画锚词 / 腿长可读」= 只有全身 / 远景（shot.wide）才保留。
+  //   近景 / 半身 / 特写里它们与画框矛盾，还会把模型往"全身立绘"带（用户反馈的构图 bug）。
+  //   ⚠️ (?<!no ) 保护负向「no tall slender figure / no long legs」（凝形/开窍的护身符，别被删成 "no ,"）。
+  const CG_WIDE_ONLY_RE = [
+    /\ban? \d+(?:\.\d+)?-heads-tall figure \(the head's height is [^)]*\)/gi,
+    /\bfashion-illustration proportions\b/gi,
+    /\btall runway-model silhouette\b/gi,
+    /\belongated elegant figure\b/gi,
+    /(?<!no )(?:very )?tall slender figure\b/gi,
+    /\bnarrow shoulders\b/gi,
+    /\b(?:elegant )?adult body silhouette\b/gi,
+    /\bthe waistline and the legs' length stay visually readable\b/gi,
+    /\bthe legs' length stays visually readable\b/gi,
+    /(?<!no )\blong legs\b/gi,
+  ];
+  // 删词后收尾：把遗留的 ", ," / "; ;" / " ," 归整成单分隔符（⛔ 只用于 CG 路径的拼接）
+  function cgTidy(s) {
+    return String(s || "")
+      .replace(/\s+/g, " ")
+      .replace(/\s*[,;][\s,;]*/g, function (m) { return /;/.test(m) ? "; " : ", "; })
+      .replace(/^[\s,;]+/, "")
+      .replace(/[\s,;]+$/, "")
+      .trim();
+  }
+  function stripPose(text) {
+    let s = String(text || "");
+    for (let i = 0; i < CG_POSE_RE.length; i++) s = s.replace(CG_POSE_RE[i], " ");
+    return cgTidy(s);
+  }
+  function cgPropFor(stage, shot) {
+    const sd = stageDef(Math.max(1, Number(stage) || 1));
+    let s = stripPose(String(sd.prop || ""));   // stripPose 已含「站直」短语（CG_POSE_RE 第 5 条）
+    const wide = !(shot && !shot.wide);          // shot 缺省 / 全身远景 → 完整比例块；近景半身特写 → 精简
+    if (!wide) {
+      for (let i = 0; i < CG_WIDE_ONLY_RE.length; i++) s = s.replace(CG_WIDE_ONLY_RE[i], " ");
+      // 锚句被整段删空后，"PROPORTION LOCK:" 会直接顶着下一个标签 → 补一句"头部相对身体要小"填位
+      s = s.replace(/PROPORTION LOCK:[^A-Za-z]*SILHOUETTE RULE:/i,
+        "PROPORTION LOCK: the head stays small in proportion to the body; SILHOUETTE RULE:");
+    }
+    return cgTidy(s);
+  }
   // 单只沁灵的 CG（蜕形 / 化形用）
   function promptForCg(item, styleKey, stage, appearance, look, sceneText, shot) {
     const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
@@ -7344,12 +7414,12 @@
     const ap = _ab.ap;
     const color = lk.hairEn;
     const stageObj = stageDef(stage);
-    const stageLook = stageObj.look;
+    const stageLook = stripPose(stageObj.look);   // v165-A：剥姿势词（姿势归画面描述）
     const head = CG_STYLE + ", " + appearancePrompt(ap) + ", with " + color + " hair and " + lk.outfitEn + " themed outfit"
       + (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") + lookExtra(lk) + ", " +
       stageLook
       + (lookHard(lk) ? (", " + lookHard(lk)) : "")
-      + (briefHard(lk) ? (", " + briefHard(lk)) : "")
+      + (briefHard(lk, { noPose: true }) ? (", " + briefHard(lk, { noPose: true })) : "")
       + ", " + st;
     const scene = cgSceneClause(sceneText, shot);
     const tail = scene
@@ -7395,6 +7465,9 @@
       "HORIZONTAL LANDSCAPE COMPOSITION, 16:9 widescreen framing, not a portrait, not a vertical poster";
   }
   // 两只沁灵的事件 CG（房间剧情用）
+  // v165-A：① 补上**漏掉的画面描述** —— 旧版收了 sceneText 参数、却从未拼进 prompt（用户确认的描述进了黑洞，
+  //           而 cgPromptFromBrief 又以为基串已含描述）。② 不再写死 "standing or sitting side by side"（那是姿势，
+  //           交给用户描述）。③ 景别听 shot（近景/半身时不再强塞全景）。
   function storyCgPrompt(a, b, level, roomName, sceneText, shot) {
     // v127：两人的发色/特征也走「设定向导」的结果（用户确认过的优先）
     const lkA = a.look || lookOf(a.item, a.rec || null);
@@ -7404,6 +7477,15 @@
     const nmA = (a.persona && a.persona.name) || a.item.name || "first character";
     const nmB = (b.persona && b.persona.name) || b.item.name || "second character";
     const mood = CG_MOOD[Math.min(CG_MOOD.length - 1, Math.max(0, Number(level) || 0))];
+    const sc = String(sceneText || "").trim();
+    const shotEn = sc
+      ? ((shot ? shot.en : "landscape wide shot of the whole room") + ", scene: " + sc +
+         ", the two characters keep their hair color, eye color, outfits and accessories consistent, " +
+         "HORIZONTAL LANDSCAPE COMPOSITION, 16:9 widescreen framing, not a portrait, not a vertical poster, ")
+      : ((shot ? (shot.en + ", ") : "landscape wide shot of the whole room, "));
+    const poseBit = sc
+      ? "the two of them together in the same scene, their poses and gestures exactly as the scene describes, "
+      : "the two of them together in the room, side by side, ";
     return CG_STYLE + ", " + mood + ", " +
       "scene: a cozy ancient Chinese room called \"" + (roomName || "little room") + "\", " +
       // v165：traditional hanfu costume -> classical Chinese-inspired costume（各自随自己意象，⛔ 不锁汉服）
@@ -7411,8 +7493,7 @@
       "① " + appearancePrompt(apA) + ", with " + lkA.hairEn + " hair and " + lkA.outfitEn + " outfit" + lookExtra(lkA) + " (name: " + nmA + "), " +
       "② " + appearancePrompt(apB) + ", with " + lkB.hairEn + " hair and " + lkB.outfitEn + " outfit" + lookExtra(lkB) + " (name: " + nmB + "), " +
       "they are the same two characters as before, keep their hair color, eye color, outfits and accessories consistent, " +
-      (shot ? (shot.en + ", ") : "landscape wide shot of the whole room, ") +
-      "the two of them standing or sitting side by side with the room around them, " +
+      shotEn + poseBit +
       "keep exactly two characters in the image, no extra people, no duplicates" +
       (lookHard(lkA) ? (", " + nmA + ": " + lookHard(lkA)) : "") +
       (lookHard(lkB) ? (", " + nmB + ": " + lookHard(lkB)) : "") + ", " + CONSISTENCY + ", " + BG_NEG;
@@ -7540,6 +7621,7 @@
 
   // 装配最终英文 prompt：CG_STYLE / 外观 / 阶段 / ANATOMY / CONSISTENCY / BG_NEG / PROPORTION LOCK **一律照带**
   // ⚠️ 顺序：确认后的描述 + CONSISTENCY + BG_NEG 插在**比例锁定块之前** —— PROPORTION LOCK 永远压在最末尾。
+  // v165-A：比例块改走 cgPropFor(stage, shot)（去姿势化 + 按景别收放"全身/腿长"），不再直接复用 sd.prop。
   function cgPromptFromBrief(brief, o) {
     const x = o || {};
     const b = String(brief || "").trim();
@@ -7547,15 +7629,14 @@
     const scene = kw || b;                     // 有英文关键词就用关键词，否则直附中文描述（模型读得懂）
     const shot = shotClause(b + " " + kw);     // v166-CG2：景别优先从中文原文解析，确保「近景/半身」不被关键词吃掉
     const stage = Math.max(1, Number(x.stage) || 1);
-    const sd = stageDef(stage);
-    const prop = sd.prop ? (", " + sd.prop) : "";
     let base;
     if (x.kind === "pair") base = storyCgPrompt(x.a, x.b, x.level, x.roomName, scene, shot);
     else if (x.kind === "fest") base = festCgPrompt(x.item, null, stage, x.appearance, x.look, x.fest, scene, shot);
     else base = promptForCg(x.item, null, stage, x.appearance, x.look, scene, shot);
     // base 已以「brief/关键词」为主场景 + 外观 + 阶段 + CONSISTENCY + BG_NEG；末尾只补比例锁定块（PROPORTION LOCK 永远压最后）。
     // ⛔ v166-CG 修复：不再把 brief 当低权重尾巴追加 —— 它现在是主场景描述。
-    return base + prop;
+    const prop = cgPropFor(stage, shot);
+    return base + (prop ? (", " + prop) : "");
   }
 
   // 用**任意 prompt**出图（剧情 CG 用；沁灵主图仍走 generateImage）
@@ -7847,6 +7928,8 @@
     personaZh, personaZhLocal, ensureDiary, diarySlots, diaryLocal, roomStory, storyLocal,
     // v125：剧情 CG
     storyCgPrompt, promptForCg, generateCustom, CG_STYLE, CG_SIZE_BY_PROVIDER, cgSizeFor, cgLadderFor,
+    // v165-A：CG 姿势词剥离（stripPose / cgPropFor）+ 景别解析（SHOT_MAP / shotClause / cgSceneClause）
+    SHOT_MAP, shotClause, cgSceneClause, CG_POSE_RE, CG_WIDE_ONLY_RE, cgTidy, stripPose, cgPropFor,
     // v165-R2：CG「描述先行」三段式（⓪ 生成中文描述 → ① 用户确认/编辑 → ② 提取关键词装配 prompt → 手动出图）
     CG_BRIEF_CFG, CG_BRIEF_SYS, CG_BRIEF_SYS_INTENT, cgBriefFacts, cgBriefLocal, cgBrief, cgKeywords, cgPromptFromBrief,
     // v125：阶段规则 —— 凝形/开窍只有立绘；觉醒/化形额外出 CG

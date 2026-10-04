@@ -76,6 +76,11 @@ const FULLBODY = "full body visible from head to toe";
 const WIDE_BOTH = "wide scenery on both sides";
 
 const FN = {
+  CG_POSE_RE: extractConst("CG_POSE_RE"),
+  CG_WIDE_ONLY_RE: extractConst("CG_WIDE_ONLY_RE"),
+  cgTidy: extractFn("cgTidy"),
+  stripPose: extractFn("stripPose"),
+  cgPropFor: extractFn("cgPropFor"),
   SHOT_MAP: extractConst("SHOT_MAP"),
   shotClause: extractFn("shotClause"),
   cgSceneClause: extractFn("cgSceneClause"),
@@ -114,7 +119,8 @@ function load(sandbox, names) {
   vm.runInContext(code, vm.createContext(sandbox), { filename: "spirits.js#extracted" });
   return sandbox.__api;
 }
-const FULL_SET = ["SHOT_MAP", "shotClause", "cgSceneClause", "promptForCg", "cgPromptFromBrief"];
+const FULL_SET = ["CG_POSE_RE", "CG_WIDE_ONLY_RE", "cgTidy", "stripPose", "cgPropFor",
+  "SHOT_MAP", "shotClause", "cgSceneClause", "promptForCg", "cgPromptFromBrief"];
 
 /* 修复前（buggy）旧实现，内嵌做负向对照 */
 const OLD_SRC = `

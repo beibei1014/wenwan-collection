@@ -127,18 +127,24 @@ ok(SP.stageDef(1).look.indexOf("very simple plain single-layer clothing") >= 0, 
 
 /* ============ G. 三个出图入口都要带 ============ */
 section("G. 立绘 / 单只 CG / 节令 CG 三个入口都带比例锁定");
-const pcg = SP.promptForCg(item, "anime", 1);
+// v166-CG 起 CG 比例块由唯一装配口 cgPromptFromBrief 追加；v165-A 改为去姿势化的 cgPropFor(stage, shot)。
+//   → 测**装配后的 CG prompt**（真实生产路径），不再直接测裸 promptForCg（它已不含比例块，避免与装配口重复）。
+const briefG = "它全身站在庭院正中，右手搭在石桌边沿，暖光融融。";
+const asmCg = (stage, extra) => SP.cgPromptFromBrief(briefG, Object.assign({ kind: "stage", item: item, stage: stage }, extra || {}));
+const pcg = asmCg(1);
 ok(pcg.indexOf("PROPORTION LOCK") >= 0, "单只 CG 带比例锁定块");
 ok(hcRe(SP.headCountOf(1)).test(pcg), "单只 CG 也复述 " + SP.headCountOf(1) + " 头身（⛔ 动态读 HEAD_COUNT，不写死）");
 ok(pcg.length - pcg.lastIndexOf("PROPORTION LOCK") < 400, "单只 CG 的比例锁定也在末尾");
 // v165-R1：头身比由 HEAD_COUNT 单点决定（蜕形 8 / 化形 9），⛔ 3/4 阶一律动态读，不写死数字
-const pcg3 = SP.promptForCg(item, "anime", 3);
+const pcg3 = asmCg(3);
 ok(hcRe(SP.headCountOf(3)).test(pcg3) && /no chibi/.test(pcg3),
    "单只 CG 在第 3 阶走 HEAD_COUNT(3)=" + SP.headCountOf(3) + " 头身 + 反对 chibi");
-const pcg4 = SP.promptForCg(item, "anime", 4);
+const pcg4 = asmCg(4);
 ok(hcRe(SP.headCountOf(4)).test(pcg4) && /no chibi/.test(pcg4),
    "单只 CG 在第 4 阶走 HEAD_COUNT(4)=" + SP.headCountOf(4) + " 头身 + 反对 chibi");
-const pfest = SP.festCgPrompt(item, "anime", 1, null, null, { key: "duanwu" });
+// v165-A：CG 路径剥掉姿势词 —— 用户描述里的动作（右手搭在石桌边沿）是唯一姿势来源
+ok(!/standing pose|confident pose/i.test(pcg3), "CG 装配不含竞争姿势短语（v165-A：姿势归画面描述）");
+const pfest = SP.cgPromptFromBrief(briefG, { kind: "fest", item: item, stage: 1, fest: { key: "duanwu" } });
 ok(pfest.indexOf("PROPORTION LOCK") >= 0, "节令 CG 带比例锁定块");
 ok(hcRe(SP.headCountOf(1)).test(pfest), "节令 CG 也复述 " + SP.headCountOf(1) + " 头身（⛔ 动态读）");
 
