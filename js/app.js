@@ -4857,16 +4857,26 @@
   function openSpiritCgManager(id) {
     const store = Spirits.load();
     const rec = Spirits.ensureIn(store, id);
+    if (typeof Spirits.ensureCgList === "function") Spirits.ensureCgList(rec);   // v172-E：懒迁移（老档补 cgList）
     const items = [];
     if (rec.cgUrl) items.push({ kind: "adv", url: rec.cgUrl, label: "进阶专属 CG" });
     const cgs = rec.cgs || {};
+    const advUrls = {};                                     // adv# 归档里的 url —— 与 cgList 去重
     Object.keys(cgs).forEach((k) => {
       const m = cgs[k];
       if (m && m.hasImg && (m.thumb || m.imgUrl)) {
+        const u = m.thumb || m.imgUrl;
+        if (String(k).startsWith("adv#") && u) advUrls[u] = true;
         // v166：回填后 adv# 条目与 rec.cgUrl 是同一张图 → 去重，避免列两遍
         if (String(k).startsWith("adv#") && rec.cgUrl && (m.thumb === rec.cgUrl || m.imgUrl === rec.cgUrl)) return;
-        items.push({ kind: "cg", key: k, url: m.thumb || m.imgUrl, label: (k.indexOf("adv#") === 0 ? "进阶 CG" : "主线 CG") + " " + (m.title || k) });
+        items.push({ kind: "cg", key: k, url: u, label: (k.indexOf("adv#") === 0 ? "进阶 CG" : "主线 CG") + " " + (m.title || k) });
       }
+    });
+    // v172-E：历史进阶 CG（cgList）—— 与 cgUrl / adv# 归档去重后逐个列出，可单独删
+    const cgl = (typeof Spirits.cgListRO === "function") ? (Spirits.cgListRO(rec) || []) : [];
+    cgl.forEach((u) => {
+      if (!u || u === rec.cgUrl || advUrls[u]) return;
+      items.push({ kind: "cgl", url: u, label: "进阶 CG · 历史" });
     });
     // v165-C：节令限定插画
     const fests = rec.fests || {};
@@ -4878,6 +4888,7 @@
     if (!items.length) { toast("还没有可管理的 CG"); return; }
     openDelManager("🗑 管理 CG", items, (it2) => {
       if (it2.kind === "adv") { rec.cgUrl = ""; rec.cgKey = ""; rec.cgStage = 0; }
+      else if (it2.kind === "cgl") { if (typeof Spirits.cgListRemove === "function") Spirits.cgListRemove(rec, it2.url); }   // v172-E：⛔ 只删本地引用，云端文件不动
       else if (it2.kind === "fest") { if (rec.fests && rec.fests[it2.key]) { rec.fests[it2.key].cgUrl = ""; rec.fests[it2.key].cgAt = 0; } }
       else { delete rec.cgs[it2.key]; }
       Spirits.save(store);
@@ -5373,9 +5384,13 @@
           seedKey: "cg|" + id + "|" + stage, variant: r1.variant || 0, ref: "",
         });
         const s2 = Spirits.load(); const r2 = Spirits.ensureIn(s2, id);
-        r2.cgUrl = out.url || ""; r2.cgAt = Date.now(); r2.cgStage = stage; r2.cgKey = cgKeyOf(r2);
-        // v166：进阶专属 CG 同时归档进 rec.cgs（相册「进阶 CG」分区），id 用 adv#<阶>；cgCollectedIds 已排除该前缀、不撑进度
-        Spirits.cgMarkCollected(r2, "adv#" + stage, {
+        const _cgAt = Date.now();
+        // v172-E：覆盖前先把**旧图**推进历史列表 → 同阶重画不丢旧图（⛔ 不覆盖）
+        if (r2.cgUrl && typeof Spirits.cgListPush === "function") Spirits.cgListPush(r2, r2.cgUrl);
+        r2.cgUrl = out.url || ""; r2.cgAt = _cgAt; r2.cgStage = stage; r2.cgKey = cgKeyOf(r2);
+        // v166：进阶专属 CG 同时归档进 rec.cgs（相册「进阶 CG」分区）；cgCollectedIds 已排除 adv# 前缀、不撑进度
+        // v172-E：归档 key **唯一化**（adv#<阶>#<时间>）→ 同阶多次生成各成一条，⛔ 不覆盖旧图
+        Spirits.cgMarkCollected(r2, Spirits.cgAdvKey(stage, _cgAt), {
           title: "进阶专属 CG · " + Spirits.stageDef(stage).name,
           caption: (brief || "").slice(0, 50),
           key: cgKeyOf(r2),
