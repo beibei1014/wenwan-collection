@@ -33,12 +33,14 @@ function newS() { const c = H.makeContext(); H.loadFile(c.ctx, SPIRITS_SRC); ret
     ok(S.BG_CATALOG["BG-19"].name.indexOf("星月坛") >= 0, "BG-19 名含「星月坛」");
     ok(S.BG_CATALOG["BG-21"].name.indexOf("雪夜") >= 0, "BG-21 名含「雪夜」");
     ok(!/DENSITY|密集恐惧/i.test(JSON.stringify(S.BG_CATALOG)), "⛔ 不含 DENSITY / 密集恐惧 类约束");
-    // v165 收尾：prompt 换正式英文正文（BG_STYLE 前缀 + 英文正文，规范 §1.1/§2.2）
+    // v172-C：BG 竖版改写（WIDE LANDSCAPE HORIZONTAL 16:9 → VERTICAL PORTRAIT 9:16，手机全屏）
     ok(typeof S.BG_STYLE === "string"
       && /empty scene, no people/.test(S.BG_STYLE)
-      && /16:9/.test(S.BG_STYLE)
-      && /WIDE LANDSCAPE HORIZONTAL COMPOSITION/.test(S.BG_STYLE),
-      "BG_STYLE 前缀含 empty scene, no people / 16:9 / 横版声明");
+      && /9:16/.test(S.BG_STYLE)
+      && /VERTICAL PORTRAIT COMPOSITION/.test(S.BG_STYLE),
+      "BG_STYLE 前缀含 empty scene, no people / 9:16 / 竖版声明（v172-C 竖版改写）");
+    ok(!/16:9/.test(S.BG_STYLE) && !/WIDE LANDSCAPE HORIZONTAL COMPOSITION/.test(S.BG_STYLE),
+      "⛔ BG_STYLE 已无横版残留（16:9 / WIDE LANDSCAPE HORIZONTAL COMPOSITION）");
     ok(keys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_STYLE) === 0), "每条 prompt 均以 BG_STYLE 前缀开头");
     ok(keys.every((k) => /no people, empty scene/.test(S.BG_CATALOG[k].prompt)), "21/21 条 prompt 含 no people, empty scene（空镜无人）");
     // v165 返工：三段式 —— 尾部再拼 **BG_NEG**（场景专用，⛔ 不含人物向词；立绘仍用 NEG_STYLE）
@@ -52,7 +54,8 @@ function newS() { const c = H.makeContext(); H.loadFile(c.ctx, SPIRITS_SRC); ret
       "BG_NEG 含 horror/eerie/creepy/ominous/haunted/gloomy/murky/desaturated/vignette 全集（用户实测「太诡异」返工）");
     ok(!/gentle neutral expressions/.test(S.BG_NEG) && !/hanfu/.test(S.BG_NEG),
       "⛔ BG_NEG 已剔除人物向词（gentle neutral expressions / hanfu-inspired costume）");
-    ok(keys.every((k) => S.BG_CATALOG[k].prompt.slice(-(S.BG_NEG || "").length) === S.BG_NEG), "21/21 条 prompt 以 BG_NEG 收尾（三段式拼装）");
+    ok(keys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_NEG) > 0 && S.BG_CATALOG[k].prompt.indexOf(", " + S.BG_NEG + ", ") > 0), "21/21 条 prompt 含 BG_NEG（三段式拼装，v172-C 后由 NO_QING 收尾）");
+    ok(typeof S.NO_QING === "string" && keys.every((k) => S.BG_CATALOG[k].prompt.slice(-(S.NO_QING || "").length) === S.NO_QING), "21/21 条 prompt 以 NO_QING 收尾（v172-C 去清代追加在末尾）");
     ok(keys.every((k) => (S.BG_CATALOG[k].prompt.split(S.BG_NEG || "\u0000").length - 1) === 1), "BG_NEG 每条恰好出现 1 次（不重复拼接）");
     ok(keys.every((k) => !/hanfu/i.test(S.BG_CATALOG[k].prompt)), "21/21 条 BG prompt 无 hanfu 人物向污染");
     ok(keys.every((k) => !/cinematic directional lighting|atmospheric depth and haze/.test(S.BG_CATALOG[k].prompt)),
@@ -100,8 +103,8 @@ function newS() { const c = H.makeContext(); H.loadFile(c.ctx, SPIRITS_SRC); ret
       };
       const u = await S.ensureBg("BG-02", deps);
       ok(u === "https://cdn/bg/BG-02.jpg" && wrote["BG-02"] === u, "未命中成功：出图→压→云→写 ww_bg→返回云 URL");
-      ok(!!genArgs && genArgs.o.seedKey === "bg:BG-02" && genArgs.o.variant === 0 && genArgs.o.landscape === true,
-        "generate 入参 seedKey=bg:BG-02 / variant:0 / landscape:true");
+      ok(!!genArgs && genArgs.o.seedKey === "bg:BG-02" && genArgs.o.variant === 0 && genArgs.o.landscape === false && genArgs.o.size === "1440x2560",
+        "generate 入参 seedKey=bg:BG-02 / variant:0 / landscape:false / size:1440x2560（v172-C 竖版 9:16）");
       ok(!!genArgs && genArgs.p === S.BG_CATALOG["BG-02"].prompt, "generate 用 catalog 里的 prompt");
       ok(!!toArgs && toArgs.bigMax === 1280 && toArgs.bigQ === 0.88, "压缩规格：云端长边 1280 / q0.88（规范 §5）");
       ok(!!toArgs && toArgs.localMax === 768 && toArgs.localQ === 0.86, "兜底规格：本地长边 768 / q0.86（规范 §5）");

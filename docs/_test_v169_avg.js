@@ -252,7 +252,7 @@ ok(/body\.talk-open \.tabbar \{ display: none/.test(cssSrc), "沉浸态隐藏底
 ok(/body\.talk-open \.view \{[^}]*animation: none/.test(cssSrc), "沉浸态关掉 .view 入场动画（否则 fixed 被困）");
 ok(/\.nt-chat\.immersive \{ position: fixed; inset: 0; z-index: 40/.test(cssSrc), ".nt-chat.immersive 整屏 fixed z40");
 ok(/\.nt-chat\.immersive \.scenebg\.blurpane[^}]*blur\(22px\)/.test(cssSrc), "blurpane：cover + blur(22px)");
-ok(/\.nt-chat\.immersive \.scenebg\.sharppane[^}]*background-size: contain/.test(cssSrc), "sharppane：contain");
+ok(/\.nt-chat\.immersive \.scenebg\.sharppane[^}]*background-size: cover/.test(cssSrc), "sharppane：cover（v172-C 竖版 9:16 铺满，不再 letterbox）");
 ok(/\.talk-portrait img \{[^}]*object-fit: cover; object-position: center 12%/.test(cssSrc), "立绘 object-fit:cover + object-position:center 12%");
 ok(/\.talk-box \{[^}]*left: 16px; right: 16px/.test(cssSrc) && /min-height: 132px/.test(cssSrc), "对话框 left/right 16 + min-height 132");
 ok(/backdrop-filter: blur\(8px\)/.test(cssSrc), "对话框 backdrop-filter blur(8px)");

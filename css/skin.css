@@ -1122,11 +1122,11 @@ body.talk-open .view { padding: 0; max-width: none; min-height: 0; animation: no
   display: block; border-radius: 0; overflow: hidden; background: #14100c; }
 .nt-chat.immersive .nt-chat-head { display: none; }             /* 旧顶部封面条退场 */
 
-/* 双层 BG：模糊垫满（补掉 16:9 进竖屏的上下空档）+ 清晰 contain（保留完整构图） */
+/* 双层 BG：模糊垫满（补掉画面比例差）+ 清晰 cover（竖版 9:16 铺满，⛔ 不再 letterbox） */
 .nt-chat.immersive .scenebg { position: absolute; inset: 0; z-index: 0; border-radius: 0; opacity: 1; pointer-events: none; }
 .nt-chat.immersive .scenebg.blurpane  { background-size: cover;  background-position: center;
   filter: blur(22px) saturate(.95) brightness(.72); transform: scale(1.14); }
-.nt-chat.immersive .scenebg.sharppane { background-size: contain; background-position: center 42%; z-index: 1; }
+.nt-chat.immersive .scenebg.sharppane { background-size: cover; background-position: center 42%; z-index: 1; }
 
 /* 底部渐暗遮罩：压立绘下缘、托起对话框（保证暗底白字对比 ≥7:1） */
 .nt-chat.immersive::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 46%;

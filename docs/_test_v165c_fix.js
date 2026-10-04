@@ -244,7 +244,8 @@ const readApp = () => fs.readFileSync(path.join(ROOT, APP_SRC), "utf8");
     ok(keys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_STYLE) === 0), "21/21 以 BG_STYLE 开头");
     ok(keys.every((k) => /no people, empty scene/.test(S.BG_CATALOG[k].prompt)), "21/21 含 no people, empty scene");
     ok(typeof S.BG_NEG === "string" && S.BG_NEG.length > 0, "BG_NEG 存在（场景专用）");
-    ok(keys.every((k) => S.BG_CATALOG[k].prompt.slice(-(S.BG_NEG || "").length) === S.BG_NEG), "21/21 以 BG_NEG 收尾");
+    ok(keys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_NEG) > 0), "21/21 仍含 BG_NEG（场景专用负向）");
+    ok(typeof S.NO_QING === "string" && keys.every((k) => S.BG_CATALOG[k].prompt.slice(-(S.NO_QING || "").length) === S.NO_QING), "21/21 以 NO_QING 收尾（v172-C：BG_NEG 之后追加去清代）");
     ok(keys.every((k) => !/hanfu/i.test(S.BG_CATALOG[k].prompt)), "21/21 无 hanfu 人物向污染");
     ok(!/gentle neutral expressions/.test(S.BG_NEG), "⛔ BG_NEG 已剔除 gentle neutral expressions");
     ok(/horror/.test(S.BG_NEG) && /eerie/.test(S.BG_NEG) && /creepy/.test(S.BG_NEG) && /ominous/.test(S.BG_NEG),
