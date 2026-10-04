@@ -4633,6 +4633,9 @@
     const mates = room ? Rooms.membersOf(room.id, items).filter((x) => x.id !== id) : [];
     const diary = (rec.diary || []).slice().reverse();
     const hist = (rec.imgHistory || []).filter((x) => x && x.url);
+    // v166：立绘 / CG 是否「有可管理的图」（供「🗑 管理」按钮显隐）
+    const _hasImg = !!rec.imgUrl || hist.length > 0;
+    const _hasCg = !!rec.cgUrl || !!(rec.cgs && Object.keys(rec.cgs).some((k) => rec.cgs[k] && rec.cgs[k].hasImg));
 
     // v126：还没出图时给一个立绘骨架屏（比空白/兜底小沁灵更像"正在画"）
     // v166：生成了进阶 CG 的沁灵，**优先在详情页展示 CG**（而不是立绘）；点图看大图。没有 CG 才回落立绘。
@@ -8320,6 +8323,15 @@
     }
 
     html += '<button class="btn ghost" id="btnTips" style="width:100%;margin-top:14px">📖 养护小知识</button>';
+    // v166：沁灵进化开关 —— 仅挂瓷的珠子串可开沁（出立绘+CG）；不喜欢的串可设「只当手串」
+    if (isBeadCat(it.category || "") && it.playStatus === "done") {
+      const _sr = Spirits.load()[it.id];
+      const _isSpirit = !(_sr && _sr.spirit === false);
+      html += '<div class="sd-card" style="margin-top:14px"><div class="sd-card-title">✨ 沁灵进化</div>' +
+        '<div class="sd-line">这只串可以开沁化成沁灵（出立绘 + CG）。不太喜欢它，就关掉，只当手串收藏。</div>' +
+        '<button class="btn ' + (_isSpirit ? "ghost" : "primary") + '" id="btnSpiritToggle" style="width:100%;margin-top:8px">' +
+        (_isSpirit ? "📿 已开沁 · 点此改为只当手串" : "✨ 当前只当手串 · 点此重新开沁") + '</button></div>';
+    }
     html += '<div class="detail-actions">';
     html += '<div class="detail-actions">' +
       '<div class="detail-stars"><span class="detail-stars-label">⭐ 评分</span>' + starHtml(it, "detail-stars") + '<span class="detail-stars-hint">' + itemStars(it) + ' 星' + (itemStars(it) >= 5 ? " · 已进喜欢展柜" : "") + '</span></div>' +
