@@ -3342,8 +3342,12 @@
     const list = spiritItems();
     // v166：全局画廊 —— 跨所有沁灵聚合 CG，顶部「主线 / 进阶」两个 tab 切换（不再按人头分组）
     const mainCgs = [], advCgs = [];
+    let _migrated = false;
     list.forEach((it) => {
-      const rec = store[it.id] || {};
+      const rec = Spirits.ensureIn(store, it.id, it);
+      // v166：把 V166 之前生成的进阶 CG（只存了 rec.cgUrl、没归档进 rec.cgs）补写进相册集合，
+      //   否则相册（全局画廊）永远聚不到那只串的 CG —— 用户「明明有 CG 却啥都不显示」的根因。
+      if (Spirits.backfillAdvCg(rec)) _migrated = true;
       const name = spiritName(it, store);
       Spirits.cgCollectedIds(rec).forEach((k) => {
         const m = Spirits.cgMetaOf(rec, k);
@@ -3354,6 +3358,7 @@
         if (m && m.hasImg) advCgs.push({ ownerId: it.id, ownerName: name, id: k, meta: m });
       });
     });
+    if (_migrated) { try { Spirits.save(store); } catch (e) { /* 忽略：回填失败不影响本次展示 */ } }
     const byAt = (a, b) => (Number(a.meta.at) || 0) - (Number(b.meta.at) || 0);
     mainCgs.sort(byAt); advCgs.sort(byAt);
     // v166：默认选「主线」；但若主线为空、进阶有图，自动跳到「进阶」tab（避免用户以为没图）
@@ -4581,7 +4586,11 @@
     const cgs = rec.cgs || {};
     Object.keys(cgs).forEach((k) => {
       const m = cgs[k];
-      if (m && m.hasImg && (m.thumb || m.imgUrl)) items.push({ kind: "cg", key: k, url: m.thumb || m.imgUrl, label: (k.indexOf("adv#") === 0 ? "进阶 CG" : "主线 CG") + " " + (m.title || k) });
+      if (m && m.hasImg && (m.thumb || m.imgUrl)) {
+        // v166：回填后 adv# 条目与 rec.cgUrl 是同一张图 → 去重，避免列两遍
+        if (String(k).startsWith("adv#") && rec.cgUrl && (m.thumb === rec.cgUrl || m.imgUrl === rec.cgUrl)) return;
+        items.push({ kind: "cg", key: k, url: m.thumb || m.imgUrl, label: (k.indexOf("adv#") === 0 ? "进阶 CG" : "主线 CG") + " " + (m.title || k) });
+      }
     });
     if (!items.length) { toast("还没有可管理的 CG"); return; }
     openDelManager("🗑 管理 CG", items, (it2) => {
@@ -4649,8 +4658,7 @@
     // v166：生成了进阶 CG 的沁灵，**优先在详情页展示 CG**（而不是立绘）；点图看大图。没有 CG 才回落立绘。
     const _cgShown = rec.cgUrl || "";
     const artInner = _cgShown
-      ? '<img class="spirit-img big cg-as-art" id="sdArtCg" src="' + esc(_cgShown) + '" alt="CG">' +
-        '<div class="sd-gen-hint" style="margin-top:6px">🎬 这是它的进阶专属 CG（蜕形 / 化形场景）</div>'
+      ? '<img class="spirit-img big cg-as-art" id="sdArtCg" src="' + esc(_cgShown) + '" alt="CG">'
       : (rec.imgUrl
         ? spiritImgHtml(it, rec, 240, "spirit-img big")
         : '<div class="sk sk-art"></div><div class="sd-gen-hint" style="margin-top:8px">正在画它的立绘…（约 15-20 秒）</div>');

@@ -243,6 +243,25 @@
     return Object.keys(c).filter((k) => c[k] && c[k].hasImg && String(k).startsWith("adv#"))
       .sort((a, b) => (Number(c[a].at) || 0) - (Number(c[b].at) || 0));
   }
+  // v166：老档回填 —— V166 之前生成的进阶 CG 只存了 rec.cgUrl，没归档进 rec.cgs，相册（全局画廊）聚不到。
+  //   这里把它补写成 adv#<阶> 一条；⛔ 只在 rec.cgUrl 有值、且 rec.cgs 里还没有同图条目时才写。
+  //   返回 true = 本次有改动（调用方据此决定是否 save）。
+  function backfillAdvCg(rec) {
+    if (!rec || typeof rec !== "object" || !rec.cgUrl) return false;
+    const c = cgsRO(rec);
+    if (c) {
+      const hit = Object.keys(c).some((k) => String(k).startsWith("adv#") && c[k] && (c[k].thumb === rec.cgUrl || c[k].imgUrl === rec.cgUrl));
+      if (hit) return false;                       // 已归档过，不重复回填
+    }
+    const stg = Number(rec.cgStage) || Number(rec.stage) || 1;
+    const sd = (typeof stageDef === "function" ? stageDef(stg) : null) || {};
+    cgMarkCollected(rec, "adv#" + stg, {
+      title: "进阶专属 CG · " + (sd.name || stg),
+      caption: String(rec.cgBrief || "").slice(0, 50),
+      key: rec.cgKey || "",
+    }, rec.cgUrl);
+    return true;
+  }
   // 落一张「画成功了」的 CG：元数据进主 store，像素另存 IDB。返回 true = 首次收集
   function cgMarkCollected(rec, id, meta, thumb) {
     const c = cgsOf(rec), key = String(id), old = c[key] || {};
@@ -7888,7 +7907,7 @@
     WHEN_KEYS, whenOK, whenNeed, thMember,
     pruneForQuota,
     // v163：CG 资产库（像素在 IndexedDB / 元数据在主 store；「已收集」只认元数据）
-    CG_DB_NAME, CG_FALLBACK_KEY, CG_TOTAL, CG_THUMB_KEEP, cgsOf, cgMetaOf, cgCollectedIds, cgCollectedCount, cgAdvIds,
+    CG_DB_NAME, CG_FALLBACK_KEY, CG_TOTAL, CG_THUMB_KEEP, cgsOf, cgMetaOf, cgCollectedIds, cgCollectedCount, cgAdvIds, backfillAdvCg,
     cgMarkCollected, cgMarkFailed, cgStateOf, cgSlotOf, dropOldCgThumbs,
     CG_STATE_CLASS, CG_STATE_HINT, cgCellClass, cgCellHint,
     cgPutPixels, cgGetPixels, cgDelPixels, cgHasPixels,

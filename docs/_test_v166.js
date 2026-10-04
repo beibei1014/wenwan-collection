@@ -59,6 +59,8 @@ const FN = {
   genderFromText: extractFn("genderFromText"),
   cgAdvIds: extractFn("cgAdvIds"),
   cgCollectedIds: extractFn("cgCollectedIds"),
+  cgMarkCollected: extractFn("cgMarkCollected"),
+  backfillAdvCg: extractFn("backfillAdvCg"),
   cgBrief: extractFn("cgBrief"),
   cgBriefLocal: extractFn("cgBriefLocal"),
   cgBriefFacts: extractFn("cgBriefFacts"),
@@ -194,6 +196,31 @@ function main() {
     const ids = api.cgCollectedIds(rec);
     ok(ids.length === 1 && ids[0] === "0",
       "I2 · cgCollectedIds 只数主线章节 CG（排除 adv#），进阶 CG 不撑爆 CG_TOTAL 进度");
+  }
+
+  /* ---- 断言 K：老进阶 CG 回填进相册 ---- */
+  section("断言K：V166 之前生成的进阶 CG（只存 rec.cgUrl）必须回填进 rec.cgs 供相册聚合");
+  if (!FN.backfillAdvCg || !FN.cgMarkCollected) ok(false, "抽不到 backfillAdvCg / cgMarkCollected");
+  else {
+    const sb = makeSandbox();
+    sb.cgsOf = (rec) => { if (!rec || typeof rec !== "object") return {}; if (!rec.cgs || typeof rec.cgs !== "object" || Array.isArray(rec.cgs)) rec.cgs = {}; return rec.cgs; };
+    sb.cgsRO = (rec) => { const c = rec && rec.cgs; return (c && typeof c === "object" && !Array.isArray(c)) ? c : null; };
+    const code = [FN.cgMarkCollected, FN.backfillAdvCg, FN.cgAdvIds, FN.cgCollectedIds].filter(Boolean).join("\n") +
+      "\n;__api = { backfillAdvCg, cgAdvIds, cgCollectedIds, cgMarkCollected };";
+    vm.runInContext(code, vm.createContext(sb), { filename: "spirits.js#backfill" });
+    const api = sb.__api;
+    // K1~K4：老档只有 cgUrl（化形时写的）、没有 cgs → 回填后相册能聚到
+    const recOld = { cgUrl: "https://cdn/x.png", cgStage: 4, stage: 4, cgBrief: "它站在雪里", cgKey: "k" };
+    ok(api.backfillAdvCg(recOld) === true, "K1 · 老档(cgUrl 有值 / cgs 无) → backfillAdvCg 返回 true（有改动，触发 save）");
+    const adv = api.cgAdvIds(recOld);
+    ok(adv.length === 1 && adv[0] === "adv#4", "K2 · 回填后 cgAdvIds 得到 adv#4（相册「进阶」tab 能显示它）");
+    ok(recOld.cgs["adv#4"].thumb === "https://cdn/x.png", "K3 · 回填条目 thumb = rec.cgUrl（相册缩略图有图）");
+    ok(api.cgCollectedIds(recOld).length === 0, "K4 · 回填的进阶 CG 不计入主线进度（cgCollectedIds 仍为空）");
+    // K5：幂等 —— 已归档过再调不重复写
+    ok(api.backfillAdvCg(recOld) === false, "K5 · 幂等：已归档过再调 → 返回 false（不重复写、不无谓 save）");
+    // K6：负向对照 —— 修复前（不回填）老档 cgAdvIds 为空，相册看不到
+    const recOld2 = { cgUrl: "https://cdn/y.png", cgStage: 3, stage: 3 };
+    ok(api.cgAdvIds(recOld2).length === 0, "K6 · 负向对照：不回填时老档 cgAdvIds 为空 → 正是「明明有 CG 相册却空」的根因");
   }
 
   /* ---- 断言 J：CG 描述润色分支 ---- */
