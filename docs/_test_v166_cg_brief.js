@@ -3,16 +3,19 @@
  * 覆盖：
  *   A. 带 brief（用户确认的中文画面描述）→ 主场景描述由 brief 驱动，
  *      且**不再**出现通用「beautiful scene that matches its personality, dramatic pose」模板；
- *      仍保留「横版 / 非肖像 / 全身」CG 格式约束。
+ *      仍保留「横版 / 非肖像」CG 格式约束。
  *   B. 带英文关键词（cgKeywords 提取）→ 用关键词作主场景，同样无通用模板。
  *   C. 无 brief（旧路径 / 兜底）→ 回落通用模板（行为不变），证明没有把旧链路搞坏。
  *   D. 负向对照：把**修复前**的旧实现内嵌进来跑同一条断言，预期它仍然含通用模板
- *      （即旧 bug 存在），从而证明本断言确实能抓到回归。
+ *      （即旧 bug 存在），从而证明断言 A2 确实能抓到回归。
  *   E. 静态检查：三条 CG 出图调用点不再把立绘当 i2i 参考图（ref: r1.imgUrl / ref: ((_rA...）。
+ *   F. v166-CG2 **景别驱动**：brief 里的「特写 / 近景半身 / 中景 / 全身 / 远景」必须真正改变
+ *      画面景别（替换掉 CG_STYLE / 通用模板里焊死的 "full body / wide scenery"），
+ *      且景别从**中文原文**解析（不被英文关键词吞掉）。含旧实现负向对照。
  *
  * 作者不可信原则：源码按大括号配对**自己抽**，沙箱里跑抽出来的真函数。
  * 用法：
- *   APP_SRC_FILE=work/spirits.js node work/_test_v166_cg_brief.js
+ *   APP_SRC_FILE=work/spirits.js APP_APP_FILE=work/app.js node work/_test_v166_cg_brief.js
  */
 "use strict";
 const fs = require("fs");
@@ -30,7 +33,7 @@ function ok(cond, msg) { if (cond) PASS++; else { FAIL++; FAILURES.push(msg); co
 function section(t) { console.log("\n=== " + t + " ==="); }
 function info(s) { console.log("  · " + s); }
 
-/* ---------- 1. 抽函数（带 async 前缀；跳过字符串/注释里的括号） ---------- */
+/* ---------- 1. 抽函数 / 常量 ---------- */
 function extractFn(name) {
   const re = new RegExp("(async\\s+)?function\\s+" + name + "\\s*\\(");
   const m = re.exec(src);
@@ -56,17 +59,32 @@ function extractFn(name) {
   }
   return src.slice(m.index, i);
 }
-// 抽常量字符串（多行也行）：const NAME = "...";  —— 这里只需要字面占位，故直接给固定值
+function extractConst(name) {
+  const re = new RegExp("const\\s+" + name + "\\s*=\\s*\\[");
+  const m = re.exec(src);
+  if (!m) return null;
+  let i = src.indexOf("[", m.index), d = 0;
+  for (; i < src.length; i++) {
+    if (src[i] === "[") d++;
+    else if (src[i] === "]") { d--; if (d === 0) { i++; break; } }
+  }
+  return src.slice(m.index, i) + ";";
+}
+
 const GENERIC_FILLER = "beautiful scene that matches its personality, dramatic pose and camera angle";
+const FULLBODY = "full body visible from head to toe";
+const WIDE_BOTH = "wide scenery on both sides";
 
 const FN = {
+  SHOT_MAP: extractConst("SHOT_MAP"),
+  shotClause: extractFn("shotClause"),
   cgSceneClause: extractFn("cgSceneClause"),
   promptForCg: extractFn("promptForCg"),
   cgPromptFromBrief: extractFn("cgPromptFromBrief"),
 };
 info("抽到：" + Object.keys(FN).map((k) => k + (FN[k] ? "(" + FN[k].length + "B)" : "=无")).join(" "));
 
-/* ---------- 2. 沙箱（外观相关函数全打桩，只验证 prompt 结构） ---------- */
+/* ---------- 2. 沙箱 ---------- */
 function makeSandbox() {
   const sandbox = {
     console, Math, JSON, String, Number, Boolean, Array, Object, Error, RegExp, Promise, Date,
@@ -91,10 +109,12 @@ function load(sandbox, names) {
   const code = names.map((n) => FN[n]).filter(Boolean).join("\n") +
     "\n;__api = { cgPromptFromBrief: (typeof cgPromptFromBrief === 'function' ? cgPromptFromBrief : null)," +
     " promptForCg: (typeof promptForCg === 'function' ? promptForCg : null)," +
-    " cgSceneClause: (typeof cgSceneClause === 'function' ? cgSceneClause : null) };";
+    " cgSceneClause: (typeof cgSceneClause === 'function' ? cgSceneClause : null)," +
+    " shotClause: (typeof shotClause === 'function' ? shotClause : null) };";
   vm.runInContext(code, vm.createContext(sandbox), { filename: "spirits.js#extracted" });
   return sandbox.__api;
 }
+const FULL_SET = ["SHOT_MAP", "shotClause", "cgSceneClause", "promptForCg", "cgPromptFromBrief"];
 
 /* 修复前（buggy）旧实现，内嵌做负向对照 */
 const OLD_SRC = `
@@ -145,33 +165,33 @@ function main() {
   if (!FN.cgPromptFromBrief) { ok(false, "抽不到 cgPromptFromBrief"); }
   else {
     const sb = makeSandbox();
-    const api = load(sb, ["cgSceneClause", "promptForCg", "cgPromptFromBrief"]);
+    const api = load(sb, FULL_SET);
     const brief = "它独自站在落雪后的中式院子里，廊下挂着一盏红灯笼，石板地上落了薄雪，它微微仰头看檐角的冰棱，神情安静而欢喜。";
     const p = api.cgPromptFromBrief(brief, { kind: "stage", item: { id: "x", name: "雪" }, stage: 3 });
     info("prompt 片段：" + p.slice(0, 160) + " …");
     ok(p.indexOf(brief) >= 0, "A1 · prompt 包含用户确认的中文画面描述（brief 没被丢）");
     ok(p.indexOf(GENERIC_FILLER) < 0, "A2 · ⛔ 不含通用「beautiful scene…dramatic pose」模板（这是 bug 的根）");
-    ok(p.indexOf("WIDE LANDSCAPE HORIZONTAL COMPOSITION") >= 0, "A3 · 保留横版构图约束");
+    ok(p.indexOf("HORIZONTAL LANDSCAPE COMPOSITION") >= 0, "A3 · 保留横版构图约束");
     ok(p.indexOf("not a portrait") >= 0, "A4 · 保留「非肖像」约束（避免画成竖版立绘）");
-    ok(p.indexOf("full body visible from head to toe") >= 0, "A5 · 保留全身约束");
+    ok(p.indexOf(FULLBODY) >= 0, "A5 · 未指定景别时回落全身约束（向后兼容）");
   }
 
   /* ---- 断言 B：带英文关键词 ---- */
   section("断言B：带英文出图关键词（cgKeywords 提取结果）");
   {
     const sb = makeSandbox();
-    const api = load(sb, ["cgSceneClause", "promptForCg", "cgPromptFromBrief"]);
+    const api = load(sb, FULL_SET);
     const kw = "ancient Chinese snowy courtyard, red lantern under the eaves, character looking up at ice on the roof, peaceful joyful expression, soft falling snow";
     const p = api.cgPromptFromBrief("（中文会被关键词覆盖）", { kind: "stage", item: { id: "x" }, stage: 4, keywords: kw });
     ok(p.indexOf(kw) >= 0, "B1 · prompt 使用提取的英文关键词作主场景");
     ok(p.indexOf(GENERIC_FILLER) < 0, "B2 · ⛔ 不含通用模板");
   }
 
-  /* ---- 断言 C：无 brief（旧路径兜底，行为不变） ---- */
+  /* ---- 断言 C：无 brief（旧路径兜底） ---- */
   section("断言C：无 brief 时回落通用模板（旧行为保留）");
   {
     const sb = makeSandbox();
-    const api = load(sb, ["cgSceneClause", "promptForCg", "cgPromptFromBrief"]);
+    const api = load(sb, FULL_SET);
     const p = api.cgPromptFromBrief("", { kind: "stage", item: { id: "x" }, stage: 3 });
     ok(p.indexOf(GENERIC_FILLER) >= 0, "C1 · 无 brief 时**仍**含通用模板（旧链路未被破坏）");
     ok(p.indexOf("solo single character only") >= 0, "C2 · 无 brief 时仍是单人立绘式描述");
@@ -181,17 +201,16 @@ function main() {
   section("断言D：负向对照（修复前的旧实现应当仍然含通用模板）");
   {
     const sb = makeSandbox();
-    const code = OLD_SRC +
-      "\n;__api = { cgPromptFromBrief: cgPromptFromBrief };";
+    const code = OLD_SRC + "\n;__api = { cgPromptFromBrief: cgPromptFromBrief };";
     vm.runInContext(code, vm.createContext(sb), { filename: "spirits.js#old" });
     const brief = "它独自站在落雪后的中式院子里，廊下挂着一盏红灯笼，石板地上落了薄雪，它微微仰头看檐角的冰棱。";
     const p = sb.__api.cgPromptFromBrief(brief, { kind: "stage", item: { id: "x" }, stage: 3 });
     ok(p.indexOf(brief) >= 0, "D1 · 旧实现也会把 brief 拼进去（所以『含 brief』不是修复判据）");
     ok(p.indexOf(GENERIC_FILLER) >= 0,
-      "D2 · 旧实现带 brief 时**仍含**通用模板 → 证明断言 A2 确实能抓到这个 bug（若旧实现此处意外为空，说明测试写错）");
+      "D2 · 旧实现带 brief 时**仍含**通用模板 → 证明断言 A2 确实能抓到这个 bug");
   }
 
-  /* ---- 断言 E：app.js 静态检查（CG 不再把立绘当 i2i 参考图） ---- */
+  /* ---- 断言 E：app.js 静态检查 ---- */
   section("断言E：CG 出图调用点不再传立绘作 ref");
   {
     const app = fs.readFileSync(APP_FILE, "utf8");
@@ -199,6 +218,46 @@ function main() {
     ok(app.indexOf("ref: ((_rA") < 0, "E2 · 双人事件 CG 不再 ref: ((_rA && _rA.imgUrl)…");
     ok(/async function drawCgFromBrief/.test(app), "E3 · 唯一 CG 落库入口 drawCgFromBrief 仍在");
     ok(/ref:\s*"",?/.test(app), "E4 · 调用点已置 ref: \"\"（纯文本驱动 CG）");
+  }
+
+  /* ---- 断言 F：v166-CG2 景别驱动 ---- */
+  section("断言F：brief 里的景别必须真正改变构图（近景 / 半身 / 特写 / 全身 / 远景）");
+  if (!FN.SHOT_MAP || !FN.shotClause) { ok(false, "抽不到 SHOT_MAP / shotClause"); }
+  else {
+    const sb = makeSandbox();
+    const api = load(sb, FULL_SET);
+    const mk = (brief, kw) => api.cgPromptFromBrief(brief, { kind: "stage", item: { id: "x" }, stage: 3, keywords: kw || "" });
+
+    // F1：半身入画 + 近景 → medium close-up，且不再出现 full body / 两侧大景
+    const p1 = mk("发丝半束半散，它侧身站立，两手自然交叠在身前，微微偏头看向檐外，半身入画，近景，暖光融融。");
+    ok(/medium close-up/.test(p1), "F1a · 「半身入画/近景」→ medium close-up 景别");
+    ok(p1.indexOf(FULLBODY) < 0, "F1b · 「半身入画/近景」时**不再**出现 full body（这是用户反馈的 bug）");
+    ok(p1.indexOf(WIDE_BOTH) < 0, "F1c · 「半身入画/近景」时**不再**出现「两侧大景」硬约束");
+
+    // F2：特写
+    const p2 = mk("脸部特写，它眨了眨眼，睫毛上沾着细雪的微光。");
+    ok(/close-up/.test(p2), "F2 · 「特写」→ close-up 景别");
+
+    // F3：显式全身
+    const p3 = mk("它全身站在庭院正中，衣摆在风里微微扬起，远景里是整座廊院。");
+    ok(p3.indexOf(FULLBODY) >= 0 || /wide establishing/.test(p3), "F3 · 「全身/远景」→ 保留全身或广角远景");
+
+    // F4：无景别描述 → 默认全身（向后兼容，与 A5 呼应）
+    const p4 = mk("它坐在窗边，手里捧着一盏热茶，窗外是安静的院子。");
+    ok(p4.indexOf(FULLBODY) >= 0, "F4 · 未写景别 → 默认 full body（不误伤旧行为）");
+
+    // F5：负向对照——旧实现面对「半身/近景」仍输 full body，证明 F1 能抓 bug
+    const sbOld = makeSandbox();
+    vm.runInContext(OLD_SRC + "\n;__api = { cgPromptFromBrief: cgPromptFromBrief };",
+      vm.createContext(sbOld), { filename: "spirits.js#old-shot" });
+    const pOld = sbOld.__api.cgPromptFromBrief("它半身入画，近景，站在廊下。", { kind: "stage", item: { id: "x" }, stage: 3 });
+    ok(pOld.indexOf(FULLBODY) >= 0,
+      "F5 · 旧实现面对「半身/近景」**仍输出 full body** → 证明 F1b 确实抓到了用户反馈的构图 bug");
+
+    // F6：景别从**中文原文**解析——英文关键词不含景别时也不丢
+    const p6 = mk("它半身入画，近景，眉头微蹙，似有话说。", "ancient Chinese veranda, warm afternoon light, soft mood");
+    ok(/medium close-up/.test(p6) && p6.indexOf(FULLBODY) < 0,
+      "F6 · 英文关键词不含景别时，「半身/近景」仍从中文原文生效（不被关键词吞掉）");
   }
 
   console.log("\n----------------------------------------");

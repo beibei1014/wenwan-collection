@@ -3835,7 +3835,7 @@
     guoqing: "National Day, red banners and clear autumn sunshine, peaceful festive atmosphere",
   };
   // 节令限定 CG 的 prompt（横版；点了「画一张」才调用）
-  function festCgPrompt(item, styleKey, stage, appearance, look, fest, sceneText) {
+  function festCgPrompt(item, styleKey, stage, appearance, look, fest, sceneText, shot) {
     const lkRaw = look || lookOf(item, null);
     const _ab = applyBrief(lkRaw, appearance || lkRaw.ap || appearanceOf(item, 0));   // v164：出图单优先
     const lk = _ab.lk;
@@ -3850,12 +3850,16 @@
       + (lookHard(lk) ? (", " + lookHard(lk)) : "")
       + (briefHard(lk) ? (", " + briefHard(lk)) : "")
       + ", " + st;
-    const tail = sceneText
-      ? (", scene: " + scene + ", the same character keeps hair color, eye color, outfit and accessories consistent, full body visible from head to toe, WIDE LANDSCAPE HORIZONTAL COMPOSITION, 16:9 cinematic framing, wide scenery on both sides, generous environment around the character, not a portrait, not a vertical poster")
-      : (", solo single character only, exactly one figure in the whole image, " +
-         "scene: " + scene + ", the character is celebrating this festival alone in this scene, " +
-         "a beautiful warm key visual for this festival moment, the wide scenery fills both sides of the character, " +
-         "no other characters, no text, no letters");
+    const sc = sceneText || scene;
+    const shotEn = shot
+      ? (shot.en + (shot.wide
+        ? ", wide scenery also flows around the character"
+        : ", the character is large and fills much of the frame, the environment stays behind them as soft bokeh, do NOT shrink the character into a small distant figure"))
+      : "full body visible from head to toe, wide scenery on both sides, generous environment around the character";
+    const tail = (", " + shotEn + ", scene: " + sc +
+      ", the same character keeps hair color, eye color, outfit and accessories consistent, " +
+      "HORIZONTAL LANDSCAPE COMPOSITION, 16:9 widescreen framing, not a portrait, not a vertical poster, " +
+      "solo single character only, exactly one figure in the whole image, no other characters, no text, no letters");
     return head + tail + (stageObj.prop ? (", " + stageObj.prop) : "") + ", " + CONSISTENCY + ", " + BG_NEG;
   }
   // 今天是不是节令；是、且没记过 → 写一条（返回新记录，否则 null）
@@ -7276,8 +7280,7 @@
   const CG_STYLE = "2D hand-drawn key visual CG illustration in traditional Chinese gufeng style, ancient Chinese scene and classical Chinese-inspired costume, " +
     "cel shading, soft elegant Chinese classical palette, cinematic lighting, atmospheric mood, detailed painted background with gentle bokeh, " +
     "expressive body language, warm cozy feeling, masterpiece quality, " +
-    "WIDE LANDSCAPE HORIZONTAL COMPOSITION, 16:9 cinematic framing, " +
-    "wide scenery on both sides, generous environment around the character, not a portrait, not a vertical poster, " +
+    "HORIZONTAL LANDSCAPE COMPOSITION, 16:9 widescreen framing, not a portrait, not a vertical poster, " +
     "no text, no letters, no words, no title, no labels, no watermark, no signature, no logo, " +
     "single continuous scene, no split panels, no collage, " + ANATOMY + ", " + NEG_STYLE;
   const CG_MOOD = [
@@ -7288,7 +7291,7 @@
     "a deep bond, they understand each other without words, breathtaking magical light, petals or light particles in the air",
   ];
   // 单只沁灵的 CG（蜕形 / 化形用）
-  function promptForCg(item, styleKey, stage, appearance, look, sceneText) {
+  function promptForCg(item, styleKey, stage, appearance, look, sceneText, shot) {
     const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
     const st = styleOf(item, key).text;
     const lkRaw = look || lookOf(item, null);
@@ -7304,7 +7307,7 @@
       + (lookHard(lk) ? (", " + lookHard(lk)) : "")
       + (briefHard(lk) ? (", " + briefHard(lk)) : "")
       + ", " + st;
-    const scene = cgSceneClause(sceneText);
+    const scene = cgSceneClause(sceneText, shot);
     const tail = scene
       ? scene
       : (", solo single character only, exactly one figure in the whole image, " +
@@ -7317,16 +7320,38 @@
 
   // v166-CG：场景优先辅助 —— 有 sceneText（用户确认后的「中文画面描述 / 提取的英文关键词」）时，
   //   它就是**主场景描述**，替换掉原来那段「generic beautiful scene / dramatic pose」模板；
-  //   只保留「单人 / 全身 / 横版 / 非肖像」这类 CG 格式约束。无 sceneText 回落空串（走通用模板）。
-  function cgSceneClause(sceneText) {
+  //   v166-CG2：景别（特写 / 近景半身 / 中景 / 全身 / 远景）由 shot 参数驱动（见 SHOT_MAP），
+  //     不再焊死 full body；未写景别时才回落「单人 / 全身 / 横版 / 非肖像」。无 sceneText 回落空串（走通用模板）。
+  // v166-CG2：景别解析 —— 从「中文画面描述 / 英文关键词」里认出镜头景别，转成强构图约束。
+  //   景别必须听 brief，绝不能被 CG_STYLE / 通用模板里的 "wide scenery / full body" 悄悄压过。
+  //   越靠前的规则越"窄"（先匹配特写/近景，再中景，最后才是全身/远景）。
+  const SHOT_MAP = [
+    { re: /(半身入画|半身|近景|胸像|上半身|腰部以上|齐腰|bust shot|waist ?up)/i, en: "medium close-up shot, shown from the waist up", wide: false },
+    { re: /(大特写|脸部特写|面部特写|extreme close ?up)/i, en: "extreme close-up shot, the face fills most of the frame, very shallow depth of field", wide: false },
+    { re: /(特写|close ?up)/i, en: "close-up shot, head and shoulders", wide: false },
+    { re: /(七分身|大腿以上|膝盖以上|medium shot)/i, en: "medium shot, shown from mid-thigh up", wide: false },
+    { re: /(中景)/i, en: "medium shot, the character occupies much of the frame with some surroundings", wide: false },
+    { re: /(远景|大远景|全景|广角|wide shot|long shot|establishing shot|full shot)/i, en: "wide establishing shot, the character is small within a vast environment, the scenery dominates", wide: true },
+    { re: /(全身|full ?body)/i, en: "full body visible from head to toe", wide: true },
+  ];
+  function shotClause(text) {
+    const t = String(text || "");
+    for (let i = 0; i < SHOT_MAP.length; i++) { if (SHOT_MAP[i].re.test(t)) return SHOT_MAP[i]; }
+    return null;
+  }
+  function cgSceneClause(sceneText, shot) {
     if (!sceneText) return "";
-    return ", scene: " + sceneText +
+    const shotEn = shot
+      ? (shot.en + (shot.wide
+        ? ", wide scenery also flows around the character"
+        : ", the character is large and fills much of the frame, the environment stays behind them as soft bokeh, do NOT shrink the character into a small distant figure, do NOT show a full-body far view"))
+      : "full body visible from head to toe, wide scenery on both sides, generous environment around the character";
+    return ", " + shotEn + ", scene: " + sceneText +
       ", the same character keeps hair color, eye color, outfit and accessories consistent, " +
-      "full body visible from head to toe, WIDE LANDSCAPE HORIZONTAL COMPOSITION, 16:9 cinematic framing, " +
-      "wide scenery on both sides, generous environment around the character, not a portrait, not a vertical poster";
+      "HORIZONTAL LANDSCAPE COMPOSITION, 16:9 widescreen framing, not a portrait, not a vertical poster";
   }
   // 两只沁灵的事件 CG（房间剧情用）
-  function storyCgPrompt(a, b, level, roomName, sceneText) {
+  function storyCgPrompt(a, b, level, roomName, sceneText, shot) {
     // v127：两人的发色/特征也走「设定向导」的结果（用户确认过的优先）
     const lkA = a.look || lookOf(a.item, a.rec || null);
     const lkB = b.look || lookOf(b.item, b.rec || null);
@@ -7342,7 +7367,8 @@
       "① " + appearancePrompt(apA) + ", with " + lkA.hairEn + " hair and " + lkA.outfitEn + " outfit" + lookExtra(lkA) + " (name: " + nmA + "), " +
       "② " + appearancePrompt(apB) + ", with " + lkB.hairEn + " hair and " + lkB.outfitEn + " outfit" + lookExtra(lkB) + " (name: " + nmB + "), " +
       "they are the same two characters as before, keep their hair color, eye color, outfits and accessories consistent, " +
-      "landscape wide shot of the whole room, the two of them standing or sitting side by side with the room around them, " +
+      (shot ? (shot.en + ", ") : "landscape wide shot of the whole room, ") +
+      "the two of them standing or sitting side by side with the room around them, " +
       "keep exactly two characters in the image, no extra people, no duplicates" +
       (lookHard(lkA) ? (", " + nmA + ": " + lookHard(lkA)) : "") +
       (lookHard(lkB) ? (", " + nmB + ": " + lookHard(lkB)) : "") + ", " + CONSISTENCY + ", " + BG_NEG;
@@ -7454,13 +7480,14 @@
     const b = String(brief || "").trim();
     const kw = String(x.keywords || "").trim();
     const scene = kw || b;                     // 有英文关键词就用关键词，否则直附中文描述（模型读得懂）
+    const shot = shotClause(b + " " + kw);     // v166-CG2：景别优先从中文原文解析，确保「近景/半身」不被关键词吃掉
     const stage = Math.max(1, Number(x.stage) || 1);
     const sd = stageDef(stage);
     const prop = sd.prop ? (", " + sd.prop) : "";
     let base;
-    if (x.kind === "pair") base = storyCgPrompt(x.a, x.b, x.level, x.roomName, scene);
-    else if (x.kind === "fest") base = festCgPrompt(x.item, null, stage, x.appearance, x.look, x.fest, scene);
-    else base = promptForCg(x.item, null, stage, x.appearance, x.look, scene);
+    if (x.kind === "pair") base = storyCgPrompt(x.a, x.b, x.level, x.roomName, scene, shot);
+    else if (x.kind === "fest") base = festCgPrompt(x.item, null, stage, x.appearance, x.look, x.fest, scene, shot);
+    else base = promptForCg(x.item, null, stage, x.appearance, x.look, scene, shot);
     // base 已以「brief/关键词」为主场景 + 外观 + 阶段 + CONSISTENCY + BG_NEG；末尾只补比例锁定块（PROPORTION LOCK 永远压最后）。
     // ⛔ v166-CG 修复：不再把 brief 当低权重尾巴追加 —— 它现在是主场景描述。
     return base + prop;
