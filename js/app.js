@@ -2650,6 +2650,111 @@
       img.src = url;
     });
   }
+  /* ---------- v171：CG 头部取景（**另写**，⛔ 不复用 analyzeFaceBox / FACE_VER） ----------
+     立绘是纯色底，能靠「四边众数当背景色」找轮廓；**CG 是带场景的横版插画**，那套会失效。
+     新思路（按规格）：最大前景连通块 = 人物 → 其最上方约 1/4 = 头 → 取景框 = 头框长边 ×1.15 + 向外留 12% 余量，硬保证不切头。
+     ⛔ 另存字段 rec.faceCg + 独立版本号 CG_FACE_VER，**绝不碰 rec.face / FACE_VER**（那套是立绘头像用的）。 */
+  const CG_FACE_VER = 1;     // v171：CG 取景版本号（升版本 = 历史 CG 缩略框自动重算，只重算框不重出图）
+  const CG_BOX_K = 1.15;     // 取景框长边 = 头框长边 × 1.15
+  const CG_MARGIN_K = 0.12;  // 再向外留 12% 余量
+  // 纯函数：从 RGBA 像素给 CG 找头部取景框（便于单测，不依赖 canvas）。找不到像样人物 → null。
+  function cgFaceBoxFromRGBA(d, W, H) {
+    const n = W * H;
+    if (!d || !W || !H || d.length < n * 4) return null;
+    // ① 背景估计：四边像素 4bit 众数 top-4（场景边缘常有天空/地面多色，取多色更稳）
+    const hist = {};
+    const addEdge = (x, y) => {
+      const i = (y * W + x) * 4;
+      const k = (d[i] >> 4) + "," + (d[i + 1] >> 4) + "," + (d[i + 2] >> 4);
+      if (!hist[k]) hist[k] = { n: 0, r: 0, g: 0, b: 0 };
+      hist[k].n++; hist[k].r += d[i]; hist[k].g += d[i + 1]; hist[k].b += d[i + 2];
+    };
+    for (let x = 0; x < W; x++) { addEdge(x, 0); addEdge(x, H - 1); }
+    for (let y = 0; y < H; y++) { addEdge(0, y); addEdge(W - 1, y); }
+    const keys = Object.keys(hist).sort((a, b) => hist[b].n - hist[a].n);
+    if (!keys.length) return null;
+    const bgs = keys.slice(0, 4).map((k) => ({ r: hist[k].r / hist[k].n, g: hist[k].g / hist[k].n, b: hist[k].b / hist[k].n }));
+    const TOL = 46;   // 比立绘宽一点（场景有渐变/柔光）
+    const isFg = (p) => {
+      const r = d[p * 4], g = d[p * 4 + 1], b = d[p * 4 + 2];
+      for (let i = 0; i < bgs.length; i++) {
+        if (Math.max(Math.abs(r - bgs[i].r), Math.abs(g - bgs[i].g), Math.abs(b - bgs[i].b)) <= TOL) return false;
+      }
+      return true;
+    };
+    // ② 连通域标注（4 邻），取面积最大块 = 人物
+    const lab = new Int32Array(n).fill(-1);
+    const stack = [];
+    let bestArea = 0, bestLab = 0, bTop = 0, bBot = 0, bLeft = 0, bRight = 0;
+    for (let s = 0; s < n; s++) {
+      if (lab[s] !== -1) continue;
+      if (!isFg(s)) { lab[s] = -2; continue; }
+      const cur = s + 1;                     // 任意唯一标签（>=1）
+      lab[s] = cur; stack.length = 0; stack.push(s);
+      let area = 0, top = H, bot = -1, left = W, right = -1;
+      while (stack.length) {
+        const q = stack.pop(); area++;
+        const x = q % W, y = (q / W) | 0;
+        if (y < top) top = y; if (y > bot) bot = y; if (x < left) left = x; if (x > right) right = x;
+        const nb = [x > 0 ? q - 1 : -1, x < W - 1 ? q + 1 : -1, y > 0 ? q - W : -1, y < H - 1 ? q + W : -1];
+        for (let k = 0; k < 4; k++) {
+          const r2 = nb[k]; if (r2 < 0 || lab[r2] !== -1) continue;
+          if (isFg(r2)) { lab[r2] = cur; stack.push(r2); } else lab[r2] = -2;
+        }
+      }
+      if (area > bestArea) { bestArea = area; bestLab = cur; bTop = top; bBot = bot; bLeft = left; bRight = right; }
+    }
+    if (bestArea < n * 0.02 || bBot - bTop < 6) return null;   // 找不到像样的人物 → 失败
+    // ③ 头 = 人物最上方约 1/4
+    const personH = bBot - bTop + 1;
+    const headH = Math.max(4, Math.round(personH * 0.25));
+    const headTop = bTop, headBot = Math.min(bBot, bTop + headH - 1);
+    // 头框横向 = 该 band 内「最大块」的左右边界
+    let hLeft = W, hRight = -1;
+    for (let y = headTop; y <= headBot; y++) {
+      const row = y * W;
+      for (let x = 0; x < W; x++) { if (lab[row + x] === bestLab) { if (x < hLeft) hLeft = x; if (x > hRight) hRight = x; } }
+    }
+    if (hRight < 0) { hLeft = bLeft; hRight = bRight; }
+    const headW = hRight - hLeft + 1;
+    const headLong = Math.max(headW, headBot - headTop + 1);
+    const headCx = (hLeft + hRight) / 2;
+    const headCy = (headTop + headBot) / 2;
+    // ④ 取景框：头框长边 ×1.15，再向外留 12% 余量；硬保证「头不切边」（顶部还要留 6%H 余量）
+    let side = headLong * CG_BOX_K * (1 + CG_MARGIN_K);
+    side = Math.min(side, Math.min(W, H));
+    const mustTop = Math.min(headTop, bTop - 0.06 * H);     // 框顶至少到「人物最上方前景行 − 6%H」
+    side = Math.max(side, headBot - mustTop + 1);
+    side = Math.min(side, Math.min(W, H));
+    let top = Math.min(mustTop, headCy - side / 2);
+    top = Math.max(0, Math.min(top, H - side));
+    if (top > mustTop) { top = Math.max(0, mustTop); side = Math.min(H - top, Math.max(side, headBot - mustTop + 1)); if (side < 2) return null; }
+    let left = headCx - side / 2;
+    left = Math.max(0, Math.min(left, W - side));
+    // 兜底自检：头必须在框内、且框顶 ≤ 人物最上方行 − 6%H，否则判失败（走 cover 兜底）
+    if (headTop < top || headBot > top + side || hLeft < left || hRight > left + side) return null;
+    if (top > bTop - 0.06 * H + 0.5) return null;
+    return { l: left / W, t: top / H, w: side / W, ar: W / H, v: CG_FACE_VER };
+  }
+  function analyzeCgFaceBox(url) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const ar = (img.width || 1) / (img.height || 1);
+          const W = 200, H = Math.max(1, Math.round(W / ar));
+          const cv = document.createElement("canvas");
+          cv.width = W; cv.height = H;
+          const ctx = cv.getContext("2d");
+          ctx.drawImage(img, 0, 0, W, H);
+          resolve(cgFaceBoxFromRGBA(ctx.getImageData(0, 0, W, H).data, W, H));
+        } catch (e) { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+  }
   /* ---------- v170：立绘抠图（透明底 PNG，连通域 flood-fill） ----------
      与 analyzeFaceBox 同一套「四边像素 4bit 众数 = 背景色」判据，但**只删与画面四边连通**的背景：
      人物内部的同色区域（白衣 / 高光 / 玉饰 / 挖空）必须保留 —— 这是本算法与「全局色键」的根本区别。
@@ -2758,6 +2863,30 @@
     return '<span class="spirit-thumb" style="width:' + size + "px;height:" + size + 'px">' +
       spiritImgHtml(item, rec, size, "spirit-img", extra, !ok) + "</span>";
   }
+  // v171：沁灵列表缩略图优先用「进阶 CG」（rec.cgUrl）；没有 CG 就完全沿用原立绘缩略图（行为零变化）。
+  //   取景用 CG 专用头部框 rec.faceCg（另存字段，⛔ 不碰 rec.face / FACE_VER）。
+  //   取景失败（无 faceCg / 版本旧 / 倍数离谱）→ 兜底 .cg18 = cover + center 18%（硬保证不切头）。
+  function spiritThumbCgHtml(item, rec, size) {
+    if (!rec || !rec.cgUrl) return spiritThumbHtml(item, rec, size);
+    const f = rec.faceCg;
+    let ok = !!(f && f.w > 0 && f.ar > 0 && f.v === CG_FACE_VER);
+    let wr = 0;
+    if (ok) {
+      const raw = size / f.w;
+      if (!(raw > 0) || raw >= size * 3) ok = false;               // 倍数 ≥3× → 取景不可信，弃用
+      else wr = Math.max(Math.round(raw), Math.round(size * 1.2));
+    }
+    const extra = ok
+      ? "position:absolute;left:" + (-Math.round(f.l * wr)) + "px;top:" + (-Math.round((f.t * wr) / f.ar)) + "px;width:" + wr + "px;height:auto"
+      : "";
+    const klass = "spirit-img spirit-img-cg" + (ok ? "" : " cg18");
+    const fallback = Spirits.localAvatarSvg(item);
+    const alt = (rec.persona && rec.persona.name) || item.name || "沁灵";
+    return '<span class="spirit-thumb" style="width:' + size + "px;height:" + size + 'px">' +
+      '<img class="' + klass + '" src="' + esc(rec.cgUrl) + '" data-fallback="' + esc(fallback) +
+      '" data-item="' + esc(item.id) + '" data-size="' + size + '" alt="' + esc(alt) + '" loading="lazy" style="width:' +
+      size + "px;height:" + size + "px" + (extra ? ";" + extra : "") + '">' + "</span>";
+  }
   // 老图（取景算法升级前算的）没有取景数据或版本旧 → 进沁灵页时补算一次并存起来，不用重新出图
   let _faceBusy = false;
   async function ensureSpiritFaces(list) {
@@ -2780,6 +2909,32 @@
       if (changed) rerenderSpiritView();
     } catch (e) { /* 静默 */ }
     _faceBusy = false;
+  }
+  // v171：CG 头部取景回填 —— 有 rec.cgUrl 但 faceCg 缺失/版本旧 → 补算一次并存进**独立字段** rec.faceCg。
+  //   ⛔ 不碰 rec.face / FACE_VER（那是立绘头像用的，改了会把所有头像框重算）。
+  //   幂等（版本对即跳过）；失败也记一笔（w=0 → 走 cover 兜底，免得每次重算）；await 后重新 load 只写 faceCg。
+  let _cgFaceBusy = false;
+  async function ensureSpiritCgFaces(list) {
+    if (_cgFaceBusy) return;
+    _cgFaceBusy = true;
+    try {
+      let changed = false;
+      for (const it of list) {
+        const rec = Spirits.ensureIn(Spirits.load(), it.id);
+        if (!rec.cgUrl) continue;
+        if (rec.faceCg && rec.faceCg.v === CG_FACE_VER) continue;
+        const f = await analyzeCgFaceBox(rec.cgUrl);
+        const st2 = Spirits.load();
+        const r2 = Spirits.ensureIn(st2, it.id);
+        if (r2.cgUrl === rec.cgUrl) {                                       // 期间没换 CG 才写，防止覆盖新图
+          r2.faceCg = f || { l: 0, t: 0, w: 0, ar: 0, v: CG_FACE_VER };     // 算不出来也记一笔（w=0 → cover 兜底）
+          Spirits.save(st2);
+          changed = true;
+        }
+      }
+      if (changed) rerenderSpiritView();
+    } catch (e) { /* 静默 */ }
+    _cgFaceBusy = false;
   }
   // 图片挂了 → 自动切本地形象（只切一次，避免死循环；本地形象是方形脸贴图，顺带去掉裁头像）
   function bindSpiritImgFallback(root) {
@@ -3398,7 +3553,7 @@
       const needSetup = spiritNeedsSetup(rec);
       const stars = "★".repeat(si.stage) + "☆".repeat(4 - si.stage);
       html += '<div class="spirit-card" data-spirit="' + esc(it.id) + '">' +
-        spiritThumbHtml(it, rec, 96) +
+        spiritThumbCgHtml(it, rec, 96) +
         '<div class="spirit-meta">' +
         '<div class="spirit-name">' + esc(spiritName(it, store)) +
         '<span class="sp-stars">' + stars + "</span></div>" +
@@ -3451,6 +3606,7 @@
     // v170：闲时把已有立绘补算成透明底（幂等 / 失败静默 / 不阻塞 / ⛔ 不重出图）
     //   ⚠️ typeof 守卫：render* 会被单测以「抽函数 + 沙箱」方式隔离运行，此时 backfillSpiritCut 不在作用域
     if (typeof backfillSpiritCut === "function") backfillSpiritCut(list);
+    if (typeof ensureSpiritCgFaces === "function") ensureSpiritCgFaces(list);   // v171：闲时补算 CG 头部取景框（幂等）
     ensureSpiritExtras(list);
     updateStoryDot();
     maybeOpenSpiritSetup(list);      // v127：还没定设定的，先弹一次向导（生成前让用户确认）
@@ -3749,7 +3905,7 @@
       const wroteToday = (rec.diary || []).some((e) => e && e.date === tk) && (rec.diarySeenAt || 0) < ((rec.diary || []).slice(-1)[0] || {}).at;
       const needSetup = spiritNeedsSetup(rec);
       html += '<div class="spirit-card' + (si.canBreak ? " can-break" : "") + '" data-spirit="' + esc(it.id) + '">' +
-        spiritThumbHtml(it, rec, 96) +
+        spiritThumbCgHtml(it, rec, 96) +
         '<div class="spirit-meta">' +
         '<div class="spirit-name">' + esc(spiritName(it, store)) +
         '<span class="spirit-stage">' + si.icon + " " + esc(si.name) + "</span>" +
@@ -3792,6 +3948,7 @@
     // v170：闲时把已有立绘补算成透明底（幂等 / 失败静默 / 不阻塞 / ⛔ 不重出图）
     //   ⚠️ typeof 守卫：render* 会被单测以「抽函数 + 沙箱」方式隔离运行，此时 backfillSpiritCut 不在作用域
     if (typeof backfillSpiritCut === "function") backfillSpiritCut(list);
+    if (typeof ensureSpiritCgFaces === "function") ensureSpiritCgFaces(list);   // v171：闲时补算 CG 头部取景框（幂等）
     ensureSpiritExtras(list);
     tickRooms();          // 进这一页也推进契合度/补写剧情（v114：之前只有沁灵页会推）
     maybeOpenSpiritSetup(list);      // v127

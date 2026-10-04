@@ -94,6 +94,7 @@ function makeSandbox() {
     spiritItems: () => LIST.slice(),
     spiritName: (it) => it.name,
     spiritThumbHtml: () => '<span class="spirit-thumb"></span>',
+    spiritThumbCgHtml: () => '<span class="spirit-thumb"></span>',   // v171：沁灵列表缩略图（CG 优先）
     spiritNeedsSetup: (rec) => rec && rec.stage === 1,
     setupHintHtml: () => ({ html: "", first: null }),
     pageStatsHtml: () => '<div class="page-stats"></div>',

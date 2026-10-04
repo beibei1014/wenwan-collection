@@ -1150,6 +1150,9 @@ body.talk-open .view { padding: 0; max-width: none; min-height: 0; animation: no
 .talk-portrait[data-cut="1"] img { object-fit: contain; object-position: center bottom;
   filter: drop-shadow(0 8px 22px rgba(0,0,0,.45)); }
 
+/* v171：沁灵列表缩略图改用进阶 CG —— CG 取景失败时的保守兜底（cover + center 18%，硬保证不切头） */
+.spirit-img.cg18 { object-fit: cover; object-position: center 18%; }
+
 /* 对话框：半透明 + 背景模糊（立绘透出来但被压暗，字清晰） */
 .talk-box { position: absolute; left: 16px; right: 16px;
   bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 4;
