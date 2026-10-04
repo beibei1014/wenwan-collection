@@ -950,6 +950,12 @@
   // (f) 中文服装锚（仅 ark（豆包 Seedream）且非 legacy；与 PROPORTION_ZH 同一开关）
   const COSTUME_ZH = "服装要求：请画中国古代汉服（先秦至明代形制），必须交领右衽、宽袍大袖，可加飘带与广袖仙袂；" +
     "绝对不要清朝服饰：不要立领、不要盘扣、不要蜈蚣扣、不要对襟褂、不要马褂、不要旗袍、不要长衫、不要官帽、不要辫子。整体气质偏仙侠仙气。";
+  // v172-A：CG **构图锚**（中文，仅 ark；与 COSTUME_ZH 同开关 zhAnchorEnabled()）
+  //   目的：沁灵列表缩略图已改用「固定几何框」（头在上方 1/3、水平居中、顶端留 2%），
+  //   这条锚让**将来新出的 CG 天然落进那个框** —— 固定框的可靠性从「经验」变成「规格保证」。
+  //   ⚠️ 插在 PROPORTION LOCK **之前**：比例锁定块永远压在整条 prompt 最末尾（见 cgPromptFromBrief）。
+  const CG_COMPOSE_ZH = "构图要求：人物头部位于画面上方三分之一、水平居中，头顶留出少量空间，不要切到头顶或发髻；" +
+    "人物主体居中偏上，画面下方留出身体与场景空间。";
   // (d) CG 三条路径共用的服装守卫（CG 无 legacy 分支，直接追加）
   const CG_COSTUME_GUARD = XIANXIA_LOOK + ", " + NO_QING;
   // 中文比例锚 / 服装锚的**总开关**（一键回退：置 false 即回到纯英文 prompt）
@@ -8312,7 +8318,11 @@ const CH09 = {
     // base 已以「brief/关键词」为主场景 + 外观 + 阶段 + CONSISTENCY + BG_NEG；末尾只补比例锁定块（PROPORTION LOCK 永远压最后）。
     // ⛔ v166-CG 修复：不再把 brief 当低权重尾巴追加 —— 它现在是主场景描述。
     const prop = cgPropFor(stage, shot);
-    return base + (prop ? (", " + prop) : "");
+    // v172-A：构图锚插在比例锁定块**之前**；PROPORTION LOCK 仍压在最末位。
+    //   ⚠️ typeof 守卫：cgPromptFromBrief 会被单测以「抽函数 + 沙箱」方式隔离运行（_test_v166_cg_brief），
+    //      此时 zhAnchorEnabled / CG_COMPOSE_ZH 不在作用域 → 静默不加锚，⛔ 别让旧套件因取符号炸掉
+    const anchor = (typeof zhAnchorEnabled === "function" && typeof CG_COMPOSE_ZH !== "undefined" && zhAnchorEnabled()) ? CG_COMPOSE_ZH : "";
+    return base + (anchor ? (", " + anchor) : "") + (prop ? (", " + prop) : "");
   }
 
   // 用**任意 prompt**出图（剧情 CG 用；沁灵主图仍走 generateImage）
@@ -8584,7 +8594,7 @@ const CH09 = {
     // v165-F：立绘比例执行手段 v2（占满画幅 / 中文比例锚[仅 ark] / 阶段开场身份锚）——供自测断言
     FRAME_FILL, FRAME_FILL_OLD, PROPORTION_ZH, proportionZhFor, AGE_OPEN, AGE_OPEN_BOY_OLD, AGE_OPEN_GIRL_OLD,
     // v167-B：服装去清代（正向汉服/仙侠 + 清代强禁 + 中文服装锚）——供自测断言
-    NO_QING, XIANXIA_LOOK, COSTUME_ZH, CG_COSTUME_GUARD, ZH_ANCHOR_ON, zhAnchorEnabled, LEGACY_OUTFIT_EN,
+    NO_QING, XIANXIA_LOOK, COSTUME_ZH, CG_COMPOSE_ZH, CG_COSTUME_GUARD, ZH_ANCHOR_ON, zhAnchorEnabled, LEGACY_OUTFIT_EN,
     appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
     // v127：设定向导（发色/特征/性格可确认可修改；一句基础设定 → 扩写成详细设定）
     HAIR_COLORS, HAIR_PALETTE, hexToCnTrad, FEATURES, PERSONAS_PICK, lookOf, lookText, lookExtra, hairWordFromInput, expandProfile, profileLocal, genderFromText,

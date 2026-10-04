@@ -2650,105 +2650,52 @@
       img.src = url;
     });
   }
-  /* ---------- v171：CG 头部取景（**另写**，⛔ 不复用 analyzeFaceBox / FACE_VER） ----------
-     立绘是纯色底，能靠「四边众数当背景色」找轮廓；**CG 是带场景的横版插画**，那套会失效。
-     新思路（按规格）：最大前景连通块 = 人物 → 其最上方约 1/4 = 头 → 取景框 = 头框长边 ×1.15 + 向外留 12% 余量，硬保证不切头。
+  /* ---------- v172-A：CG 取景 = 固定几何框（⛔ V171 的自适应决策已在真图上验穿，已删除） ----------
+     为什么删：V171 那套「四边众数 top-4 估背景 → 最大前景连通块当人物 → 最上方 1/4 当头」，
+       ① 末尾自检 `if (top > bTop - 0.06 * H + 0.5) return null` 是一条**恒真式** ——
+          只要人物顶到画面上 6% 以内（真 CG 实测 bTop 大量 = 0/3/4/5），mustTop 变负数、top 被 clamp 到 0
+          ⇒ `0 > 负数` 恒成立 ⇒ 必定判失败（R6 单独吃掉一半样本）；
+       ② 「最大前景连通块」在带场景的 CG 上**根本不是人物** —— 实测 bestArea/n 达 35%~76%，
+          且 bTop=0、bBot=149（= 整幅高），揪出来的是整片前景/背景；于是「最上方 1/4 当头」的头带
+          横跨 hLeft=0→hRight=184，取景框 side=150 装不下 ⇒ 走 R5 判失败。
+       真 CG 实测（15 张 1280×960）：**10 张判失败回落、4 张框错（有一张框落在人物腰际的手上）、仅 1 张对**。
+        ⇒ 这不是「调参能救」，而是会给出「自信的错误答案」，比直接走兜底更糟。
+     现在：**固定几何框**，只依赖 cw/ch、**完全不看像素**（常量见下）。
+       该框已被画到 15 张真 CG 上逐张目视：12 张单人 CG **全部正确罩住头肩**，
+       含「举臂高过头顶（手臂出框但头完整）」「头顶发髻顶到画面 2%（框顶刚好在发髻之上）」两个难例。
+       3 张双人 CG 只罩住一人 —— 但双人属房间/契合度 CG，走 rooms.js setStoryImage、
+       **永不落进 rec.cgUrl**，不在本函数作用域内。
+       再配合出图端构图锚（见 spirits.js CG_COMPOSE_ZH），固定框从「经验」升级为「规格保证」。
      ⛔ 另存字段 rec.faceCg + 独立版本号 CG_FACE_VER，**绝不碰 rec.face / FACE_VER**（那套是立绘头像用的）。 */
-  const CG_FACE_VER = 1;     // v171：CG 取景版本号（升版本 = 历史 CG 缩略框自动重算，只重算框不重出图）
-  const CG_BOX_K = 1.15;     // 取景框长边 = 头框长边 × 1.15
-  const CG_MARGIN_K = 0.12;  // 再向外留 12% 余量
-  // 纯函数：从 RGBA 像素给 CG 找头部取景框（便于单测，不依赖 canvas）。找不到像样人物 → null。
+  const CG_FACE_VER = 2;     // v172-A：1 → 2。**必须升**：V171 一进沁灵页就把错框写进了用户 localStorage
+                             //           （含那张落在手指上的），升版本 → 历史 CG 缩略框全部自动重算
+                             //           （只重算框、不重出图、零成本）
+  const CG_BOX_SIDE_K = 0.48;   // 取景框边长 = 0.48 × 图高
+  const CG_BOX_TOP_K  = 0.02;   // 框顶距画面顶端 = 0.02 × 图高
+  // 纯几何：**不看像素**（形参 d 仅为兼容 V171 的调用签名，已不再读取）——
+  //   正因如此它能被写成「不变量」单测：任何像素输入都返回同一个框。
+  //   返回 { l, t, w, ar, v }，与 rec.face 同构（spiritThumbCgHtml 按 l/w = 宽度占比、t = 高度占比换算）：
+  //     l = x0/cw、t = y0/ch、w = side/cw（**宽度占比**）、ar = cw/ch
+  //   ⚠️ 注意 w ≠ 0.48：1280×960 时 w = 460.8/1280 = 0.36；**0.48 是高度占比**（= w×ar = side/ch）。
   function cgFaceBoxFromRGBA(d, W, H) {
-    const n = W * H;
-    if (!d || !W || !H || d.length < n * 4) return null;
-    // ① 背景估计：四边像素 4bit 众数 top-4（场景边缘常有天空/地面多色，取多色更稳）
-    const hist = {};
-    const addEdge = (x, y) => {
-      const i = (y * W + x) * 4;
-      const k = (d[i] >> 4) + "," + (d[i + 1] >> 4) + "," + (d[i + 2] >> 4);
-      if (!hist[k]) hist[k] = { n: 0, r: 0, g: 0, b: 0 };
-      hist[k].n++; hist[k].r += d[i]; hist[k].g += d[i + 1]; hist[k].b += d[i + 2];
-    };
-    for (let x = 0; x < W; x++) { addEdge(x, 0); addEdge(x, H - 1); }
-    for (let y = 0; y < H; y++) { addEdge(0, y); addEdge(W - 1, y); }
-    const keys = Object.keys(hist).sort((a, b) => hist[b].n - hist[a].n);
-    if (!keys.length) return null;
-    const bgs = keys.slice(0, 4).map((k) => ({ r: hist[k].r / hist[k].n, g: hist[k].g / hist[k].n, b: hist[k].b / hist[k].n }));
-    const TOL = 46;   // 比立绘宽一点（场景有渐变/柔光）
-    const isFg = (p) => {
-      const r = d[p * 4], g = d[p * 4 + 1], b = d[p * 4 + 2];
-      for (let i = 0; i < bgs.length; i++) {
-        if (Math.max(Math.abs(r - bgs[i].r), Math.abs(g - bgs[i].g), Math.abs(b - bgs[i].b)) <= TOL) return false;
-      }
-      return true;
-    };
-    // ② 连通域标注（4 邻），取面积最大块 = 人物
-    const lab = new Int32Array(n).fill(-1);
-    const stack = [];
-    let bestArea = 0, bestLab = 0, bTop = 0, bBot = 0, bLeft = 0, bRight = 0;
-    for (let s = 0; s < n; s++) {
-      if (lab[s] !== -1) continue;
-      if (!isFg(s)) { lab[s] = -2; continue; }
-      const cur = s + 1;                     // 任意唯一标签（>=1）
-      lab[s] = cur; stack.length = 0; stack.push(s);
-      let area = 0, top = H, bot = -1, left = W, right = -1;
-      while (stack.length) {
-        const q = stack.pop(); area++;
-        const x = q % W, y = (q / W) | 0;
-        if (y < top) top = y; if (y > bot) bot = y; if (x < left) left = x; if (x > right) right = x;
-        const nb = [x > 0 ? q - 1 : -1, x < W - 1 ? q + 1 : -1, y > 0 ? q - W : -1, y < H - 1 ? q + W : -1];
-        for (let k = 0; k < 4; k++) {
-          const r2 = nb[k]; if (r2 < 0 || lab[r2] !== -1) continue;
-          if (isFg(r2)) { lab[r2] = cur; stack.push(r2); } else lab[r2] = -2;
-        }
-      }
-      if (area > bestArea) { bestArea = area; bestLab = cur; bTop = top; bBot = bot; bLeft = left; bRight = right; }
-    }
-    if (bestArea < n * 0.02 || bBot - bTop < 6) return null;   // 找不到像样的人物 → 失败
-    // ③ 头 = 人物最上方约 1/4
-    const personH = bBot - bTop + 1;
-    const headH = Math.max(4, Math.round(personH * 0.25));
-    const headTop = bTop, headBot = Math.min(bBot, bTop + headH - 1);
-    // 头框横向 = 该 band 内「最大块」的左右边界
-    let hLeft = W, hRight = -1;
-    for (let y = headTop; y <= headBot; y++) {
-      const row = y * W;
-      for (let x = 0; x < W; x++) { if (lab[row + x] === bestLab) { if (x < hLeft) hLeft = x; if (x > hRight) hRight = x; } }
-    }
-    if (hRight < 0) { hLeft = bLeft; hRight = bRight; }
-    const headW = hRight - hLeft + 1;
-    const headLong = Math.max(headW, headBot - headTop + 1);
-    const headCx = (hLeft + hRight) / 2;
-    const headCy = (headTop + headBot) / 2;
-    // ④ 取景框：头框长边 ×1.15，再向外留 12% 余量；硬保证「头不切边」（顶部还要留 6%H 余量）
-    let side = headLong * CG_BOX_K * (1 + CG_MARGIN_K);
-    side = Math.min(side, Math.min(W, H));
-    const mustTop = Math.min(headTop, bTop - 0.06 * H);     // 框顶至少到「人物最上方前景行 − 6%H」
-    side = Math.max(side, headBot - mustTop + 1);
-    side = Math.min(side, Math.min(W, H));
-    let top = Math.min(mustTop, headCy - side / 2);
-    top = Math.max(0, Math.min(top, H - side));
-    if (top > mustTop) { top = Math.max(0, mustTop); side = Math.min(H - top, Math.max(side, headBot - mustTop + 1)); if (side < 2) return null; }
-    let left = headCx - side / 2;
-    left = Math.max(0, Math.min(left, W - side));
-    // 兜底自检：头必须在框内、且框顶 ≤ 人物最上方行 − 6%H，否则判失败（走 cover 兜底）
-    if (headTop < top || headBot > top + side || hLeft < left || hRight > left + side) return null;
-    if (top > bTop - 0.06 * H + 0.5) return null;
-    return { l: left / W, t: top / H, w: side / W, ar: W / H, v: CG_FACE_VER };
+    const cw = Number(W) || 0, ch = Number(H) || 0;
+    if (!cw || !ch) return null;
+    let side = CG_BOX_SIDE_K * ch;                                        // 正方形边长
+    if (side > cw) side = cw;                                             // 竖版兜底（CG 恒为横版，实际不触发）
+    const x0 = Math.max(0, Math.min(cw / 2 - side / 2, cw - side));       // 水平居中 + 不越界
+    const y0 = Math.max(0, Math.min(CG_BOX_TOP_K * ch, ch - side));       // 顶端留 2% + 不越界
+    return { l: x0 / cw, t: y0 / ch, w: side / cw, ar: cw / ch, v: CG_FACE_VER };
   }
+  // v172-A：固定框只吃原始宽高 → **不再需要 canvas.getImageData**（消掉 CORS 污染风险，也更快）
   function analyzeCgFaceBox(url) {
     return new Promise((resolve) => {
       const img = new Image();
-      img.crossOrigin = "anonymous";
       img.onload = () => {
         try {
-          const ar = (img.width || 1) / (img.height || 1);
-          const W = 200, H = Math.max(1, Math.round(W / ar));
-          const cv = document.createElement("canvas");
-          cv.width = W; cv.height = H;
-          const ctx = cv.getContext("2d");
-          ctx.drawImage(img, 0, 0, W, H);
-          resolve(cgFaceBoxFromRGBA(ctx.getImageData(0, 0, W, H).data, W, H));
+          const cw = img.naturalWidth || img.width || 0;
+          const ch = img.naturalHeight || img.height || 0;
+          if (!cw || !ch) return resolve(null);
+          resolve(cgFaceBoxFromRGBA(null, cw, ch));   // 固定框：只吃宽高，不读像素
         } catch (e) { resolve(null); }
       };
       img.onerror = () => resolve(null);
