@@ -8147,7 +8147,7 @@ const CH09 = {
 
   // ⓪ 生成中文画面描述（文本模型；失败 / 无 key → 本地模板）
   //   v166：若 o.intent 非空（用户在 textarea 先写了大概意向），则把意向交给 AI **润色完善**；
-  //         o.intent 为空则按原逻辑从精灵事实自动生成（向后兼容）。
+  //         o.intent 为空则按原逻辑从沁灵事实自动生成（向后兼容）。
   async function cgBrief(o) {
     const x = o || {};
     if (!getAiKey()) return cgBriefLocal(x);
