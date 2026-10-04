@@ -2944,11 +2944,22 @@
   function chapTaGet() { return _chapTa || "那只"; }
   // persona id → 行当名（取该 persona 在册那只的名字；缺则回落「那只」）
   function chapTaNameOf(pid) {
-    const rec = chapRecByPersona(String(pid || ""), load());
+    const st = load();
+    const rec = chapRecByPersona(String(pid || ""), st);
     if (rec) {
       const nm = (rec.persona && rec.persona.name) || "";
       if (nm) return nm;
     }
+    // v165-N2：本型缺人时（玩家不足 7 只）→ 查出场表里**复用出演**的那只，用它的名字
+    //   （⛔ 兜底仍是「那只」，绝不写「它」）；查不到就回落「那只」，⛔ 不抛错。
+    try {
+      const c = (castOf() || {})[String(pid || "")];
+      if (c && c.id) {
+        const r2 = st[c.id];
+        const nm2 = (r2 && r2.persona && r2.persona.name) || "";
+        if (nm2) return nm2;
+      }
+    } catch (e) { /* 静默 */ }
     return "那只";
   }
 
@@ -6938,6 +6949,33 @@
         id: hit.id, pid: pid, near: near,
       };
     });
+    // v165-N2：群像边界 —— 玩家**不足 7 只**时（新用户可能只有 1–2 只），缺的行当不能空着：
+    //   ① 空头像（UI 上是一个没有脸的圈）—— 群像剧本 7 个行当全在说话，空 4 个等于崩场；
+    //   ② `lively`/`mystery` 这两型在 MAIN 里**没有同组邻居**，1 只沁灵时 castNearest 也救不回来。
+    //   方案：**复用在册沁灵轮转分配**（小剧团一人分饰多角），并标 fill:true 以便调试面板区分。
+    //   ⛔ 行当名仍是剧本写死的那 7 个（`who`），复用只影响**头像**，绝不改名字、绝不改台词。
+    if (entries.length) {
+      const usedIds = [];
+      Object.keys(out).forEach(function (p) {
+        const id = String(out[p].id);
+        if (usedIds.indexOf(id) < 0) usedIds.push(id);
+      });
+      const pool = usedIds.slice();
+      entries.forEach(function (e) { const id = String(e.id); if (pool.indexOf(id) < 0) pool.push(id); });
+      let pi = 0;
+      CHAP_CAST_CFG.MAIN.forEach(function (pid) {
+        if (out[pid]) return;
+        const id = pool[pi % pool.length]; pi++;
+        const e = entries.filter(function (x) { return String(x.id) === id; })[0];
+        if (!e) return;
+        out[pid] = {
+          name: CHAP_CAST_NAME[pid] || pid, id: id, pid: pid,
+          // ⚠️ 语义分层：near=true 只表示「同组回落（castNearest）」；轮转复用一律 near=false + fill=true，
+          //    这样「⛔ 缺型不跨组回落」这条老规则仍可被测试精确钉住（_test_v165_engine.js P1-5）。
+          near: false, fill: true, from: e.pid,
+        };
+      });
+    }
     return out;
   }
   // 读出场表（带年内缓存）；⛔ 任何失败都返回空表并静默
@@ -7087,13 +7125,16 @@
   }
   // 回一句 → 接着往下
   // v165-N3：可选第 5 参 actOf（同上，供 MAIN_ACTS 复用）
+  // ⛔ v165-N2 修：内部两处 chapWalk 必须**透传 actOf** —— 否则新 9 章选完第 1 个选项后，
+  //    chapWalk 会用默认的 chapActOf 去找 "m1" 剧本（找不到）→ 推进停死（N2 自测抓到：ch1 选完就不动了）。
+  //    旧 8 章不传 actOf → 回落 chapActOf，行为零变化。
   function chapTalkChoose(item, rec, ctx, idx, actOf) {
     const t = rec && rec.talk;
     const act = (actOf || chapActOf)(t && t.chapId);
     if (!t || !act || t.ended) return { added: [], choices: [], ending: (t && t.ending) || null, ended: true };
     const nd = act.nodes[t.node];
     const c = nd && nd.choices ? nd.choices[idx] : null;
-    if (!c) return chapWalk(item, rec, ctx);
+    if (!c) return chapWalk(item, rec, ctx, actOf);
     const v0 = greetVars(item, rec, ctx);
     // v165 批次3A-4：选项文案里的 {ta} 指向该选项 rset 的键（ch3「这一步，我替{ta}定。」）
     const v = (c.rset) ? (chapTaSet(c.rset), greetVars(item, rec, ctx)) : v0;
@@ -7110,7 +7151,7 @@
       t.log = t.log.concat([fbl]);
       t.msgs = (Number(t.msgs) || 0) + 1;
     }
-    const r = chapWalk(item, rec, ctx);
+    const r = chapWalk(item, rec, ctx, actOf);
     r.added = [mine].concat(r.added);
     r.fb = c.fb ? fmt(String(c.fb), v) : "";
     return r;
@@ -7146,9 +7187,11 @@
    *   状态：ww_story.mainTalk（聊天进度）+ ww_story.mainChapters（已读）—— **全局一条，不进 rec**
    *   天数锚点取自 docs/v165-第1-9章-剧本.md §4 各章章首（⛔ 硬编码，岁除是日历事件）
    * ============================================================ */
-  // v165-N3：正文装帧开关 —— N2 批次把 9 章正文机械抽取装入后置 true。
-  //   ⛔ 集中配置（铁律），禁止在界面里散落硬编码；关闭时入口显示「还没装帧」而不是空页。
-  const MAIN_STORY_OPEN = false;
+  // v165-N2：正文装帧开关 —— 9 章正文已机械抽取装入，六条断言全过 ⇒ 置 true，入口即开。
+  //   ⛔ 集中配置（铁律），禁止在界面里散落硬编码。
+  //   ⚠️ 置 false 时：首页 #mainEntry **整块不渲染**（app.js renderHome），
+  //      列表也全部 locked —— ⛔ 绝不让用户撞见半成品状态。
+  const MAIN_STORY_OPEN = true;
   const MAIN_CHAPTERS = [
     // title：列表显示名（md 章首原名含 {ta}，如《{ta}想往前走》；{ta} 要等进章才知道指谁，
     //         所以列表用去掉占位符的显示名，避免显示成「那只想往前走」）
@@ -7162,9 +7205,538 @@
     { day: 108, icon: "🌑",  title: "不知道是谁顶的",          sub: "影子浅了" },
     { day: 120, icon: "❄️", title: "岁除一 · 榜上有人比你远",  sub: "数了两遍" },
   ];
-  /* v165-N2 批次：这里将放入从 docs/v165-第1-9章-剧本.md §4 **机械抽取**的 CH01..CH09
-     （⛔ 禁手打、禁改字；抽取纪律与六条校验见 N2）。N3 阶段正文未装帧，故为空数组。 */
-  const MAIN_SCRIPTS = [];
+  /* ---- v165-N2：第 1–9 章正文 —— **机械抽取**自 docs/v165-第1-9章-剧本.md §4 ----
+     ⛔ 禁手打、禁改字。抽取脚本：docs/_extract_chapters.py（改剧情请改 md 后重跑一遍）。
+     六条校验：9 章齐全 / 零断链 / end:true 恰好 9 处 / who 170 处 go 25 处 /
+               与 md 逐字节一致 / 旧 8 章逐字节未动 —— 由 docs/_test_v165n2_script.js 钉住。
+     ⚠️ 下面 9 个 const **与 md 里的 js 代码块逐字节一致**（缩进也保持 md 原样，方便逐字节比对）。 */
+const CH01 = {
+  bg: "BG-01", cg: "CG-01",
+  cast: ["最老的那只","记账的那只","不爱说话的那只","安静的那只","最吵的那只","知道点什么的","最小的",
+         "邻居·爱往外跑的","邻居·嘴快的","门客·稳的","门客·不肯说话的","门客·数人的"],
+  start: {
+    lines: [
+      { w:"sys", bg:"BG-01", fx:"fade_in", t:"三息之后，最底下那一级石阶先亮起来。" },
+      { w:"sys", bg:"BG-01", fx:"tilt_up",  t:"雾里只剩几级被踩得发亮，其余看得出形，看不出格数。" },
+      { w:"sys", bg:"BG-02", fx:"cut",      t:"后来你一只一只领回来，这儿就有了家。" },
+      { w:"sp", at:"B", who:"记账的那只", ps:["scholar"], t:"被踩亮的那几级，我又数了一遍。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"],  t:"我也听见了！四级！你上次说五级！" },
+      { w:"sp", at:"B", who:"记账的那只", ps:["scholar"], t:"……我数的是亮的。" },
+      { w:"sp", at:"L", who:"安静的那只", ps:["gentle"],  t:"今天冷。{call}，别站门口。" },
+      { w:"sp", at:"B", who:"知道点什么的", ps:["mystery"], t:"{call}，站门口也不要紧。怕的是站门口，还不进屋。" },
+      { w:"sp", at:"L", who:"最小的", ps:["sweet"], t:"我最小。我最不着急。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"你最小，所以你最急。" },
+    ],
+    next: "c1",
+  },
+  c1: {
+    lines: [
+      { w:"sp", bg:"BG-02", at:"C", who:"最老的那只", ps:["dignified"], t:"认得出，才护得住。" },
+      { w:"sys", bg:"BG-03", fx:"cut", t:"晌午，巷口来了三个人。门开着，他们不进来。" },
+      { w:"sp", bg:"BG-02", at:"B", who:"门客·不肯说话的", ps:["aloof"], t:"三个。门客两位，收旧物的一位。" },
+      { w:"sp", at:"C", who:"记账的那只", ps:["scholar"], t:"你数得比他们还清楚。" },
+      { w:"sp", at:"B", who:"门客·不肯说话的", ps:["aloof"], t:"我不看人。我数脚步。" },
+    ],
+    next: "c2",
+  },
+  c2: {
+    lines: [
+      { w:"sp", bg:"BG-02", at:"R", who:"门客·数人的", ps:["sentimental"], t:"你们这一门，全是自己养出来的。养出来的，我们也记一笔。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"记你的。我们家的账，我们自己记。" },
+      { w:"sp", at:"R", who:"门客·数人的", ps:["sentimental"], t:"随你。岁除要报数。" },
+      { w:"sp", at:"B", who:"记账的那只", ps:["scholar"], t:"报给谁。" },
+      { w:"sp", at:"R", who:"门客·数人的", ps:["sentimental"], t:"报给记着的人。" },
+      { w:"sp", at:"R", who:"门客·数人的", ps:["sentimental"], fx:"slow", t:"你们亮成这样，过两年，说不定也上我们的册子。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], fx:"cut", t:"让他走。话难听，理不歪。" },
+    ],
+    next: "c3",
+  },
+  c3: {
+    lines: [
+      { w:"sp", bg:"BG-02", at:"L", who:"邻居·爱往外跑的", ps:["wild"], t:"当家的，还有一件事。巷尾这两天，有别的人在转。" },
+      { w:"sp", at:"L", who:"邻居·爱往外跑的", ps:["wild"], t:"腰里挂着东西。不看门，看院墙。站着，不动。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"看就看。门开着。" },
+      { w:"sys", fx:"slow", t:"他们走了。院子又安静下来——这一次，安静得比刚才久。" },
+    ],
+    choices: [
+      { t:"那句话，我记下了。",     go:"m1", tone:"quiet", gset:{ STANCE_CH1:true  }, fb:"记账的把册子摊开，笔尖停了一下。" },
+      { t:"咱家的账，咱自己记。",   go:"m2", tone:"warm",  gset:{ STANCE_CH1:false }, fb:"最老的那只点头，院里松了半分。" },
+      { t:"门开着，谁来都看得见。", go:"m3", tone:"quiet", gset:{ STANCE_CH1:false }, fb:"最老的那只：开了门，才看得清来的是谁。" },
+    ],
+  },
+  m1: { lines: [
+      { w:"sp", bg:"BG-02", at:"B", who:"记账的那只", ps:["scholar"], t:"我记下了。他们说要报数，我就记下：我们，不被数进他们的册子。" },
+      { w:"sp", at:"C", who:"安静的那只", ps:["gentle"], t:"不被他们收，也不被他们数。我们好好的。" },
+    ], next:"n1" },
+  m2: { lines: [
+      { w:"sp", bg:"BG-02", at:"C", who:"最老的那只", ps:["dignified"], t:"对。我们家的账，我们自己记。" },
+      { w:"sp", at:"B", who:"记账的那只", ps:["scholar"], t:"我把册子摊平了。" },
+    ], next:"n1" },
+  m3: { lines: [
+      { w:"sp", bg:"BG-02", at:"C", who:"最老的那只", ps:["dignified"], t:"门开着。开了门，才看得清来的是谁。" },
+      { w:"sp", at:"B", who:"知道点什么的", ps:["mystery"], t:"{call}也听见了。那句『亮成这样』，不是吓人。是提醒。" },
+    ], next:"n1" },
+  n1: { lines: [
+      { w:"sp", bg:"BG-02", at:"C", who:"最老的那只", ps:["dignified"], t:"别人有一门一派，要拜，要考，要走很长的路才进得去。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"我们这门没有那些。这门，是{call}一只一只领回来的。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], fx:"slow", t:"{call}不拜谁。{call}，就是这门里的长辈。" },
+      { w:"sp", at:"L", who:"最小的", ps:["sweet"], t:"那我是小辈！" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"你是最小的。门里最小，也是家里人。" },
+    ], next:"n2" },
+  n2: { lines: [
+      { w:"sys", bg:"BG-03", fx:"cut", t:"傍晚了。没有人来收，也没有人走。" },
+      { w:"sp", at:"L", who:"安静的那只", ps:["gentle"], t:"灯我给{call}留着。{call}回来晚，灯就亮着。" },
+      { w:"sp", at:"B", who:"知道点什么的", ps:["mystery"], t:"一盏灯就够了。亮得多的，反倒看不清路。" },
+      { w:"sp", bg:"BG-03", at:"C", who:"最老的那只", ps:["dignified"], t:"岁除快到了。到了那天，天劫要来。法力不够的，撑不过去。" },
+      { w:"sp", at:"L", who:"不爱说话的那只", ps:["cool"], t:"我们够吗。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"够不够，那天才知道。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], fx:"slow", t:"现在能做的，是让每一个人都站得住。" },
+    ], next:"n3" },
+  n3: { lines: [
+      { w:"sys", bg:"BG-04", fx:"slow", t:"门还开着。廊角一盏灯。石板路空着，远处天色压下来。" },
+      { w:"sys", t:"这是一家人的第一年。后面还有很长。" },
+    ], end:true },
+};
+const CH02 = {
+  bg: "BG-02",
+  cast: ["最老的那只","记账的那只","不爱说话的那只","安静的那只","最吵的那只","知道点什么的","最小的",
+         "邻居·爱往外跑的","邻居·嘴快的"],
+  start: {
+    lines: [
+      { w:"sys", bg:"BG-02", t:"这一门静不下来。不是吵，是各有各的动静。" },
+      { w:"sp", at:"B", who:"记账的那只", ps:["scholar"], t:"第二道缝，我又数了一遍。" },
+      { w:"sp", at:"L", who:"不爱说话的那只", ps:["cool"], t:"数这个做什么。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"亮不亮，晒一晌午就见分晓！" },
+      { w:"sp", at:"B", who:"知道点什么的", ps:["mystery"], t:"{call}没回头，却笑了。认得出的人，才敢在暗处笑。" },
+      { w:"sp", at:"L", who:"最小的", ps:["sweet"], t:"那我呢？{call}认得出我吗？" },
+      { w:"me",  t:"凭你一开口，院里就少了一半的话。" },
+      { w:"sp", at:"L", who:"最小的", ps:["sweet"], t:"那是他们先不说！我替他们说！" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"认得出，才护得住。" },
+    ],
+    next: "c1",
+  },
+  c1: {
+    lines: [
+      { w:"sys", bg:"BG-07", fx:"cut", t:"黄昏。你在石桌边坐下。桌上空着。" },
+      { w:"sys", t:"你先搁下的那件东西——没说是给谁的。" },
+    ],
+    choices: [
+      { t:"那块磨白的布",   go:"m1", tone:"warm",  gset:{ CH2_FAVOR:"gentle"  }, fb:"安静的那只先过来：『我以为没人看见。』" },
+      { t:"一块甜的",       go:"m2", tone:"warm",  gset:{ CH2_FAVOR:"sweet"   }, fb:"最小的踮着脚来够，眼睛比肚子快。" },
+      { t:"一页账纸",       go:"m3", tone:"quiet", gset:{ CH2_FAVOR:"scholar" }, fb:"记账的把纸拿起来，按在胸口，没说话。" },
+    ],
+  },
+  m1: { lines: [
+      { w:"sp", bg:"BG-07", at:"L", who:"安静的那只", ps:["gentle"], t:"我以为没人看见。{call}眼好。" },
+    ], next:"n1" },
+  m2: { lines: [
+      { w:"sp", bg:"BG-07", at:"L", who:"最小的", ps:["sweet"], t:"{call}怎么知道我要甜的！那不是饿，那是……那是我想。" },
+      { w:"sp", at:"B", who:"记账的那只", ps:["scholar"], t:"{call}，他上个月也是这么说的。八成又想多要一块。" },
+    ], next:"n1" },
+  m3: { lines: [
+      { w:"sp", bg:"BG-07", at:"B", who:"记账的那只", ps:["scholar"], t:"……这是新写的那一页。" },
+      { w:"sp", at:"B", who:"记账的那只", ps:["scholar"], t:"我收着。{call}放心。" },
+    ], next:"n1" },
+  n1: { lines: [
+      { w:"sys", bg:"BG-04", fx:"cut", t:"天黑了。安静的那只把廊下那盏灯点上。" },
+      { w:"sp", at:"L", who:"邻居·爱往外跑的", ps:["wild"], t:"当家的。巷尾那家人，又多了两个。前天的事，我去看了两回。" },
+      { w:"sp", at:"L", who:"邻居·嘴快的", ps:["cheeky"], t:"什么模样？收旧物的？腰里挂着东西没有？" },
+      { w:"sp", at:"L", who:"邻居·爱往外跑的", ps:["wild"], t:"不收旧物。挂着东西，可不叫卖，也不进门。就站着，看院墙。" },
+      { w:"sp", at:"B", who:"知道点什么的", ps:["mystery"], fx:"slow", t:"{call}，墙上那几道印，是有人拿手比着量过的。量够不够翻进来。" },
+      { w:"sp", at:"L", who:"不爱说话的那只", ps:["cool"], t:"他们来吗。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"门开着。开了门，才看得清来的是谁。" },
+    ], next:"n2" },
+  n2: { lines: [
+      { w:"sys", bg:"BG-04", fx:"slow", t:"那盏灯亮到很晚。这一夜没有人关门，也没有人来。" },
+    ], end:true },
+};
+const CH03 = {
+  bg: "BG-04", cg: "CG-02",
+  cast: ["最小的","最老的那只","记账的那只","知道点什么的","安静的那只"],
+  start: {
+    lines: [
+      { w:"sys", bg:"BG-04", fx:"fade_in", t:"第 20 天。夜里，地上是月，墙上也是月，连石阶都亮。" },
+      { w:"sp", at:"L", who:"最小的", ps:["sweet"], t:"{call}。上面的石头，为什么亮。" },
+      { w:"me",  t:"走得多的，就亮。" },
+      { w:"sp", at:"L", who:"最小的", ps:["sweet"], t:"那我要走很多很多。他们都说我还小——可我今年想走上去。" },
+      { w:"sp", at:"C", who:"记账的那只", ps:["scholar"], t:"今年的数——" },
+      { w:"sp", at:"L", who:"最小的", ps:["sweet"], t:"今年的数我知道。我知道我差。" },
+      { w:"sp", at:"B", who:"知道点什么的", ps:["mystery"], t:"{call}，路是 {ta} 自己的。就看这半步，是谁迈的。" },
+      { w:"sys", fx:"cut", t:"整院的人都看着你。" },
+    ],
+    next: "c1",
+  },
+  c1: {
+    lines: [
+      { w:"sp", bg:"BG-04", at:"C", who:"最老的那只", ps:["dignified"], t:"今年这一步，由谁定。" },
+    ],
+    choices: [
+      { t:"这一步，我替{ta}定。", go:"D1", tone:"quiet", rset:{ sweet:{ stance:"DECIDE" } }, gset:{ FORK_STANCE:"DECIDE" }, fb:"{ta} 的一声『好』，是跟在后头的。" },
+      { t:"这条路，{ta}自己选。", go:"D2", tone:"warm",  rset:{ sweet:{ stance:"LET"    } }, gset:{ FORK_STANCE:"LET"    }, fb:"{ta} 走上第一级亮处，留下自己的脚印。" },
+    ],
+  },
+  D1: { lines: [
+      { w:"sp", bg:"BG-04", at:"L", who:"最小的", ps:["sweet"], t:"……好。" },
+      { w:"sp", at:"B", who:"知道点什么的", ps:["mystery"], t:"{ta} 是照{call}的话做的。这一程，是{call}替 {ta} 走的。" },
+      { w:"sys", fx:"slow", t:"上面那几级，月亮照着，还是亮的——只是今晚，没有新的脚印上去。" },
+    ], next:"n1" },
+  D2: { lines: [
+      { w:"sp", bg:"BG-04", at:"L", who:"最小的", ps:["sweet"], t:"{call}，我自己上的。" },
+      { w:"sp", at:"B", who:"知道点什么的", ps:["mystery"], t:"这一程，是 {ta} 自己走的。" },
+      { w:"sys", fx:"slow", t:"{ta} 没走到第二级，只把一只脚放上第一级亮的地方。" },
+      { w:"sys", cg:"CG-02", t:"留下的，是 {ta} 自己的脚印。" },
+    ], next:"n1" },
+  n1: { lines: [
+      { w:"sp", bg:"BG-04", at:"C", who:"最老的那只", ps:["dignified"], t:"上面几级亮，是因为有人走过了。亮给别人看的。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], fx:"slow", t:"{call}只管一件——别让 {ta} 站在路口。等到天黑，还没人告诉 {ta}，路是 {ta} 自己的。" },
+      { w:"sp", at:"B", who:"知道点什么的", ps:["mystery"], t:"路口站着的，不止 {ta} 一个。" },
+      { w:"sys", fx:"slow", t:"这一夜过完。石阶上有一道新的脚印，很浅。" },
+    ], end:true },
+};
+const CH04 = {
+  bg: "BG-09", cg: "CG-03",
+  cast: ["记账的那只","最老的那只","最吵的那只","安静的那只","知道点什么的","最小的","不爱说话的那只",
+         "收旧物的老头","门客·稳的","门客·不肯说话的","掠客"],
+  start: {
+    lines: [
+      { w:"sys", bg:"BG-09", fx:"cut", t:"第 45 天。小岁除。一年到头，要在门里挂一张榜。" },
+      { w:"sp", at:"C", who:"记账的那只", ps:["scholar"], t:"名字，一个一个写。最老的。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"（把手按在牌边上，算认下。）" },
+      { w:"sp", at:"C", who:"记账的那只", ps:["scholar"], t:"记账的……不爱说话的……安静的……最吵的。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"我在这儿呢！" },
+      { w:"sp", at:"C", who:"记账的那只", ps:["scholar"], t:"最——" },
+      { w:"sys", fx:"slow", t:"笔停住了。最小的那只蹲在牌跟前，仰头等那一行字。" },
+      { w:"sp", at:"C", who:"记账的那只", ps:["scholar"], t:"{call}，{ta} 的大名，写哪个？" },
+      { w:"sp", at:"L", who:"最小的", ps:["sweet"], t:"我没大名。家里都叫我『最小的』。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"就写这个。小名也是名。名字是留着以后叫的——急什么。" },
+    ],
+    next: "c1",
+  },
+  c1: {
+    lines: [
+      { w:"sys", bg:"BG-09", t:"牌立起来了。一行一行的人名，最后一行最短。" },
+      { w:"sys", t:"你退后两步，看那张牌。" },
+    ],
+    choices: [
+      { t:"看那行最短的",   go:"m1", tone:"quiet", gset:{ CH4_LOOKED:"sweet"  }, fb:"你的眼睛停在『最小的』那一行。" },
+      { t:"看最吵的那行",   go:"m2", tone:"quiet", gset:{ CH4_LOOKED:"lively" }, fb:"最吵的在牌前站得最久，半天没挪。" },
+      { t:"从头一行行看",   go:"m3", tone:"quiet", gset:{ CH4_LOOKED:"all"    }, fb:"一院人的名字，一行行过。" },
+    ],
+  },
+  m1: { lines: [
+      { w:"sys", bg:"BG-09", t:"那最后一行，比别的都短。" },
+    ], next:"n1" },
+  m2: { lines: [
+      { w:"sp", bg:"BG-09", at:"C", who:"最吵的那只", ps:["lively"], t:"……就看看。" },
+      { w:"sys", t:"然后他头一个走开，脚步比平时快。" },
+    ], next:"n1" },
+  m3: { lines: [
+      { w:"sp", bg:"BG-09", at:"B", who:"知道点什么的", ps:["mystery"], t:"这张榜是面镜子。照的不是名字好不好看——是名字底下那个人，今年够不够自己站着。" },
+    ], next:"n1" },
+  n1: { lines: [
+      { w:"sys", bg:"BG-02", fx:"cut", t:"晌午，一家人都到牌跟前来了。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"站不稳的，今年就多走一步。" },
+      { w:"sys", fx:"slow", t:"最吵的在牌前站得最久。没人说话。缺口，是靠沉默照见的。" },
+      { w:"sp", bg:"BG-09", at:"R", who:"收旧物的老头", ps:["calm"], t:"挂得好。自己记自己，比等别人记强。" },
+      { w:"sp", at:"R", who:"收旧物的老头", ps:["calm"], t:"我们记没醒过的。醒了的，你们自己记。" },
+      { w:"sp", at:"R", who:"收旧物的老头", ps:["calm"], fx:"slow", t:"你们这七个，都有看头——过两年，有人要惦记的那种。" },
+    ], next:"n2" },
+  n2: { lines: [
+      { w:"sys", bg:"BG-20", fx:"cut", t:"小岁除夜。后半夜，院墙上有响。断的，一点，又一点。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"谁！" },
+      { w:"sys", fx:"shake", t:"一道影子翻上来，压在墙头。腰里挂着东西，垂着，一晃。" },
+      { w:"sp", at:"C", who:"掠客", ps:["wanderer"], t:"留下。能带走的那一段。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"你敢下来。" },
+      { w:"sys", fx:"flash", t:"墙头紧底下的暗处，伸过来另一样东西——快得像抽走一根线。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], fx:"slow", t:"（喊了半声。那半声，是他从来没喊过的那种。）" },
+      { w:"sp", bg:"BG-20", at:"C", who:"最老的那只", ps:["dignified"], fx:"slow", t:"没有翻进来。挡在墙外头了。……{ta} 身上，短了一截。" },
+      { w:"sp", at:"L", who:"安静的那只", ps:["gentle"], t:"会好的。我记着，养回来就好了。" },
+    ], next:"n3",
+    rset: { lively: { harmed:true, harmCause:"掠客" } } },
+  n3: { lines: [
+      { w:"sys", bg:"BG-20", cg:"CG-04", fx:"slow", t:"墙上有几道印，比白天多。月色很白。" },
+      { w:"sp", at:"B", who:"知道点什么的", ps:["mystery"], t:"来了。这才第一回。" },
+      { w:"sys", t:"小岁除的夜，院门没有开。屋里有个平时最吵的人，这一夜，说了最少的话。" },
+    ], end:true },
+};
+const CH05 = {
+  bg: "BG-02",
+  cast: ["最吵的那只","最老的那只","记账的那只","知道点什么的","安静的那只","星月·并珠的"],
+  start: {
+    lines: [
+      { w:"sys", bg:"BG-02", t:"第 62 天。小岁除过去半个月了。最吵的那只还是话少。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"我今年想动。往前走——往上走。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"伤刚好。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"刚好才要动。再不动，我就真的慢了。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], fx:"slow", t:"我不怕慢。我怕停在原地，还装着没事。" },
+      { w:"sp", at:"B", who:"知道点什么的", ps:["mystery"], t:"{call}，{ta} 这话，一半是真的，一半是怕。" },
+    ],
+    next: "n1",
+  },
+  n1: {
+    lines: [
+      { w:"sys", bg:"BG-02", fx:"cut", t:"黄昏，{ta} 把你拉到石阶下面。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"{call}，陪我一程。{call}在上头站着，我往前走。" },
+      { w:"me",  t:"你自己走。我在。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"就这样？{call}不拉着我？" },
+      { w:"me",  t:"我拉着你，你走的就是我的路。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"那我就走给{call}看。" },
+      { w:"sys", fx:"slow", t:"最老的那只在廊下听着，没插话，只点了点头。" },
+    ],
+    next: "n2",
+  },
+  n2: {
+    lines: [
+      { w:"sys", bg:"BG-04", fx:"cut", t:"夜里，院门外来了人。这个来的很规矩——站在门外，不进门，先开口。" },
+      { w:"sp", at:"R", who:"星月·并珠的", ps:["cheeky"], t:"当家的，在吗。我从星月坛来。听说，你们家有一只，今年想动。" },
+      { w:"sp", at:"R", who:"星月·并珠的", ps:["cheeky"], t:"想动是好事。可自己动，慢。我们坛里有个法子——借。" },
+      { w:"sp", at:"R", who:"星月·并珠的", ps:["cheeky"], t:"借一段力。借你们的，明年，还你们两颗。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"我不要。" },
+      { w:"sp", at:"R", who:"星月·并珠的", ps:["cheeky"], fx:"slow", t:"小兄弟，话别说满了。你今年想动，我们坛里的门，一直开着。" },
+    ],
+    next: "c1",
+  },
+  c1: {
+    lines: [
+      { w:"sp", bg:"BG-04", at:"R", who:"星月·并珠的", ps:["cheeky"], t:"那么，当家的——你说呢。" },
+    ],
+    choices: [
+      { t:"力我们不借。门也不借。", go:"m1", tone:"quiet", gset:{ STANCE_CH5:"FIRM"  }, fb:"门外那个的笑意不变，鞋底一点土都没带起来。" },
+      { t:"你说还两颗。拿什么还。", go:"m2", tone:"quiet", gset:{ STANCE_CH5:"PROBE" }, fb:"门外那个顿了顿：『拿坛里的力还。』" },
+      { t:"今夜就到这儿。",         go:"m3", tone:"quiet", gset:{ STANCE_CH5:"GUARD" }, fb:"灯还亮着，门没关，人已经走远。" },
+    ],
+  },
+  m1: { lines: [ { w:"sp", bg:"BG-04", at:"R", who:"星月·并珠的", ps:["cheeky"], t:"当家的这话，说得急了些。你们不要，你们家那一只，可未必不要。" } ], next:"n3" },
+  m2: { lines: [ { w:"sp", bg:"BG-04", at:"R", who:"星月·并珠的", ps:["cheeky"], t:"拿坛里的力还。规矩就是规矩。" }, { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"我们不要你的力。" } ], next:"n3" },
+  m3: { lines: [ { w:"sp", bg:"BG-04", at:"C", who:"最老的那只", ps:["dignified"], t:"今夜就到这儿。门开着，路你走你的。" } ], next:"n3" },
+  n3: { lines: [
+      { w:"sys", bg:"BG-04", fx:"slow", t:"星月坛的门，今夜第一次，在这条巷子外面，开了一条缝。缝里的人没进来，可那句话，进来了。" },
+    ], end:true },
+};
+const CH06 = {
+  bg: "BG-04",
+  cast: ["最吵的那只","最老的那只","记账的那只","知道点什么的","安静的那只","最小的","星月·数团的"],
+  start: {
+    lines: [
+      { w:"sys", bg:"BG-04", t:"第 78 天。入了冬，天黑得早。那盏灯，点得比前些日子早。" },
+      { w:"me",  t:"过了年，关口那一段，我替你顶一次。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"不。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"{call}替我顶，走的就不是我自己的路了。这一回，我想自己走上去。" },
+      { w:"me",  t:"你走得上去吗。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], fx:"slow", t:"走不上去，也是我走的。" },
+      { w:"sp", at:"B", who:"知道点什么的", ps:["mystery"], t:"{call}，不是每一条路，人家都肯让{call}替的。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"让他走。" },
+    ],
+    next: "n1",
+  },
+  n1: {
+    lines: [
+      { w:"sys", bg:"BG-05", fx:"cut", t:"第二天一早，巷子尽头。雾里站着一个人，空着手，手里拿的是册子。" },
+      { w:"sp", at:"C", who:"星月·数团的", ps:["scholar"], t:"当家的。我从星月坛来。岁除近了，我来报个数。" },
+      { w:"sp", at:"C", who:"星月·数团的", ps:["scholar"], t:"巷东三家，我数过了。巷西两家，我数过了。你们家——" },
+      { w:"sys", fx:"slow", t:"他停住了。把簿子合上，抱在怀里。" },
+      { w:"sp", at:"C", who:"星月·数团的", ps:["scholar"], fx:"slow", t:"还差一颗。" },
+      { w:"sp", at:"C", who:"星月·数团的", ps:["scholar"], t:"不差谁的。就是——我数过的人家，到后来，都少了一颗。" },
+    ],
+    next: "n2",
+  },
+  n2: {
+    lines: [
+      { w:"sys", bg:"BG-04", fx:"cut", t:"夜里，一家人没谁先睡。灯亮着，谁也不提白天的事。" },
+      { w:"sp", at:"L", who:"最小的", ps:["sweet"], t:"那个报数的说少一颗——是我们当中，要少一个吗。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"数得清的，才拿得走。数不清的，就拿不动。" },
+      { w:"sp", at:"B", who:"知道点什么的", ps:["mystery"], t:"白天那个，是来数人的。夜里，说不准还有来拿人的。谁数得清，拿谁。" },
+    ],
+    next: "c1",
+  },
+  c1: {
+    lines: [
+      { w:"sp", bg:"BG-04", at:"C", who:"最老的那只", ps:["dignified"], t:"那么，{call}——这一屋人的心，怎么安。" },
+    ],
+    choices: [
+      { t:"他来数人。数清了才拿得走。", go:"m1", tone:"quiet", gset:{ STANCE_CH6:"NAME" }, fb:"一屋人安静。记账的把册子往怀里按了按。" },
+      { t:"谁也不会少。睡吧。",         go:"m2", tone:"warm",  gset:{ STANCE_CH6:"CALM" }, fb:"最小的往榜那边靠了靠。" },
+      { t:"从今起，自家的数，天天点。", go:"m3", tone:"warm",  gset:{ STANCE_CH6:"RULE" }, fb:"记账的在新的一页写下第一行。" },
+    ],
+  },
+  m1: { lines: [ { w:"sp", bg:"BG-04", at:"C", who:"最老的那只", ps:["dignified"], t:"对。数得清的，才拿得走。那就让他数不清——我们，各家是各家。" } ], next:"n3" },
+  m2: { lines: [ { w:"sp", bg:"BG-04", at:"L", who:"安静的那只", ps:["gentle"], t:"我在。谁也不会少。" }, { w:"sys", t:"安静的那只把灯芯剪了剪，灯亮了些。从今晚起，她把灯留到最晚。" } ], next:"n3" },
+  m3: { lines: [ { w:"sp", bg:"BG-04", at:"B", who:"记账的那只", ps:["scholar"], t:"从今起，自家的数，天天点。点清了，谁也拿不动。" } ], next:"n3" },
+  n3: { lines: [
+      { w:"sys", bg:"BG-04", fx:"slow", t:"这一夜没有人关门。灯亮到很晚，亮得门外那条空巷，连影子都清清楚楚。" },
+    ], end:true },
+};
+const CH07 = {
+  bg: "BG-06", cg: "CG-05",
+  cast: ["最吵的那只","不爱说话的那只","星月·并珠的","星月·守坛的"],
+  start: {
+    lines: [
+      { w:"sys", bg:"BG-06", fx:"cut", t:"第 95 天。雨下了三天。关口，就在今晚。" },
+      { w:"sys", t:"今年要去的，是两只。一只说要动，就再没改口；另一只谁也没说。" },
+      { w:"sp", at:"B", who:"不爱说话的那只", ps:["cool"], t:"（他把新洗过的鞋搁在廊下，摆得整整齐齐。）" },
+      { w:"sp", at:"L", who:"最吵的那只", ps:["lively"], t:"你也去。到那儿，谁也别管谁。各走各的。" },
+    ],
+    next: "n1",
+  },
+  n1: {
+    lines: [
+      { w:"sys", bg:"BG-16", fx:"cut", t:"到了关口，雨停了。天上那道裂痕，比上次见时更长。" },
+      { w:"sp", at:"R", who:"星月·并珠的", ps:["cheeky"], t:"当家的。你们家今年要过关口，我们来看看。" },
+      { w:"sp", at:"R", who:"星月·并珠的", ps:["cheeky"], fx:"slow", t:"过了，就好。过不去——我们坛里，有个位子。" },
+      { w:"sp", bg:"BG-16", at:"C", who:"不爱说话的那只", ps:["cool"], t:"（上前一步。走到石阶一半，脚步顿了一下。）" },
+      { w:"sp", at:"R", who:"星月·并珠的", ps:["cheeky"], t:"（伸手虚抬了一下，像是在『扶』。）" },
+      { w:"sys", fx:"slow", t:"风朝 {ta} 收过去——像抽走一根线。{ta} 的肩膀轻轻一沉。" },
+      { w:"sys", t:"{ta} 没喊。{ta} 从来不喊。只是继续往上走，走得比刚才慢。" },
+      { w:"sp", at:"R", who:"星月·并珠的", ps:["cheeky"], t:"这就对了。过不去的，我们替他过。这一位，我上回就记着了。" },
+    ],
+    rset: { cool: { harmed:true, harmCause:"星月·并团" } },
+    next: "c1",
+  },
+  c1: {
+    lines: [
+      { w:"sys", bg:"BG-16", fx:"slow", t:"{ta} 站到石阶底下。他没回头看你。" },
+    ],
+    choices: [
+      { t:"我替{ta}挡这一道。", go:"K1a", tone:"quiet", gset:{ KEY_CHOICES:"+1" }, fb:"风朝你收过来。你没让。" },
+      { t:"回来。今年你不走。", go:"K1b", tone:"quiet", fb:"{ta} 顿住，没上去。" },
+    ],
+  },
+  // ★K1 二选（主理人裁定）：第③方向「放手」已并入 K1a 的旁白（见下第 3 行）
+  K1a: { lines: [
+      { w:"sp", bg:"BG-16", at:"R", who:"星月·并珠的", ps:["cheeky"], t:"这一道，是 {ta} 自己走的。你插进来，算谁的。" },
+      { w:"me",  t:"算我的。" },
+      { w:"sys", fx:"slow", t:"你没拦他。你只是横在他前头，替他挨这一下——让他自己走上去。" },
+      { w:"sys", cg:"CG-05", fx:"slow", t:"你横在关口上。{ta} 在你身后，只看见一个背影挡了一下风——然后，风就过去了。" },
+      { w:"sp", at:"R", who:"星月·并珠的", ps:["cheeky"], fx:"slow", t:"当家的，你把这一颗，记在自己名下了。可惜——我另取一颗。" },
+      { w:"sys", t:"{ta} 一步一步，走过了关口。他以为，是自己走过去的。" },
+    ], next:"n3" },
+  K1b: { lines: [
+      { w:"me",  t:"回来。今年你不走。" },
+      { w:"sp", bg:"BG-16", at:"C", who:"最吵的那只", ps:["lively"], t:"……{call}。" },
+      { w:"sys", fx:"slow", t:"{ta} 退回你身边，没再上去。关口上那道裂痕，亮了一下，又暗下去。" },
+      { w:"sp", at:"R", who:"星月·并珠的", ps:["cheeky"], t:"当家的，护得住今天。" },
+    ], next:"n3" },
+  n3: { lines: [
+      { w:"sys", bg:"BG-16", fx:"slow", t:"那天夜里，两只都过了关口。一只知道自己过了，一只只知道自己过了半程。" },
+      { w:"sys", t:"风停的时候，谁也没提起中间那一下。" },
+    ], end:true },
+};
+const CH08 = {
+  bg: "BG-02", cg: "CG-06",
+  cast: ["最吵的那只","不爱说话的那只","记账的那只","知道点什么的","安静的那只","最老的那只","最小的"],
+  start: {
+    lines: [
+      { w:"sys", bg:"BG-02", fx:"cut", t:"第 108 天。最吵的那只，这几天话多起来了。逢人就讲那一夜。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"那道石阶，我一口气走上去的。风那么大，我都没停。" },
+      { w:"sp", at:"L", who:"最小的", ps:["sweet"], t:"你没害怕吗。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"怕什么。我自己走的。" },
+      { w:"sys", t:"有一句话，好几次到了你嘴边——『那天，有人替你挡了一下。』" },
+      { w:"sys", fx:"slow", t:"可你每次开口，都换成了别的。" },
+    ],
+    next: "n1",
+  },
+  n1: {
+    lines: [
+      { w:"sys", bg:"BG-02", fx:"cut", t:"黄昏，记账的照例点名。" },
+      { w:"sp", at:"C", who:"记账的那只", ps:["scholar"], t:"一双、两双、三双。今晚留几盏灯。" },
+      { w:"sys", t:"这是不爱说话的那只答的。他一向只答三个字。" },
+      { w:"sp", at:"B", who:"不爱说话的那只", ps:["cool"], t:"……两盏。" },
+      { w:"sp", at:"C", who:"记账的那只", ps:["scholar"], fx:"slow", t:"是三盏。这半个月，都是三盏。" },
+      { w:"sys", t:"不爱说话的那只张了张口，没说话。他看着桌上的册子，像在把那一个数，往回捡。" },
+      { w:"sp", at:"C", who:"知道点什么的", ps:["mystery"], t:"{call}。这几天，{ta} 的话，一次比一次短。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], fx:"slow", t:"丢了的不怕。就是淡了——淡了，还能再浓回来。" },
+      { w:"sp", at:"L", who:"安静的那只", ps:["gentle"], t:"我陪你坐。" },
+    ],
+    next: "n2",
+  },
+  n2: {
+    lines: [
+      { w:"sys", bg:"BG-04", fx:"cut", t:"夜里，灯点上了。影子落在墙上——一盏灯，照一墙影。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"我看我的影子，比上个月长了。过关口，长个子。" },
+      { w:"sp", at:"L", who:"最小的", ps:["sweet"], fx:"slow", t:"那他的影子，怎么浅了一截。" },
+      { w:"sys", fx:"slow", t:"墙上，不爱说话的那只的影子，比旁人的淡。淡得像是隔着水看。" },
+      { w:"sys", t:"他没动。看了一会儿，往灯那边挪了半步——影子浓了一点点。他就没再挪。" },
+      { w:"sp", at:"C", who:"最吵的那只", ps:["lively"], t:"{call}。那天夜里——风是不是特别大。我记得挺大的。" },
+    ],
+    choices: [
+      { t:"风是挺大的。", go:"m1", tone:"warm",  fb:"{ta} 点点头，去看自己的影子了。" },
+      { t:"你走得很稳。", go:"m2", tone:"warm",  fb:"{ta} 笑了半下，没接话。" },
+      { t:"……",         go:"m3", tone:"quiet", fb:"你没答。灯影晃了一下，又定住。" },
+    ],
+  },
+  m1: { lines: [ { w:"sp", bg:"BG-04", at:"C", who:"最吵的那只", ps:["lively"], t:"那就对了。" } ], next:"n3" },
+  m2: { lines: [ { w:"sp", bg:"BG-04", at:"C", who:"最吵的那只", ps:["lively"], t:"稳吧？我自己都觉得稳。" } ], next:"n3" },
+  m3: { lines: [ { w:"sys", bg:"BG-04", t:"你没答。他也没再问。" } ], next:"n3" },
+  n3: { lines: [
+      { w:"sys", bg:"BG-04", cg:"CG-06", fx:"slow", t:"一墙影子，只有一道，比别的浅。" },
+      { w:"sys", t:"这一夜，没有谁问起关口上的那一下。那道浅影——淡一点，可还在。" },
+    ], end:true },
+};
+const CH09 = {
+  bg: "BG-09",
+  cast: ["坛主·并团的老先生","最吵的那只","最老的那只","记账的那只","知道点什么的","最小的",
+         "门客·稳的","收旧物的老头"],
+  start: {
+    lines: [
+      { w:"sys", bg:"BG-09", fx:"cut", t:"第 120 天。岁除一。这是这一门头一个正式岁除——这回要报数。" },
+      { w:"sp", at:"C", who:"门客·稳的", ps:["calm"], t:"当家的。岁除要报数。" },
+      { w:"sp", at:"B", who:"记账的那只", ps:["scholar"], t:"我们自己记自己的。" },
+      { w:"sp", at:"C", who:"门客·稳的", ps:["calm"], t:"记你们的。我们记我们的。对一对，各自清楚。" },
+      { w:"sp", at:"R", who:"收旧物的老头", ps:["calm"], fx:"slow", t:"今年，巷尾那家，空了个位子。去年报数，是四个。今年——三个。" },
+      { w:"sp", at:"B", who:"记账的那只", ps:["scholar"], t:"那一个呢。" },
+      { w:"sp", at:"R", who:"收旧物的老头", ps:["calm"], t:"没走。就是，不在他家了。" },
+      { w:"sys", fx:"slow", t:"院里没人说话。最小的往榜那边靠了靠，像是要数一遍自己家的人。" },
+    ],
+    next: "n1",
+  },
+  n1: {
+    lines: [
+      { w:"sys", bg:"BG-19", fx:"cut", t:"岁除这日，星月坛开坛，请各家去对榜。讲的是礼。所以你还是去了。" },
+      { w:"sys", t:"坛里很暗。一线天光落在坛面上。阶下站着一个人，慢，稳，像一截老木头。" },
+      { w:"sp", at:"C", who:"坛主·并团的老先生", ps:["pampered"], t:"当家的，稀客。你们家的榜，我读过。这是坛册。谁进了团，名字记在这里。" },
+      { w:"sp", at:"C", who:"坛主·并团的老先生", ps:["pampered"], t:"我们不拿人。只是——你家隔壁那家，去年也是这么说的。" },
+      { w:"sp", at:"C", who:"坛主·并团的老先生", ps:["pampered"], t:"一颗珠子，不叫团。团是——你不必自己撑。要是你站不住，团会把你接住。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"接住了，还是在团里，还是在自家。" },
+      { w:"sp", at:"C", who:"坛主·并团的老先生", ps:["pampered"], t:"在团里。团里，也是家。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"不是这个家。" },
+      { w:"sp", at:"C", who:"坛主·并团的老先生", ps:["pampered"], fx:"slow", t:"当家的，你们家今年要走关口的那一位——报数那日，我记着了。" },
+      { w:"sys", fx:"slow", t:"册子上，落了一笔。最吵的那只站在你身后，看清了那一笔。他把手在袖子里收了一下——这一下，是他头一回怕。" },
+      { w:"sp", at:"C", who:"坛主·并团的老先生", ps:["pampered"], t:"不必急。册上落一笔，不是把人拿走了。人还在你家院子里站着。" },
+    ],
+    rset: { lively: { starMark:true } },
+    next: "c1",
+  },
+  c1: {
+    lines: [
+      { w:"sp", bg:"BG-19", at:"C", who:"坛主·并团的老先生", ps:["pampered"], t:"记着——明年这个时候，你会想起今天。" },
+    ],
+    choices: [
+      { t:"这笔我认下。人还在我家。", go:"m1", tone:"quiet", gset:{ STANCE_CH9:"ACCEPT" }, fb:"坛主合上册子，眼没抬。" },
+      { t:"能落一笔，就能划一笔。",   go:"m2", tone:"quiet", gset:{ STANCE_CH9:"DENY"   }, fb:"一线天光落下来，坛主笑了一下，不恼。" },
+      { t:"（沉默）带人走。",         go:"m3", tone:"quiet", gset:{ STANCE_CH9:"SILENT" }, fb:"最吵的跟上你。袖子里那一下，谁也没看见。" },
+    ],
+  },
+  m1: { lines: [ { w:"sp", bg:"BG-19", at:"C", who:"坛主·并团的老先生", ps:["pampered"], t:"认下，就好。" } ], next:"n3" },
+  m2: { lines: [ { w:"sp", bg:"BG-19", at:"C", who:"坛主·并团的老先生", ps:["pampered"], t:"划不划得动，明年再说。" } ], next:"n3" },
+  m3: { lines: [ { w:"sys", bg:"BG-19", t:"你没接话。带人出了坛门。" } ], next:"n3" },
+  n3: {
+    lines: [
+      { w:"sys", bg:"BG-10", fx:"cut", t:"回到巷子，下雪了。榜立在门里，正对着门。你把自家的名字，从头到尾看了一遍。" },
+      { w:"sys", t:"七个名字。一个不少。你看完一遍，心里不安稳，又看了一遍。" },
+      { w:"sys", fx:"slow", t:"第二遍，眼睛里多了一样东西——旁边那个空着的位子。" },
+      { w:"sp", at:"C", who:"最老的那只", ps:["dignified"], t:"数了两遍。第二遍，数的是不是少了一个。" },
+      { w:"me",  t:"没有。" },
+      { w:"sp", at:"L", who:"最小的", ps:["sweet"], t:"后巷那家少的那个，会不会回来。" },
+      { w:"me",  t:"会。" },
+      { w:"sp", at:"L", who:"最小的", ps:["sweet"], fx:"slow", t:"要是回不来呢。" },
+      { w:"sys", cg:"CG-08", fx:"slow", t:"雪落在榜上，一行一行盖过去。你伸手，把落在名字上的那一片雪拂了下去。" },
+      { w:"sp", at:"B", who:"知道点什么的", ps:["mystery"], fx:"slow", t:"{call}。坛里那本册子，翻的时候，我看见前头——还有别人的名字。有一个，排在咱们前头，远得很。他不认识。他跟了团。" },
+      { w:"sys", t:"这一夜，你数了两遍自家的名字，一遍比一遍慢。七个名字，你认得出来——只剩下那个空着的位子，是别人家的。" },
+    ],
+    end:true,
+  },
+};
+  const MAIN_SCRIPTS = [CH01, CH02, CH03, CH04, CH05, CH06, CH07, CH08, CH09];
   const MAIN_ACTS = MAIN_CHAPTERS.map(function (c, i) {
     return {
       id: "m" + (i + 1), i: i, day: c.day, icon: c.icon, title: c.title, sub: c.sub || "",

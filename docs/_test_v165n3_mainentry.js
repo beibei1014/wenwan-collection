@@ -67,7 +67,12 @@ const spSrc = fs.readFileSync(path.join(ROOT, "js/spirits.js"), "utf8");
   ok(Array.isArray(S.MAIN_ACTS) && S.MAIN_ACTS.length === 9, "MAIN_ACTS = 9 条");
   ok((S.MAIN_ACTS || []).every((a, i) => a.id === "m" + (i + 1)), "MAIN_ACTS 的 id 是 m1..m9（与旧 c1..c8 不冲突）");
   ok(typeof S.MAIN_STORY_OPEN === "boolean", "MAIN_STORY_OPEN 是集中配置常量（铁律：不散落硬编码）");
-  ok(spSrc.indexOf("const MAIN_STORY_OPEN = false;") >= 0, "正文装帧开关当前为 false（N2 装完 9 章正文后翻 true）");
+  // v165-N2：9 章正文已机械抽取装入 ⇒ 开关翻 true（装帧前为 false）。
+  //   本测试不写死 true/false，只要求「源码里的开关值 == 运行值」，并对两种状态各验其契约。
+  const OPEN = !!S.MAIN_STORY_OPEN;
+  ok(spSrc.indexOf("const MAIN_STORY_OPEN = " + OPEN + ";") >= 0,
+    "源码里的装帧开关 == 运行值（当前 " + OPEN + "；N2 装完 9 章正文后应为 true）");
+  ok(OPEN === true, "9 章正文已装帧 ⇒ 开关为 true（N2 交付物）");
   typeof S.mainActOf === "function" ? ok(true, "mainActOf 已导出") : ok(false, "mainActOf 未导出");
   ["mainChapterState", "mainUnreadCount", "mainReadChapter", "mainTalkEnter", "mainTalkChoose", "mainTalkReplay", "mainTalkBrief"]
     .forEach((f) => ok(typeof S[f] === "function", "新方法已导出：" + f));
@@ -76,9 +81,17 @@ const spSrc = fs.readFileSync(path.join(ROOT, "js/spirits.js"), "utf8");
   {
     const st = S.mainChapterState({ dayNo: 999 });
     ok(st.length === 9, "mainChapterState 返回 9 条");
-    ok(st.every((c) => !c.unlocked), "正文未装帧时全部 locked（不会出现能点进去却是空页）");
-    ok(st.every((c) => String(c.need).indexOf("装帧") >= 0), "locked 原因写明「正文还没装帧」");
-    ok(S.mainUnreadCount({ dayNo: 999 }) === 0, "未装帧时未读数为 0");
+    if (!OPEN) {
+      ok(st.every((c) => !c.unlocked), "未装帧时全部 locked（不会出现能点进去却是空页）");
+      ok(st.every((c) => String(c.need).indexOf("装帧") >= 0), "locked 原因写明「正文还没装帧」");
+      ok(S.mainUnreadCount({ dayNo: 999 }) === 0, "未装帧时未读数为 0");
+    } else {
+      ok(st[0].unlocked === true, "已装帧 ⇒ 第 1 章解锁（dayNo 999 ≥ 锚点 1）");
+      ok(st.filter((c) => c.unlocked).length >= 1, "已装帧 ⇒ 至少 1 章可进");
+      ok(S.mainUnreadCount({ dayNo: 999 }) >= 1, "已装帧 ⇒ 未读数 ≥ 1（有得读）");
+      // 顺序锁：第 2 章要先读完第 1 章
+      ok(st[1].unlocked === false, "已装帧 ⇒ 第 2 章仍锁着（要先读完第 1 章）");
+    }
   }
   {
     // 状态全在 ww_story：mainReadChapter 只写 ww_story，绝不写 rec
@@ -89,14 +102,14 @@ const spSrc = fs.readFileSync(path.join(ROOT, "js/spirits.js"), "utf8");
     ok(!!(after.mainChapters && after.mainChapters[0] && after.mainChapters[0].at), "mainReadChapter 写进 ww_story.mainChapters");
     ok(S.mainChapterState({ dayNo: 999 })[0].read === true, "已读状态能被列表读到");
   }
-  section("③-c 正文为空时绝不崩（N2 装帧前的防御）");
+  section("③-c 越界章节号绝不崩（防御，与正文是否装帧无关）");
   {
     let threw = false, r = null;
-    try { r = S.mainTalkEnter({ dayNo: 999 }, 0); } catch (e) { threw = true; }
-    ok(!threw, "mainTalkEnter 在正文为空时不抛错");
-    ok(r && r.ended === true && Array.isArray(r.added) && r.added.length === 0, "空正文 ⇒ 直接 ended，不产出空消息");
+    try { r = S.mainTalkEnter({ dayNo: 999 }, 99); } catch (e) { threw = true; }
+    ok(!threw, "mainTalkEnter 在越界章节号下不抛错");
+    ok(r && r.ended === true && Array.isArray(r.added) && r.added.length === 0, "越界 ⇒ 直接 ended，不产出空消息");
     let threw2 = false;
-    try { S.mainTalkChoose({ dayNo: 999 }, 0); S.mainTalkReplay({ dayNo: 999 }, 0); S.mainTalkBrief(); } catch (e) { threw2 = true; }
+    try { S.mainTalkChoose({ dayNo: 999 }, 99); S.mainTalkReplay({ dayNo: 999 }, 99); S.mainTalkBrief(); } catch (e) { threw2 = true; }
     ok(!threw2, "mainTalkChoose / Replay / Brief 同样不抛错");
   }
 

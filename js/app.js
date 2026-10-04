@@ -7583,7 +7583,9 @@
     if (planHtml) html += planHtml;
 
     // ===== v165-N3：《沁灵纪 · 主线》独立入口（用户裁定：取消详情页里的旧 8 章入口，改用这个） =====
-    {
+    // ⚠️ 受 MAIN_STORY_OPEN 控制：正文没装帧时**整块不渲染** ——
+    //    绝不让用户撞见「一个大卡片，点进去九章全写『正文还没装帧』」的半成品状态。
+    if (Spirits.MAIN_STORY_OPEN) {
       const _mCtx = mainStoryCtx();
       const _mList = Spirits.mainChapterState(_mCtx);
       const _mRead = _mList.filter((c) => c.read).length;

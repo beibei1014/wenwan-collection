@@ -327,8 +327,12 @@ section("P1-5 casting 规则3：缺该 persona ⇒ 取最接近型并复用其�
   ok(!!cast.dignified && cast.dignified.near === true, "同组(plain)缺型 ⇒ dignified 回落到 cool（near=true）");
   ok(!!cast.cool && cast.cool.near === false, "在册 persona near=false");
   ok(!!cast.lively && cast.lively.id === "x", "lively 正常出场");
-  // sweet(soft) 与 lively(motion) 不同组 ⇒ sweet 不应跨组回落到 lively
-  ok(!cast.sweet, "⛔ 缺型不跨组回落（sweet↔lively 不同组）");
+  // sweet(soft) 与 lively(motion) 不同组 ⇒ **castNearest 不得**把它回落到 lively（老规则仍在）。
+  // v165-N2：群像边界 —— 玩家不足 7 只时，剩下没人演的行当由「轮转复用」补齐（fill=true），
+  //   它与同组回落是两条独立通道：near=false + fill=true。⛔ 因此这里改为钉「不跨组」而不是「不出场」。
+  ok(!!cast.sweet && cast.sweet.near === false && cast.sweet.fill === true,
+    "⛔ 缺型不跨组回落（sweet↔lively 不同组 ⇒ near 不得为 true）；缺人由 N2 轮转复用补齐（fill=true，实得 " +
+    (cast.sweet ? (cast.sweet.near + "/" + cast.sweet.fill + "/" + cast.sweet.from) : "无") + "）");
 }
 
 section("P1-5 casting 规则3b：同组缺型 ⇒ 复用最接近型的名（不报错）");
