@@ -472,8 +472,8 @@
     { en: "a crossed-collar Chinese hanfu robe with wide sleeves and a cloth sash", zh: "交领长袍 + 宽布腰带" },
     { en: "a round-collar Chinese robe (yuanlingpao) with a leather belt", zh: "圆领袍 + 革带" },
     { en: "a straight-hem deep robe (shenyi) with a layered collar", zh: "直裾深衣 + 层叠领" },
-    { en: "a traditional Chinese tang-style jacket with frog buttons and a stand collar", zh: "中式对襟褂 + 盘扣立领" },
-    { en: "an embroidered Chinese front-button jacket with cloud-patterned trim", zh: "绣花对襟褂 + 云纹滚边" },
+    { en: "a cross-collar Chinese hanfu robe with the right lapel over the left and wide sleeves", zh: "交领右衽宽袖长袍" },
+    { en: "an embroidered Chinese cross-collar robe with cloud-patterned trim", zh: "绣花交领长袍 + 云纹滚边" },
     { en: "a wide-sleeved Chinese Taoist robe with hanging ties", zh: "大袖道袍 + 系带" },
     { en: "a plain wrap-front Chinese top with a cloth waist wrap", zh: "素色裹襟上衣 + 布腰封" },
     { en: "a short-sleeve Chinese beizi vest layered over a long robe", zh: "半臂褙子 + 长衫内搭" },
@@ -506,7 +506,7 @@
       zhOutfit: "玉色丝袍 + 玉雕饰件" },
     { zh: "金属", keys: ["银", "金属", "铁", "钢", "锡", "铜", "钛"],
       en: "silver filigree vest over silk with metal-disc ornaments",
-      zhOutfit: "錾花银 vest + 金属盘扣饰件" },
+      zhOutfit: "錾花银披肩 + 金属环扣饰件" },
     // ⛔ 泛组垫底：只在名称**真的**提到木/菩提/根时才生效（品类不算）
     { zh: "木", keys: ["檀", "木", "菩提", "核", "根", "椰", "橄榄"],
       en: "wood-toned rustic silk and plain woven cloth",
@@ -932,6 +932,37 @@
     "画面比例要求：成年形态，全身站姿，全身高度约为头高的九倍，腿部要占身高的一半以上，头部更小、身形修长挺拔，整体是时装画里高挑成年人的比例，绝不是大头短腿的可爱风格。",
   ];
   function proportionZhFor(stage) { return PROPORTION_ZH[Math.min(4, Math.max(1, Number(stage) || 1))] || ""; }
+  /* ============================================================
+   * 🔴 v167-B · 服装去清代 + 仙侠基调 + 中文指令锚
+   *   用户是汉服爱好者/汉族，**强烈反感清朝服饰特征**（点名了几类清制官服形制：立式高领、对襟排扣、蜈蚣扣、厂字领），
+   *   声明「不接受清朝的服饰，我宁愿是仙侠风格」；并问「方舟（ark）中文理解更好，prompt 能中文化吗」。
+   *   本块只作用于**非 legacy** 路径（legacy＝详情页「🔙 恢复旧立绘」，必须逐字节复刻旧 prompt）。
+   * ============================================================ */
+  // (a) 清代服饰强禁（英文负向）—— ⛔ 独立常量，⛔ 绝不并入全局 NEG_STYLE（NEG_STYLE 被 legacy 共用，且凝形 Q 版靠大头吃饭）
+  const NO_QING = "strictly no Qing dynasty or Manchu costume: no mandarin collar, no standing collar, " +
+    "no frog buttons, no knot buttons, no pankou, no magua, no tang-style front-button jacket, " +
+    "no qipao, no cheongsam, no changshan, no mandarin jacket, no official hat, no queue hairstyle";
+  // (b) 正向仙侠 / 汉服形制（先秦至明代）
+  const XIANXIA_LOOK = "xianxia wuxia immortal aesthetic, hanfu in pre-Qing Chinese styles: " +
+    "cross-collar with the right lapel over the left (jiaoling youren), wide flowing sleeves, " +
+    "long floating silk ribbons, immortal-robed drapery, jade crown or hairpin, layered silk sashes; " +
+    "never a standing collar, never a buttoned placket";
+  // (f) 中文服装锚（仅 ark（豆包 Seedream）且非 legacy；与 PROPORTION_ZH 同一开关）
+  const COSTUME_ZH = "服装要求：请画中国古代汉服（先秦至明代形制），必须交领右衽、宽袍大袖，可加飘带与广袖仙袂；" +
+    "绝对不要清朝服饰：不要立领、不要盘扣、不要蜈蚣扣、不要对襟褂、不要马褂、不要旗袍、不要长衫、不要官帽、不要辫子。整体气质偏仙侠仙气。";
+  // (d) CG 三条路径共用的服装守卫（CG 无 legacy 分支，直接追加）
+  const CG_COSTUME_GUARD = XIANXIA_LOOK + ", " + NO_QING;
+  // 中文比例锚 / 服装锚的**总开关**（一键回退：置 false 即回到纯英文 prompt）
+  const ZH_ANCHOR_ON = true;
+  function zhAnchorEnabled() { return ZH_ANCHOR_ON && (getImageCfg() || {}).provider === "ark"; }
+  // (e) legacy 冻结：清理清代诱导词时改过 en 的两条 OUTFITS —— legacy 分支替换回旧 en，保证旧图 URL 逐字节复刻。
+  //   （zh 显示串改了不影响 legacy：legacy prompt 只用 en；⛔ 但 en 一改，恰好抽中这两条的沁灵旧图就会漂 → 故冻结。）
+  const LEGACY_OUTFIT_EN = [
+    { now: "a cross-collar Chinese hanfu robe with the right lapel over the left and wide sleeves",
+      old: "a traditional Chinese tang-style jacket with frog buttons and a stand collar" },
+    { now: "an embroidered Chinese cross-collar robe with cloud-patterned trim",
+      old: "an embroidered Chinese front-button jacket with cloud-patterned trim" },
+  ];
   function stageOrnate(stage) { return Number(stage) === 4; }   // 化形（终阶）：更华丽服饰 + 场景
   function stageProgress(item, rec) {
     // v165：⛔ 不再返回天数余量（toNextDays 恒 0，仅为兼容旧调用方保留字段）；bottleneck 恒 "plays"
@@ -1004,7 +1035,7 @@
     "大袖衫": "a wide-sleeved gown", "大袖": "a wide-sleeved gown", "袄裙": "a padded jacket and skirt set",
     "袄": "a padded jacket", "披风": "a Chinese cape", "斗篷": "a hooded cloak", "鹤氅": "a crane-feather cloak",
     "对襟": "a front-buttoned robe", "交领": "a cross-collar robe", "半臂": "a sleeveless short jacket",
-    "齐胸": "a chest-high ruqun", "曲裾": "a quju robe", "褂": "a mandarin jacket", "外袍": "an outer robe",
+    "齐胸": "a chest-high ruqun", "曲裾": "a quju robe", "褂": "a Chinese front-opening long robe", "外袍": "an outer robe",
     "裙": "a skirt", "衫": "a robe", "衣裳": "a traditional outfit",
   };
   const _HAIR_ZH_EN = {
@@ -2100,7 +2131,15 @@
         ", wearing " + ap.acc + ", " + ap.vibe + " personality, " + stageLook + ", " +
         "full body creature illustration, whole body visible, centered with comfortable margin";
     }
+    // v167-B：legacy 逐字节复刻 —— 把去清代时改过的两条 OUTFITS 的 en 换回旧串
+    if (opts && opts.legacy) {
+      for (let _li = 0; _li < LEGACY_OUTFIT_EN.length; _li++) {
+        cmp = cmp.split(LEGACY_OUTFIT_EN[_li].now).join(LEGACY_OUTFIT_EN[_li].old);
+      }
+    }
     const bits = [cmp, GUOFENG, ANATOMY, soft, SINGLE, CONSISTENCY, growth, NEG_STYLE];
+    // v167-B：仙侠/汉服正向形制 —— 非 legacy 紧跟 GUOFENG 之后
+    if (!(opts && opts.legacy)) bits.splice(2, 0, XIANXIA_LOOK);
     // v112：把「人物设定 → 形象细节关键词」也拼进去，立绘不再"只有颜色"
     const tags = getLookTags(item);
     if (tags) bits.push(lk.chosen
@@ -2124,9 +2163,14 @@
     //   legacy（恢复旧立绘）时末尾不挂比例锁定块，精确复刻 v164c 之前的 prompt。
     // v165-F（根因③）：中文比例锚 —— 仅 ark（豆包 Seedream），压在**整条 prompt 最末尾**（propLock 之后）。
     //   国产模型对中文指令的理解与执行力通常强于英文；其它 provider 不保证中文理解力 → 不追加。
-    const zhAnchor = (isChar && !(opts && opts.legacy) && (getImageCfg() || {}).provider === "ark")
-      ? (", " + proportionZhFor(stage == null ? 1 : stage)) : "";
-    return bits.join(", ") + ", " + st + propLock + zhAnchor;
+    // v167-B：再加中文服装锚（COSTUME_ZH），同一开关 zhAnchorEnabled()。
+    const _nonLegacy = !(opts && opts.legacy);
+    const _zh = (isChar && _nonLegacy && zhAnchorEnabled());
+    const zhAnchor = _zh ? (", " + proportionZhFor(stage == null ? 1 : stage)) : "";
+    const zhCostume = _zh ? (", " + COSTUME_ZH) : "";
+    // v167-B：清代服饰强禁挂**整条 prompt 最末尾**（最高权重）
+    const noQing = _nonLegacy ? (", " + NO_QING) : "";
+    return bits.join(", ") + ", " + st + propLock + zhAnchor + zhCostume + noQing;
   }
   // 用「v164c 之前的旧 prompt」精确还原当时的出图 URL —— 用于「恢复旧立绘」，把被 prompt 改动洗掉的旧图找回来。
   // 与旧版显示路径一致：不传 appearance / stage（旧显示走的就是默认外观 + 第 1 阶），才能精确复刻当时浏览器请求的那个 URL。
@@ -3979,7 +4023,8 @@
       ", the same character keeps hair color, eye color, outfit and accessories consistent, " +
       "HORIZONTAL LANDSCAPE COMPOSITION, 16:9 widescreen framing, not a portrait, not a vertical poster, " +
       "solo single character only, exactly one figure in the whole image, no other characters, no text, no letters");
-    return head + tail + ", " + CONSISTENCY + ", " + BG_NEG;
+    // v167-B：CG 服装守卫（同 promptForCg）
+    return head + tail + ", " + CONSISTENCY + ", " + BG_NEG + ", " + CG_COSTUME_GUARD;
   }
   // 今天是不是节令；是、且没记过 → 写一条（返回新记录，否则 null）
   function ensureFest(item, rec, ctx) {
@@ -8058,7 +8103,8 @@ const CH09 = {
          "personality, dramatic pose and camera angle, full body visible from head to toe, " +
          "the horizontal frame filled with the wide scenery of the scene (sky / room / distant view) on both sides of the character, " +
          "light particles and elegant atmosphere, no other characters");
-    return head + tail + ", " + CONSISTENCY + ", " + BG_NEG;
+    // v167-B：CG 服装守卫（正向仙侠/汉服 + 清代强禁）——⛔ CG 无 legacy 分支；比例块仍由 cgPromptFromBrief 压最后
+    return head + tail + ", " + CONSISTENCY + ", " + BG_NEG + ", " + CG_COSTUME_GUARD;
   }
 
   // v166-CG：场景优先辅助 —— 有 sceneText（用户确认后的「中文画面描述 / 提取的英文关键词」）时，
@@ -8125,7 +8171,7 @@ const CH09 = {
       shotEn + poseBit +
       "keep exactly two characters in the image, no extra people, no duplicates" +
       (lookHard(lkA) ? (", " + nmA + ": " + lookHard(lkA)) : "") +
-      (lookHard(lkB) ? (", " + nmB + ": " + lookHard(lkB)) : "") + ", " + CONSISTENCY + ", " + BG_NEG;
+      (lookHard(lkB) ? (", " + nmB + ": " + lookHard(lkB)) : "") + ", " + CONSISTENCY + ", " + BG_NEG + ", " + CG_COSTUME_GUARD;
   }
 
   /* ============================================================
@@ -8536,6 +8582,8 @@ const CH09 = {
     STAGES, stageDef, stageInfo, growthOf, STAGE_DAYS, STAGE_PLAYS, HEAD_COUNT, stageOf, headCountOf, stageOrnate, stageProgress,
     // v165-F：立绘比例执行手段 v2（占满画幅 / 中文比例锚[仅 ark] / 阶段开场身份锚）——供自测断言
     FRAME_FILL, FRAME_FILL_OLD, PROPORTION_ZH, proportionZhFor, AGE_OPEN, AGE_OPEN_BOY_OLD, AGE_OPEN_GIRL_OLD,
+    // v167-B：服装去清代（正向汉服/仙侠 + 清代强禁 + 中文服装锚）——供自测断言
+    NO_QING, XIANXIA_LOOK, COSTUME_ZH, CG_COSTUME_GUARD, ZH_ANCHOR_ON, zhAnchorEnabled, LEGACY_OUTFIT_EN,
     appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
     // v127：设定向导（发色/特征/性格可确认可修改；一句基础设定 → 扩写成详细设定）
     HAIR_COLORS, HAIR_PALETTE, hexToCnTrad, FEATURES, PERSONAS_PICK, lookOf, lookText, lookExtra, hairWordFromInput, expandProfile, profileLocal, genderFromText,

@@ -19,7 +19,7 @@
  *   A. 根因存在（负向对照）：改动前的 HEAD 版**必然失败**（它还带旧留白、无 FRAME_FILL、无中文锚、开场带 boyish）
  *   B. 占满画幅：非 legacy 四阶都含 FRAME_FILL、不含旧留白
  *   C. 数值化身体分区：蜕形/化形 prop 含腿长半身 / 肩宽 1.5 头宽
- *   D. 中文比例锚：仅 ark 追加、且**恰在整条 prompt 最末尾**；非 ark 一律没有
+ *   D. 中文比例锚：仅 ark 追加（v167-B 起其后还接 COSTUME_ZH + NO_QING，整条以 NO_QING 收尾）；非 ark 一律没有
  *   E. 开场身份锚：3/4 阶无 "young boy / boyish face"；1/2 阶保持原样
  *   F. ⛔ legacy 逐字节复刻：legacy 立绘 prompt 与改动前**完全一致**（旧图 URL 还能找回来）
  *   G. ⛔ CG 路径一字未动：cgPropFor / cgPromptFromBrief 不含 FRAME_FILL / 中文锚
@@ -111,8 +111,11 @@ section("D. 中文比例锚：仅 ark、且恰在整条 prompt 最末尾");
   [1, 2, 3, 4].forEach((s) => {
     const p = P(s), zh = SP.proportionZhFor(s);
     ok(ZH_RE.test(p), "D-ark" + s + " · 阶段" + s + " 含中文比例锚");
-    ok(p.slice(-zh.length) === zh, "D-ark" + s + " · 阶段" + s + " 中文锚**恰在整条 prompt 最末尾**（endsWith）");
-    ok(p.lastIndexOf("PROPORTION LOCK") < p.length - zh.length, "D-ark" + s + " · 阶段" + s + " 中文锚在英文比例块**之后**（末尾权重最高）");
+    // v167-B：中文比例锚之后还接 COSTUME_ZH + NO_QING（服装两段）→ 不再要求「恰为最后一个字符」，
+    //   改为「整条 prompt 以 NO_QING 收尾、比例锚在英文比例块之后、服装锚接在比例锚之后」。
+    ok(p.endsWith(SP.NO_QING), "D-ark" + s + " · 阶段" + s + " 整条 prompt 以 NO_QING 收尾（服装强禁最高权重）");
+    ok(p.indexOf(zh) > p.lastIndexOf("PROPORTION LOCK"), "D-ark" + s + " · 阶段" + s + " 中文比例锚在英文比例块**之后**");
+    ok(p.indexOf(zh) >= 0 && p.indexOf(SP.COSTUME_ZH) > p.indexOf(zh), "D-ark" + s + " · 阶段" + s + " 中文服装锚接在比例锚之后");
     ok(zh.indexOf(String(SP.headCountOf(s))) >= 0 || /四头身|六头身|八倍|九倍/.test(zh), "D-ark" + s + " · 中文锚与本阶头身数一致");
   });
   ok(/绝不是大头短腿/.test(SP.proportionZhFor(3)) && /绝不是大头短腿/.test(SP.proportionZhFor(4)),

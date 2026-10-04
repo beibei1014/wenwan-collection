@@ -113,7 +113,9 @@ ok(iSpec >= 0, "带出图单时 prompt 里有 'OWNER-CONFIRMED DRAWING SPEC'（�
 ok(iStyle >= 0, "prompt 里有风格预设段（前提成立）");
 ok(iAnchor > iStyle, "比例锁定块必须压在风格预设 st **之后**（st 是纯成人/少年措辞的结尾大段）");
 ok(iAnchor > iSpec, "比例锁定块必须压在用户出图单之后（两者谈的东西不重叠：出图单只管服饰/发色/持物/神态，从不谈比例）");
-ok(pb.length - iAnchor < 400, "比例锁定块位于结尾 400 字符内（实测 " + (pb.length - iAnchor) + "）");
+// v167-B：比例块之后还会接服装守卫（XIANXIA_LOOK + NO_QING，≈580 字符）→ 400 太紧，放宽到 1100，
+//   仍能保证"比例块落在整条 prompt 的尾段"（块起始距结尾 ≤1100）。
+ok(pb.length - iAnchor < 1100, "比例锁定块位于尾段 1100 字符内（实测 " + (pb.length - iAnchor) + "）");
 ok(pb.indexOf("OWNER-CONFIRMED DRAWING SPEC") >= 0 && pb.indexOf("柿子") >= 0, "出图单内容仍在 prompt 里（v164 的保证没被破坏）");
 
 /* ============ F. 凝形不再与 appearancePrompt 的配饰指令打架 ============ */

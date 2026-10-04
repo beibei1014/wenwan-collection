@@ -94,6 +94,8 @@ function makeSandbox() {
   const sandbox = {
     console, Math, JSON, String, Number, Boolean, Array, Object, Error, RegExp, Promise, Date,
     CG_STYLE: "CG_STYLE", CONSISTENCY: "CONSISTENCY", BG_NEG: "BG_NEG", DEFAULT_STYLE: "x",
+    // v167-B：promptForCg 末尾追加的服装守卫（抽取沙箱需提供同名 stub，否则 ReferenceError）
+    CG_COSTUME_GUARD: "XIANXIA_STUB, NO_QING_STUB",
     styleOf: () => ({ text: "ST" }),
     getImageCfg: () => ({ style: "x" }),
     appearanceOf: () => ({}),
