@@ -1,18 +1,20 @@
-/* V172-E · 进阶 CG 允许多张（不覆盖旧图）自测
+/* V172-E / V172-F · 进阶 CG 允许多张（不覆盖旧图 · ⛔ 系统永不自动裁剪）自测
  * ===========================================================================
  * 钉住的契约：
- *   1. rec.cgList：历史进阶 CG 的 url 列表；cgListPush 幂等 + 去重 + 上限（丢最旧）
+ *   1. rec.cgList：历史进阶 CG 的 url 列表；cgListPush 幂等 + 去重 + ⛔ 无上限（系统永不自动丢）
  *   2. ensureCgList 懒迁移：老档从 rec.cgs 的 adv# 条目按 at 重建（不含当前 cgUrl / 主线）
  *   3. cgListRemove / cgListCount：逐个删 / 计数；空记录安全
  *   4. cgAdvKey 归档 key 唯一化：同阶多次生成各成一条相册条目（⛔ 不覆盖旧图）；
  *      cgAdvIds 认 adv#*（相册能显示多张）；cgCollectedIds 排除 adv#（⛔ 不撑进度）
- *   5. dropOldCgThumbs：清表不误创字段；cgList 同口径瘦身（保最新 N 条）
+ *   5. dropOldCgThumbs：清表不误创字段；⛔ 不碰 cgList（v172-F：配额瘦身只丢 cgs 的 thumb）
  *   6. app.js 接线（静态）：出图前先 push 旧 cgUrl；归档 key 走 cgAdvKey；管理页列历史；⛔ 不删云端文件
  *   7. openSpiritCgManager 真跑：cgList 历史项列出、删一项只动本地引用、不动当前 cgUrl
  *
  * 用法： node docs/_test_v172e_cglib.js
  * 负向对照（证明抓得住「还没做多张」）：
  *   git show 9adf2e0:js/spirits.js > /tmp/sp_prev.js && SPIRITS_SRC=/tmp/sp_prev.js node docs/_test_v172e_cglib.js → 必须 FAIL
+ * 负向对照（V172-F：证明抓得住「系统悄悄裁剪」）：
+ *   git show 4befc2f:js/spirits.js > /tmp/sp_v172e.js && SPIRITS_SRC=/tmp/sp_v172e.js node docs/_test_v172e_cglib.js → 必须 FAIL
  */
 "use strict";
 const fs = require("fs");
@@ -52,23 +54,24 @@ function extractFn(src, name) {
 }
 
 /* ========================================================================
- * 1 · cgListPush：幂等 + 去重 + 上限
+ * 1 · cgListPush：幂等 + 去重 + ⛔ 无上限（系统永不自动丢）
  * ====================================================================== */
-section("1 · cgListPush：幂等 / 去重 / 上限（丢最旧）");
+section("1 · cgListPush：幂等 / 去重 / ⛔ 无上限（永不自动丢）");
 {
   const S = newS();
   ok(typeof S.cgListPush === "function", "cgListPush 导出");
+  ok(S.CG_LIST_MAX === undefined, "⛔ CG_LIST_MAX 已不存在（「上限」概念已废）");
   const push = fn(S, "cgListPush");
   const rec = {};
   ok(push(rec, "A") === true && JSON.stringify(rec.cgList) === JSON.stringify(["A"]), "push 首次 → cgList=[A]");
   ok(push(rec, "A") === false && rec.cgList.length === 1, "push 同值幂等（不重复）");
   ok(push(rec, "") === false, "空 url 不写");
+  // v172-F：推 40 张必须原样保留 40 张（旧实现在 30 张处会开始 shift 掉最旧）
   const r2 = { cgList: [] };
-  const MAX = Number(S.CG_LIST_MAX) || 30;
-  for (let i = 0; i < MAX + 5; i++) push(r2, "u" + i);
-  ok(r2.cgList.length === MAX, "超出上限丢最旧（长度=" + r2.cgList.length + " ≤ " + MAX + "）");
-  ok(r2.cgList[r2.cgList.length - 1] === "u" + (MAX + 4), "最新一张保留");
-  ok(r2.cgList.indexOf("u0") < 0, "最旧一张被丢");
+  for (let i = 0; i < 40; i++) push(r2, "u" + i);
+  ok(r2.cgList.length === 40, "推 40 张 → 长度仍是 40（⛔ 不裁剪，实得 " + r2.cgList.length + "）");
+  ok(r2.cgList[0] === "u0", "最旧一张 u0 仍在（系统没偷偷删）");
+  ok(r2.cgList[39] === "u39", "最新一张 u39 在");
 }
 
 /* ========================================================================
@@ -128,9 +131,9 @@ section("4 · cgAdvKey 归档 key 唯一化（⛔ 不覆盖旧图）");
 }
 
 /* ========================================================================
- * 5 · dropOldCgThumbs：不误创字段 + cgList 同口径瘦身
+ * 5 · dropOldCgThumbs：不误创字段 + ⛔ cgList 豁免（v172-F：不再裁剪）
  * ====================================================================== */
-section("5 · dropOldCgThumbs：清表不误创字段；cgList 同口径瘦身");
+section("5 · dropOldCgThumbs：清表不误创字段；⛔ cgList 豁免（不裁剪）");
 {
   const S = newS();
   const empty = {};
@@ -138,8 +141,13 @@ section("5 · dropOldCgThumbs：清表不误创字段；cgList 同口径瘦身")
   ok(!("cgs" in empty) && !("cgList" in empty), "空记录 → 不凭空创 cgs / cgList");
   const rec = { cgList: ["a", "b", "c", "d", "e"], cgs: {} };
   fn(S, "dropOldCgThumbs")(rec, 3);
-  ok(rec.cgList.length === 3 && rec.cgList[2] === "e", "cgList 也按上限瘦身（保最新 3）：" + JSON.stringify(rec.cgList));
+  ok(rec.cgList.length === 5 && rec.cgList[0] === "a" && rec.cgList[4] === "e",
+    "⛔ cgList 不参与配额瘦身（5 张原样保留，实得 " + JSON.stringify(rec.cgList) + "）");
   ok(rec.cgList.every((u) => typeof u === "string"), "cgList 元素仍是 url 字符串（语义不变）");
+  // 唯一允许长度下降的入口 = 玩家点删
+  const before = rec.cgList.length;
+  fn(S, "cgListRemove")(rec, "c");
+  ok(rec.cgList.length === before - 1, "只有玩家点删（cgListRemove）才让长度下降");
 }
 
 /* ========================================================================

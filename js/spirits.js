@@ -262,14 +262,17 @@
     }, rec.cgUrl);
     return true;
   }
-  /* ---------- v172-E：进阶专属 CG 允许多张（不覆盖旧图） ----------
+  /* ---------- v172-E / v172-F：进阶专属 CG 允许多张（不覆盖旧图 · ⛔ 不设上限） ----------
      rec.cgList = 历史进阶 CG 的 url 列表（按生成先后，末尾最新）。
        · 与 rec.cgs 的区别：cgs 是「相册元数据」，其缩略图会随配额瘦身被丢空；
          cgList 只存 url 引用，缩略图被丢后仍能找回这张图，也用于「管理 CG」逐个列出。
        · ⛔ 只存引用，**绝不动云端 Storage 文件**（删列表项 ≠ 删文件，那是用户花钱出的图）。
      出图回调在覆盖 rec.cgUrl 前先把旧值推进 cgList（见 app.js drawCgFromBrief 回调），
-     故同阶重画不会覆盖/丢失旧图；相册归档 key 也已唯一化（见 cgAdvKey）。 */
-  const CG_LIST_MAX = 30;                                   // 上限，防无界增长（超出丢最旧）
+     故同阶重画不会覆盖/丢失旧图；相册归档 key 也已唯一化（见 cgAdvKey）。
+     🔴 v172-F（主理人裁定）：**系统永不自动删 cgList 里的任何一张**。
+        全项目只有玩家在「管理 CG」里点删（cgListRemove）才允许列表变短 ——
+        一张都不许偷偷丢。（旧有的 CG_LIST_MAX=30 截断、以及 dropOldCgThumbs 里的
+        `l.splice(0, l.length - k)` 配额裁剪，均已删除。cgList 长度 = 玩家画过的张数。） */
   function cgListRO(rec) { const l = rec && rec.cgList; return Array.isArray(l) ? l : null; }
   // 懒迁移：老档只有 rec.cgUrl（无 cgList）→ 从 rec.cgs 的 adv# 条目按收集时间重建历史列表。
   //   ⛔ 不把当前 cgUrl 计入（它是「现在这张」）；返回 true = 本次补了字段（调用方据需 save）。
@@ -289,7 +292,7 @@
     rec.cgList = out;
     return true;
   }
-  // 把一张进阶 CG 归档进历史（幂等；超出上限丢最旧）。返回 true = 有改动。
+  // 把一张进阶 CG 归档进历史（幂等；⛔ 不设上限、永不自动丢）。返回 true = 有改动。
   function cgListPush(rec, url) {
     if (!rec || typeof rec !== "object") return false;
     const u = String(url || "");
@@ -297,7 +300,6 @@
     if (!Array.isArray(rec.cgList)) rec.cgList = [];
     if (rec.cgList.indexOf(u) >= 0) return false;
     rec.cgList.push(u);
-    while (rec.cgList.length > CG_LIST_MAX) rec.cgList.shift();
     return true;
   }
   function cgListRemove(rec, url) {
@@ -368,6 +370,8 @@
 
   // 配额超限时：保底留最新 CG_THUMB_KEEP 张的缩略图，其余从旧到新丢 thumb
   // ⚠️ 只丢 thumb（可再生），**元数据（含 hasImg）永不丢**
+  // 🔴 v172-F：**rec.cgList 一律豁免** —— 它是玩家的画作清单，系统不得裁剪
+  //   （原 `const l = cgListRO(rec); if (l && l.length > k) l.splice(0, l.length - k);` 已删）
   function dropOldCgThumbs(rec, keep) {
     const k = keep || CG_THUMB_KEEP;
     const c = cgsRO(rec);                       // 只读：没有 cgs 就什么都不用丢
@@ -378,9 +382,7 @@
         ids.slice(0, ids.length - k).forEach((kk) => { c[kk].thumb = ""; });
       }
     }
-    // v172-E：cgList 也只留最新 k 条（丢的是本地 url 引用；⛔ 云端 Storage 文件不动，可再取回）
-    const l = cgListRO(rec);
-    if (l && l.length > k) l.splice(0, l.length - k);
+    // 🔴 v172-F：⛔ 这里**不再**裁剪 rec.cgList（配额瘦身只碰 cgs 的 thumb）
   }
 
   /* ---------- 配额瘦身（v163 重排顺序：CG 最后才丢） ----------
@@ -9001,8 +9003,8 @@ const CH09 = {
     // v163：CG 资产库（像素在 IndexedDB / 元数据在主 store；「已收集」只认元数据）
     CG_DB_NAME, CG_FALLBACK_KEY, CG_TOTAL, CG_THUMB_KEEP, cgsOf, cgMetaOf, cgCollectedIds, cgCollectedCount, cgAdvIds, backfillAdvCg,
     cgMarkCollected, cgMarkFailed, cgStateOf, cgSlotOf, dropOldCgThumbs,
-    // v172-E：进阶 CG 允许多张（cgList 历史列表 + 懒迁移 + 归档 key 唯一化）
-    CG_LIST_MAX, cgListRO, ensureCgList, cgListPush, cgListRemove, cgListCount, cgAdvKey,
+    // v172-E / v172-F：进阶 CG 允许多张（cgList 历史列表 + 懒迁移 + 归档 key 唯一化 + ⛔ 系统永不自动裁剪）
+    cgListRO, ensureCgList, cgListPush, cgListRemove, cgListCount, cgAdvKey,
     CG_STATE_CLASS, CG_STATE_HINT, cgCellClass, cgCellHint,
     cgPutPixels, cgGetPixels, cgDelPixels, cgHasPixels,
   };
