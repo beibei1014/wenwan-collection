@@ -3051,23 +3051,24 @@
   function chapTaGet() { return _chapTa || "那只"; }
   // persona id → 行当名（取该 persona 在册那只的名字；缺则回落「那只」）
   function chapTaNameOf(pid) {
+    const key = String(pid || "");
+    // v172：{ta} 跟随选角 —— 取「出场表里该行当当下由哪只扮」的名字，
+    //   ⛔ 与立绘指向同一只（老链路 chapRecByPersona 按入藏序取，会和立绘不是同一只）。
+    try {
+      const c = (castOf() || {})[key];
+      if (c && c.id) {
+        const nm = castDispNameOf(c.id, load()[c.id]);
+        if (nm) return nm;
+      }
+    } catch (e) { /* 静默 */ }
+    // 老链路回落（出场表查不到时，行为与 v165 逐字一致）
     const st = load();
-    const rec = chapRecByPersona(String(pid || ""), st);
+    const rec = chapRecByPersona(key, st);
     if (rec) {
       const nm = (rec.persona && rec.persona.name) || "";
       if (nm) return nm;
     }
-    // v165-N2：本型缺人时（玩家不足 7 只）→ 查出场表里**复用出演**的那只，用它的名字
-    //   （⛔ 兜底仍是「那只」，绝不写「它」）；查不到就回落「那只」，⛔ 不抛错。
-    try {
-      const c = (castOf() || {})[String(pid || "")];
-      if (c && c.id) {
-        const r2 = st[c.id];
-        const nm2 = (r2 && r2.persona && r2.persona.name) || "";
-        if (nm2) return nm2;
-      }
-    } catch (e) { /* 静默 */ }
-    return "那只";
+    return "那只";                 // ⛔ 兜底是「那只」，绝不写「它」
   }
 
   function greetVars(item, rec, ctx) {
@@ -7003,12 +7004,38 @@
   const CHAP_CAST_CFG = {
     MAIN: ["dignified", "scholar", "cool", "gentle", "lively", "mystery", "sweet"], // 主角 7 型（§5.2）
     CACHE_KEY: "cast", CACHE_YEAR: "castYear",
+    MANUAL_KEY: "castManual",   // v172：玩家手动选角（⛔ 落 ww_story 的字段，不是新 key）
+    EXTRA: [],                  // v172：非我方扩展槽位开关位（邻居 wild/cheeky）；默认空 ⇒ 本批只做 7 个
   };
   // 主角 persona → 该型的代表行当名（缺型回落时**复用其名**，⛔ 不新造）
   const CHAP_CAST_NAME = {
     dignified: "最老的那只", scholar: "记账的那只", cool: "不爱说话的那只",
     gentle: "安静的那只", lively: "最吵的那只", mystery: "知道点什么的", sweet: "最小的",
   };
+  // v172：选角页文案 —— ⛔ 单一可替换数据源（编剧定稿，UI 侧只消费、不硬编码、不兜底假文案）
+  //   ⚠️ CHAP_CAST_DESC / CHAP_CAST_COPY 是**两张平表**（键面不同），各自是唯一真源：
+  //     CHAP_CAST_DESC：7 行行当说明（键 = CHAP_CAST_CFG.MAIN 的 persona）
+  //     CHAP_CAST_COPY：界面文案（HEAD/NOT_PICKED/AUTO_TAG/FEW_NOTE/COUNT_LINE/TOAST_ALL/ENTRY_BADGE）
+  const CHAP_CAST_DESC = {
+    dignified: "年纪最长，开口一门人都听。",
+    scholar: "管着一本账，谁进谁出都记着。",
+    cool: "不搭腔，开口往往只半句。",
+    gentle: "性子最软，谁也不跟谁争。",
+    lively: "抢着开口，什么都藏不住。",
+    mystery: "知道的比说的多，话只点到。",
+    sweet: "年纪最小，最想被认出来。",
+  };
+  const CHAP_CAST_COPY = {
+    HEAD: "戏要开场，一门七位，先定谁扮哪一位。",
+    NOT_PICKED: "还没点，这位是家里自己顶的。",
+    AUTO_TAG: "家里顶的",
+    FEW_NOTE: "人少也不妨：性子像的先顶上，再一位扮上几位，家里轮着来。",
+    COUNT_LINE: "台上七位 · 在册 {N} 位",
+    TOAST_ALL: "七位都点上了 · 往后这门人的戏就照这个扮。",
+    ENTRY_BADGE: "还没点戏",
+  };
+  const CHAP_CAST_ROW_COPY = CHAP_CAST_COPY;           // 导出别名（⛔ 不是第二份真源）
+  const CAST_NO_PERSONA_TAG = "性子还藏着";             // 无 persona 的沁灵：下拉项「{名字}（性子还藏着）」
 
   function castYear() { try { return new Date().getFullYear(); } catch (e) { return 0; } }
 
@@ -7037,7 +7064,48 @@
     }
     return null;
   }
-  // 构造出场表：{ <persona>: {name, id, who, near} }；⛔ 永不抛错
+  /* ---------- v172：手动选角（castManual） ----------
+     存储：ww_story.castManual = { "<persona>": { id: "<spiritId>" } }
+     ⛔ 落 ww_story（不是新 key）—— packSync() 已把 readStory() 整包推云端，换设备不丢；
+     ⛔ 绝不写进 ww_spirits 的逐串 rec（资产库禁区）。 */
+  function castDispNameOf(id, rec) {
+    const r = rec || {};
+    return String(r.name || (r.persona && r.persona.name) || "");
+  }
+  function castManualRead() {
+    try {
+      const w = readStory();
+      const m = w[CHAP_CAST_CFG.MANUAL_KEY];
+      return (m && typeof m === "object" && !Array.isArray(m)) ? m : {};
+    } catch (e) { return {}; }
+  }
+  function castManualWrite(m) {
+    try { const w = readStory(); w[CHAP_CAST_CFG.MANUAL_KEY] = m || {}; writeStory(w); return true; }
+    catch (e) { return false; }
+  }
+  // 指定某行当由哪只扮（幂等：同值重复写不产生新写入，条目只含 { id }，⛔ 无时间戳抖动）
+  function castSetManual(pid, id) {
+    const p = String(pid || "");
+    if (!p || CHAP_CAST_CFG.MAIN.indexOf(p) < 0) return false;   // ⛔ 非我方 persona 不接受
+    const sid = String(id || "");
+    if (!sid) return false;
+    try { if (!load()[sid]) return false; } catch (e) { return false; }   // ⛔ 不在册的串不写
+    const m = castManualRead();
+    const cur = m[p];
+    if (cur && cur.id === sid && Object.keys(cur).length <= 2) return true;  // 幂等
+    m[p] = { id: sid };
+    return castManualWrite(m);
+  }
+  function castClearManual(pid) {
+    const p = String(pid || "");
+    const m = castManualRead();
+    if (!Object.prototype.hasOwnProperty.call(m, p)) return false;
+    delete m[p];
+    return castManualWrite(m);
+  }
+  function castClearAllManual() { return castManualWrite({}); }
+
+  // 构造出场表：{ <persona>: {name, castName, id, who, near, fill, manual} }；⛔ 永不抛错
   function castBuild() {
     const store = load();
     const entries = [];
@@ -7048,13 +7116,32 @@
       entries.push({ id: id, pid: pid, rec: rec, bond: Number(rec.bond) || 0 });
     });
     const out = {};
+    // v172 步骤 1：手动表优先（⛔ 只认 MAIN 7 型；失效 id ⇒ 当没指定并清掉脏键，绝不残留）
+    const manual = castManualRead();
+    let manualDirty = false;
     CHAP_CAST_CFG.MAIN.forEach(function (pid) {
+      const mv = manual[pid];
+      if (!mv || typeof mv !== "object") return;
+      const sid = String(mv.id || "");
+      const rec = sid ? store[sid] : null;
+      if (!sid || !rec) { delete manual[pid]; manualDirty = true; return; }
+      out[pid] = {
+        name: CHAP_CAST_NAME[pid] || pid,   // ⛔ 行当名仍是剧本那一个，绝不改成沁灵本名
+        castName: castDispNameOf(sid, rec), // v172：名牌小字 —— 这一位当下由哪只扮
+        id: sid, pid: pid, manual: true, near: false, fill: false,
+      };
+    });
+    if (manualDirty) castManualWrite(manual);
+    // v172 步骤 2：没手动指定的槽位照旧走自动抽签（⛔ force 重抽也不会顶掉手动，因为上面已先占位）
+    CHAP_CAST_CFG.MAIN.forEach(function (pid) {
+      if (out[pid]) return;
       let hit = castPick(entries, pid);
       let near = false;
       if (!hit) { hit = castNearest(entries, pid); near = !!hit; }   // 缺型 → 最接近型
       if (!hit) return;                                                // 连近似都没有 ⇒ 该角色不出场
       out[pid] = {
         name: CHAP_CAST_NAME[pid] || pid,   // ⛔ 复用该 persona 的行当名，绝不新造
+        castName: castDispNameOf(hit.id, hit.rec),
         id: hit.id, pid: pid, near: near,
       };
     });
@@ -7079,6 +7166,7 @@
         if (!e) return;
         out[pid] = {
           name: CHAP_CAST_NAME[pid] || pid, id: id, pid: pid,
+          castName: castDispNameOf(id, e.rec),
           // ⚠️ 语义分层：near=true 只表示「同组回落（castNearest）」；轮转复用一律 near=false + fill=true，
           //    这样「⛔ 缺型不跨组回落」这条老规则仍可被测试精确钉住（_test_v165_engine.js P1-5）。
           near: false, fill: true, from: e.pid,
@@ -7099,9 +7187,12 @@
         return w[CHAP_CAST_CFG.CACHE_KEY];
       }
       const cast = castBuild();
-      w[CHAP_CAST_CFG.CACHE_KEY] = cast;
-      w[CHAP_CAST_CFG.CACHE_YEAR] = y;
-      w.at = todayKey(); writeStory(w);
+      // ⛔ 重新读一次：castBuild 可能刚清理过 castManual 里的失效键（幽灵 id），
+      //    直接写回上面那个 w 会把脏键又写回去。
+      const w2 = readStory();
+      w2[CHAP_CAST_CFG.CACHE_KEY] = cast;
+      w2[CHAP_CAST_CFG.CACHE_YEAR] = y;
+      w2.at = todayKey(); writeStory(w2);
       return cast;
     } catch (e) { return {}; }
   }
@@ -7134,6 +7225,15 @@
     // ⚠️ 站位**不复用 at**：消息封套的 at 是时间戳（chapLine 一直在写），覆盖它会破坏既有读法。
     //    剧本字段 at（站位）落到 slot，UI 层读 m.slot。
     if (l.ps) out.ps = l.ps;                       // 人格型数组（立绘/配色取型）
+    // v172：名牌小字 —— 这一行当当下由哪只沁灵扮（⛔ m.name 仍是行级 who，一字不动）
+    //   ⛔ 只在群像行（有 ps）上算；旧单串剧本无 ps ⇒ 完全不触发，老行为零变化
+    try {
+      const pid0 = (Array.isArray(l.ps) && l.ps[0]) ? String(l.ps[0]) : "";
+      if (pid0) {
+        const c0 = (castOf() || {})[pid0];
+        if (c0 && c0.id) out.castName = castDispNameOf(c0.id, load()[c0.id]) || "";
+      }
+    } catch (e) { /* 静默 */ }
     if (l.at) out.slot = chapAtOf(l.at);           // 站位 L/C/R/B（非法值回落 C）
     if (l.bg) out.bg = l.bg;                       // 背景 key（⛔ 上层只读 bgGet，不调 ensureBg）
     if (l.fx) out.fx = chapAsset(l.fx);            // 演出效果
@@ -8659,6 +8759,10 @@ const CH09 = {
     chapTaSet, chapTaGet, chapTaNameOf,
     // v165 批次3A P1：casting（出场表）+ 演出层字段读取
     CHAP_CAST_CFG, CHAP_CAST_NAME, CHAP_AT_ZH, castOf, castBuild, castPick, castNearest,
+    // v172：选角文案（单一可替换数据源 + 两个导出别名）+ 无 persona 标记
+    CHAP_CAST_COPY, CHAP_CAST_DESC, CHAP_CAST_ROW_COPY, CAST_NO_PERSONA_TAG,
+    // v172：手动选角写入口（⛔ 只写 ww_story，绝不碰 ww_spirits 逐串 rec）
+    castSetManual, castClearManual, castClearAllManual,
     chapAtOf, chapBgOf, chapAsset,
     // v165 批次3A-8：主线 1–9 章天数锚点（⛔ 硬编码，岁除按日历事件）
     MAIN_DAY_ANCHOR,

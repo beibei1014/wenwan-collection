@@ -6368,7 +6368,20 @@
       } else {
         boxEl.classList.remove("narration");
         const nm = (m.w === "me") ? "我" : (m.name || "");
-        if (nameEl) { nameEl.textContent = nm; nameEl.hidden = !nm; }
+        if (nameEl) {
+          nameEl.textContent = nm;
+          nameEl.hidden = !nm;
+          // v172：名牌小字 —— 这一行当当下由哪只沁灵扮（chapLine 按 castOf 现算；⛔ m.name 不动）
+          const cn = (m.w === "me" || m.w === "sys") ? "" : String(m.castName || "");
+          if (cn && cn !== nm && nm) {
+            try {
+              const sp = document.createElement("small");
+              sp.className = "talk-name-cast";
+              sp.textContent = cn;
+              if (typeof nameEl.appendChild === "function") nameEl.appendChild(sp);
+            } catch (e) { /* 抽函数单测无 document → 忽略 */ }
+          }
+        }
         let url = "", cut = false;
         try { url = o.portrait ? (o.portrait(m) || "") : ""; } catch (e) { url = ""; }   // 其它调用点不传 → 无立绘
         try { cut = o.portraitCut ? !!o.portraitCut(m) : false; } catch (e) { cut = false; }   // v170：是否透明抠图
@@ -6537,6 +6550,257 @@
       return spiritThumbHtml(it, Spirits.load()[c.id] || {}, 30);
     } catch (e) { return ""; }
   }
+  /* ============================================================
+   * v172：主线选角（点戏 · 谁扮谁）
+   *   - 独立页 #/maincast（数据层 castManual 在 spirits.js；UI 只消费）
+   *   - 每行当三种身份：手动 .is-picked / 自动 .is-auto / 顶着 .is-fill（+ 兜底 .is-empty）
+   *   - ⛔ 文案全部取 Spirits.CHAP_CAST_COPY / CHAP_CAST_DESC（单一真源，UI 不硬编码）
+   * ============================================================ */
+  function renderMainCastPage() {
+    topbarTitle.textContent = "点戏 · 谁扮谁";
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+    const COPY = castCopy();
+    const MAIN = castMain();
+    const items = spiritItems();               // 候选取在册沁灵（⛔ 不用 stage 判定）
+    const store = Spirits.load();
+    const cast = Spirits.castOf() || {};
+    const picked = castManualCount(cast);
+    let h = '<div class="cast-head">' + esc(COPY.HEAD || "") + "</div>";
+    if (items.length < 7) {                    // 不足 7 只：整体空态（⛔ 不像报错）+ 中性数据行
+      h += '<div class="cast-all-note">' + esc(COPY.FEW_NOTE || "") + "</div>" +
+        '<div class="cast-count-line">' + esc(String(COPY.COUNT_LINE || "").replace("{N}", String(items.length))) + "</div>";
+    }
+    h += '<div class="cast-card">';
+    MAIN.forEach((pid) => { h += castRowHtml(pid, cast, store); });
+    h += "</div>";
+    h += '<div class="cast-actions">' +
+      '<button class="cast-auto' + (MAIN.length && picked >= MAIN.length ? " is-disabled" : "") + '" id="castAuto" type="button">按在册顺序 · 把没点的都点上</button>' +
+      '<button class="cast-revert' + (picked === 0 ? " is-disabled" : "") + '" id="castRevert" type="button">按交情重新点一遍</button>' +
+      "</div>";
+    h += '<div class="cast-confirm" id="castConfirm" hidden>' +
+      '<span class="cast-confirm-text">都撤了？撤了之后，七位都回到按交情抽。</span>' +
+      '<button class="cast-confirm-ok" type="button" id="castConfirmOk">撤</button>' +
+      '<button class="cast-confirm-no" type="button" id="castConfirmNo">再想想</button></div>';
+    view.innerHTML = h;
+    window.scrollTo(0, 0);
+    view.querySelectorAll(".cast-pick").forEach((el) => { el.onclick = () => openCastSheet(el.dataset.pick); });
+    view.querySelectorAll(".cast-unset").forEach((el) => { el.onclick = () => castRevertSlot(el.dataset.unset); });
+    const ba = $("#castAuto");
+    if (ba) ba.onclick = () => { if (ba.classList.contains("is-disabled")) return; castAutoAssignAll(); };
+    const br = $("#castRevert");
+    if (br) br.onclick = () => {
+      if (br.classList.contains("is-disabled")) return;
+      const bar = $("#castConfirm"); if (bar) bar.hidden = false;
+    };
+    const okc = $("#castConfirmOk");
+    if (okc) okc.onclick = () => castRevertAll();
+    const noc = $("#castConfirmNo");
+    if (noc) noc.onclick = () => { const bar = $("#castConfirm"); if (bar) bar.hidden = true; };
+  }
+  // 行身份 → （带点的 CSS 钩子类即真源名 + 无障碍 aria-label）。⛔ 只读屏可见，界面不显示
+  const CAST_ROW_STATE = {
+    ".is-picked": "这一位是你点的",
+    ".is-auto": "这一位是按交情配的",
+    ".is-fill": "这一位暂时由家里的顶着",
+    ".is-empty": "这一位还没点",
+  };
+  function castCopy() { return Spirits.CHAP_CAST_COPY || {}; }
+  function castDescOf(pid) { const d = Spirits.CHAP_CAST_DESC || {}; return d[pid]; }   // ⛔ 无默认值兜底
+  function castMain() { return (Spirits.CHAP_CAST_CFG && Spirits.CHAP_CAST_CFG.MAIN) || []; }
+  function castNames() { return Spirits.CHAP_CAST_NAME || {}; }
+  // 手动点了几位（入口卡 / 按钮态判据：按「手动指定了几位」，⛔ 不按有没有人演）
+  function castManualCount(cast) {
+    const c = cast || Spirits.castOf() || {};
+    return castMain().filter((p) => c[p] && c[p].manual === true).length;
+  }
+  // 每个 id 被哪些行当占用（冲突提示 + 面板「扮了几处」数字标）
+  function castOwners(cast) {
+    const c = cast || Spirits.castOf() || {};
+    const m = {};
+    castMain().forEach((p) => {
+      if (c[p] && c[p].id) { const k = String(c[p].id); (m[k] = m[k] || []).push(p); }
+    });
+    return m;
+  }
+  // #/main 顶部入口卡（.chap-prog 后、.chap-list 前）；三态按「手动点了几位」
+  function castEntryHtml() {
+    const COPY = castCopy();
+    const picked = castManualCount();
+    const total = castMain().length;
+    let badge = "", cls = "cast-entry", sub = "";
+    if (picked <= 0) {
+      cls += " is-empty"; sub = "七位都还按交情抽";
+      badge = '<span class="cast-entry-badge">' + esc(COPY.ENTRY_BADGE || "") + "</span>";
+    } else if (picked >= total) { sub = "七位都是你点的"; }
+    else { sub = "已点 " + picked + " 位 · 其余按交情"; }
+    return '<div class="' + cls + '" data-goto="#/maincast">' +
+      '<span class="cast-entry-ico">🎭</span>' +
+      '<div class="cast-entry-meta"><div class="cast-entry-title">点戏 · 谁扮谁</div>' +
+      '<div class="cast-entry-sub">' + esc(sub) + "</div></div>" +
+      badge + '<span class="chap-arrow">›</span></div>';
+  }
+  // 下拉触发器（一行一个）：缩略图 + 名 + ›
+  function castPickHtml(pid, c, store) {
+    let av, nm;
+    if (c && c.id) {
+      const it = spiritItemById(c.id);
+      const rec = store[c.id] || {};
+      av = it ? spiritThumbCgHtml(it, rec, 36) : "";
+      nm = it ? nameOf(it, store) : String(c.castName || "");
+    } else {
+      av = '<span class="cast-pick-empty">＋</span>';
+      nm = "还没点 · 点一只";
+    }
+    return '<button class="cast-pick" type="button" data-pick="' + esc(pid) +
+      '" aria-haspopup="listbox" aria-expanded="false">' +
+      '<span class="cast-pick-av">' + av + "</span>" +
+      '<span class="cast-pick-name">' + esc(nm) + "</span>" +
+      '<span class="cast-pick-arrow">›</span></button>';
+  }
+  // 单行当行（手动 / 自动 / 顶着 / 真空 四态）
+  function castRowHtml(pid, cast, store) {
+    const c = cast[pid];
+    const COPY = castCopy();
+    const names = castNames();
+    const isManual = !!(c && c.manual === true);
+    const isFill = !!(c && c.fill === true);
+    const hasC = !!(c && c.id);
+    const owners = castOwners(cast);
+    const others = hasC ? (owners[String(c.id)] || []).filter((p) => p !== pid) : [];
+    const stateKey = isManual ? ".is-picked" : (!hasC ? ".is-empty" : (isFill ? ".is-fill" : ".is-auto"));
+    let cls = "cast-row " + stateKey.slice(1);
+    if (others.length) cls += " is-conflict";
+    let nameInner = isManual ? '<i class="cast-seal" aria-hidden="true"></i>' : "";
+    nameInner += esc(names[pid] || pid);
+    if (!isManual && hasC) nameInner += '<i class="cast-auto-tag" aria-hidden="true">' + esc(COPY.AUTO_TAG || "") + "</i>";
+    const desc = castDescOf(pid);      // ⛔ 缺 key 就不渲染那句说明（绝不填占位假文案）
+    let h = '<div class="' + cls + '" data-slot="' + esc(pid) + '" aria-label="' +
+      esc(CAST_ROW_STATE[stateKey] || "") + '">' +
+      '<div class="cast-slot-info"><div class="cast-slot-name">' + nameInner + "</div>" +
+      (desc != null ? '<div class="cast-slot-desc">' + esc(desc) + "</div>" : "") + "</div>" +
+      castPickHtml(pid, c, store);
+    if (isManual) h += '<button class="cast-unset" type="button" aria-label="回到按交情" data-unset="' + esc(pid) + '">✕</button>';
+    if (others.length) {
+      const oName = names[others[0]] || others[0];
+      h += '<div class="cast-note">这一位还扮着「' + esc(oName) + '」—— 一个人扮两个，也不是不行。</div>';
+    } else if (isFill) {
+      h += '<div class="cast-note">' + esc(COPY.NOT_PICKED || "") + "</div>";
+    }
+    return h + "</div>";
+  }
+  // 保存后统一：重算出场表（全局立刻生效）+ 置脏同步云端 + 重绘
+  function castPersist() {
+    Spirits.castOf({ force: true });
+    try { _spiritsDirty = true; pushSpirits(); } catch (e) { /* 静默 */ }
+  }
+  function castRevertSlot(pid) {
+    Spirits.castClearManual(pid);
+    castPersist();
+    toast("「" + (castNames()[pid] || pid) + "」回到按交情了。");
+    renderMainCastPage();
+  }
+  function castRevertAll() {
+    Spirits.castClearAllManual();
+    castPersist();
+    toast("都回到按交情了 · 七位重新抽过。");
+    renderMainCastPage();
+  }
+  function castAssignSlot(pid, id) {
+    if (!Spirits.castSetManual(pid, id)) return;
+    castPersist();
+    renderMainCastPage();
+  }
+  // 一键分派：未手动指定的行当按在册顺序依次点上（一轮不够 ⇒ 循环复用）；⛔ 不覆盖手动
+  function castAutoAssignAll() {
+    const MAIN = castMain();
+    const items = spiritItems();
+    if (!items.length) return;
+    const cast = Spirits.castOf() || {};
+    const used = {};
+    MAIN.forEach((p) => { if (cast[p] && cast[p].manual === true) used[String(cast[p].id)] = true; });
+    let k = 0;
+    MAIN.forEach((pid) => {
+      if (cast[pid] && cast[pid].manual === true) return;    // 手动优先，⛔ 不覆盖
+      let pick = null;
+      for (let n = 0; n < items.length; n++) {
+        const cand = items[(k + n) % items.length];
+        if (!used[String(cand.id)]) { pick = cand; k = (k + n + 1) % items.length; break; }
+      }
+      if (!pick) { pick = items[k % items.length]; k = (k + 1) % items.length; }   // 循环复用
+      used[String(pick.id)] = true;
+      Spirits.castSetManual(pid, pick.id);
+    });
+    castPersist();
+    toast(castCopy().TOAST_ALL || "");
+    renderMainCastPage();
+  }
+  // 自绘下拉面板（挂 body，⛔ 不放进 .view 免得被裁剪 / 层级错乱）
+  let _castMask = null, _castSheet = null;
+  function ensureCastSheet() {
+    if (_castMask && _castSheet && document.body.contains(_castMask)) return;
+    _castMask = document.createElement("div");
+    _castMask.className = "cast-sheet-mask";
+    _castMask.hidden = true;
+    _castSheet = document.createElement("div");
+    _castSheet.className = "cast-sheet";
+    _castSheet.setAttribute("role", "dialog");
+    _castSheet.setAttribute("aria-modal", "true");
+    _castSheet.hidden = true;
+    document.body.appendChild(_castMask);
+    document.body.appendChild(_castSheet);
+    _castMask.onclick = closeCastSheet;
+  }
+  function closeCastSheet() {
+    if (_castSheet) _castSheet.hidden = true;
+    if (_castMask) _castMask.hidden = true;
+  }
+  function openCastSheet(pid) {
+    ensureCastSheet();
+    const store = Spirits.load();
+    const cast = Spirits.castOf() || {};
+    const names = castNames();
+    const items = spiritItems();
+    const owners = castOwners(cast);
+    const curId = (cast[pid] && cast[pid].id) ? String(cast[pid].id) : "";
+    const NO_P = (typeof Spirits.CAST_NO_PERSONA_TAG === "string") ? Spirits.CAST_NO_PERSONA_TAG : "";
+    let opts = "";
+    if (!items.length) {
+      opts = '<div class="cast-opt is-empty" role="option">还没点 · 点一只</div>';
+    } else {
+      items.forEach((it) => {
+        const rec = store[it.id] || {};
+        const id = String(it.id);
+        const mine = (id === curId);
+        const own = owners[id] || [];
+        const elsewhere = own.filter((p) => p !== pid);
+        const hasPersona = !!(rec.persona && (rec.persona.id || rec.persona.name));
+        const cls = "cast-opt" + (mine ? " is-current" : "") + (elsewhere.length ? " is-taken" : "");
+        const st = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
+        let tag = "";
+        if (mine && elsewhere.length) tag = "正在扮这位 · 还扮着「" + esc(names[elsewhere[0]] || elsewhere[0]) + "」";
+        else if (mine) tag = "正在扮这位";
+        else if (elsewhere.length) tag = "还扮着「" + esc(names[elsewhere[0]] || elsewhere[0]) + "」";
+        else if (!hasPersona) tag = esc(NO_P);
+        opts += '<div class="' + cls + '" role="option" aria-selected="' + (mine ? "true" : "false") +
+          '" data-id="' + esc(id) + '">' +
+          '<span class="cast-opt-av">' + spiritThumbCgHtml(it, rec, 28) +
+          (own.length > 1 ? '<i class="cast-opt-count">' + own.length + "</i>" : "") + "</span>" +
+          '<span class="cast-opt-meta"><span class="cast-opt-name">' + esc(nameOf(it, store)) + "</span>" +
+          '<span class="cast-opt-stage">' + esc(st.icon + " " + st.name) + "</span></span>" +
+          (tag ? '<span class="cast-opt-tag">' + tag + "</span>" : "") + "</div>";
+      });
+    }
+    _castSheet.innerHTML = '<div class="cast-sheet-grip"></div>' +
+      '<div class="cast-sheet-title">点谁扮「' + esc(names[pid] || pid) + "」</div>" +
+      '<div class="cast-opt-list" role="listbox">' + opts + "</div>";
+    _castSheet.querySelectorAll(".cast-opt[data-id]").forEach((el) => {
+      el.onclick = () => { const id = el.dataset.id; closeCastSheet(); castAssignSlot(pid, id); };
+    });
+    _castMask.hidden = false;
+    _castSheet.hidden = false;
+  }
+
   function renderMainPage() {
     topbarTitle.textContent = "沁灵纪 · 主线";
     btnBack.style.visibility = "visible";
@@ -6552,6 +6816,7 @@
       '<div class="main-head-sub">九章 · 已看 ' + read + "/" + list.length +
       (Spirits.MAIN_STORY_OPEN ? "" : " · 正文装帧中") + "</div></div></div>" +
       '<div class="chap-prog"><i style="width:' + Math.round((read / Math.max(1, list.length)) * 100) + '%"></i></div>';
+    h += castEntryHtml();                          // v172：点戏入口卡（.chap-prog 后、.chap-list 前）
     h += '<div class="chap-list">';
     list.forEach((ch) => {
       if (!ch.unlocked) {
@@ -6579,6 +6844,9 @@
     view.innerHTML = h;
     view.querySelectorAll(".chap-item[data-main]").forEach((el) => {
       el.onclick = () => { location.hash = "#/maintalk/" + Number(el.dataset.main); };
+    });
+    view.querySelectorAll(".cast-entry").forEach((el) => {          // v172：点戏入口卡
+      el.onclick = () => { location.hash = el.dataset.goto || "#/maincast"; };
     });
     window.scrollTo(0, 0);
   }
@@ -9735,6 +10003,7 @@ else if (h.indexOf("#/night/") === 0) {                                         
     }
     
     else if (h === "#/main") renderMainPage();                                                   // v165-N3：沁灵纪 · 主线（独立入口 · 9 章）
+    else if (h === "#/maincast") renderMainCastPage();                                            // v172：主线选角（点戏 · 谁扮谁）
     else if (h.indexOf("#/maintalk/") === 0) renderMainTalkPage(Number(h.slice(11)) || 0);        // v165-N3：新 9 章对话页
     else if (h.indexOf("#/talk/") === 0) {                                                        // v161：旧 8 章（⛔ 入口已取消，直接回沁灵页）
       location.hash = "#/spirit/" + h.slice(7).split("/")[0];
@@ -9847,6 +10116,7 @@ else if (h.indexOf("#/night/") === 0) {                                         
     }
     if (h.indexOf("#/maintalk/") === 0) { location.hash = "#/main"; return; }   // v165-N3：章节对话 → 主线列表
     if (h === "#/main") { location.hash = "#/"; return; }                       // v165-N3：主线列表 → 首页
+    if (h === "#/maincast") { location.hash = "#/main"; return; }                // v172：选角页 → 主线列表
     if (h === "#/spirits") { location.hash = "#/spirit"; return; }        // 全部沁灵 → 回到小房间
     if (h === "#/settings" || h === "#/profile" || h === "#/new" || h === "#/cat" || h === "#/stats" || h === "#/quest" || h === "#/spirit") { location.hash = "#/"; return; }
     if (h.startsWith("#/box/")) { location.hash = "#/cat"; return; }
