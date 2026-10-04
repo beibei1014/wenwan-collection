@@ -6692,7 +6692,7 @@
     let avatar = ow.avatar;
     modal.innerHTML = "<h3>👤 主人设定</h3>" +
       '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:12px;text-align:center">' +
-      "沁灵写日记、写剧情、聊天时都会照这里来称呼你，别让它们把你写成另一个性别 😆</p>" +
+      "沁灵写日记、写剧情、聊天时都会照这里来称呼你，别让他们把你写成另一个性别 😆</p>" +
       '<div class="form-group"><div class="form-label">昵称 <small>它们会这么叫你</small></div>' +
       '<input class="form-input" id="ownName" maxlength="12" placeholder="如：小北" value="' + esc(ow.name || "") + '"></div>' +
       '<div class="form-group"><div class="form-label">我是</div><div class="prov-row" id="ownGenderRow">' +
