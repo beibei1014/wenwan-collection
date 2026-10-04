@@ -4896,8 +4896,7 @@
       (_hasCg ? ' <button type="button" class="link-btn" id="sdManageCg" style="float:right">🗑 管理</button>' : "") + "</div>";
     if (rec.cgUrl && !_cgRedo[id]) {
       h += '<img class="cg-thumb" id="sdCg" src="' + esc(rec.cgUrl) + '" alt="CG">' +
-        '<div class="sd-gen-hint">点图看大图 · 蜕形 / 化形的专属场景插画 · ' +
-        '<button type="button" class="link-btn" id="sdCgRedo">✏️ 改描述重画</button></div>';
+        '<button type="button" class="link-btn" id="sdCgRedo" style="margin-top:8px;display:block">✏️ 改描述重画</button>';
     } else if (Spirits.needCg(si.stage)) {
       h += '<div class="cg-brief">' +
         '<div class="cg-brief-tip">先看要画什么 —— 这段描述可以直接改，改满意了再出图（出图消耗 1 次额度）</div>' +
