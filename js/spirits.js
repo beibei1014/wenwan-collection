@@ -805,7 +805,9 @@
       //   ⛔ 强负向只写在 prop（阶段内），⛔ 绝不写进全局 NEG_STYLE —— 凝形靠大头吃饭，全局禁 chibi 会毁掉 Q 版。
       prop: "PROPORTION LOCK: an 8-heads-tall figure (the head's height is about one eighth of the total figure height), " +
         "fashion-illustration proportions, tall runway-model silhouette, elongated elegant figure, " +
-        "tall slender figure, long legs, narrow shoulders, adult body silhouette, mature elegant standing pose; " +
+        "tall slender figure, long legs, narrow shoulders, adult body silhouette, mature elegant standing pose, " +
+        // v165-F：数值化身体分区（比"8 头身"这种抽象词可执行 —— 模型会拿去对照画）
+        "the legs alone take up about half of the total height, the shoulder width is about one and a half head-widths; " +
         "SILHOUETTE RULE: the long robe must not hide the body silhouette; " +
         "the legs' length stays visually readable; the figure stands at full height, head to feet; " +
         "HAIR VOLUME: long hair is fine, but the hair must not visually enlarge the head or shorten the body; " +
@@ -826,7 +828,9 @@
       prop: "PROPORTION LOCK: a fully grown tall adult, a 9-heads-tall figure " +
         "(the head's height is about one ninth of the total figure height), " +
         "fashion-illustration proportions, tall runway-model silhouette, elongated elegant figure, " +
-        "very tall slender figure, long legs, elegant adult body silhouette, mature majestic standing pose; " +
+        "very tall slender figure, long legs, elegant adult body silhouette, mature majestic standing pose, " +
+        // v165-F：数值化身体分区（同蜕形）
+        "the legs alone take up about half of the total height, the shoulder width is about one and a half head-widths; " +
         "SILHOUETTE RULE: the long robe and the layered silk must not hide the body silhouette; " +
         "the waistline and the legs' length stay visually readable; the figure stands at full height, head to feet; " +
         "HAIR VOLUME: long hair and hair ornaments are fine, but they must not visually enlarge the head " +
@@ -889,6 +893,45 @@
     return s;
   }
   function headCountOf(stage) { return HEAD_COUNT[Math.min(4, Math.max(1, Number(stage) || 1))]; }
+  /* ============================================================
+   * 🔴 v165-F · 立绘比例执行手段 v2
+   *   用户第二次打回：蜕形（8 头身）实测约 5.5–6 头身，宽袍及地、人物偏小。
+   *   上一版（v165-R1）已写了"数字锚 + 时装画锚词 + 七条强负向 + 轮廓句 + 头发句"仍不达标。
+   *   dump 真产物（docs/_dump_prompt.js）后确认的三条新根因：
+   *     ① 画幅留白：cmp 里写死 "centered with comfortable margin around the character"
+   *        → 模型把人物画小、四周留白 → 观者按"画面里这个人"脑补，比例被视觉压矮。
+   *     ② 抽象锚词不落地：8-heads / fashion-illustration 对扩散模型是"风格词"，不是可计量的身体分区
+   *        → 换/补成可直接对照的数值分区（腿长≈身高一半 / 肩宽≈1.5 头宽）。
+   *     ③ 全英文 prompt：ark 走的是**字节豆包 Seedream（国产模型）**，中文指令执行力通常强于英文。
+   *        → 追加一句中文比例锚，压在**整条 prompt 最末尾**（仅 ark 生效）。
+   *   立绘路径专属：⛔ CG 路径（promptForCg / cgPromptFromBrief / cgPropFor）一律不动。
+   * ============================================================ */
+  // 人物占满画幅（非 legacy 的立绘一律用它替换旧的"舒适留白"措辞）
+  const FRAME_FILL = "the standing figure fills the full vertical extent of the frame, from the very bottom to the very top, " +
+    "no empty space above the head or below the feet";
+  // 旧措辞：仅 legacy（恢复旧立绘 URL）时保留 —— 必须逐字节复刻旧 prompt，否则旧图找不到
+  const FRAME_FILL_OLD = "centered with comfortable margin around the character";
+  // 开场身份锚的旧文案（appearancePrompt 里写死；这里用于按阶段替换，⛔ 不改 appearancePrompt 本体，避免污染 CG）
+  const AGE_OPEN_BOY_OLD = "a young boy character, clearly male, boyish face:";
+  const AGE_OPEN_GIRL_OLD = "a young girl character, clearly female, girlish face:";
+  //   索引对齐 HEAD_COUNT；1/2 阶保持原样（幼儿本就该幼态），3/4 阶掐掉"young boy / boyish face"这种幼态残留
+  const AGE_OPEN = [
+    null,
+    { boy: AGE_OPEN_BOY_OLD, girl: AGE_OPEN_GIRL_OLD },
+    { boy: AGE_OPEN_BOY_OLD, girl: AGE_OPEN_GIRL_OLD },
+    { boy: "a teenage boy, clearly male, youthful handsome face:", girl: "a teenage girl, clearly female, youthful pretty face:" },
+    { boy: "a young adult man, clearly male, handsome mature face:", girl: "a young adult woman, clearly female, beautiful mature face:" },
+  ];
+  // 中文比例锚（仅 provider==="ark" 追加到 prompt 最末尾）：可配置常量表，索引对齐 HEAD_COUNT。
+  //   理由：用户实际用 ark（豆包 Seedream）；其它 provider 不保证中文理解力 → 不追加，避免污染 prompt。
+  const PROPORTION_ZH = [
+    "",
+    "画面比例要求：刚醒来的小宝宝形态，全身站姿，大约四头身，头要大、身子和手脚要短小，脸要圆要幼，整体是圆润可爱的小幼儿比例。",
+    "画面比例要求：小孩子形态，全身站姿，大约六头身，头略大、身子和腿偏短，脸圆但比宝宝形态清秀，比宝宝形态更高更瘦一些。",
+    "画面比例要求：少年形态，全身站姿，全身高度约为头高的八倍，腿部要占身高的一半以上，头部要画得小、肩膀要窄、腿要长，整体是时装画里那种修长挺拔的比例，绝不是大头短腿的可爱风格。",
+    "画面比例要求：成年形态，全身站姿，全身高度约为头高的九倍，腿部要占身高的一半以上，头部更小、身形修长挺拔，整体是时装画里高挑成年人的比例，绝不是大头短腿的可爱风格。",
+  ];
+  function proportionZhFor(stage) { return PROPORTION_ZH[Math.min(4, Math.max(1, Number(stage) || 1))] || ""; }
   function stageOrnate(stage) { return Number(stage) === 4; }   // 化形（终阶）：更华丽服饰 + 场景
   function stageProgress(item, rec) {
     // v165：⛔ 不再返回天数余量（toNextDays 恒 0，仅为兼容旧调用方保留字段）；bottleneck 恒 "plays"
@@ -2041,7 +2084,17 @@
         lookExtra(lk) + ", " + stageLook + ", " +
         "full body character illustration, standing pose, whole body visible from head to toe, " +
         "detailed outfit and shoes, vertical composition, " +
-        "centered with comfortable margin around the character";
+        // v165-F：非 legacy 立绘一律"占满画幅"（旧的"舒适留白"把人物画小 → 比例被视觉压矮）
+        ((opts && opts.legacy) ? FRAME_FILL_OLD : FRAME_FILL);
+      // v165-F（根因②）：非 legacy 且高阶形态 —— 掐掉开场身份锚里的幼态残留
+      //   "a young boy character, clearly male, boyish face" 出现在 prompt **位置 0**（权重高），
+      //   与后面 "teenage/adult version" 直接打架、抵消末尾的强负向；只替换这一句，其余身份锚（瞳色/配饰/服装）不动。
+      if (!(opts && opts.legacy)) {
+        const _sN = Math.min(4, Math.max(1, Number(stage) || 1));
+        if (_sN >= 3) {
+          cmp = cmp.replace(AGE_OPEN_BOY_OLD, AGE_OPEN[_sN].boy).replace(AGE_OPEN_GIRL_OLD, AGE_OPEN[_sN].girl);
+        }
+      }
     } else {
       cmp = "a " + (ap.gender === "boy" ? "boy" : "girl") + " creature mascot whose body color is " + color + colorHint +
         ", wearing " + ap.acc + ", " + ap.vibe + " personality, " + stageLook + ", " +
@@ -2069,7 +2122,11 @@
     //   它是 prompt 结尾权重最高的一段，却对"几头身"零约束 —— 这正是凝形被画成少年的第二个元凶。
     //   所以**比例锁定块必须压在 `st` 之后、占据最末尾**（briefHard 只管服饰/发色/持物/神态，从不谈比例，两者不冲突）。
     //   legacy（恢复旧立绘）时末尾不挂比例锁定块，精确复刻 v164c 之前的 prompt。
-    return bits.join(", ") + ", " + st + propLock;
+    // v165-F（根因③）：中文比例锚 —— 仅 ark（豆包 Seedream），压在**整条 prompt 最末尾**（propLock 之后）。
+    //   国产模型对中文指令的理解与执行力通常强于英文；其它 provider 不保证中文理解力 → 不追加。
+    const zhAnchor = (isChar && !(opts && opts.legacy) && (getImageCfg() || {}).provider === "ark")
+      ? (", " + proportionZhFor(stage == null ? 1 : stage)) : "";
+    return bits.join(", ") + ", " + st + propLock + zhAnchor;
   }
   // 用「v164c 之前的旧 prompt」精确还原当时的出图 URL —— 用于「恢复旧立绘」，把被 prompt 改动洗掉的旧图找回来。
   // 与旧版显示路径一致：不传 appearance / stage（旧显示走的就是默认外观 + 第 1 阶），才能精确复刻当时浏览器请求的那个 URL。
@@ -8477,6 +8534,8 @@ const CH09 = {
     // v165-R1：竖版（立绘）尺寸阶梯常量 —— 供自测断言「立绘走竖版梯子、不走 CG 横版梯子」
     SIZE_BY_PROVIDER, SIZE_DEFAULT_LADDER,
     STAGES, stageDef, stageInfo, growthOf, STAGE_DAYS, STAGE_PLAYS, HEAD_COUNT, stageOf, headCountOf, stageOrnate, stageProgress,
+    // v165-F：立绘比例执行手段 v2（占满画幅 / 中文比例锚[仅 ark] / 阶段开场身份锚）——供自测断言
+    FRAME_FILL, FRAME_FILL_OLD, PROPORTION_ZH, proportionZhFor, AGE_OPEN, AGE_OPEN_BOY_OLD, AGE_OPEN_GIRL_OLD,
     appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
     // v127：设定向导（发色/特征/性格可确认可修改；一句基础设定 → 扩写成详细设定）
     HAIR_COLORS, HAIR_PALETTE, hexToCnTrad, FEATURES, PERSONAS_PICK, lookOf, lookText, lookExtra, hairWordFromInput, expandProfile, profileLocal, genderFromText,

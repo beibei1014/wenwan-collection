@@ -110,7 +110,11 @@ function scanAssembled(tag, p, opts) {
   ok(!COMPETE.test(p), tag + " · ⛔ 无任何竞争的姿势短语（confident/standing/energetic/dramatic/站直）");
   const cnt = p.split("PROPORTION LOCK").length - 1;
   ok(cnt === 1, tag + " · PROPORTION LOCK 恰好出现一次（实际 " + cnt + "，防重复拼装）");
-  ok(p.trim().lastIndexOf("PROPORTION LOCK") > p.length * 0.85, tag + " · PROPORTION LOCK 压在末尾区");
+  // v165-F：比例块天然很长（数字锚 + 轮廓句 + 头发句 + 一组强负向，≈900 字符），
+  //   用「占全长 15%」的比例阈值会被块自身长度顶破（比例块没错，是代理量失真）。
+  //   改成直接量「块起始到结尾的距离」——块必须落在结尾 ≤1100 字符内（即整条 prompt 的尾段）。
+  const _iA = p.trim().lastIndexOf("PROPORTION LOCK");
+  ok(p.length - _iA < 1100, tag + " · PROPORTION LOCK 压在末尾区（尾长 " + (p.length - _iA) + " ≤1100）");
   return p;
 }
 const bWide = "它坐在廊下的石桌旁，" + ACTION + "，视线落在院里的落雪上，" + ACTION + " 的手边放着一盏热茶。";
