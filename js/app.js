@@ -6047,6 +6047,7 @@
        endTag, endingExtra(e), backLabel, backHash
      } */
   function renderTalkPage(o) {
+    try { document.body.classList.add("talk-open"); } catch (e) { /* v169：抽函数单测无 document.body → 忽略 */ }
     topbarTitle.textContent = o.title;
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
@@ -6055,21 +6056,62 @@
     //   ⚠️ 用 typeof 守卫：renderTalkPage 会被单测以「抽函数 + 沙箱」方式隔离运行，此时 sceneBgUrl 不在作用域
     let _bgUrl = "";
     try { if (typeof sceneBgUrl === "function") _bgUrl = sceneBgUrl(o.bg); } catch (e) { _bgUrl = ""; }
-    view.innerHTML = '<div class="nt-chat">' +
-      '<div class="scenebg' + (_bgUrl ? "" : " noimg") + '" id="sceneBgLayer"></div>' +
+    view.innerHTML = '<div class="nt-chat immersive">' +
+      '<div class="scenebg blurpane' + (_bgUrl ? "" : " noimg") + '" id="sceneBgBlur"></div>' +
+      '<div class="scenebg sharppane' + (_bgUrl ? "" : " noimg") + '" id="sceneBgLayer"></div>' +
+      '<div class="talk-portrait" id="talkPortrait"></div>' +
       '<div class="nt-chat-head">' +
       '<div class="nt-head-av">' + o.headAv + "</div>" +
       '<div class="nt-head-meta"><b>' + esc(o.headName) + "</b><span>" + esc(o.headSub) + "</span></div>" +
       (o.listHash ? '<button class="link-btn" id="ntListBtn">' + esc(o.listLabel || "返回") + "</button>" : "") +
       "</div>" +
       '<div class="nt-body" id="ntBody"></div>' +
+      '<div class="talk-box" id="talkBox">' +
+      '<div class="talk-name" id="talkName" hidden></div>' +
+      '<div class="talk-text" id="talkText"></div>' +
+      '<i class="talk-cue" id="talkCue" hidden></i>' +
+      "</div>" +
       '<div class="nt-foot" id="ntFoot"></div></div>';
-    // 背景图 URL 走 JS 设值，避免把 base64/带参数的长 URL 拼进 HTML 属性里出错
-    const _sbl = $("#sceneBgLayer");
-    if (_sbl && _bgUrl) _sbl.style.backgroundImage = "url(" + JSON.stringify(_bgUrl) + ")";
+    // v169：双层 BG（横版 16:9 进竖屏 9:16）—— 模糊垫满 + 清晰 contain，两张同源，走 JS 设值
+    if (_bgUrl) {
+      ["#sceneBgBlur", "#sceneBgLayer"].forEach(function (sel) {
+        const el = $(sel);
+        if (el) el.style.backgroundImage = "url(" + JSON.stringify(_bgUrl) + ")";
+      });
+    }
     bindSpiritImgFallback(view);
 
     const body = $("#ntBody"), foot = $("#ntFoot");
+    // v169：沉浸式呈现层 —— 每显示一条消息，同步刷新「整屏立绘 + 底部对话框 + 名牌 + 继续指示」
+    //   ⛔ 抽函数单测（_test_talk_flow / 沙箱）里这些节点取不到 → present 直接静默返回，绝不影响消息流
+    const pEl = $("#talkPortrait"), boxEl = $("#talkBox");
+    const nameEl = $("#talkName"), txtEl = $("#talkText"), cueEl = $("#talkCue");
+    const present = (m) => {
+      if (!m || !pEl || !boxEl) return;
+      if (m.w === "sys") {
+        pEl.classList.add("hide"); pEl.innerHTML = ""; pEl.dataset.url = "";
+        boxEl.classList.add("narration"); if (nameEl) nameEl.hidden = true;
+      } else {
+        boxEl.classList.remove("narration");
+        const nm = (m.w === "me") ? "我" : (m.name || "");
+        if (nameEl) { nameEl.textContent = nm; nameEl.hidden = !nm; }
+        let url = "";
+        try { url = o.portrait ? (o.portrait(m) || "") : ""; } catch (e) { url = ""; }   // 其它调用点不传 → 无立绘
+        const side = m.slot || "C";
+        if (url) {
+          if (pEl.dataset.url !== url) {
+            pEl.dataset.url = url; pEl.classList.remove("hide");
+            pEl.innerHTML = '<img src="' + esc(url) + '" alt="" decoding="async">';
+            const im = pEl.querySelector ? pEl.querySelector("img") : null;
+            if (im) im.onerror = () => { im.style.display = "none"; };
+            pEl.classList.add("enter"); void pEl.offsetWidth; pEl.classList.remove("enter");   // 260ms 上浮
+          } else { pEl.classList.remove("hide"); }
+          pEl.dataset.slot = side;                                   // slot(L/C/R/B) → 站位
+        } else { pEl.classList.add("hide"); pEl.innerHTML = ""; pEl.dataset.url = ""; pEl.dataset.slot = ""; }
+      }
+      if (txtEl) txtEl.textContent = String(m.text || "");
+      if (cueEl) cueEl.hidden = false;
+    };
     const msgHtml = (m) => {
       if (m.w === "sys") {
         let s = String(m.text || "");
@@ -6090,6 +6132,9 @@
       body.innerHTML = hist.slice(0, Math.max(0, hist.length - rr.added.length)).map(msgHtml).join("") + '<div id="ntPend"></div>';
     };
     paint(r);
+    // v169：仅当「没有新行要播」时（中途回到选择点/结局）才把历史最后一句铺进对话框，避免空框；
+    //   正常进入时由 step()→append() 负责，⛔ 不重复调 present
+    if ((!r.added || !r.added.length) && r.log && r.log.length) present(r.log[r.log.length - 1]);
     let pend = $("#ntPend");
     const scrollEnd = () => { try { window.scrollTo(0, document.body.scrollHeight); } catch (e) { /* 忽略 */ } };
 
@@ -6101,6 +6146,7 @@
       d.innerHTML = msgHtml(m);
       const node = d.firstChild;
       if (node) { node.classList.add("nt-in"); body.insertBefore(node, pend); }
+      present(m);                      // v169：唯一挂点 —— me/sys 也走这里，⛔ 别重复调
     };
     const endingHtml = (e) => '<div class="nt-end">' +
       '<div class="nt-end-tag">' + esc(o.endTag || "本段结束") + "</div>" +
@@ -6171,14 +6217,17 @@
       step();
     };
     // 点一下就能跳过打字（不想等的时候）
-    body.addEventListener("click", () => {
+    // v169：整屏点击推进 —— 舞台（#ntBody 透明层）或对话框都能推进；选项在 #ntFoot（兄弟节点）里 → 不会误触
+    const advance = () => {
       if (waiting) return;
       clearTimeout(timer);
       // v163e：先补回「正在输入」的那条（下标 = qi-1），再铺剩下的 —— 顺序反了会错序
       if (inflight) { pend.innerHTML = ""; append(inflight); inflight = null; }
       while (qi < r.added.length) append(r.added[qi++]);
       showFoot();
-    });
+    };
+    body.addEventListener("click", advance);
+    if (boxEl) boxEl.addEventListener("click", advance);
     const lb = $("#ntListBtn");
     if (lb) lb.onclick = () => { location.hash = o.listHash; };
     step();
@@ -6272,6 +6321,16 @@
       listLabel: "回到主线", listHash: back,
       bg: Spirits.bgForChapter("ch" + (i + 1)),   // 章节 → BG key（⛔ 未出图 = 渐变兜底，不出图）
       av: (w, m) => mainCastThumb(m) || '<span class="main-av">📿</span>',
+      // v169：当前说话人的整张立绘（行 → castOf[pid] → load()[id].imgUrl）；拿不到 = "" → 只显示 BG + 对话框，⛔ 不报错
+      portrait: (m) => {
+        try {
+          const pid = (m && m.ps && m.ps[0]) ? String(m.ps[0]) : "";   // sys/me → 无 ps → ""
+          if (!pid) return "";
+          const c = (Spirits.castOf() || {})[pid];
+          if (!c || !c.id) return "";
+          return (Spirits.load()[c.id] || {}).imgUrl || "";
+        } catch (e) { return ""; }
+      },
       nameOf: () => "",                            // 群像剧本：说话人名字由行级 who 给（chapLine 已写进 m.name）
       endTag: "第 " + (i + 1) + " 章 · 完",
       endingExtra: () => (i === list.length - 1)
@@ -6313,6 +6372,7 @@
       listLabel: "回到它", listHash: back,
       bg: Spirits.bgForChapter("ch" + (i + 1)),   // v165：章节 → BG key 映射（卷一 ch1–ch5；未覆盖 = 渐变兜底）
       av: () => spiritThumbHtml(it, rc0, 30),
+      portrait: (m) => (m && m.w === "sp") ? (rc0.imgUrl || "") : "",   // v169：单串剧本 → 该串立绘
       nameOf: () => nm,
       endTag: "第 " + (i + 1) + " 章 · 完",
       endingExtra: () => (i === Spirits.CHAP_ACTS.length - 1)
@@ -9347,6 +9407,7 @@
 
   /* ---------- 路由 ---------- */
   function router() {
+    document.body.classList.remove("talk-open");   // v169：中央路由分发处统一退出沉浸态（⛔ 不逐页删，否则漏页会把全局 UI 拖进沉浸态）
     const h = location.hash || "#/";
     if (h === "#/auth") {
       if (user) { location.hash = "#/"; return; }  // 已登录访问登录页 → 回首页

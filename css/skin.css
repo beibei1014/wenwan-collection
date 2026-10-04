@@ -1106,6 +1106,84 @@ details.ft-item > .ft-text { padding: 0 10px 10px; }
 .nt-opt:active { background: color-mix(in srgb, var(--gold) 16%, var(--card));
   border-color: color-mix(in srgb, var(--gold) 55%, var(--line) 45%); }
 
+/* ============================================================
+   v169 · 剧情页 AVG 化（沉浸模式）—— 追加到「对话页」段之后
+   整屏大立绘（spotlight 单立绘）+ 底部半透明圆角对话框 + 名牌 + 双层 BG
+   ⚠️ 本文件是 LF（全项目唯一 LF 的 css），⛔ 别写成 CRLF
+   ============================================================ */
+body.talk-open { overflow: hidden; }
+body.talk-open .tabbar { display: none; }                       /* 沉浸时不显示底部导航 */
+/* 关键：页面入场动画（pageIn）带 transform —— 会让 position:fixed 的子层被困在 .view 里。
+   沉浸态下把它关掉，fixed 立绘层才是真正铺满视口。 */
+body.talk-open .view { padding: 0; max-width: none; min-height: 0; animation: none; }
+
+/* 整屏容器：脱离 .view，铺满视口 */
+.nt-chat.immersive { position: fixed; inset: 0; z-index: 40;
+  display: block; border-radius: 0; overflow: hidden; background: #14100c; }
+.nt-chat.immersive .nt-chat-head { display: none; }             /* 旧顶部封面条退场 */
+
+/* 双层 BG：模糊垫满（补掉 16:9 进竖屏的上下空档）+ 清晰 contain（保留完整构图） */
+.nt-chat.immersive .scenebg { position: absolute; inset: 0; z-index: 0; border-radius: 0; opacity: 1; pointer-events: none; }
+.nt-chat.immersive .scenebg.blurpane  { background-size: cover;  background-position: center;
+  filter: blur(22px) saturate(.95) brightness(.72); transform: scale(1.14); }
+.nt-chat.immersive .scenebg.sharppane { background-size: contain; background-position: center 42%; z-index: 1; }
+
+/* 底部渐暗遮罩：压立绘下缘、托起对话框（保证暗底白字对比 ≥7:1） */
+.nt-chat.immersive::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 46%;
+  z-index: 3; pointer-events: none;
+  background: linear-gradient(180deg, rgba(12,9,6,0) 0%, rgba(12,9,6,.42) 58%, rgba(12,9,6,.78) 100%); }
+
+/* 立绘层：整屏铺满（豎屏下 3:4 立绘左右各裁约 12–13%，纵向完整） */
+.talk-portrait { position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  transition: opacity .22s var(--ease-out), transform .26s var(--ease-out); }
+.talk-portrait img { width: 100%; height: 100%; object-fit: cover; object-position: center 12%; display: block;
+  filter: drop-shadow(0 10px 28px rgba(0,0,0,.5)); }
+.talk-portrait[data-slot="L"] { transform: translateX(-12%); }
+.talk-portrait[data-slot="R"] { transform: translateX(12%); }
+.talk-portrait[data-slot="B"] { transform: scale(.9); opacity: .78; filter: brightness(.82); }
+.talk-portrait.hide { opacity: 0; }                             /* 旁白 / 玩家：立绘淡出 */
+.talk-portrait.enter { transform: translateY(10px); opacity: 0; }   /* 首次登场 260ms 上浮 */
+
+/* 对话框：半透明 + 背景模糊（立绘透出来但被压暗，字清晰） */
+.talk-box { position: absolute; left: 16px; right: 16px;
+  bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 4;
+  min-height: 132px; padding: 16px 18px 22px; border-radius: var(--r-lg);
+  background: rgba(24,18,14,.72); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,238,214,.16); box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  color: #fdf6ea; font-size: 17.5px; line-height: 1.78; }
+.talk-box.narration { text-align: center; color: #efe6d6; opacity: .94; }
+.talk-name { position: absolute; top: -15px; right: 20px; z-index: 5;
+  padding: 3px 14px; border-radius: 99px; font-size: 13px; letter-spacing: 1px; color: #fff8ec;
+  background: linear-gradient(180deg, #8a6136, #6b4a2c); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+.talk-cue { position: absolute; right: 16px; bottom: 10px; width: 0; height: 0;
+  border-left: 6px solid transparent; border-right: 6px solid transparent;
+  border-top: 8px solid rgba(255,238,214,.75); animation: talkCue 1.1s ease-in-out infinite; }
+@keyframes talkCue { 0%,100%{ transform: translateY(0); opacity:.5 } 50%{ transform: translateY(3px); opacity:1 } }
+
+/* 引擎输出位：旧聊天气泡流退场，但保留为整屏透明点击层（整屏点击推进用）——
+   ⛔ 不能 display:none，否则 #ntBody 上的 click 监听拿不到点击 = 推进失灵 */
+.nt-chat.immersive .nt-body { position: absolute; inset: 0; z-index: 3; margin: 0; padding: 0;
+  gap: 0; overflow: hidden; opacity: 0; }
+
+/* 选项 / 结局：压到最上，暗底（z 高于对话框，点击落在按钮上，不冒泡到推进层） */
+.nt-chat.immersive .nt-foot { position: absolute; left: 16px; right: 16px;
+  bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 6; margin: 0; }
+.nt-chat.immersive .nt-opt { width: 100%; background: rgba(24,18,14,.82); color: #fdf6ea;
+  border-color: rgba(255,238,214,.2); }
+.nt-chat.immersive .nt-opt:active { background: rgba(24,18,14,.95); }
+
+/* 顶栏沉浸态：透明浮层（返回 / 菜单仍可点） */
+body.talk-open .topbar { background: linear-gradient(180deg, rgba(12,9,6,.55), rgba(12,9,6,0));
+  border-bottom-color: transparent; backdrop-filter: none; }
+body.talk-open .topbar-title { color: #fdf6ea; text-shadow: 0 1px 3px rgba(0,0,0,.5); }
+body.talk-open .topbar .icon-btn { color: #fdf6ea; background: rgba(0,0,0,.25); }
+
+/* 「减少动态效果」降级 */
+@media (prefers-reduced-motion: reduce) {
+  .talk-portrait, .scenebg, .nt-opt { transition: none !important; animation: none !important; }
+  .talk-cue { animation: none; opacity: .8; }
+}
+
 /* —— 结局卡 —— */
 .nt-end { padding: 16px 15px; border-radius: var(--r-lg); text-align: center;
   background: linear-gradient(180deg, #fffdf3, #f9edd4);

@@ -71,9 +71,10 @@ const PREA = path.join(ROOT, "docs/_tmp/_pre_v168_app.js");
 if (!neg && fs.existsSync(PRE) && fs.existsSync(PREA)) {
   const dSp = cntLines(SRC.O) - cntLines(PRE);
   const dApp = cntLines(SRC.A) - cntLines(PREA);
-  ok(dSp === -1, "spirits.js Δ行=" + dSp + "（应 -1）");
-  ok(dApp === 0, "app.js Δ行=" + dApp + "（应 0）");
-  console.log("   spirits Δ行=" + dSp + "  app Δ行=" + dApp);
+  ok(dSp === -1, "spirits.js Δ行=" + dSp + "（应 -1：仅删 1 行日文残留）");
+  // 注：app.js 的内容校验已由 A/B 段覆盖；此处不再对 app.js 作「行数等于 V168 基线」的等值断言
+  //     —— 后续批次（V169 起）会继续改 app.js，等值断言会误红。只保留 CRLF/loneLF 校验。
+  console.log("   spirits Δ行=" + dSp + "  app Δ行=" + dApp + "（app.js 后续批次会继续改，不作等值断言）");
   [SRC.O, SRC.A].forEach((abs) => {
     const s = fs.readFileSync(abs, "latin1");
     const lone = (s.match(/\n/g) || []).length - (s.match(/\r\n/g) || []).length;
