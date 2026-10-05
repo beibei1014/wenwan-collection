@@ -3833,6 +3833,7 @@
     ]);
     html += '<div class="section-title">🍡 我的沁灵（' + list.length + '）' +
       '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点它进详情页</small>' +
+      '<button type="button" class="link-btn" id="spExportAll" style="float:right;font-size:11px;margin-right:8px;color:var(--wood);font-weight:700">📦 导出所有立绘</button>' +
       '<button type="button" class="link-btn" id="spRedrawAll" style="float:right;font-size:11px">🖌 全部重画</button>' +
       '<button type="button" class="link-btn" id="spRecoverOld" style="float:right;font-size:11px;margin-right:8px">🔙 恢复旧立绘</button></div>';
     // 形态收集进度（图鉴感）：四个形态各多少只
@@ -3949,6 +3950,10 @@
           "恢复旧立绘", true);
         if (yes) await recoverOldPortraits(list, rerender);
       };
+    }
+    const exportAll = $("#spExportAll");
+    if (exportAll) {
+      exportAll.onclick = () => { exportAllSpiritImages(); };
     }
   }
 
@@ -4346,15 +4351,11 @@
         if (r.cgUrl || r.cgKey) { r.cgUrl = ""; r.cgKey = ""; r.cgStage = 0; Spirits.save(s); }
         return;
       }
-      if (r.cgUrl && r.cgKey === cgKeyOf(r)) return;               // 已经是最新的
-      if (r.cgUrl || r.cgKey) {                                     // 旧 CG 跟新形象对不上了 → 先撤掉
-        r.cgUrl = ""; r.cgKey = ""; r.cgStage = 0; Spirits.save(s);
-      }
-      ensureSpiritCg([item]);
+      // v173-UI：换立绘/换形象不再撤进阶 CG（阶段到了就直接结束，保留已有 r.cgUrl，绝不撤）
     } catch (e) { /* 静默 */ }
   }
   // v165-R2：⛔ **CG 绝不自动出图**。这里只剩两件事：
-  //   ① 阶段不到（凝形/开窍）→ 撤掉 CG；② 形象变了 → 撤掉对不上的旧 CG。
+  //   ① 阶段不到（凝形/开窍）→ 撤掉 CG；② 进阶 CG 不随换立绘/换形象自动撤（v173-UI：保留已画的 CG，由用户手动重画覆盖）。
   //   欠图一律 `continue`（与 M 批次 `stageImgPending` 同口径）—— 新图只能由用户在 CG 卡片里
   //   「确认描述 → 点『按这段描述出图』」手动触发。
   async function ensureSpiritCg(list) {
@@ -4372,10 +4373,7 @@
           if (rec.cgUrl || rec.cgKey) { rec.cgUrl = ""; rec.cgKey = ""; rec.cgStage = 0; Spirits.save(st0); changed = true; }
           continue;
         }
-        // 形象变了（换外观 / 换形象 / 换服务商）→ 旧 CG 对不上了，撤掉
-        if ((rec.cgUrl || rec.cgKey) && rec.cgKey !== cgKeyOf(rec)) {
-          rec.cgUrl = ""; rec.cgKey = ""; rec.cgStage = 0; Spirits.save(st0); changed = true;
-        }
+        // v173-UI：换立绘/换形象不再撤掉进阶 CG，保留已画的 CG，由用户手动重画覆盖
         if (!rec.cgUrl) continue;        // ⛔ 欠图：只记着，绝不自动补（出图必须用户点确认）
       }
       if (changed) rerenderSpiritView();
@@ -4799,7 +4797,7 @@
   }
 
   // v166：轻量删除管理（立绘 / CG）—— 用户可手动删掉生成错的图。就地弹层，删除不可恢复但可重新生成。
-  function openDelManager(title, items, onDelete, onDone) {
+  function openDelManager(title, items, onDelete, onDone, opts) {
     const old = document.getElementById("wwDelMgr"); if (old) old.remove();
     const mask = document.createElement("div");
     mask.id = "wwDelMgr";
@@ -4816,12 +4814,21 @@
           '<img src="' + it.url + '" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block" onerror="this.style.opacity=.2">' +
           '<div style="padding:6px 8px;font-size:12px;color:var(--text-2)">' + esc(it.label) + "</div>" +
           '<button data-i="' + i + '" style="width:100%;border:0;background:#e5484d;color:#fff;padding:7px;font-size:13px;cursor:pointer">🗑 删除</button>' +
+          (opts && opts.onSetCover ? (it.cover === true ? '<button disabled style="width:100%;border:0;background:#ddd;color:#666;padding:7px;font-size:13px;margin-top:6px">✓ 当前展示</button>' : '<button data-set="' + i + '" style="width:100%;border:0;background:var(--gold,#caa06a);color:#fff;padding:7px;font-size:13px;cursor:pointer;margin-top:6px">设为展示</button>') : "") +
           "</div>").join("") + "</div>";
       box.querySelectorAll("button[data-i]").forEach((b) => b.onclick = () => {
         const idx = +b.dataset.i; const it = cur[idx];
         onDelete(it); cur = cur.filter((_, k) => k !== idx);
         if (onDone) onDone();   // 背后详情页即时刷新（缩略图消失）
         paint();                // 弹层内的列表也即时刷新
+      });
+      if (opts && opts.onSetCover) box.querySelectorAll("button[data-set]").forEach((b) => {
+        b.onclick = () => {
+          const idx = +b.dataset.set; const it = cur[idx];
+          opts.onSetCover(it);
+          if (opts.onDone) opts.onDone();   // 背后详情页即时刷新（覆盖"展示的那张"）
+          paint();                          // 弹层内"当前展示"标记即时刷新
+        };
       });
     };
     paint();
@@ -4859,7 +4866,7 @@
     const rec = Spirits.ensureIn(store, id);
     if (typeof Spirits.ensureCgList === "function") Spirits.ensureCgList(rec);   // v172-E：懒迁移（老档补 cgList）
     const items = [];
-    if (rec.cgUrl) items.push({ kind: "adv", url: rec.cgUrl, label: "进阶专属 CG" });
+    if (rec.cgUrl) items.push({ kind: "adv", url: rec.cgUrl, label: "进阶专属 CG", cover: true });
     const cgs = rec.cgs || {};
     const advUrls = {};                                     // adv# 归档里的 url —— 与 cgList 去重
     Object.keys(cgs).forEach((k) => {
@@ -4892,8 +4899,60 @@
       else if (it2.kind === "fest") { if (rec.fests && rec.fests[it2.key]) { rec.fests[it2.key].cgUrl = ""; rec.fests[it2.key].cgAt = 0; } }
       else { delete rec.cgs[it2.key]; }
       Spirits.save(store);
-    }, () => renderSpiritDetailPage(id));
+    }, () => renderSpiritDetailPage(id),
+    { onSetCover: (it2) => { items.forEach(x => x.cover = (x.url === it2.url)); rec.cgUrl = it2.url; Spirits.save(store); renderSpiritDetailPage(id); } });
   }
+  /* ---------- v173-ui：一键导出所有 AI 立绘（高清大图） ---------- */
+  async function exportAllSpiritImages() {
+    try {
+      const store = Spirits.load();
+      const ids = Object.keys(store || {});
+      const urls = new Set();
+      const pushUrl = (u) => { if (u && (u.indexOf("http://") === 0 || u.indexOf("https://") === 0)) urls.add(u); };
+      for (const id of ids) {
+        const r = store[id];
+        if (!r || r.spirit === false) continue;
+        pushUrl(r.imgUrl);
+        if (r.exprs && r.exprs.base && r.exprs.base.url) pushUrl(r.exprs.base.url);
+        (r.imgHistory || []).forEach((h) => pushUrl(h && h.url));
+        pushUrl(r.cgUrl);
+        if (typeof Spirits.cgListRO === "function") (Spirits.cgListRO(r) || []).forEach(pushUrl);
+        const cgs = r.cgs || {};
+        Object.keys(cgs).forEach((k) => { const m = cgs[k]; if (m) { pushUrl(m.thumb); pushUrl(m.imgUrl); } });
+        const fests = r.fests || {};
+        Object.keys(fests).forEach((dk) => { const fx = fests[dk]; if (fx) pushUrl(fx.cgUrl); });
+      }
+      // 双人事件 CG（房间剧情插画）
+      if (typeof Rooms !== "undefined" && Rooms.listRooms && Rooms.storiesOfRoom) {
+        (Rooms.listRooms() || []).forEach((rm) => {
+          (Rooms.storiesOfRoom(rm.id) || []).forEach((s) => { if (s && s.story && s.story.img) pushUrl(s.story.img); });
+        });
+      }
+      const list = Array.from(urls);
+      if (!list.length) { toast("还没有可导出的立绘"); return; }
+      const yes = await confirmModal("导出全部立绘？",
+        "将下载 " + list.length + " 张高清原图到本地（每张一次下载，浏览器可能依次弹出保存框）。", "开始下载", true);
+      if (!yes) return;
+      toast("开始下载 " + list.length + " 张…");
+      for (let i = 0; i < list.length; i++) {
+        const u = list[i];
+        try {
+          const res = await fetch(u, { mode: "cors" });
+          const blob = await res.blob();
+          const obj = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = obj;
+          const name = (u.split("/").pop() || "img").split("?")[0] || "img";
+          a.download = "spirit_" + String(i + 1).padStart(3, "0") + "_" + name;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(obj), 4000);
+        } catch (e2) { console.warn("下载失败", u, e2); }
+        if (i % 8 === 7) await new Promise((r) => setTimeout(r, 400));   // 轻微节流，降低被浏览器拦截概率
+      }
+      toast("下载完成（共 " + list.length + " 张；失败的见浏览器控制台）");
+    } catch (e) { toast("导出失败：" + ((e && e.message) || "")); }
+  }
+
   // v165-C：管理「双人事件 CG」—— 房间内每段剧情的插画逐个删（同款删除弹层）
   function openRoomCgManager(roomId) {
     const store = Spirits.load();
@@ -5887,9 +5946,8 @@
       const r4 = Spirits.ensureIn(s4, item.id);
       r4.lookAsked = 1;
       delete r4.setupPending;
-      // 确认后重画：清掉旧立绘 / 旧 CG（CG 的 key 里有外观种子与服务商，显式清掉最稳）
+      // v173-UI：确认后重画只清旧立绘；⛔ 不再清进阶 CG（换立绘/换形象也继续展示已画的 CG，由用户手动重画覆盖）
       r4.imgUrl = ""; r4.imgAt = 0; r4.face = null; r4._imgErr = ""; r4._imgErrAt = 0; r4.imgFrozen = 0;
-      r4.cgUrl = ""; r4.cgKey = ""; r4.cgStage = 0;
       // v166：设定确认后写回性别 —— 设计规定的 item.gender 优先；否则从用户写的设定文字认（少年郎→男 / 姑娘→女），
       //   这样「粉黛熊写了少年郎」就不会因为 born() 随机掷过而画成女孩。
       {
