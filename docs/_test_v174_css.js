@@ -112,5 +112,50 @@ if (OLD) {
   ok(true, "⑧ (取不到 03c473c 基线 → 负向对照优雅跳过)");
 }
 
+/* ============ ⑨ C3b · 补 4 类样式（.evt-end / .evt-blank / .evt-ph+.ph-evt-* / .evt-all） ============
+   背景：V174-C3b 派单 —— C2A 的 HTML 用到、C3 未覆盖的 4 类，由 C2A 作者补齐（最清楚预期视觉）。
+   ⛔ 只追加新规则；负向对照铆定 C3 提交 baa83f4（⛔ 绝不用 HEAD —— 一提交 HEAD 就成「改后」→ 永久假红）。 */
+const C3B_ANCHOR = "baa83f4";
+function baselineAt(commit, tmpRel) {
+  try {
+    return require("child_process").execSync("git show " + commit + ":css/skin.css", { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 28 });
+  } catch (e) {
+    try { return fs.readFileSync(path.join(__dirname, tmpRel), "utf8"); } catch (e2) { return ""; }
+  }
+}
+function c3bChecks(css) {
+  return [
+    { n: "⑨.1 .evt-end 已定义（列到底文案）", p: /\.evt-end\s*\{/.test(css) },
+    { n: "⑨.2 .evt-blank 已定义（单筛选空态）", p: /\.evt-blank\s*\{/.test(css) },
+    { n: "⑨.3 .evt-ph 已定义（封泥字形占位）", p: /\.evt-ph\s*\{/.test(css) },
+    { n: "⑨.4 .ph-evt-* 按类型钩子已在", p: css.indexOf("ph-evt-") >= 0 && /\[class\*=["']ph-evt-["']\]/.test(css) },
+    { n: "⑨.5 .evt-all 已定义（看全部入口）", p: /\.evt-all\s*\{/.test(css) },
+    { n: "⑨.6 .evt-card.is-sum 已定义（汇总卡中性兜底 · team-lead 裁定 4）", p: /\.evt-card\.is-sum/.test(css) },
+  ];
+}
+section("⑨ C3b · 纪事页补 4 类样式（当前工作区，应全绿）");
+c3bChecks(CSS).forEach((c) => ok(c.p, "V174-C3b · " + c.n));
+ok((CSS.match(/\r\n/g) || []).length === 0, "⑨.0 C3b 改动后 css/skin.css 仍 CRLF === 0（唯一 LF 文件不变量）");
+
+section("⑨-neg 负向对照（铆定 C3 提交 " + C3B_ANCHOR + " · ⛔ 不用 HEAD）");
+const C3BASE = baselineAt(C3B_ANCHOR, "_tmp/_pre_v174c3b_baseline_skin.css");
+if (C3BASE) {
+  const cc = c3bChecks(C3BASE);
+  const fails = cc.filter((c) => !c.p).length;
+  ok(fails === cc.length, "⑨-neg 铆定 " + C3B_ANCHOR + " 上这 " + cc.length + " 条**全部**不成立（改前 FAIL " + fails + "/" + cc.length + " → 改后全 PASS）⇒ C3b 确为新增");
+} else {
+  ok(true, "⑨-neg (取不到 " + C3B_ANCHOR + " 基线 → 优雅跳过)");
+}
+
+/* ============ ⑩ 跨文件一致性：--evt-queue-max ≡ app.js 的 EVT_QUEUE_MAX（机械防漂移，零运行时代价） ============
+   team-lead 裁定 1：⛔ 不读 CSSOM（不把渲染绑到样式表加载时序）；改为「两侧同值 + 跨文件断言」的机械防漂移。 */
+section("⑩ 单点旋钮跨文件一致：--evt-queue-max ≡ EVT_QUEUE_MAX");
+const APP = fs.existsSync(path.join(ROOT, "js/app.js")) ? fs.readFileSync(path.join(ROOT, "js/app.js"), "utf8") : "";
+const cssNum = (CSS.match(/--evt-queue-max:\s*(\d+)/) || [])[1];
+const jsNum = (APP.match(/EVT_QUEUE_MAX\s*=\s*(\d+)/) || [])[1];
+ok(cssNum != null, "⑩ skin.css 取到 --evt-queue-max 数值（实测 " + cssNum + "）");
+ok(jsNum != null, "⑩ app.js 取到 EVT_QUEUE_MAX 数值（实测 " + jsNum + "）");
+ok(cssNum != null && cssNum === jsNum, "⑩ 两侧同值（css " + cssNum + " == js " + jsNum + "）—— 任一侧改动未同步即 FAIL");
+
 const passed = summary();
 process.exit(passed ? 0 : 1);

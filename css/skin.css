@@ -31,7 +31,7 @@
   --evt-ico: 34px;           /* 事件卡 / 纪事行 图标底 */
   --evt-row-minh: 56px;      /* 纪事行最小高 */
   --evt-card-w: 366px;       /* 事件卡宽度上限 */
-  --evt-queue-max: 3;        /* 待播队列上限（JS 读同值，⛔ 不两处硬编码） */
+  --evt-queue-max: 3;        /* 待播队列上限：与 js/app.js 的 EVT_QUEUE_MAX 同值，改动需同步 */
   --hub-chip-h: 30px;        /* hub chip 高 */
   --album-cell-ratio: 4 / 3; /* 画册格比例（对齐 CG 出图 4:3，⛔ 改 1:1 会切人物两头） */
 }
@@ -1680,6 +1680,28 @@ body.route-night #aiFab { display: none !important; }
 .evt-fail-title { font-size: 14px; font-weight: 700; color: var(--wood); }
 .evt-fail-sub { font-size: 12.5px; color: var(--wood-2); margin-top: 4px; }
 .evt-fail .btn { margin-top: 10px; }
+
+/* ---- ③b V174-C3b · 纪事页补齐 4 类（C2A 的 HTML 在用、C3 未覆盖）----
+   ⚠️ 只追加新规则，⛔ 未改任何既有规则；只用 C3 已定义的 token 与既有 --wood-* / --text-* 体系。 */
+/* 列到底：一行说明收尾（规范 §2.3「到这儿就是最早的一笔了。」13px --wood-2 居中） */
+.evt-end { padding: 16px 0 24px; text-align: center; font-size: 13px; color: var(--wood-2); }
+/* 单筛选空：保留筛选条、列表区一块留白（规范 §2.4「这一档还空着 —— 换个档看看。」13px --wood-2 居中 padding:32px 0） */
+.evt-blank { padding: 32px 0; text-align: center; font-size: 13px; color: var(--wood-2); }
+/* 占位字形（无 SVG 素材时的「封泥字」，⛔ 不用 emoji）：.evt-ico 已给 34×34 底色方块，这里只定字形。
+   .ph-evt-{type} 是按类型预留的钩子（本批 8 个 type 无差异样式，供后续单独特调某类封泥字）。 */
+.evt-ph { font-size: 15px; font-weight: 700; line-height: 1; }
+[class*="ph-evt-"] { letter-spacing: 0; }
+/* 「看全部」全量入口（详情页「它的纪事」→ 纪事页时出现；靠 margin-left:auto 推到页顶右侧） */
+.evt-all { margin-left: auto; flex: none; padding: 4px 2px; font-size: 11px; color: var(--wood-2);
+  background: transparent; border: 0; cursor: pointer; }
+.evt-all:active { opacity: .7; }
+/* 汇总卡（同一 tick ≥3 条 l1 合并成一张）：按 l1 呈现 —— 防御性兜底，即便 level 被误标也不带金饰。
+   零成本：1 个类选择器 + 2 条规则，无新增 DOM / 跨段依赖。 */
+.evt-card.is-sum { border-color: var(--line); background: var(--card); }
+.evt-card.is-sum::before { display: none; }
+/* ⚠️ 单点旋钮对齐（team-lead 裁定 1）：本文件 :root 的 --evt-queue-max 与 js/app.js 的 EVT_QUEUE_MAX
+   必须同值（当前 3）；⛔ 运行时不走 getComputedStyle（不把渲染绑到样式表加载时序）。
+   机械防漂移：docs/_test_v174_css.js 有「跨文件一致性断言」——任一侧改动而另一侧没跟上即 FAIL。 */
 
 /* ---- ③ 画册 #/album（四册 tab 复用 .evt-tab chip；.album-grid 见既有，⛔ 不动列数） ---- */
 .album-tabs { margin-bottom: 12px; }
