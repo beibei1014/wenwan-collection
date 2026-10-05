@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>沁灵纪 · 立绘导出</title>
+<style>
+  :root{--bg:#f7f3ec;--card:#fffdf8;--ink:#3a2f26;--sub:#8a7a68;--gold:#b8894a;--line:#e6dccb;--ok:#4a7c4e;--err:#b4553f;}
+  *{box-sizing:border-box}
+  body{margin:0;padding:22px;background:var(--bg);color:var(--ink);
+       font:14px/1.7 "PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+  .wrap{max-width:860px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--sub);font-size:12px;margin-bottom:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:15px 17px;margin-bottom:13px}
+  .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin:8px 0}
+  button{background:var(--gold);color:#fff;border:0;border-radius:7px;padding:9px 17px;font-size:14px;cursor:pointer;font-weight:600}
+  button.ghost{background:#fff;color:var(--gold);border:1px solid var(--gold)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .bar{height:8px;background:#efe7d9;border-radius:5px;overflow:hidden;margin:10px 0}
+  .bar>i{display:block;height:100%;background:var(--gold);width:0;transition:width .2s}
+  .log{font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;background:#fbf7ef;
+       border:1px solid var(--line);border-radius:7px;padding:10px;max-height:250px;overflow:auto;white-space:pre-wrap}
+  .ok{color:var(--ok)} .err{color:var(--err)}
+  .tip{font-size:12px;color:var(--sub);margin-top:6px}
+  code{background:#f0e9dc;padding:1px 5px;border-radius:4px;font-size:12px}
+  .warn{background:#fdf3e3;border:1px solid #e8c88a;border-radius:8px;padding:11px 13px;font-size:13px;margin-bottom:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📦 沁灵纪 · 立绘导出</h1>
+  <div class="sub">把所有 AI 立绘 / CG 高清大图，直接保存到你的电脑文件夹（文件名按沁灵名字）。</div>
+
+  <div class="warn" id="originWarn" style="display:none">
+    ⚠️ 你可能是用「文件」方式打开的（<code>file://</code>），这样<b>读不到游戏数据</b>（浏览器按网址隔离存储）。
+    请改用游戏网址打开本页：<code>https://beibei1014.github.io/wenwan-collection/tools/export.html</code>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button id="pick">📁 选择保存文件夹（推荐）</button>
+      <button id="start">⬇️ 开始导出</button>
+      <button class="ghost" id="stop">⏹ 停止</button>
+    </div>
+    <div class="tip">
+      选文件夹后，图片会<b>真正写入那个目录</b>（不进浏览器下载列表）。不支持的浏览器会自动退回普通下载。<br>
+      覆盖规则：立绘 / 表情基 / 进化史旧立绘 / 进阶CG / 历史CG / 相册（含缩略图）/ 节令CG / 房间双人事件CG。
+    </div>
+    <div class="bar"><i id="prog"></i></div>
+    <div class="row"><span id="stat" class="sub">待命</span></div>
+  </div>
+
+  <div class="card">
+    <div class="sub" style="margin-bottom:7px">导出日志</div>
+    <div class="log" id="log">（尚未开始）</div>
+  </div>
+</div>
+
+<script>
+/* ============================================================================
+ * 沁灵纪立绘导出器（必须与游戏同源运行，才能读到 localStorage / IndexedDB）
+ *  数据源：
+ *    - localStorage['ww_spirits']  → 主存档（立绘 URL、CG URL、相册元数据…）
+ *    - IndexedDB['ww_cg']/['pixels'] → CG 像素（data URI 或 blob）
+ *    - localStorage['ww_rooms']      → 房间与双人事件 CG
+ * ========================================================================== */
+const STAGE_ZH = ["凝形", "开窍", "蜕形", "化形"];
+let DIR = null, STOP = false;
+const $ = (s) => document.querySelector(s);
+
+function log(s, cls) {
+  const el = $("#log");
+  if (el.textContent === "（尚未开始）") el.textContent = "";
+  const d = document.createElement("div");
+  if (cls) d.className = cls;
+  d.textContent = s;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+function stat(s) { $("#stat").textContent = s; }
+
+function safe(s, fb) {
+  let t = String(s == null ? "" : s).replace(/[\\/:*?"<>|\r\n\t]/g, "_").replace(/\s+/g, " ").trim();
+  t = t.replace(/[. ]+$/g, "");
+  if (!t) t = fb || "unnamed";
+  return t.slice(0, 60);
+}
+function uniq(used, fn) {
+  if (!used.has(fn)) { used.add(fn); return fn; }
+  const d = fn.lastIndexOf(".");
+  let k = 2, c;
+  do { c = (d > 0 ? fn.slice(0, d) : fn) + "-" + k + (d > 0 ? fn.slice(d) : ""); k++; } while (used.has(c));
+  used.add(c); return c;
+}
+
+/* ---------- IndexedDB: ww_cg / pixels ---------- */
+function idbAll() {
+  return new Promise((resolve) => {
+    let idb;
+    try { idb = window.indexedDB; } catch (e) { return resolve({}); }
+    if (!idb) return resolve({});
+    let db;
+    try { db = idb.open("ww_cg", 1); } catch (e) { return resolve({}); }
+    db.onupgradeneeded = () => {
+      try { if (!db.result.objectStoreNames.contains("pixels")) db.result.createObjectStore("pixels"); } catch (e) {}
+    };
+    db.onsuccess = () => {
+      const out = {};
+      try {
+        const rq = db.result.transaction("pixels", "readonly").objectStore("pixels").getAllKeys();
+        rq.onsuccess = () => {
+          const keys = rq.result || [];
+          if (!keys.length) return resolve(out);
+          const rq2 = db.result.transaction("pixels", "readonly").objectStore("pixels").getAll();
+          rq2.onsuccess = () => {
+            const vals = rq2.result || [];
+            keys.forEach((k, i) => { out[String(k)] = vals[i]; });
+            resolve(out);
+          };
+          rq2.onerror = () => resolve(out);
+        };
+        rq.onerror = () => resolve(out);
+      } catch (e) { resolve(out); }
+    };
+    db.onerror = () => resolve({});
+    setTimeout(() => resolve({}), 4000);   // 兜底：不因 IDB 卡死而全程挂起
+  });
+}
+
+/* ---------- 收集任务 ---------- */
+async function collect() {
+  const jobs = [];   // { file, get: async()=>({blob|bytes, ext}) }
+  const store = (() => { try { return JSON.parse(localStorage.getItem("ww_spirits") || "{}"); } catch (e) { return {}; } })();
+  const ids = Object.keys(store);
+  log("读到 ww_spirits：" + ids.length + " 条记录", "ok");
+
+  // CG 像素表：id -> data URI / blob
+  const px = await idbAll();
+  const pxKeys = Object.keys(px);
+  log("读到 IndexedDB ww_cg：" + pxKeys.length + " 张 CG 像素", pxKeys.length ? "ok" : "err");
+  // 退路：ww_cg_px（IndexedDB 不可用时的独立 key）
+  let fbPx = {};
+  try { fbPx = JSON.parse(localStorage.getItem("ww_cg_px") || "{}"); } catch (e) {}
+  if (!pxKeys.length && Object.keys(fbPx).length) {
+    log("改用退路键 ww_cg_px：" + Object.keys(fbPx).length + " 张", "err");
+    Object.keys(fbPx).forEach((k) => { px[k] = fbPx[k]; });
+  }
+
+  const used = new Set();
+  const nameOf = (r, id) => safe(r.name || (r.persona && r.persona.name) || id, "沁灵");
+  const stageOf = (r) => STAGE_ZH[Math.min(4, Math.max(1, Number(r.stage) || 1)) - 1] || "";
+  // HTTP(S) 图
+  const addHttp = (u, label) => {
+    if (!u || typeof u !== "string") return;
+    if (u.indexOf("http://") !== 0 && u.indexOf("https://") !== 0) return;
+    const file = uniq(used, safe(label, "img") + ".jpg");
+    jobs.push({ file, kind: "http", url: u });
+  };
+  // data URI 图
+  const addData = (d, label) => {
+    if (!d || typeof d !== "string" || d.indexOf("data:") !== 0) return;
+    const ext = (d.slice(5, d.indexOf("/")) || "png").replace("jpeg", "jpg").replace("+xml", "");
+    const file = uniq(used, safe(label, "img") + "." + (ext || "png"));
+    jobs.push({ file, kind: "data", data: d });
+  };
+  // IndexedDB 像素（可能是 data URI 或 Blob）
+  const addPx = (id, label) => {
+    const v = px[String(id)];
+    if (v == null) return;
+    if (typeof Blob !== "undefined" && v instanceof Blob) {
+      const file = uniq(used, safe(label, "img") + ".png");
+      jobs.push({ file, kind: "blob", blob: v });
+    } else if (typeof v === "string" && v.indexOf("data:") === 0) {
+      addData(v, label);
+    }
+  };
+
+  let spirits = 0;
+  for (const id of ids) {
+    const r = store[id];
+    if (!r || typeof r !== "object" || r.spirit === false) continue;
+    spirits++;
+    const nm = nameOf(r, id), stg = stageOf(r);
+    const tag = (s) => (stg ? nm + "·" + stg + "_" + s : nm + "_" + s);
+
+    addHttp(r.imgUrl, tag("立绘"));
+    if (r.exprs && r.exprs.base) {
+      addHttp(r.exprs.base.url, tag("立绘"));
+      addPx(r.exprs.base.key, tag("立绘"));
+    }
+    (r.imgHistory || []).forEach((h, i) => {
+      addHttp(h && h.url, tag("旧立绘" + (i + 1)));
+      addPx(h && h.key, tag("旧立绘" + (i + 1)));
+    });
+    addHttp(r.cgUrl, tag("进阶CG"));
+    addPx(r.cgKey, tag("进阶CG"));
+    if (Array.isArray(r.cgList)) r.cgList.forEach((e, i) => {
+      const u = typeof e === "string" ? e : (e && (e.url || e.img));
+      addHttp(u, tag("历史CG" + (i + 1)));
+    });
+    const cgs = r.cgs || {};
+    Object.keys(cgs).forEach((k) => {
+      const m = cgs[k]; if (!m) return;
+      const lbl = tag("相册_" + safe(m.title || k, "图"));
+      addHttp(m.thumb, lbl + "_缩略");
+      addHttp(m.imgUrl, lbl);
+      addPx(m.key, lbl);
+    });
+    const fests = r.fests || {};
+    Object.keys(fests).forEach((dk) => {
+      const fx = fests[dk]; if (!fx) return;
+      addHttp(fx.cgUrl, nm + "_节令CG_" + safe((fx.name || "") + dk, dk));
+      addPx(fx.key, nm + "_节令CG_" + safe((fx.name || "") + dk, dk));
+    });
+  }
+  log("其中有图的沁灵：" + spirits + " 只", "ok");
+
+  // 房间双人事件 CG
+  try {
+    const rk = localStorage.getItem("ww_rooms");
+    if (rk) {
+      const db = JSON.parse(rk);
+      const rooms = (db && db.rooms) || {};
+      let n = 0;
+      Object.keys(rooms).forEach((rid) => {
+        const rm = rooms[rid]; if (!rm) return;
+        const rn = safe(rm.name || rid, "房间");
+        const st = (rm.stories && typeof rm.stories === "object") ? rm.stories : {};
+        Object.keys(st).forEach((sid, i) => {
+          const s = st[sid] || {};
+          const img = s.img || (s.story && s.story.img);
+          addHttp(img, rn + "_事件CG_" + (i + 1));
+          n++;
+        });
+      });
+      log("房间事件 CG：" + n + " 条", "ok");
+    }
+  } catch (e) { log("读房间失败：" + e.message, "err"); }
+
+  return jobs;
+}
+
+/* ---------- 存盘 ---------- */
+function dataUriToBlob(d) {
+  const i = d.indexOf(",");
+  const meta = d.slice(5, i), body = d.slice(i + 1);
+  const mime = (meta.split(";")[0] || "image/png") + (meta.indexOf("base64") >= 0 ? "" : "");
+  if (meta.indexOf("base64") >= 0) {
+    const bin = atob(body), u8 = new Uint8Array(bin.length);
+    for (let i2 = 0; i2 < bin.length; i2++) u8[i2] = bin.charCodeAt(i2);
+    return new Blob([u8], { type: mime });
+  }
+  return new Blob([decodeURIComponent(body)], { type: mime });
+}
+async function saveBlob(blob, filename) {
+  if (DIR) {
+    const fh = await DIR.getFileHandle(filename, { create: true });
+    const ws = await fh.createWritable();
+    await ws.write(blob); await ws.close();
+    return "dir";
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 8000);
+  return "dl";
+}
+
+async function run() {
+  STOP = false;
+  $("#start").disabled = true; $("#pick").disabled = true;
+  if (!/^https?:$/.test(location.protocol)) $("#originWarn").style.display = "block";
+
+  const jobs = await collect();
+  if (!jobs.length) {
+    stat("没有可导出的图片");
+    log("没收集到任何图片。若你确实有图，请确认本页与游戏<b>同源</b>打开。", "err");
+    $("#start").disabled = false; $("#pick").disabled = false;
+    return;
+  }
+  log("—— 开始导出 " + jobs.length + " 张 ——");
+  let ok = 0, bad = 0;
+  for (let i = 0; i < jobs.length; i++) {
+    if (STOP) { log("⏹ 已停止", "err"); break; }
+    const j = jobs[i];
+    try {
+      let blob = j.blob;
+      if (j.kind === "http") {
+        const res = await fetch(j.url, { mode: "cors", cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        blob = await res.blob();
+      } else if (j.kind === "data") {
+        blob = dataUriToBlob(j.data);
+      }
+      if (!blob || !blob.size) throw new Error("空内容");
+      const mode = await saveBlob(blob, j.file);
+      ok++;
+      log("✓ " + j.file + "  " + Math.round(blob.size / 1024) + " KB" + (mode === "dl" ? "（下载列表）" : ""));
+    } catch (e) {
+      bad++;
+      log("✗ " + j.file + "  " + (e && e.message), "err");
+    }
+    $("#prog").style.width = Math.round((i + 1) / jobs.length * 100) + "%";
+    stat("进度 " + (i + 1) + " / " + jobs.length + "　成功 " + ok + (bad ? "　失败 " + bad : ""));
+    await new Promise((r) => setTimeout(r, 90));
+  }
+  log("—— 完成：成功 " + ok + " 张" + (bad ? "，失败 " + bad + " 张" : "") + " ——", bad ? "err" : "ok");
+  stat(bad ? ("完成，有 " + bad + " 张失败（见上方 ✗）") : "全部完成 ✔");
+  $("#start").disabled = false; $("#pick").disabled = false;
+}
+
+$("#pick").onclick = async () => {
+  if (!window.showDirectoryPicker) { alert("此浏览器不支持选择文件夹，将使用普通下载。\n建议用 Chrome 或 Edge。"); return; }
+  try {
+    DIR = await window.showDirectoryPicker({ mode: "readwrite" });
+    log("📁 已选择文件夹：" + DIR.name, "ok");
+    stat("将直接写入该文件夹");
+  } catch (e) { if (e && e.name !== "AbortError") log("选文件夹失败：" + e.message, "err"); }
+};
+$("#start").onclick = run;
+$("#stop").onclick = () => { STOP = true; };
+</script>
+</body>
+</html>
