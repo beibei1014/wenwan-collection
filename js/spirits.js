@@ -8737,7 +8737,7 @@ const CH09 = {
     };
     if (x.kind === "pair") {
       L.push("画面里有两只：" + who(x.a) + "；" + who(x.b));
-      L.push("这是它们第 " + ((Number(x.level) || 0) + 1) + " 段故事，关系：" + (x.levelName || "正在熟络") + "；地点：" + (x.roomName || "他们的小房间"));
+      L.push("这是他们第 " + ((Number(x.level) || 0) + 1) + " 段故事，关系：" + (x.levelName || "正在熟络") + "；地点：" + (x.roomName || "他们的小房间"));
       if (x.storyText) L.push("这段剧情讲的是：" + String(x.storyText).replace(/\s+/g, " ").slice(0, 150));
       L.push("构图：横版宽幅，两只同框，房间与院子的环境占满画面两侧。");
     } else {

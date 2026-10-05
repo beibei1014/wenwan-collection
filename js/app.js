@@ -3953,7 +3953,7 @@
       const shown = Math.min(cur.length, (_albumPage + 1) * 18);
       let h = '<div class="album-head"><div class="album-head-n"><b>' + counts[_albumTab] + '</b><span> 张</span></div>' +
         '<div class="album-head-meta"><div class="album-head-title">画册</div>' +
-        '<div class="album-head-sub">它们留下的样子</div></div></div>';
+        '<div class="album-head-sub">他们留下的样子</div></div></div>';
       h += albumTabsHtml(counts, _albumTab);               // 四册 chip（复用 C3 的 .evt-tabs / .evt-tab）
       if (!cur.length) {
         h += '<div class="album-empty">这一册还空着 —— 换一册看看。</div>';
