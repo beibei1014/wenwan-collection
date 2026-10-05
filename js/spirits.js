@@ -1041,31 +1041,178 @@
   /* ---------- v163b：事件卡（瞬时弹出 + 事件回顾）—— 见 docs/v163-互动系统设计.md 【C+.2】 ---------- */
   const EVENT_KEEP = 60;                 // 每只沁灵最多保留 60 条事件（体积纪律）
   const _eventPops = [];                 // 待弹出的瞬时事件（app.js 负责 drain 渲染）
+  /* ---------- v174：事件级别 / 筛选分组（集中配置 · 单一数据源；⛔ UI 只读，不硬编码） ----------
+     级别：l1 日常（自动收）/ l2 要事（自动收 + 去看看）/ l3 节点（不自动收，必须点「记下了」）
+     ⛔ 判定权在数据层：UI 只读 ev.level，⛔ 不许在 UI 里写 if (type === "fest")。 */
+  const EVENT_LEVEL = {
+    milestone: "l3",   // 挂瓷开沁 / 纪念日
+    fest: "l3",        // 节令 · 岁除（一年四次的那种）
+    chapter: "l2",     // 读完一章
+    night: "l2",       // 夜话一幕有了结果
+    bond: "l2",        // 亲密度进阶
+    gift: "l1",        // 递了一件东西
+    quest: "l1",       // 今日任务做完
+    diary: "l1",       // 写了日记
+  };
+  const EVENT_LEVEL_FALLBACK = "l1";     // 未知 type 一律回落 l1（⛔ 不报错、不阻断）
+  function eventLevelOf(type) { return EVENT_LEVEL[String(type || "")] || EVENT_LEVEL_FALLBACK; }
+  // type → 纪事页 chip 组（§2.1 的 5 个 chip）；⛔ 这张表也只在这里做单一真源，UI 不硬编码
+  //   gift / quest / diary 等未归类的 type 只在「全部」里出现（⛔ 不硬塞进别的 chip）
+  const EVENT_CHIP = {
+    all: null,
+    story: ["milestone", "chapter"],
+    bond: ["bond"],
+    fest: ["fest"],
+    night: ["night"],
+  };
+  const EVENT_CHIP_ORDER = ["all", "story", "bond", "fest", "night"];
+  function eventChipOf(type) {
+    const t = String(type || "");
+    const ks = Object.keys(EVENT_CHIP);
+    for (let i = 0; i < ks.length; i++) { const arr = EVENT_CHIP[ks[i]]; if (arr && arr.indexOf(t) >= 0) return ks[i]; }
+    return "";
+  }
   function recordEvent(rec, ev) {
+    // v174：三个可选字段（⛔ 严格向后兼容 —— 不传 ⇒ level 按 type 查表回落、go=null、iconKey=""）
+    const _lvl = ev.level ? String(ev.level) : eventLevelOf(ev.type);
+    const _go = (ev.go == null) ? null : ev.go;
+    const _ik = ev.iconKey ? String(ev.iconKey) : "";
     rec.events = rec.events || [];
     const id = (ev.linked && ev.linked[0] || "?") + "|" + ev.type + "|" + todayKey(ev.at);  // 同类型同日去重键
     const ex = rec.events.find((e) => e.id === id);
-    if (ex) { ex.at = ev.at; ex.title = ev.title; ex.summary = ev.summary; ex.icon = ev.icon; return false; }  // 更新不新增
+    if (ex) { ex.at = ev.at; ex.title = ev.title; ex.summary = ev.summary; ex.icon = ev.icon; ex.level = _lvl; ex.go = _go; ex.iconKey = _ik; return false; }  // 更新不新增
     rec.events.push({
       id: id, type: ev.type, at: ev.at, title: ev.title, summary: ev.summary, icon: ev.icon,
+      level: _lvl, go: _go, iconKey: _ik,
       linked: (ev.linked && ev.linked.length) ? ev.linked.slice() : [ev.linked && ev.linked[0] || "?"],
     });
     if (rec.events.length > EVENT_KEEP) rec.events.splice(0, rec.events.length - EVENT_KEEP);  // 超限丢最旧
-    _eventPops.push({ title: ev.title, summary: ev.summary, icon: ev.icon, ownerId: (ev.linked && ev.linked[0]) || "?", at: ev.at });
+    _eventPops.push({ title: ev.title, summary: ev.summary, icon: ev.icon, iconKey: _ik, level: _lvl, go: _go, ownerId: (ev.linked && ev.linked[0]) || "?", at: ev.at });
     return true;                         // true = 首次新增（用于触发弹出）
   }
   function drainEventPops() { const p = _eventPops.slice(); _eventPops.length = 0; return p; }
-  function allEvents(items, store) {     // O(n)：每只扫一次 rec.events，绝不两两枚举
+  // v174：加 opts { type, limit, offset }（⛔ 不另写一套查询）。
+  //   · opts 缺省 / 不传 ⇒ 与旧行为逐字节一致（仍是「全量 + 时间倒序」的数组，只是多了 total/hasMore 两个挂载属性）
+  //   · type 支持 chip 键（all/story/bond/fest/night）或原始 type 精确匹配
+  //   · 分页不重不漏：total = 当前筛选下的总数，hasMore = 后面还有没有
+  function allEvents(items, store, opts) {     // O(n)：每只扫一次 rec.events，绝不两两枚举
+    const o = opts || {};
     const out = [];
     (items || []).forEach((it) => {
       const rec = (store && store[it.id]) || {};
       (rec.events || []).forEach((e) => out.push({
         id: e.id, type: e.type, at: e.at, title: e.title, summary: e.summary, icon: e.icon,
+        level: e.level || eventLevelOf(e.type),                       // v174：老档没存 level ⇒ 现算回落
+        go: (e.go == null) ? null : e.go,                             // v174：null = 不可跳（UI 据此不画 ›）
+        iconKey: e.iconKey || "",                                    // v174：新图标键（emoji 兼容字段 icon 保留）
         linked: e.linked, ownerId: it.id, ownerName: it.name,
       }));
     });
     out.sort((a, b) => (b.at || 0) - (a.at || 0));   // 倒序：最近的在前
+    let rows = out;
+    const t = String(o.type || "");
+    if (t && t !== "all") {
+      const grp = EVENT_CHIP[t];
+      rows = grp ? out.filter((x) => grp.indexOf(String(x.type)) >= 0)
+                 : out.filter((x) => String(x.type) === t);
+    }
+    const total = rows.length;
+    const off = Math.max(0, Math.floor(Number(o.offset) || 0));
+    const lim = (o.limit == null) ? total : Math.max(0, Math.floor(Number(o.limit) || 0));
+    const page = rows.slice(off, off + lim);
+    page.total = total;
+    page.hasMore = (off + page.length) < total;
+    return page;
+  }
+  /* ---------- v174：纪事页未读（时间戳 ww_ev_seen，整数；⛔ 只读 rec.events，不改记录） ---------- */
+  const EV_SEEN_KEY = "ww_ev_seen";
+  function evSeenAt() {
+    try { return Math.max(0, Math.floor(Number(localStorage.getItem(EV_SEEN_KEY)) || 0)); } catch (e) { return 0; }
+  }
+  function markEventsSeen(at) {
+    const t = Math.floor(Number(at) || Date.now());
+    try { localStorage.setItem(EV_SEEN_KEY, String(t)); return true; } catch (e) { return false; }
+  }
+  // 未读条数：at > seenAt 的条数（seenAt 缺省取 ww_ev_seen）
+  function unreadEventCount(items, store, seenAt) {
+    const seen = (seenAt == null) ? evSeenAt() : Math.max(0, Math.floor(Number(seenAt) || 0));
+    let n = 0;
+    (items || []).forEach((it) => {
+      const rec = (store && store[it.id]) || {};
+      (rec.events || []).forEach((e) => { if ((Number(e.at) || 0) > seen) n++; });
+    });
+    return n;
+  }
+  /* ---------- v174：画册聚合（三册）----------
+     ⛔ 这里只出 main / adv / fest 三册：双人册必须由 app.js 侧用 Rooms 合并
+        （js/spirits.js 在 index.html 里先于 js/rooms.js 加载，看不到 Rooms；
+         且项目约定「不把 Rooms 依赖写进 spirits.js」，见 v163 主线 room 门槛注释）。
+     统一行形状：{ key, url, title, caption, ownerId, ownerName, at, isCover }
+     ⛔ at 是「首次收集时间」used 排序；url 取 thumb（缩略图，画册宫格用）。 */
+  function albumOwnerName(it, rec) {
+    const r = rec || {}, o = it || {};
+    return String(r.name || (r.persona && r.persona.name) || o.name || "");
+  }
+  function albumRow(key, m, fallback) {
+    const x = m || {}, f = fallback || {};
+    return {
+      key: String(key),
+      url: String(x.thumb || x.imgUrl || ""),
+      title: String(x.title || x.name || f.title || ""),
+      caption: String(x.caption || x.text || f.text || ""),
+      at: Number(x.at) || 0,
+      stage: Number(f.stage) || 0,
+    };
+  }
+  function albumMain(rec) {            // 主线章节 CG
+    const out = [];
+    cgCollectedIds(rec).forEach((k) => { const m = cgMetaOf(rec, k); if (m && m.hasImg) out.push(albumRow(k, m)); });
     return out;
+  }
+  function albumAdv(rec) {             // 进阶专属 CG（V172-E：多张永久保留，⛔ 不覆盖）
+    const out = [];
+    cgAdvIds(rec).forEach((k) => { const m = cgMetaOf(rec, k); if (m && m.hasImg) out.push(albumRow(k, m)); });
+    return out;
+  }
+  function festCgsOf(rec) {            // v174 新增能力：节令限定 CG（此前画册里完全看不到）
+    const f = (rec && rec.fests && typeof rec.fests === "object") ? rec.fests : {};
+    return Object.keys(f)
+      .map((k) => f[k])
+      .filter((x) => x && x.cgUrl)                                    // ⛔ cgUrl 为空的不计入
+      // ⚠️ 节令记录存的是 cgUrl（不是 thumb/imgUrl）⇒ 这里显式映射，⛔ 不复用 albumRow
+      .map((x) => ({
+        key: String(x.date || x.key || ""),
+        url: String(x.cgUrl || ""),
+        title: String(x.name || ""),
+        caption: String(x.text || ""),
+        at: Number(x.at) || 0,
+        stage: 0,
+      }))
+      .sort((a, b) => b.at - a.at);
+  }
+  // 一次返回三册 + 各册计数（app.js 直接消费；双人册由 app 侧 merge 成四册）
+  function albumAll3(list, store) {
+    const main = [], adv = [], fest = [];
+    (list || []).forEach((it) => {
+      const rec = (store && store[it.id]) || {};
+      const nm = albumOwnerName(it, rec);
+      const cover = String(rec.cgUrl || "");                           // V173「设为展示」= rec.cgUrl（⛔ 不新建第二套字段）
+      const push = (arr, rows) => {
+        rows.forEach((r) => arr.push(Object.assign({}, r, {
+          ownerId: it.id, ownerName: nm, isCover: !!(cover && r.url && r.url === cover),
+        })));
+      };
+      push(main, albumMain(rec));
+      push(adv, albumAdv(rec));
+      push(fest, festCgsOf(rec));
+    });
+    const desc = (a, b) => (b.at || 0) - (a.at || 0);
+    main.sort(desc); adv.sort(desc); fest.sort(desc);
+    return {
+      main: main, adv: adv, fest: fest,
+      counts: { main: main.length, adv: adv.length, fest: fest.length,
+                all: main.length + adv.length + fest.length },
+    };
   }
 
   /* ---------- v163b：出图提炼器 / 自检器 / 确认卡 —— 见 docs/v163-出图提炼规范.md ---------- */
@@ -9003,6 +9150,11 @@ const CH09 = {
     EXPR_LIST, EXPR_BY_KEY, EXPR_SALT_BASE, exprForText,
     localPersona, persona, chat, letter, localChat, localLetter,
     todayKey, load, save, ensureIn, recordEvent, allEvents, drainEventPops, extractLookBrief, validateAnatomy, renderConfirmCard,
+    // v174-C1：事件分级 / chip 分组 / 分页未读（数据层单一真源，UI 只读）
+    EVENT_LEVEL, EVENT_LEVEL_FALLBACK, EVENT_CHIP, EVENT_CHIP_ORDER, eventLevelOf, eventChipOf,
+    EV_SEEN_KEY, evSeenAt, markEventsSeen, unreadEventCount,
+    // v174-C1：画册三册聚合（⛔ 双人册由 app.js 侧用 Rooms 合并，本文件看不到 Rooms）
+    albumMain, albumAdv, festCgsOf, albumAll3,
     // v164：出图单（用户确认卡 → look.brief → 真进 prompt）
     toBrief, mergeBrief, briefHard, applyBrief,
     // v110：性别在「挂瓷开沁」时定下来（男女 3:1），之后不可改
