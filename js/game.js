@@ -225,15 +225,19 @@
     BACKFILL: false,     // ⛔ 不补做
     DAILY_MAX_GIFT: 5,   // 每日礼物上限（=任务数；与送礼「全局 ≤2/日」分开计）
   };
-  // 5 条固定菩提根任务（大纲 §13.2 正式案 / 本设计 §3.2）。`key` = 达成信号。
-  //   ⚠️ `care`（照料三式）与 `look`（看纹）信号未接 → 按 §七-10 用最近既有信号顶替：
-  //      care → play、look → greet（⛔ 不改任务名）。均属菩提根，池内 0 处他类别词。
+  // 5 条固定菩提根任务（大纲 §13.2 正式案 / 本设计 §3.2）。
+  //   v175：每条都绑定 **一个真实存在的玩家行为** + **当天指定的一只沁灵**：
+  //     act  = 达成信号（app.js 在行为真实发生处调 Game.markDaily(act + ":" + 沁灵id)）
+  //     key  = 旧达成信号（只为向后兼容：老 ww_daily 里的裸键仍算达成，⛔ 别删）
+  //     go   = 跳转落点（spirit → #/spirit/<id>；night → #/night）
+  //     global = 非单只行为（夜话）：不按沁灵 id 绑定
+  //     desc 里的 {name} 由 buildDailyTasks 换成「当天那只」的名字。均属菩提根，池内 0 处他类别词。
   const DAILY_TEMPLATES = [
-    { id: "jingshou",  key: "greet", icon: "🫧", title: "净手", desc: "把手洗净了，再进这道门。",           cls: "ware",  gifts: ["ware_cup", "ware_ink"] },
-    { id: "peizuo",    key: "play",  icon: "🍵", title: "陪坐", desc: "坐下，什么都不用说。",               cls: "human", gifts: ["human_tea", "human_snack"], want: "care" },
-    { id: "kanwen",    key: "greet", icon: "🔎", title: "看纹", desc: "看看那只那道纹，今天走到哪儿了。", cls: "odd",   gifts: ["odd_glass", "odd_shell"], want: "look" },
-    { id: "shoudeng",  key: "night", icon: "🏮", title: "守灯", desc: "把这盏灯，守到有人回来。",           cls: "cloth", gifts: ["cloth_pa", "cloth_stone"] },
-    { id: "yingsheng", key: "reply", icon: "🔔", title: "应声", desc: "那头一喊，你就应一声。",             cls: "sound", gifts: ["sound_bell", "sound_drum"] },
+    { id: "jingshou",  key: "greet", act: "clean", icon: "🫧", title: "净手", desc: "去看看 {name}，顺手拾掇一下（详情页 · 照料「探看」）",                 cls: "ware",  gifts: ["ware_cup", "ware_ink"], go: "spirit" },
+    { id: "peizuo",    key: "play",  act: "play",  icon: "🍵", title: "陪坐", desc: "今天陪 {name} 坐一回（详情页 · 盘玩）",                              cls: "human", gifts: ["human_tea", "human_snack"], go: "spirit" },
+    { id: "kanwen",    key: "greet", act: "greet", icon: "🔎", title: "看纹", desc: "看看那只那道纹，今天走到哪儿了。今天去看 {name}（进详情页打个招呼）", cls: "odd",   gifts: ["odd_glass", "odd_shell"], go: "spirit" },
+    { id: "shoudeng",  key: "night", act: "night", icon: "🏮", title: "守灯", desc: "把这盏灯守到有人回来 —— 今晚去夜话，看看 {name} 那边有没有动静",      cls: "cloth", gifts: ["cloth_pa", "cloth_stone"], go: "night", global: true },
+    { id: "yingsheng", key: "reply", act: "reply", icon: "🔔", title: "应声", desc: "{name} 写了一句话 —— 回一声（详情页 · 日记回一句）",                  cls: "sound", gifts: ["sound_bell", "sound_drum"], go: "spirit" },
   ];
   function dailyDefaults() { return { day: "", acts: {}, claimed: {}, tasks: [], days: 0 }; }
   function normDailyObj(d) {
@@ -273,6 +277,55 @@
     return n.getFullYear() * 10000 + (n.getMonth() + 1) * 100 + n.getDate();
   }
   function strHash(str) { let h = 0; const x = String(str || ""); for (let i = 0; i < x.length; i++) h = (h * 31 + x.charCodeAt(i)) | 0; return h >>> 0; }
+
+  /* ---------- v175：目标沁灵 + 行为键（绑定真实动作 / 老数据向后兼容） ---------- */
+  // 在册沁灵候选池（与 app.js 沁灵列表同口径：未送出 + 已挂瓷 + 未设「只当手串」）
+  function spiritPool(items) {
+    let store = {};
+    try { if (typeof Spirits !== "undefined" && Spirits && Spirits.load) store = Spirits.load() || {}; } catch (e) { store = {}; }
+    const arr = (Array.isArray(items) && items.length) ? items : Object.keys(store).map((id) => ({ id: id }));
+    const out = [], seen = {};
+    arr.forEach((it) => {
+      if (!it || !it.id || seen[it.id]) return;
+      if (it.gifted) return;
+      if (it.playStatus && it.playStatus !== "done") return;
+      const rec = store[it.id] || {};
+      if (rec.spirit === false) return;                 // v166：设了「只当手串」的不进沁灵列表
+      seen[it.id] = 1;
+      out.push({ id: it.id, name: rec.name || (rec.persona && rec.persona.name) || it.name || "沁灵" });
+    });
+    return out;
+  }
+  // 当天每条任务的目标沁灵（日期种子 ⇒ 当天固定、跨设备一致）
+  function dailyTargets(items, dayKey) {
+    const pool = spiritPool(items);
+    const seed = (dailySeedNum(dayKey) ^ strHash("v175-daily")) >>> 0;
+    return DAILY_TEMPLATES.map((tpl) => {
+      if (!pool.length) return { id: "", name: "沁灵" };
+      return seededShuffle(pool, (seed ^ strHash(tpl.id)) >>> 0)[0];
+    });
+  }
+  function fillDailyName(tpl, name) { return String(tpl == null ? "" : tpl).replace(/\{name\}/g, String(name || "沁灵")); }
+  // 行为键：带 spiritId（如 "play:<id>"）；非单只行为或没有目标沁灵时退回裸键
+  function actKeyOf(tpl, spiritId) {
+    const act = String((tpl && (tpl.act || tpl.key)) || "");
+    if (tpl && tpl.global) return act;
+    const sid = String(spiritId || "");
+    return sid ? act + ":" + sid : act;
+  }
+  // 完成判定：先认带 id 的键，再认老裸键（老 ww_daily 数据不炸、也不误判为已做）
+  function actDoneOf(d, tpl, spiritId) {
+    const acts = (d && d.acts) || {};
+    const act = String((tpl && (tpl.act || tpl.key)) || "");
+    const legacy = String((tpl && tpl.key) || "");
+    if (act && acts[act]) return true;                  // 裸键（老数据 / 未带 id 的记账）
+    if (legacy && acts[legacy]) return true;            // 老 key 裸键（向后兼容）
+    const pre = act + ":";
+    if (tpl && tpl.global) return Object.keys(acts).some((x) => x.indexOf(pre) === 0);
+    const sid = String(spiritId || "");
+    if (sid) return !!acts[pre + sid];
+    return Object.keys(acts).some((x) => x.indexOf(pre) === 0);
+  }
   // 某任务当日发哪件礼物（2 候选取 1，日期种子决定 → 当天固定、跨设备一致）
   function rewardGiftOf(tpl, dayKey) {
     const arr = (tpl && tpl.gifts && tpl.gifts.length) ? tpl.gifts : [];
@@ -286,20 +339,27 @@
     catch (e) { return String(key || ""); }
   }
   // 当日 5 条任务（含 done；种子固定）—— 返回形状向后兼容 app.js（icon/title/desc/done/xp）
-  function buildDailyTasks() {
+  function buildDailyTasks(items) {
     const day = todayKey();
     const d = ensureDaily(loadDaily());
-    const tasks = DAILY_TEMPLATES.map((tpl) => {
+    const targets = dailyTargets(items, day);
+    const tasks = DAILY_TEMPLATES.map((tpl, i) => {
       const gk = rewardGiftOf(tpl, day);
+      const tg = targets[i] || { id: "", name: "沁灵" };
+      const done = actDoneOf(d, tpl, tg.id);
+      const isNight = String(tpl.go || "") === "night";
       return {
-        id: tpl.id, key: tpl.key, want: tpl.want || tpl.key, icon: tpl.icon,
-        title: tpl.title, desc: tpl.desc, target: 1,
-        done: !!d.acts[tpl.key], progress: d.acts[tpl.key] ? 1 : 0,
+        id: tpl.id, key: tpl.key, act: tpl.act || tpl.key, actKey: actKeyOf(tpl, tg.id),
+        want: tpl.want || tpl.key, icon: tpl.icon,
+        title: tpl.title, desc: fillDailyName(tpl.desc, tg.name), target: 1,
+        spiritId: tg.id, spiritName: tg.name,
+        go: isNight ? "#/night" : (tg.id ? "#/spirit/" + encodeURIComponent(tg.id) : ""),
+        done: done, progress: done ? 1 : 0,
         xp: DAILY_CFG.KEEP_XP ? DAILY_CFG.XP_PER : 0,
         giftKey: gk, giftName: giftNameSafe(gk), claimed: !!d.claimed[tpl.id],
       };
     });
-    d.tasks = tasks.map((t) => ({ id: t.id, key: t.key, giftKey: t.giftKey, done: t.done }));
+    d.tasks = tasks.map((t) => ({ id: t.id, key: t.key, actKey: t.actKey, spiritId: t.spiritId, giftKey: t.giftKey, done: t.done }));
     saveDaily(d);
     tasks.sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1));
     return tasks;
@@ -310,10 +370,10 @@
     const id = String(t.id || "");
     const tpl = DAILY_TEMPLATES.filter((x) => x.id === id)[0] || null;
     if (!id || !tpl) return { ok: false, reason: "no_task" };
-    const key = String(t.key || tpl.key);
     const day = todayKey();
     const d = ensureDaily(loadDaily());
-    if (!d.acts[key]) { saveDaily(d); return { ok: false, reason: "undone" }; }   // 未完成不可领
+    const actKey = String(t.actKey || actKeyOf(tpl, t.spiritId));
+    if (!actDoneOf(d, tpl, t.spiritId)) { saveDaily(d); return { ok: false, reason: "undone" }; }   // 未完成不可领
     if (d.claimed[id]) { saveDaily(d); return { ok: false, reason: "claimed" }; } // ⛔ 不可重复领
     const giftKey = String(t.giftKey || rewardGiftOf(tpl, day));
     const firstClaimToday = Object.keys(d.claimed).length === 0;
@@ -326,11 +386,11 @@
     if (firstClaimToday) d.days = Math.max(0, Math.floor(Number(d.days) || 0)) + 1; // 当日首次领奖记 1 天（⛔ 无惩罚）
     saveDaily(d);
     try { window.dispatchEvent(new CustomEvent("ww:daily-changed")); } catch (e) { /* 忽略 */ }
-    return { ok: true, reason: "ok", giftKey: giftKey, giftName: giftNameSafe(giftKey), rewardN: DAILY_CFG.REWARD_N };
+    return { ok: true, reason: "ok", actKey: actKey, giftKey: giftKey, giftName: giftNameSafe(giftKey), rewardN: DAILY_CFG.REWARD_N };
   }
 
   // 每日任务（对外入口，兼容旧签名；任务已固定为 5 条菩提根日常）
-  function dailyTasks(items) { return buildDailyTasks(); }
+  function dailyTasks(items) { return buildDailyTasks(items); }
 
   /* ---------- 隐藏任务：不买挑战 ---------- */
   function noBuyChallenge(items) {
@@ -459,5 +519,7 @@
 
   window.Game = { computeXp, getLevel, dailyTasks, noBuyChallenge, boxProgress, daysSinceLastBuy, drawRecommendation, isDrawable, playPlan, bestStreak, currentStreak, todayKey, normDays,
     // v165 每日任务改造（菩提根 5 条 + ww_daily 台账；领奖只发礼物）
-    DAILY_CFG, DAILY_TEMPLATES, loadDaily, saveDaily, markDaily, claimTask, rewardGiftOf, buildDailyTasks };
+    DAILY_CFG, DAILY_TEMPLATES, loadDaily, saveDaily, markDaily, claimTask, rewardGiftOf, buildDailyTasks,
+    // v175：目标沁灵绑定 + 行为键（app.js 用 spiritPool/dailyTargets/actKeyOf 可自测）
+    spiritPool, dailyTargets, actKeyOf, actDoneOf, fillDailyName };
 })();

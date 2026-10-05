@@ -636,14 +636,21 @@
       '<div style="display:flex;justify-content:space-between;font-size:11px;opacity:.8;margin-top:6px">' +
       "<span>" + level.xp + " XP</span><span>距下一称号还需 " + (level.nextMin - level.xp) + " XP</span></div></div>";
 
-    // 每日任务
+    // 每日任务（v175：每条绑定当天一只沁灵 + 一个真实动作；点进去做，做完回来领礼）
     html += '<div class="section-title">📋 今日任务 <small style="color:var(--text-2);font-weight:400">' + doneCount + "/" + tasks.length + " 完成</small></div>";
+    html += '<div style="font-size:11px;color:var(--text-2);margin:-2px 0 8px">任务跟着每天的相处走 —— 点一条进去做，做完回来领礼。</div>';
     html += paperCardHtml(paperListHtml(tasks.map((t) =>
-      '<div class="quest-item' + (t.done ? " done" : "") + '">' +
+      '<div class="quest-item' + (t.done ? " done" : "") + '"' + (t.go ? ' data-go="' + esc(t.go) + '" style="cursor:pointer"' : "") + '>' +
       '<span class="quest-icon">' + t.icon + "</span>" +
       '<div class="quest-body"><div class="quest-title">' + esc(t.title) + "</div>" +
-      '<div class="quest-desc">' + esc(t.desc) + "</div></div>" +
-      (t.done ? '<span class="quest-flag">✓ +' + t.xp + "XP</span>" : '<span class="quest-xp">+' + t.xp + "XP</span>") +
+      '<div class="quest-desc">' + esc(t.desc) + "</div>" +
+      (t.go ? '<div style="font-size:11px;color:var(--text-2);margin-top:2px">去这儿做 ›</div>' : "") +
+      "</div>" +
+      (t.done
+        ? (t.claimed
+          ? '<span class="quest-flag">已领 ✓ +' + t.xp + "XP</span>"
+          : '<button type="button" class="quest-claim" data-claim="' + esc(t.id) + '" style="font-size:11px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer">领礼</button>')
+        : '<span class="quest-xp">+' + t.xp + "XP</span>") +
       "</div>")), "tight");
 
     // 隐藏任务：不买挑战
@@ -671,6 +678,30 @@
     }
 
     view.innerHTML = html;
+
+    // v175：点任务卡 → 跳到该去做的地方（沁灵详情 / 夜话）
+    view.querySelectorAll(".quest-item[data-go]").forEach((el) => {
+      el.addEventListener("click", (ev) => {
+        if (ev.target && ev.target.closest && ev.target.closest(".quest-claim")) return;   // 领奖按钮不触发跳转
+        location.hash = el.dataset.go;
+      });
+    });
+    // v175：完成的任务 → 领奖（只走 Game.claimTask：发礼物到 ww_gifts，⛔ 不碰亲密度）
+    view.querySelectorAll(".quest-claim").forEach((b) => {
+      b.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const t = tasks.filter((x) => x.id === b.dataset.claim)[0];
+        if (!t) return;
+        const r = Game.claimTask(t);
+        if (!r || !r.ok) {
+          toast((r && r.reason === "claimed") ? "今天这份已经领过了。" : "还没做完 —— 做完了再来领。");
+          return;
+        }
+        toast("🎁 领到「" + (r.giftName || "一件东西") + "」，收进礼物库存了");
+        renderQuestPage();                    // 置灰 + 重排
+        try { window.dispatchEvent(new CustomEvent("ww:daily-changed")); } catch (e) { /* 忽略 */ }
+      });
+    });
   }
 
   /* ---------- 统计页 ---------- */
@@ -1581,6 +1612,8 @@
       }
       // 记录今天的打卡（用于连续打卡；失败不阻断主流程）
       await recordPlayDay();
+      // v175：今日任务「陪坐」—— 陪这只盘玩一回（记账失败不阻断主流程）
+      try { Game.markDaily("play:" + item.id); } catch (e) { /* 忽略 */ }
       return true;
     } catch (err) {
       item.lastPlayedAt = prevT; item.playStatus = prevSt; item.playCount = prevC; item.firstPlayedAt = prevF;
@@ -5161,6 +5194,8 @@
       return;
     }
     Spirits.save(store);
+    // v175：今日任务「净手」= 照料·探看（clean）；sit / thread 也各记各的键
+    try { Game.markDaily(kind + ":" + it.id); } catch (e) { /* 忽略 */ }
     const def = Spirits.careActOf(kind) || {};
     const acts = Spirits.CARE_ACTS || [];
     await showActModal("照料", def.line || "", "羁绊 <b>+" + r.delta + "</b> · 今天照料了 " + Spirits.careDoneOf(rec) + "/" + acts.length);
@@ -5492,6 +5527,8 @@
     if (Spirits.ensureEcho(it, rec, cpCtx)) cpDirty = true;
     if (Spirits.ensureFest(it, rec, cpCtx)) cpDirty = true;      // v158：节令（只有当天过节才写）
     if (cpDirty) Spirits.save(store);
+    // v175：今日任务「看纹」—— 进这只的详情页看了看（打个招呼）
+    try { Game.markDaily("greet:" + it.id); } catch (e) { /* 忽略 */ }
     const p = rec.persona || Spirits.localPersona(it);
     const lkNow = Spirits.lookOf(it, rec);   // v140：提前取到，合并到「人物设定」单卡
     const si = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
@@ -5997,7 +6034,7 @@
     const gb = $("#sdGoBead"); if (gb) gb.onclick = () => location.hash = "#/item/" + it.id;
     const ch = $("#sdChat"); if (ch) ch.onclick = () => showSpiritChatModal(it);
     const sl = $("#sdSpiritList"); if (sl) sl.onclick = () => location.hash = "#/spirit";
-    const sdn = $("#sdNight"); if (sdn) sdn.onclick = () => { _nightFrom = "#/spirit/" + encodeURIComponent(id); location.hash = "#/night"; };
+    const sdn = $("#sdNight"); if (sdn) sdn.onclick = () => { _nightFrom = "#/spirit/" + encodeURIComponent(id); try { Game.markDaily("night:" + id); } catch (e) { /* 忽略 */ } location.hash = "#/night"; };
     const rg = $("#sdRoomGo"); if (rg) rg.onclick = (e) => { e.stopPropagation(); _roomFrom = "#/spirit/" + encodeURIComponent(id); location.hash = "#/room/" + encodeURIComponent(room.id); };
     const rp = $("#sdRoomPick"); if (rp) rp.onclick = () => showSpiritRoomPicker(it);
     view.querySelectorAll("[data-mate]").forEach((el) => el.onclick = () => { location.hash = "#/spirit/" + encodeURIComponent(el.dataset.mate); });
@@ -6035,6 +6072,8 @@
       const r5 = Spirits.ensureIn(s5, it.id);
       Spirits.replyDiary(it, r5, (repBox && repBox.dataset.date) || Spirits.todayKey(), t);
       Spirits.save(s5);
+      // v175：今日任务「应声」—— 回了这只一句
+      try { Game.markDaily("reply:" + it.id); } catch (e) { /* 忽略 */ }
       toast(fillTa("💌 回了{ta}，{ta}下一篇日记会回应你", spiritName(it, store)));
       refresh();
     };
@@ -6716,6 +6755,8 @@
     topbarTitle.textContent = "夜话";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
+    // v175：今日任务「守灯」—— 进一次夜话
+    try { Game.markDaily("night"); } catch (e) { /* 忽略 */ }
     const S = nightNow();
     if (!S.threads.length) {
       view.innerHTML = emptyCardHtml({
