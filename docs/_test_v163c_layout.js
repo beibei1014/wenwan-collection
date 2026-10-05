@@ -101,6 +101,11 @@ function makeSandbox() {
     paperCardHtml: (h) => '<div class="paper">' + h + "</div>",
     emptyCardHtml: () => '<div class="empty"></div>',
     albumEntryHtml: () => '<button class="album-entry" id="albumEntry"></button>',
+    // v174-C2B：沁灵页新增的两个入口卡（真实源码由 runRenderer 一并抽出，见下）
+    //   这里只补它们依赖的两个内联 SVG 常量与 {ta} 解析器
+    HUB_TOWN_SVG: '<svg class="hub-svg"></svg>',
+    HUB_BOOK_SVG: '<svg class="main-svg"></svg>',
+    fillTa: (tpl, name) => String(tpl == null ? "" : tpl).replace(/\{ta\}/g, name || "那只"),
     bindSetupHint: noop, bindSpiritImgFallback: noop, bindRedrawAll: noop,
     ensureSpiritData: noop, ensureSpiritLook: () => Promise.resolve(), ensureSpiritImages: () => Promise.resolve(),
     ensureSpiritCg: () => Promise.resolve(), ensureSpiritFaces: noop, ensureSpiritExtras: noop,
@@ -171,7 +176,14 @@ function runRenderer(name) {
   const { sandbox, view } = makeSandbox();
   const other = name === "renderSpiritPage" ? "renderAllSpiritsPage" : "renderSpiritPage";
   const ctx = vm.createContext(sandbox);
-  const code = extractFn(name) + "\n" + extractFn(other) + "\n;__fn = " + name + ";";
+  // v174-C2B：renderSpiritPage 现在会调 hubCardHtml / mainStoryEntryHtml。
+  // ⛔ 不打桩 —— 把**真实源码**一并抽出来跑，门禁才测得到真货（打桩会掩盖真实标签问题）。
+  // ⚠️ 用 opt() 容错抽取：对「C2B 之前」的源码（负向对照基线）这两个函数不存在，
+  //    必须静默跳过而不是抛错崩掉 —— 否则负向对照会变成「崩溃」而不是「干净 FAIL」。
+  const opt = (n) => { try { return extractFn(n); } catch (e) { return ""; } };
+  const code = extractFn(name) + "\n" + extractFn(other) + "\n" +
+    opt("hubCardHtml") + "\n" + opt("mainStoryEntryHtml") + "\n" +
+    ";__fn = " + name + ";";
   vm.runInContext(code, ctx, { filename: "app.js#extracted" });
   sandbox.__fn();
   return view.innerHTML;

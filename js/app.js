@@ -3464,7 +3464,7 @@
       return d.length && (rec.diarySeenAt || 0) < d[d.length - 1].at;
     }).length;
     if (diaryToday) {
-      html += '<div class="diary-hint" id="diaryHint">📔 今天有 <b>' + diaryToday + '</b> 只沁灵写了日记 · 点{ta}的头像进去看</div>';
+      html += '<div class="diary-hint" id="diaryHint">📔 今天有 <b>' + diaryToday + '</b> 只沁灵写了日记 · 点他们的头像进去看</div>';
     }
     // v155：有新回响（纪念日信）—— 一年就那么几次，值得提醒一下
     // v163d：点名「是谁写的」—— 用户反馈只知道「今天有回响」却不知道是谁留的。
@@ -3484,7 +3484,7 @@
         const head = echoOwners.slice(0, 3).map((o) => esc(o.name)).join("、");
         echoWho = "<b>" + head + "</b>" + (echoOwners.length > 3 ? " 等 " + echoOwners.length + " 尊" : "") + " 给你留了";
       }
-      html += '<div class="diary-hint echo" id="echoHint">✦ ' + echoWho + " <b>" + echoN + "</b> 封回响信 · 点{ta}进去看</div>";
+      html += '<div class="diary-hint echo" id="echoHint">✦ ' + echoWho + " <b>" + echoN + "</b> 封回响信 · 点它进去看</div>";
     }
 
     html += '<div class="section-title">🍡 我的沁灵（' + list.length + '）' +
@@ -3517,10 +3517,10 @@
         "</div></div>";
     });
     html += "</div>";
-    html += '<div class="sp-2col">' +
-      '<button class="btn primary" id="spTownBtn">🏘 沁灵巷（房间·纪事·CG）</button>' +
-      '<button class="btn ghost" id="spEventsBtn">📜 事件回顾</button></div>';
-    html += '<button class="btn ghost" id="spMainBtn" style="width:100%;margin-top:10px">📜 沁灵纪（主线主串设置）</button>';
+    // v174-C2B：导航收敛 —— 三平铺按钮 → hub 卡（房间/纪事/画册的唯一正式入口）+ 沁灵纪卡
+    // ⚠️ typeof 守卫：render* 会被单测以「抽函数 + 沙箱」方式隔离运行（同下方 backfillSpiritCut）
+    if (typeof hubCardHtml === "function") html += hubCardHtml(list, store);
+    if (typeof mainStoryEntryHtml === "function") html += mainStoryEntryHtml();
     view.innerHTML = fillTa(html);
     bindSetupHint(setupHintHtml(list, store).first);
     bindSpiritImgFallback(view);
@@ -3530,13 +3530,18 @@
     view.querySelectorAll("[data-setup]").forEach((el) => el.onclick = (e) => {
       e.stopPropagation(); const it = list.filter((x) => x.id === el.dataset.setup)[0]; if (it) showSpiritSetupModal(it);
     });
-    const ae = $("#albumEntry"); if (ae) ae.onclick = () => location.hash = "#/album";
-    const twBtn = $("#spTownBtn");      // v157：沁灵巷
-    if (twBtn) twBtn.onclick = () => location.hash = "#/town";
-    const evBtn = $("#spEventsBtn");     // v163b：事件回顾
-    if (evBtn) evBtn.onclick = () => location.hash = "#/events";
-    const msBtn = $("#spMainBtn");       // v163：沁灵纪（主串集合制）
-    if (msBtn) msBtn.onclick = () => { location.hash = "#/mainstory"; };
+    // v174-C2B：hub 入口 —— 来源记忆「在点入口的那一下」写（⛔ 不在 router() 里按 hash 推断）
+    view.querySelectorAll("[data-goto]").forEach((el) => {
+      el.onclick = () => {
+        const to = el.dataset.goto || "#/town";
+        if (to === "#/album") _albumFrom = "#/spirit";
+        else if (to === "#/events") _eventsFrom = "#/spirit";
+        location.hash = to;
+      };
+    });
+    const ae = $("#albumEntry"); if (ae) ae.onclick = () => { _albumFrom = "#/spirit"; location.hash = "#/album"; };
+    const msBtn = $("#spMainEntry");      // v174-C2B：沁灵纪卡 → #/main（⛔ 原指陈旧的 #/mainstory）
+    if (msBtn) msBtn.onclick = () => { location.hash = "#/main"; };
     const dh = $("#diaryHint");
     if (dh) dh.onclick = () => location.hash = "#/spirits";
     const eh = $("#echoHint");
@@ -3812,80 +3817,163 @@
     return '<button class="album-entry" id="albumEntry" data-album="open">' +
       '<span class="album-entry-cover">' + cover + '<span class="album-entry-stack"></span></span>' +
       '<span class="album-entry-meta">' +
-        '<span class="album-entry-title">CG 相册</span>' +
+        '<span class="album-entry-title">画册</span>' +
         '<span class="album-entry-sub">已收集 <b>' + total + '</b>/' + denom +
         (list.length > 1 ? ' · 共 ' + list.length + ' 尊' : '') + '</span>' +
       '</span>' +
       '<span class="album-entry-go">›</span></button>';
   }
 
-  // 相册页：按沁灵分册，每只各算 N/8（不跨串求和）；格子按卷分组，未解锁防剧透
-  let _albumTab = "main";   // v166：CG 相册全局画廊当前 tab（main=主线 / adv=进阶）
-  function renderAlbumPage() {
-    topbarTitle.textContent = "CG 相册";
+  /* ============================================================
+   * v174-C2B：画册（四册）/ 沁灵页 hub 卡 —— 与 C3 的 css/skin.css 契约一一对应
+   *   ⛔ 只读页：isCover 只读 rec.cgUrl 的比对结果，不开写入口
+   *   ⛔ 四册 = main/adv/fest（走 C1 的 Spirits.albumAll3）+ duo（app 侧合并 Rooms）
+   * ============================================================ */
+  // 沁灵巷 hub 主行图标 + 沁灵纪图标（22×22 内联 SVG，⛔ 不用 emoji —— 规范 §5.3）
+  const HUB_TOWN_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 12 4l9 7"/><path d="M6 10v9h12v-9"/></svg>';
+  const HUB_BOOK_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h7v15H4z"/><path d="M13 5h7v15h-7z"/></svg>';
+  /* v174-C2B：沁灵页 hub 卡 —— 房间 / 纪事 / 画册的唯一正式入口（导航收敛，规范 §4.1/§4.2）
+     ⛔ 计数为 0 时 chip 仍渲染（显示 0），⛔ 不隐藏 */
+  function hubCardHtml(list, store) {
+    let roomsN = 0, eventsN = 0, albumN = 0;
+    try { if (typeof Rooms !== "undefined" && Rooms.listRooms) roomsN = (Rooms.listRooms() || []).length; } catch (e) { /* 房间未就绪 */ }
+    try { eventsN = (Spirits.allEvents(list, store) || []).length; } catch (e) { /* 事件未就绪 */ }
+    try { albumN = Spirits.albumAll3(list, store).counts.all + albumDuoRows(store).length; } catch (e) { /* 画册未就绪 */ }
+    return '<div class="hub-card">' +
+      '<div class="hub-main" data-goto="#/town">' +
+        '<span class="hub-ico">' + HUB_TOWN_SVG + '</span>' +
+        '<span class="hub-meta"><span class="hub-title">沁灵巷</span>' +
+        '<span class="hub-sub">一镇人的日子，都在这里</span></span>' +
+        '<span class="hub-go">›</span>' +
+      '</div>' +
+      '<div class="hub-chips">' +
+        '<button class="hub-chip" data-goto="#/town">小屋 <b>' + roomsN + '</b></button>' +
+        '<button class="hub-chip" data-goto="#/events">纪事 <b>' + eventsN + '</b></button>' +
+        '<button class="hub-chip" data-goto="#/album">画册 <b>' + albumN + '</b></button>' +
+      '</div>' +
+    '</div>';
+  }
+  /* v174-C2B：沁灵纪卡（复用 css/style.css 的 .main-entry*；图标内联 SVG，⛔ 不用 emoji）
+     🔴 入口指 #/main（原位 #spMainBtn 指陈旧的 #/mainstory，已撤入口） */
+  function mainStoryEntryHtml() {
+    return '<button class="main-entry" id="spMainEntry">' +
+      '<span class="main-entry-ico">' + HUB_BOOK_SVG + '</span>' +
+      '<span class="main-entry-body">' +
+        '<span class="main-entry-title">沁灵纪 · 主线</span>' +
+        '<span class="main-entry-sub">九章 · 走到哪儿算哪儿</span>' +
+      '</span>' +
+      '<span class="main-entry-arrow">›</span></button>';
+  }
+  /* v174-C2B：画册第四册「双人」—— 必须在 app 侧合并（spirits.js 先于 rooms.js 加载，看不到 Rooms） */
+  function albumDuoRows(store) {
+    const out = [];
+    if (typeof Rooms === "undefined" || !Rooms.listRooms || !Rooms.storiesOfRoom) return out;
+    try {
+      (Rooms.listRooms() || []).forEach((rm) => {
+        (Rooms.storiesOfRoom(rm.id) || []).forEach((s) => {
+          if (!(s.story && s.story.img)) return;                        // ⛔ 无图不入册
+          const nm = (s.pair || []).map((pid) => {
+            const it = (typeof spiritItemById === "function") ? spiritItemById(pid) : null;
+            return it ? nameOf(it, store) : pid;
+          }).join(" × ");
+          out.push({
+            key: String(s.key), url: String(s.story.img),
+            title: "房间故事 · 第 " + ((Number(s.story.level) || 0) + 1) + " 段",
+            caption: nm, at: Number(s.story.at) || 0,
+            ownerId: rm.id, ownerName: nm,
+            isCover: false,   // 双人 CG 不属任何 rec.cgUrl ⇒ 恒 false（team-lead 裁定，⛔ 不新增存储）
+          });
+        });
+      });
+    } catch (e) { /* Rooms 未就绪：双人册留空，⛔ 不抛 */ }
+    return out.sort((a, b) => (b.at || 0) - (a.at || 0));
+  }
+  // 四册顺序 = 规范 §3.3（主线 / 进阶 / 节令 / 双人）
+  const ALBUM_BOOKS = [
+    { key: "main", label: "主线" }, { key: "adv", label: "进阶" },
+    { key: "fest", label: "节令" }, { key: "duo", label: "双人" },
+  ];
+  function albumTabsHtml(counts, cur) {
+    return '<div class="evt-tabs album-tabs" role="tablist">' +
+      ALBUM_BOOKS.map((b) => '<button class="evt-tab' + (b.key === cur ? " is-on" : "") + '"' +
+        ' data-album-tab="' + b.key + '" role="tab" aria-selected="' + (b.key === cur ? "true" : "false") + '">' +
+        esc(b.label) + " (" + (counts[b.key] || 0) + ")</button>").join("") +
+      "</div>";
+  }
+  function albumCellHtml(row) {
+    const url = String((row && row.url) || "");
+    return '<button class="album-cell' + (row.isCover ? " is-cover" : "") + '"' +
+      ' data-cg="' + esc(url) + '" data-owner="' + esc(row.ownerId || "") + '" title="' + esc(row.caption || "") + '">' +
+      (url ? '<img class="album-cell-img" src="' + esc(url) + '" alt="">' : '<span class="album-cell-need">已收集</span>') +
+      '<span class="album-cell-tag">' + esc(row.title || row.key || "") + "</span>" +
+      '<span class="album-cell-owner">' + esc(row.ownerName || "") + "</span>" +
+      (row.isCover ? '<span class="album-cell-cover">正在展示</span>' : "") +
+      "</button>";
+  }
+  function albumFailHtml() {
+    return '<div class="album-fail"><div class="album-fail-title">这册子没翻开。</div>' +
+      '<div class="album-fail-sub">点一下，再看看。</div>' +
+      '<button class="btn ghost" id="albumRetry">再看看</button></div>';
+  }
+
+  // 画册页 #/album：四册（主线 / 进阶 / 节令 / 双人）；3 列（≥480px 4 列）；每次 +18 格
+  let _albumTab = "main";   // v174-C2B：会话内 sticky；⛔ 已删「主线空就自动跳 adv」
+  let _albumPage = 0;       // 分段游标（每次 +18 格）
+  function renderAlbumPage(keepPage) {
+    if (!keepPage) _albumPage = 0;
+    topbarTitle.textContent = "画册";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
-    const store = Spirits.load();
-    const list = spiritItems();
-    // v166：全局画廊 —— 跨所有沁灵聚合 CG，顶部「主线 / 进阶」两个 tab 切换（不再按人头分组）
-    const mainCgs = [], advCgs = [];
-    let _migrated = false;
-    list.forEach((it) => {
-      const rec = Spirits.ensureIn(store, it.id, it);
-      // v166：把 V166 之前生成的进阶 CG（只存了 rec.cgUrl、没归档进 rec.cgs）补写进相册集合，
-      //   否则相册（全局画廊）永远聚不到那只串的 CG —— 用户「明明有 CG 却啥都不显示」的根因。
-      if (Spirits.backfillAdvCg(rec)) _migrated = true;
-      const name = spiritName(it, store);
-      Spirits.cgCollectedIds(rec).forEach((k) => {
-        const m = Spirits.cgMetaOf(rec, k);
-        if (m && m.hasImg) mainCgs.push({ ownerId: it.id, ownerName: name, id: k, meta: m });
+    try {
+      const store = Spirits.load();
+      const list = spiritItems();
+      let _migrated = false;
+      list.forEach((it) => {
+        const rec = Spirits.ensureIn(store, it.id, it);
+        // v166 迁移：把只存了 rec.cgUrl 的老进阶 CG 补写进 rec.cgs（否则画册聚不到）
+        if (Spirits.backfillAdvCg(rec)) _migrated = true;
       });
-      Spirits.cgAdvIds(rec).forEach((k) => {
-        const m = Spirits.cgMetaOf(rec, k);
-        if (m && m.hasImg) advCgs.push({ ownerId: it.id, ownerName: name, id: k, meta: m });
-      });
-    });
-    if (_migrated) { try { Spirits.save(store); } catch (e) { /* 忽略：回填失败不影响本次展示 */ } }
-    const byAt = (a, b) => (Number(a.meta.at) || 0) - (Number(b.meta.at) || 0);
-    mainCgs.sort(byAt); advCgs.sort(byAt);
-    // v166：默认选「主线」；但若主线为空、进阶有图，自动跳到「进阶」tab（避免用户以为没图）
-    if (!_albumTab || (_albumTab === "main" && !mainCgs.length && advCgs.length)) _albumTab = (!mainCgs.length && advCgs.length) ? "adv" : "main";
-    const cur = _albumTab === "adv" ? advCgs : mainCgs;
-
-    if (!mainCgs.length && !advCgs.length) {
-      view.innerHTML = emptyCardHtml({ ill: "spirit", icon: "🖼", title: "还没有 CG", sub: "沁灵走到关键处、或蜕形 / 化形时，会留下 CG" });
+      if (_migrated) { try { Spirits.save(store); } catch (e) { /* 回填失败不影响展示 */ } }
+      const three = Spirits.albumAll3(list, store);        // C1 数据层：main / adv / fest
+      const duo = albumDuoRows(store);                     // 第四册（app 侧）
+      const books = { main: three.main, adv: three.adv, fest: three.fest, duo: duo };
+      const counts = { main: three.counts.main, adv: three.counts.adv, fest: three.counts.fest, duo: duo.length };
+      counts.all = counts.main + counts.adv + counts.fest + counts.duo;
+      // ?tab= 优先 > 会话内 sticky > main（⛔ 不因主线空就自动跳 —— team-lead 裁定）
+      const qt = (location.hash.split("?")[1] || "").match(/tab=([^&]+)/);
+      if (qt) _albumTab = decodeURIComponent(qt[1]);
+      if (!_albumTab || !books[_albumTab]) _albumTab = "main";
+      const cur = books[_albumTab] || [];
+      if (!counts.all) {                                   // 整册空（规范 §3.6；无后台味文案）
+        view.innerHTML = emptyCardHtml({ ill: "spirit", icon: "🖼", title: "画册还空着。",
+          sub: "沁灵走到关键处、或是蜕形 / 化形的那天，会在这儿留下一张。" });
+        bindSpiritImgFallback(view);
+        return;
+      }
+      const shown = Math.min(cur.length, (_albumPage + 1) * 18);
+      let h = '<div class="album-head"><div class="album-head-n"><b>' + counts[_albumTab] + '</b><span> 张</span></div>' +
+        '<div class="album-head-meta"><div class="album-head-title">画册</div>' +
+        '<div class="album-head-sub">它们留下的样子</div></div></div>';
+      h += albumTabsHtml(counts, _albumTab);               // 四册 chip（复用 C3 的 .evt-tabs / .evt-tab）
+      if (!cur.length) {
+        h += '<div class="album-empty">这一册还空着 —— 换一册看看。</div>';
+      } else {
+        h += '<div class="album-grid">' + cur.slice(0, shown).map(albumCellHtml).join("") + '</div>';
+        if (shown < cur.length) h += '<button class="btn ghost album-more" id="albumMore">再看下一批</button>';
+      }
+      view.innerHTML = h;
       bindSpiritImgFallback(view);
-      return;
-    }
-    let h = '<div class="album-head"><div class="album-head-n"><b>' + mainCgs.length + '</b><span> 张主线</span></div>' +
-      '<div class="album-head-meta"><div class="album-head-title">CG 相册</div>' +
-      '<div class="album-head-sub">每张沁灵最多 ' + Spirits.CG_TOTAL + ' 张主线 CG · 另有进阶专属 CG</div></div></div>';
-    // tab 切换
-    h += '<div style="display:flex;gap:8px;margin:12px 0">' +
-      '<button data-tab="main" style="flex:1;padding:10px 8px;border-radius:10px;border:1px solid var(--line,#e3d9c4);background:' + (_albumTab === "main" ? "var(--gold,#c9a24b)" : "transparent") + ';color:' + (_albumTab === "main" ? "#fff" : "var(--text,#3b3128)") + ';font-weight:600;font-size:14px">📜 主线 (' + mainCgs.length + ')</button>' +
-      '<button data-tab="adv" style="flex:1;padding:10px 8px;border-radius:10px;border:1px solid var(--line,#e3d9c4);background:' + (_albumTab === "adv" ? "var(--gold,#c9a24b)" : "transparent") + ';color:' + (_albumTab === "adv" ? "#fff" : "var(--text,#3b3128)") + ';font-weight:600;font-size:14px">✨ 进阶 (' + advCgs.length + ')</button>' +
-      '</div>';
-    if (!cur.length) {
-      h += '<div class="album-empty" style="padding:28px 12px;text-align:center;color:var(--text-2,#8a7f6d)">' +
-        (_albumTab === "adv" ? "还没有进阶专属 CG（蜕形 / 化形时生成）" : "主线 CG 还没收集，先去走剧情吧") + '</div>';
-    } else {
-      h += '<div class="album-grid album-grid-wide">';
-      cur.forEach((c) => {
-        const m = c.meta;
-        h += '<button class="album-cell" data-cg="' + esc(m.thumb || "") + '" title="' + esc((m && m.caption) || "") + '" style="position:relative">' +
-          (m.thumb ? '<img class="album-cell-img" src="' + esc(m.thumb) + '" alt="">' : '<span class="album-cell-need">已收集</span>') +
-          '<span class="album-cell-tag">' + esc(m.title || c.id) + '</span>' +
-          '<span class="album-cell-owner" style="position:absolute;left:6px;bottom:6px;right:6px;font-size:10px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6);text-align:left;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">' + esc(c.ownerName) + '</span></button>';
+      view.querySelectorAll(".evt-tab[data-album-tab]").forEach((el) => el.onclick = () => {
+        _albumTab = el.dataset.albumTab; renderAlbumPage();
       });
-      h += '</div>';
+      const mo = $("#albumMore"); if (mo) mo.onclick = () => { _albumPage += 1; renderAlbumPage(true); };
+      view.querySelectorAll(".album-cell[data-cg]").forEach((el) => el.onclick = () => openSpiritViewer(el.dataset.cg || ""));
+    } catch (e) {                                          // 出错（规范 §3.6）
+      view.innerHTML = albumFailHtml();
+      const r = $("#albumRetry"); if (r) r.onclick = () => renderAlbumPage();
     }
-    h += '<button class="btn ghost" id="albumBack" style="width:100%;margin-top:14px">← 回到沁灵页</button>';
-    view.innerHTML = h;
-    bindSpiritImgFallback(view);
-    view.querySelectorAll(".album-tab").forEach((el) => el.onclick = () => { _albumTab = el.dataset.tab; renderAlbumPage(); });
-    const bk = $("#albumBack"); if (bk) bk.onclick = () => location.hash = "#/spirit";
-    view.querySelectorAll(".album-cell[data-cg]").forEach((el) => el.onclick = () => openSpiritViewer(el.dataset.cg || ""));
   }
+
 
   /* ---------- v174-C2A：纪事页 #/events（按日分组 / 五类筛选 / 30 条分页 / 未读）----------
      ⛔ 分组与查询一律走数据层单一真源（Spirits.EVENT_CHIP_ORDER / allEvents opts）
@@ -3894,6 +3982,11 @@
   let _evtPageShown = 0;        // 当前列表已展示条数（翻页游标）
   let _evtSeen0 = 0;            // 进页时的「上次看到」（未读判定基准，本页内冻结）
   let _evtSeenBottom = false;   // 滚到底是否已写过 seen
+  // v174-C2B：本次进页是不是「带 owner= 的筛选视图」。
+  //   Spirits.markEventsSeen(at) 是**全局单一时间戳**（无 per-owner 维度），
+  //   在只看某一尊的筛选流里写它，会把**别的沁灵**的未读一起清 0 ⇒ 对玩家撒谎。
+  //   ⇒ 带 owner= 时一次都不写（进页 / 触底 / 空页 三处统一受此开关约束）。
+  let _evtOwnerFiltered = false;
   function renderEventsPage() {
     topbarTitle.textContent = "纪事";
     btnBack.style.visibility = "visible";
@@ -3901,6 +3994,7 @@
     _evtSeenBottom = false;
     const qs = (location.hash.split("?")[1] || "");
     const owner = decodeURIComponent((qs.match(/owner=([^&]+)/) || [])[1] || "");
+    _evtOwnerFiltered = !!owner;
     let chip = (qs.match(/type=([^&]+)/) || [])[1] || "";
     if (Spirits.EVENT_CHIP_ORDER.indexOf(chip) < 0) chip = "all";
     _evtPageChip = chip;
@@ -3921,7 +4015,7 @@
 
     if (!allCount) {                                    // 整页空（§2.4）
       view.innerHTML = evtEmptyHtml();
-      try { Spirits.markEventsSeen(Date.now()); } catch (e2) { /* 忽略 */ }
+      if (!_evtOwnerFiltered) { try { Spirits.markEventsSeen(Date.now()); } catch (e2) { /* 忽略 */ } }
       return;
     }
     let h = evtHeadHtml(page.total, owner);
@@ -3934,7 +4028,8 @@
     evtBindRows();
     evtBindMore(list, store, owner);
     const al = $("#evAll"); if (al) al.onclick = () => { location.hash = "#/events"; };
-    try { Spirits.markEventsSeen(Date.now()); } catch (e3) { /* 忽略 */ }   // 进页写一次未读
+    // 进页写一次未读（仅全量视图；⛔ 筛选视图不写 —— 见 _evtOwnerFiltered 注释）
+    if (!_evtOwnerFiltered) { try { Spirits.markEventsSeen(Date.now()); } catch (e3) { /* 忽略 */ } }
   }
   function evtBindFail() { const b = $("#evtRetry"); if (b) b.onclick = () => renderEventsPage(); }
   function evtBindChips(list, store, owner) {
@@ -4060,6 +4155,7 @@
   // 滚到底写一次未读（§2.2）
   function evtOnScroll() {
     if ((location.hash || "").indexOf("#/events") !== 0 || _evtSeenBottom) return;
+    if (_evtOwnerFiltered) return;        // v174-C2B：筛选视图不写全局未读（见 renderEventsPage 注释）
     const doc = document.documentElement || {};
     if ((doc.scrollHeight || 0) - ((window.scrollY || 0) + (window.innerHeight || 0)) < 120) {
       _evtSeenBottom = true;
@@ -5709,7 +5805,7 @@
     const bk = $("#sdBreak"); if (bk) bk.onclick = () => spiritBreak(it, host);
     const nl = $("#sdNewLook"); if (nl) nl.onclick = () => spiritNewLook(it, host);
     const rr = $("#sdReRoll"); if (rr) rr.onclick = () => spiritReRoll(it, host);
-    const ev = $("#sdEvents"); if (ev) ev.onclick = () => { location.hash = "#/events?owner=" + encodeURIComponent(id); };
+    const ev = $("#sdEvents"); if (ev) ev.onclick = () => { _eventsFrom = "#/spirit/" + encodeURIComponent(id); location.hash = "#/events?owner=" + encodeURIComponent(id); };
     const ro = $("#sdRecoverOld"); if (ro) ro.onclick = async () => {
       const yes = await confirmModal("恢复到 v164c 之前的旧立绘？", "用旧版出图设定重铺这只沁灵的立绘（仅当它还在缓存里才回得来）。当前立绘不会被删，只是换成旧版。", "恢复旧立绘", true);
       if (!yes) return;
@@ -5902,7 +5998,7 @@
     const ch = $("#sdChat"); if (ch) ch.onclick = () => showSpiritChatModal(it);
     const sl = $("#sdSpiritList"); if (sl) sl.onclick = () => location.hash = "#/spirit";
     const sdn = $("#sdNight"); if (sdn) sdn.onclick = () => { _nightFrom = "#/spirit/" + encodeURIComponent(id); location.hash = "#/night"; };
-    const rg = $("#sdRoomGo"); if (rg) rg.onclick = (e) => { e.stopPropagation(); location.hash = "#/room/" + encodeURIComponent(room.id); };
+    const rg = $("#sdRoomGo"); if (rg) rg.onclick = (e) => { e.stopPropagation(); _roomFrom = "#/spirit/" + encodeURIComponent(id); location.hash = "#/room/" + encodeURIComponent(room.id); };
     const rp = $("#sdRoomPick"); if (rp) rp.onclick = () => showSpiritRoomPicker(it);
     view.querySelectorAll("[data-mate]").forEach((el) => el.onclick = () => { location.hash = "#/spirit/" + encodeURIComponent(el.dataset.mate); });
     // ✏️ 改名（只能改一次）
@@ -6518,7 +6614,8 @@
       return (r.cgs && typeof r.cgs === "object") ? Object.keys(r.cgs).some((k) => r.cgs[k] && r.cgs[k].hasImg) : false;
     });
     if (albumSpirits.length) {
-      h += '<div class="sd-card"><div class="sd-card-title">🎬 全主串 CG 墙</div>';
+      h += '<div class="sd-card"><div class="sd-card-title">🎬 全主串 CG 墙' +
+        '<button type="button" class="link-btn" id="townAlbum" style="float:right;font-size:11px">看全部 ›</button></div>';
       albumSpirits.forEach((it) => {
         const r = store[it.id] || {};
         const ids = Spirits.cgCollectedIds(r);
@@ -6538,11 +6635,13 @@
     const b1 = $("#townBack");
     if (b1) b1.onclick = () => location.hash = "#/spirit";
     view.querySelectorAll("[data-room]").forEach((c) => c.addEventListener("click", () => {
+      _roomFrom = "#/town";                       // v174-C2B：来源记忆
       location.hash = "#/room/" + encodeURIComponent(c.dataset.room);
     }));
     // v165：建房入口（复用房间设置弹窗，isNew 分支建完自动跳进新房间 #/room/<id>）
     const tr = $("#townNewRoom"); if (tr) tr.onclick = () => showRoomEditModal(null);
-    const te = $("#townEvents"); if (te) te.onclick = () => location.hash = "#/events";
+    const te = $("#townEvents"); if (te) te.onclick = () => { _eventsFrom = "#/town"; location.hash = "#/events"; };
+    const taa = $("#townAlbum"); if (taa) taa.onclick = () => { _albumFrom = "#/town"; location.hash = "#/album"; };
     view.querySelectorAll(".cg-wall-thumb[data-cg]").forEach((el) => el.onclick = () => openSpiritViewer(el.dataset.cg || ""));
   }
 
@@ -6551,6 +6650,10 @@
      进度存在「第一位成员」（开沁最早的那只）的记录里 —— 跟着跨手机同步走。
      与「房间剧情（同屋两只小故事）」「主线·串与我（单串 8 章）」互不影响。 */
   let _nightFrom = "#/spirit";
+  /* v174-C2B：来源记忆三件（与 _nightFrom 同款）—— 只在「点入口的那一下」写，⛔ 不在 router() 里按 hash 推断 */
+  let _albumFrom = "#/spirit";
+  let _eventsFrom = "#/spirit";
+  let _roomFrom = "#/town";
   /* ---------- v162：夜话 2.0 —— 多会话（全家 / 房间 / 双人组）+ 事件触发 ---------- */
   function nightGroups() {
     try {
@@ -10519,7 +10622,7 @@
     else if (h.startsWith("#/spirit/")) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));   // 每只沁灵的独立页面
     else if (h.startsWith("#/room/")) renderRoomPage(decodeURIComponent(h.slice(7)));             // 小房间
     else if (h === "#/town") renderTownPage();                                                    // v157：沁灵巷
-    else if (h === "#/album") renderAlbumPage();                                                  // v163b：CG 相册
+    else if (h.indexOf("#/album") === 0) renderAlbumPage();                                                  // v174-C2B：画册（支持 ?tab=）
     else if (h.indexOf("#/events") === 0) renderEventsPage();                                     // v163b：事件回顾（支持 ?owner=）
     else if (h === "#/night") renderNightPage();                                                 // v162：夜话（会话列表）
 else if (h.indexOf("#/night/") === 0) {                                                        // v162：#/night/<会话> 或 #/night/<会话>/<事件>
@@ -10636,6 +10739,14 @@ else if (h.indexOf("#/night/") === 0) {                                         
       return;
     }
     if (h === "#/night") { location.hash = _nightFrom || "#/spirit"; return; } // 夜话列表 → 进来的那一页
+    if (h.indexOf("#/album") === 0) { location.hash = _albumFrom || "#/spirit"; return; }   // v174-C2B：画册 → 来源页
+    if (h.indexOf("#/events") === 0) {                                                      // v174-C2B：纪事 → 来源页（?owner= 回那尊）
+      const oq = (h.split("?")[1] || "").match(/owner=([^&]+)/);
+      location.hash = oq ? ("#/spirit/" + oq[1]) : (_eventsFrom || "#/spirit");
+      return;
+    }
+    if (h.indexOf("#/room/") === 0) { location.hash = _roomFrom || "#/town"; return; }       // v174-C2B：房间 → 来源页
+    if (h === "#/town") { location.hash = "#/spirit"; return; }                              // v174-C2B：沁灵巷 → 沁灵页
     if (h.indexOf("#/talk/") === 0) {                                          // v165-N3：旧 8 章入口已取消 → 回到这一串
       location.hash = "#/spirit/" + h.slice(7).split("/")[0];
       return;
