@@ -60,6 +60,21 @@ function extractConst(src, name) {
   return src.slice(m.index, j) + ";";
 }
 
+// 字符串拼接型 const（如 CG_BRIEF_SYS）—— extractConst 只认 { / [ 字面量，认不了
+function extractConstStr(src, name) {
+  const lines = src.split("\n");
+  const re = new RegExp("const\\s+" + name + "\\s*=");
+  let s = -1;
+  for (let i = 0; i < lines.length; i++) { if (re.test(lines[i])) { s = i; break; } }
+  if (s < 0) return "";
+  const out = [];
+  for (let i = s; i < lines.length; i++) {
+    out.push(lines[i]);
+    if (/;\s*$/.test(lines[i])) break;          // 到「行尾 ;」即声明结束（串内无 ASCII 分号）
+  }
+  return out.join("\n");
+}
+
 /* ---------- 把「真数据」取出来 ---------- */
 // diaryLocal 的池：eval 出来才是真字符串（含 colorName 拼接结果）
 function realPool(src) {
@@ -134,9 +149,42 @@ function run(src) {
   B.push(["B16 · ⛔ 未动 hashStr / ww_spirits / spirit_store",
     src.indexOf("function hashStr") >= 0 && src.indexOf("ww_spirits") >= 0]);
 
+  /* ===== C 组：续批 6 处 AI 文案入口（世界观口径 + 去物化 + 性别纪律）=====
+     ⚠️ 按「区域」断言（不是全文件扫）—— STYLE_PRESETS 里的「日漫风 · 小生物」
+        是用户可选**美术风格**，不是世界观表述，⛔ 不该被这条断言误伤。 */
+  const C = [];
+  const REG = {
+    "1 persona": extractFn(src, "persona"),
+    "2 chat（群戏）": extractFn(src, "chat"),
+    "3 letter": extractFn(src, "letter"),
+    "4 personaZh": extractFn(src, "personaZh"),
+    "5 roomStory（群戏）": extractFn(src, "roomStory"),
+    "6 CG_BRIEF_SYS": extractConstStr(src, "CG_BRIEF_SYS"),
+  };
+  Object.keys(REG).forEach((k) => {
+    const r = REG[k] || "";
+    C.push(["C · " + k + "：⛔ 无旧世界观「盘到挂瓷」", !!r && r.indexOf("盘到挂瓷") < 0]);
+    C.push(["C · " + k + "：⛔ 无旧表述「小生物」", !!r && r.indexOf("小生物") < 0]);
+    C.push(["C · " + k + "：⛔ 无旧表述「化成的小人」", !!r && r.indexOf("化成的小人") < 0]);
+    C.push(["C · " + k + "：写明新世界观（有灵性/修行 + 一家人 + 陪伴）",
+      !!r && /有灵性|修行/.test(r) && /一家人/.test(r) && /陪伴/.test(r)]);
+    C.push(["C · " + k + "：有禁物件视角硬约束",
+      !!r && /严禁物件视角/.test(r) && /被盘|被捏|被摸|装睡|把玩/.test(r)]);
+    C.push(["C · " + k + "：禁「它」指沁灵", !!r && /禁用「它」|禁「它」/.test(r)]);
+  });
+  // 性别纪律：单只能拿 ap 的必须注入；群戏/拿不到的至少「不许混用他/她」
+  C.push(["C · personaZh 已注入 spiritGenderLine(ap)",
+    (REG["4 personaZh"] || "").indexOf("spiritGenderLine(ap)") >= 0]);
+  C.push(["C · chat（群戏）有「不许混用他/她」", (REG["2 chat（群戏）"] || "").indexOf("不许混用他/她") >= 0]);
+  C.push(["C · roomStory（群戏）有「不许混用他/她」", (REG["5 roomStory（群戏）"] || "").indexOf("不许混用他/她") >= 0]);
+  C.push(["C · letter 有「不许混用他/她」", (REG["3 letter"] || "").indexOf("不许混用他/她") >= 0]);
+  C.push(["C · diaryWrite 已注入 spiritGenderLine(ap)", !!dw && dw.indexOf("spiritGenderLine(ap)") >= 0]);
+
   return {
-    A, B,
-    aFail: A.filter((x) => !x[1]).length, bFail: B.filter((x) => !x[1]).length,
+    A, B, C,
+    aFail: A.filter((x) => !x[1]).length,
+    bFail: B.filter((x) => !x[1]).length,
+    cFail: C.filter((x) => !x[1]).length,
   };
 }
 
@@ -163,25 +211,28 @@ console.log("A 组（本次缺陷，共 " + cur.A.length + "）：失败 " + cur
 cur.A.forEach((x) => { if (!x[1]) console.log("  ✗ " + x[0]); });
 console.log("B 组（回归护栏，共 " + cur.B.length + "）：失败 " + cur.bFail);
 cur.B.forEach((x) => { if (!x[1]) console.log("  ✗ " + x[0]); });
+console.log("C 组（续批 6 处 AI 文案入口，共 " + cur.C.length + "）：失败 " + cur.cFail);
+cur.C.forEach((x) => { if (!x[1]) console.log("  ✗ " + x[0]); });
 
 console.log("\n=== 2. 负向对照（铆定 commit 90bccf2 · ⛔ 不用 HEAD）===");
 const OLD = baselineSrc();
 if (OLD) {
   const o = run(OLD);
   console.log("基线 A 组：失败 " + o.aFail + " / " + o.A.length +
-    (o.aFail >= 6 ? "  ⇒ 负向对照成立 ✅（新断言确实抓得住旧缺陷）" : "  ⚠ 基线失败条数偏少（" + o.aFail + "）"));
-  o.A.forEach((x) => { if (!x[1]) console.log("    · 基线 FAIL：" + x[0]); });
+    (o.aFail >= 6 ? "  ⇒ 负向对照成立 ✅" : "  ⚠ 基线失败条数偏少（" + o.aFail + "）"));
   console.log("基线 B 组：失败 " + o.bFail + " / " + o.B.length + "（应接近 0 —— 护栏测的是结构，改前也该成立）");
   o.B.forEach((x) => { if (!x[1]) console.log("    · 基线也 FAIL：" + x[0]); });
+  console.log("基线 C 组：失败 " + o.cFail + " / " + o.C.length +
+    (o.cFail >= 20 ? "  ⇒ 负向对照成立 ✅（续批 6 处确为新增改动）" : "  ⚠ 基线失败条数偏少（" + o.cFail + "）"));
 } else {
   console.log("  （取不到 90bccf2 基线 → 负向对照优雅跳过）");
 }
 
-const fails = cur.aFail + cur.bFail;
+const fails = cur.aFail + cur.bFail + cur.cFail;
 console.log("\n----------------------------------------");
-console.log("V175 批次1：通过 " + (cur.A.length + cur.B.length - fails) + " 项，失败 " + fails + " 项");
+console.log("V175 批次1：通过 " + (cur.A.length + cur.B.length + cur.C.length - fails) + " 项，失败 " + fails + " 项");
 if (fails) {
   console.log("失败清单：");
-  cur.A.concat(cur.B).forEach((x) => { if (!x[1]) console.log("  - " + x[0]); });
+  cur.A.concat(cur.B).concat(cur.C).forEach((x) => { if (!x[1]) console.log("  - " + x[0]); });
 }
 process.exit(fails ? 1 : 0);
