@@ -3576,6 +3576,223 @@
     return Math.max(TALK_MIN_MS, Math.min(TALK_MAX_MS, TALK_MIN_MS + len * TALK_PER_CHAR_MS));
   }
 
+  /* ============================================================
+   * v174-C2A：事件卡队列（纯状态机）—— 见 docs/v174-事件卡片与回顾页-界面规范.md §1.5
+   *   为什么抽成纯函数：app.js 是 DOM 密集文件，把队列算法与 DOM 分开，才能真跑自测。
+   *   state = { cur: 当前在播的卡 | null, queue: [待播卡…] }（queue[0] = 下一张）
+   *   级别判定权在数据层（recordEvent 写 p.level）；⛔ UI 只读，⛔ 不按 type 猜。
+   * ============================================================ */
+  // >>> v174 evtqueue pure-core begin
+  const EVT_QUEUE_MAX = 3;                                    // 待播队列上限（§1.5）
+  const EVT_L1_MERGE = 3;                                     // 同 tick ≥3 条同级 l1 ⇒ 合并一张汇总卡
+  const EVT_DWELL = { l1: 2600, l2: EVENT_TOAST_MS, l3: 0 };  // 停留 ms（0 = 不自动收，§1.1）
+  const EVT_SUM_TITLE = "今天又添了几件小事";                   // 汇总卡标题（≤16 ✅）
+  const EVT_LEVELS = { l1: "is-l1", l2: "is-l2", l3: "is-l3" };
+  function evtLevelOf(p) { const l = p && p.level; return EVT_LEVELS[l] ? l : "l1"; }
+  function evtNorm(p) {
+    return { id: (p && p.id) || "", type: (p && p.type) || "", at: Number((p && p.at) || 0),
+      level: evtLevelOf(p), title: (p && p.title) || "", summary: (p && p.summary) || "",
+      icon: (p && p.icon) || "", iconKey: (p && p.iconKey) || "",
+      go: (p && p.go) || null, ownerId: (p && p.ownerId) || "", ownerName: (p && p.ownerName) || "",
+      sum: false, count: 0 };
+  }
+  // 汇总卡：把一批事件并成一张 l1 卡（⛔ 无按钮；count = 并入条数，可嵌套累加）
+  function evtSummaryCard(list) {
+    let n = 0, at = 0;
+    (list || []).forEach((p) => { n += (p && p.sum ? (p.count || 0) : 1); if (p && Number(p.at) > at) at = Number(p.at); });
+    return { id: "__evt_sum__", type: "sum", at: at, level: "l1", title: EVT_SUM_TITLE,
+      summary: "还有 " + n + " 件 · 回头在纪事墙上看。", icon: "", iconKey: "", go: null,
+      ownerId: "", ownerName: "", sum: true, count: n };
+  }
+  // 播放顺序：① l3 插队队首 ② 同级按 at 升序（先发生的先播）
+  function evtOrder(a, b) {
+    const ra = (evtLevelOf(a) === "l3") ? 0 : 1, rb = (evtLevelOf(b) === "l3") ? 0 : 1;
+    if (ra !== rb) return ra - rb;
+    return (Number(a && a.at) || 0) - (Number(b && b.at) || 0);
+  }
+  // 入队：drain 到的一批 pops → 并入队列（返回新 state）。
+  //   · 脏数据（无 title）静默丢弃（⛔ 不抛错、不弹提示）
+  //   · 同 tick ≥ EVT_L1_MERGE 条同级 l1 ⇒ 合并成一张汇总卡
+  //   · 队列超上限 ⇒ 溢出部分并入一张汇总卡（⛔ 事件不丢：rec.events 里仍在，纪事页看得到）
+  function evtEnqueue(state, pops) {
+    const st = { cur: (state && state.cur) || null, queue: ((state && state.queue) || []).slice() };
+    const l1 = [], rest = [];
+    (pops || []).forEach((p) => {
+      if (!p || p.title == null || String(p.title) === "") return;   // 脏数据 ⇒ 丢
+      const q = evtNorm(p);
+      if (q.level === "l1") l1.push(q); else rest.push(q);
+    });
+    if (l1.length >= EVT_L1_MERGE) st.queue.push(evtSummaryCard(l1));  // ≥3 条 l1 合并
+    else rest.push.apply(rest, l1);                                    // <3 条按原样
+    rest.forEach((q) => st.queue.push(q));
+    st.queue.sort(evtOrder);
+    if (st.queue.length > EVT_QUEUE_MAX) {                             // 上限：溢出并入汇总卡
+      const keep = st.queue.slice(0, EVT_QUEUE_MAX - 1);
+      keep.push(evtSummaryCard(st.queue.slice(EVT_QUEUE_MAX - 1)));
+      st.queue = keep;
+    }
+    return st;
+  }
+  // 取下一张：① 正在播 ⇒ 不打断 ② 队列空 ⇒ 不出现（cur 保持 null）
+  function evtPump(state) {
+    const st = { cur: (state && state.cur) || null, queue: ((state && state.queue) || []).slice() };
+    if (st.cur || !st.queue.length) return st;
+    st.cur = st.queue.shift();
+    return st;
+  }
+  // evtNext 的纯核心：返回「本次是否该挂一张新卡」——正在播 / 空队列 ⇒ card=null（⛔ 不重复挂）
+  //   （这条不变式很关键：router() 每次切页都会调 flushEventPops，若这里不看 cur 就会把当前卡重复挂一遍）
+  function evtAdvance(state) {
+    const before = (state && state.cur) || null;
+    const st = evtPump(state);
+    return { state: st, card: (st.cur && !before) ? st.cur : null };
+  }
+  // <<< v174 evtqueue pure-core end
+
+  /* ============================================================
+   * v174-C2A：事件卡 / 纪事页的 HTML 构建（纯字符串，便于标签平衡自测）
+   *   图标：内联 SVG（照 index.html #tabSpirit 的 stroke 风格）；无素材 ⇒ 封泥字形占位
+   *   ⛔ 一律不往 DOM 里塞 emoji（用户铁律）；⛔ 级别/分组不在这里硬编码
+   * ============================================================ */
+  // >>> v174 evtview begin
+  const EVT_PAGE = 30;                                        // 纪事页每段 30 条（§2.3）
+  const EVT_CHIP_LABEL = { all: "全部", story: "主线", bond: "亲缘", fest: "年节", night: "夜话" };
+  const CN_NUM = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+  function cnNum(n) {
+    n = Math.floor(Number(n) || 0);
+    if (n <= 10) return CN_NUM[n] || "";
+    if (n < 20) return "十" + (CN_NUM[n - 10] || "");
+    const t = Math.floor(n / 10), o = n % 10;
+    return (CN_NUM[t] || "") + "十" + (o ? (CN_NUM[o] || "") : "");
+  }
+  function cnDay(n) { n = Math.floor(Number(n) || 0); return n <= 10 ? "初" + (CN_NUM[n] || "") : cnNum(n); }
+  function cnMonthDay(d) { return cnNum(d.getMonth() + 1) + "月" + cnDay(d.getDate()); }
+  function evtDayLabel(at) {
+    const ts = Number(at) || 0;
+    if (Spirits.todayKey(ts) === Spirits.todayKey()) return "今天";
+    if (Spirits.todayKey(ts) === Spirits.todayKey(Date.now() - 86400000)) return "昨天";
+    return cnMonthDay(new Date(ts));
+  }
+  function evtTimeLabel(at) {
+    const ts = Number(at) || 0, d = new Date(ts);
+    const hm = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    if (Spirits.todayKey(ts) === Spirits.todayKey()) return "今天 · " + hm;
+    if (Spirits.todayKey(ts) === Spirits.todayKey(Date.now() - 86400000)) return "昨天 · " + hm;
+    return cnMonthDay(d);
+  }
+  // 内联 SVG（24×24 stroke；渲染 18/22 由 CSS 定）—— 键 = ev.iconKey
+  const EVT_ICO_SVG = {
+    chapter: '<path d="M5.6 4.8h5.1c1.2 0 2.1.9 2.1 2.1v12.3H7.7c-1.2 0-2.1-.9-2.1-2.1z"/><path d="M18.4 4.8h-5.1c-1.2 0-2.1.9-2.1 2.1v12.3h5.1c1.2 0 2.1-.9 2.1-2.1z"/>',
+    night: '<path d="M20 14.3A8.3 8.3 0 0 1 9.7 4 8.4 8.4 0 1 0 20 14.3z"/>',
+    fest: '<path d="M12 3.4c2.9 0 5 2.4 5 5.9s-2.1 6.3-5 6.3-5-2.8-5-6.3 2.1-5.9 5-5.9z"/><path d="M12 15.6v2.2"/><path d="M10 20.4h4"/>',
+    bond: '<path d="M12 20s-7-4.4-7-9.3A4.2 4.2 0 0 1 12 7.4a4.2 4.2 0 0 1 7 3.3C19 15.6 12 20 12 20z"/>',
+    gift: '<rect x="4.6" y="9.7" width="14.8" height="9.7" rx="1.6"/><path d="M3.6 6.4h16.8v3.3H3.6z"/><path d="M12 6.4v13"/>',
+    quest: '<path d="M6.4 4.6h9.2L18.6 8v11.4H6.4z"/><path d="M15.6 4.6V8h2.9"/>',
+    diary: '<path d="M6.4 4.6h11.2a1.4 1.4 0 0 1 1.4 1.4v12.6a1.4 1.4 0 0 1-1.4 1.4H6.4z"/><path d="M9.4 9h5.2M9.4 12.4h5.2"/>',
+    milestone: '<path d="M12 3.4l1.8 4.9 4.9 1.8-4.9 1.8L12 16.8l-1.8-4.9L5.3 10.1l4.9-1.8z"/><path d="M18.2 16.4l.6 1.7 1.7.6-1.7.6-.6 1.7-.6-1.7-1.7-.6 1.7-.6z"/>',
+  };
+  // 占位字形（无 SVG 素材）：用事件 type 的「封泥字」——⛔ 不用 emoji
+  const EVT_GLYPH = { milestone: "纪", fest: "节", chapter: "章", night: "夜", bond: "缘", gift: "递", quest: "课", diary: "记", sum: "事" };
+  function evtGlyphOf(type) {
+    const t = String(type || "");
+    if (EVT_GLYPH[t]) return EVT_GLYPH[t];
+    return t ? Array.from(t)[0] : "";
+  }
+  function evtIconInner(p) {
+    const key = String((p && p.iconKey) || "");
+    const svg = EVT_ICO_SVG[key];
+    if (svg) return '<svg class="evt-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + svg + "</svg>";
+    const t = String((p && p.type) || "");
+    const cls = "evt-ph" + (/^[a-z0-9_-]+$/i.test(t) ? " ph-evt-" + t : "");
+    return '<span class="' + cls + '" aria-hidden="true">' + esc(evtGlyphOf(t)) + "</span>";
+  }
+  // 事件卡（§1.2 六层结构）：图标 + 标题 + 一句话 + 时间 + 来源 + 按钮
+  //   ⚠️ 扁平直挂 .evt-card 下（CSS 用 grid 定位各层，⛔ 不再套 .evt-body/.evt-foot 包裹层）
+  function evtCardHtml(p) {
+    const lv = evtLevelOf(p);
+    const isSum = !!(p && p.sum);
+    let btn = "";
+    if (lv === "l3") btn = '<button type="button" class="evt-go" data-evt-ok>记下了</button>';
+    else if (lv === "l2" && !isSum) {
+      const gl = (p && p.go && p.go.label) ? String(p.go.label) : "去看看 ›";
+      const gh = (p && p.go && p.go.hash) ? String(p.go.hash) : "";
+      btn = '<button type="button" class="evt-go" data-evt-go data-evt-hash="' + esc(gh) + '">' + esc(gl) + "</button>";
+    }
+    const who = (p && p.ownerName) ? '<span class="evt-who">来自〈' + esc(p.ownerName) + "〉</span>" : "";
+    return '<div class="evt-card ' + EVT_LEVELS[lv] + (isSum ? " is-sum" : "") + '" data-evt-card>' +
+      '<div class="evt-ico">' + evtIconInner(p) + "</div>" +
+      '<div class="evt-title">' + esc((p && p.title) || "") + "</div>" +
+      ((p && p.summary) ? '<div class="evt-sum">' + esc(p.summary) + "</div>" : "") +
+      '<span class="evt-time">' + esc(evtTimeLabel(p && p.at)) + "</span>" +
+      who + btn +
+      "</div>";
+  }
+  function evtRowMeta(e) {
+    return evtTimeLabel(e && e.at) + ((e && e.ownerName) ? " · 来自〈" + e.ownerName + "〉" : "");
+  }
+  // 纪事行（§2.1）：未读 = is-new（左沿金条 + 标题深字；「新」微标由 CSS .evt-row.is-new::after 画，⛔ 不在 DOM 重复）
+  function evtRowHtml(e, seenAt) {
+    const isNew = (Number(e && e.at) || 0) > (Number(seenAt) || 0);
+    const dest = (e && e.go && e.go.hash) ? String(e.go.hash)
+      : (e && e.ownerId) ? ("#/spirit/" + encodeURIComponent(e.ownerId)) : "";
+    return '<button type="button" class="evt-row' + (isNew ? " is-new" : "") + '"' +
+      ' data-ev="' + esc((e && e.id) || "") + '"' + (dest ? ' data-ev-dest="' + esc(dest) + '"' : "") + ">" +
+      '<span class="evt-row-ico">' + evtIconInner(e) + "</span>" +
+      '<span class="evt-row-body">' +
+        '<span class="evt-row-title">' + esc((e && e.title) || "") + "</span>" +
+        ((e && e.summary) ? '<span class="evt-row-sum">' + esc(e.summary) + "</span>" : "") +
+        '<span class="evt-row-who">' + esc(evtRowMeta(e)) + "</span>" +
+      "</span>" +
+      (dest ? '<span class="evt-row-go">›</span>' : "") +
+      "</button>";
+  }
+  function evtGroupByDay(rows) {
+    const out = [];
+    (rows || []).forEach((e) => {
+      const k = Spirits.todayKey(Number(e && e.at) || 0);
+      const last = out[out.length - 1];
+      if (last && last.key === k) last.items.push(e);
+      else out.push({ key: k, at: (e && e.at) || 0, items: [e] });
+    });
+    return out;
+  }
+  function evtDaysHtml(rows, seenAt) {
+    return evtGroupByDay(rows).map((g) =>
+      '<div class="evt-day">' +
+        '<div class="evt-day-head"><span>' + esc(evtDayLabel(g.at)) + "</span><small>" + g.items.length + " 笔</small></div>" +
+        '<div class="evt-list">' + g.items.map((e) => evtRowHtml(e, seenAt)).join("") + "</div>" +
+      "</div>").join("");
+  }
+  function evtHeadHtml(n, owner) {
+    return '<div class="evt-head">' +
+      '<div class="evt-head-n"><b id="evtCount">' + (Number(n) || 0) + "</b><span> 笔</span></div>" +
+      '<div class="evt-head-meta"><div class="evt-head-title">纪事</div>' +
+      '<div class="evt-head-sub">这一门人走过的日子</div></div>' +
+      (owner ? '<button type="button" class="link-btn evt-all" id="evAll">看全部</button>' : "") +
+      "</div>";
+  }
+  function evtTabsHtml(cur) {
+    const order = (Spirits && Spirits.EVENT_CHIP_ORDER) || ["all", "story", "bond", "fest", "night"];
+    return '<div class="evt-tabs" role="tablist">' + order.map((k) =>
+      '<button type="button" class="evt-tab' + (k === cur ? " is-on" : "") + '" data-type="' + esc(k) + '"' +
+      ' role="tab" aria-selected="' + (k === cur ? "true" : "false") + '">' + esc(EVT_CHIP_LABEL[k] || k) + "</button>").join("") + "</div>";
+  }
+  function evtMoreHtml(total, shown) {
+    if ((Number(shown) || 0) < (Number(total) || 0)) return '<button type="button" class="btn ghost evt-more" id="evtMore">再往上翻</button>';
+    return '<div class="evt-end">到这儿就是最早的一笔了。</div>';
+  }
+  function evtBlankHtml() { return '<div class="evt-blank">这一档还空着 —— 换个档看看。</div>'; }
+  function evtEmptyHtml() {
+    return emptyCardHtml({ ill: "spirit", title: "日子还浅，墙上还是一片干净。",
+      sub: "盘一串、过个节、夜里聊几句，都会在这面墙上留下痕迹。" });
+  }
+  function evtFailHtml() {
+    return '<div class="evt-fail"><div class="evt-fail-title">这一页没翻过去。</div>' +
+      '<div class="evt-fail-sub">点一下，再翻一次。</div>' +
+      '<button type="button" class="btn ghost" id="evtRetry">再翻一次</button></div>';
+  }
+  // <<< v174 evtview end
+
   // 全沁灵「已收集」合计（分母 = CG_TOTAL × 居民数，不硬编码 8）
   function albumEntryHtml(list, store) {
     let total = 0, recentAt = 0, recentThumb = "";
@@ -3670,56 +3887,186 @@
     view.querySelectorAll(".album-cell[data-cg]").forEach((el) => el.onclick = () => openSpiritViewer(el.dataset.cg || ""));
   }
 
-  // 事件回顾页：O(n) 只读聚合；支持 ?owner= 过滤（详情页「它的纪事」入口）
+  /* ---------- v174-C2A：纪事页 #/events（按日分组 / 五类筛选 / 30 条分页 / 未读）----------
+     ⛔ 分组与查询一律走数据层单一真源（Spirits.EVENT_CHIP_ORDER / allEvents opts）
+     ⛔ allEvents 是同步聚合 ⇒ 没有网络等待 ⇒ 不给骨架屏 / loading（规范 §2.4） */
+  let _evtPageChip = "all";     // 当前筛选 chip
+  let _evtPageShown = 0;        // 当前列表已展示条数（翻页游标）
+  let _evtSeen0 = 0;            // 进页时的「上次看到」（未读判定基准，本页内冻结）
+  let _evtSeenBottom = false;   // 滚到底是否已写过 seen
   function renderEventsPage() {
-    topbarTitle.textContent = "事件回顾";
+    topbarTitle.textContent = "纪事";
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
-    const list = spiritItems();
-    const store = Spirits.load();
+    _evtSeenBottom = false;
     const qs = (location.hash.split("?")[1] || "");
     const owner = decodeURIComponent((qs.match(/owner=([^&]+)/) || [])[1] || "");
-    let evs = Spirits.allEvents(list, store);
-    if (owner) evs = evs.filter((e) => e.ownerId === owner);
-    let h = '<div class="section-title">📜 事件回顾' +
-      (owner ? '<button type="button" class="link-btn" id="evAll" style="float:right;font-size:11px">看全部</button>' : '') + '</div>';
-    if (!evs.length) {
-      h += emptyCardHtml({ ill: "spirit", icon: "📜", title: "还没发生过事件", sub: "盘串、过节、夜话……都会留下痕迹" });
-    } else {
-      h += '<div class="memo-line">';
-      evs.forEach((e) => {
-        h += '<div class="memo-row"><div class="memo-dot">' + (e.icon || "•") + '</div>' +
-          '<div class="memo-body"><div class="memo-title">' + esc(e.title || "") + '</div>' +
-          (e.summary ? '<div class="memo-text">' + esc(e.summary) + '</div>' : '') +
-          '<div class="memo-sub">' + esc(Spirits.todayKey(Number(e.at))) +
-          (e.ownerName ? ' · 来自〈' + esc(e.ownerName) + '〉' : '') + '</div></div></div>';
-      });
-      h += '</div>';
+    let chip = (qs.match(/type=([^&]+)/) || [])[1] || "";
+    if (Spirits.EVENT_CHIP_ORDER.indexOf(chip) < 0) chip = "all";
+    _evtPageChip = chip;
+
+    let list = [], store = null;
+    try {
+      store = Spirits.load();
+      list = spiritItems();
+      if (owner) list = list.filter((it) => it.id === owner);
+    } catch (e) { view.innerHTML = evtFailHtml(); evtBindFail(); return; }
+
+    _evtSeen0 = Spirits.evSeenAt();
+    let allCount = 0, page = [];
+    try {
+      allCount = Spirits.allEvents(list, store, { type: "all", limit: 0 }).total;
+      page = Spirits.allEvents(list, store, { type: chip, offset: 0, limit: EVT_PAGE });
+    } catch (e) { view.innerHTML = evtFailHtml(); evtBindFail(); return; }
+
+    if (!allCount) {                                    // 整页空（§2.4）
+      view.innerHTML = evtEmptyHtml();
+      try { Spirits.markEventsSeen(Date.now()); } catch (e2) { /* 忽略 */ }
+      return;
     }
-    h += '<button class="btn ghost" id="evBack" style="width:100%;margin-top:14px">← 回到沁灵页</button>';
+    let h = evtHeadHtml(page.total, owner);
+    h += evtTabsHtml(chip);
+    h += '<div id="evtList">' + (page.length ? evtDaysHtml(page, _evtSeen0) : evtBlankHtml()) + "</div>";
+    h += '<div id="evtMoreWrap">' + evtMoreHtml(page.total, page.length) + "</div>";
     view.innerHTML = h;
-    bindSpiritImgFallback(view);
-    const bk = $("#evBack"); if (bk) bk.onclick = () => location.hash = "#/spirit";
-    const al = $("#evAll"); if (al) al.onclick = () => location.hash = "#/events";
+    _evtPageShown = page.length;
+    evtBindChips(list, store, owner);
+    evtBindRows();
+    evtBindMore(list, store, owner);
+    const al = $("#evAll"); if (al) al.onclick = () => { location.hash = "#/events"; };
+    try { Spirits.markEventsSeen(Date.now()); } catch (e3) { /* 忽略 */ }   // 进页写一次未读
+  }
+  function evtBindFail() { const b = $("#evtRetry"); if (b) b.onclick = () => renderEventsPage(); }
+  function evtBindChips(list, store, owner) {
+    view.querySelectorAll(".evt-tab").forEach((el) => {
+      el.onclick = () => evtSwitchChip(list, store, owner, el.getAttribute("data-type") || "all");
+    });
+  }
+  // 换筛选：重置 offset=0 + 保持滚动位置不回顶（§2.3）
+  function evtSwitchChip(list, store, owner, chip) {
+    if (Spirits.EVENT_CHIP_ORDER.indexOf(chip) < 0) chip = "all";
+    _evtPageChip = chip;
+    const y = window.scrollY || 0;
+    view.querySelectorAll(".evt-tab").forEach((el) => {
+      const on = (el.getAttribute("data-type") || "all") === chip;
+      el.classList.toggle("is-on", on);
+      el.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    let page = [];
+    try { page = Spirits.allEvents(list, store, { type: chip, offset: 0, limit: EVT_PAGE }); }
+    catch (e) { page = []; page.total = 0; }
+    const cnt = $("#evtCount"); if (cnt) cnt.textContent = String(page.total);
+    const lw = $("#evtList"); if (lw) lw.innerHTML = page.length ? evtDaysHtml(page, _evtSeen0) : evtBlankHtml();
+    _evtPageShown = page.length;
+    const mw = $("#evtMoreWrap"); if (mw) mw.innerHTML = evtMoreHtml(page.total, page.length);
+    window.scrollTo(0, y);
+    evtBindRows();
+    evtBindMore(list, store, owner);
+  }
+  function evtBindRows() {
+    view.querySelectorAll(".evt-row").forEach((el) => {
+      el.onclick = () => { const d = el.getAttribute("data-ev-dest") || ""; if (d) location.hash = d; };
+    });
+  }
+  // 「再往上翻」：每次 +EVT_PAGE，重绘整段列表（分组不会在翻页边界被切成两半）
+  function evtBindMore(list, store, owner) {
+    const btn = $("#evtMore");
+    if (!btn) return;
+    btn.onclick = () => {
+      _evtPageShown += EVT_PAGE;
+      let page = [];
+      try { page = Spirits.allEvents(list, store, { type: _evtPageChip, offset: 0, limit: _evtPageShown }); }
+      catch (e) { page = []; page.total = _evtPageShown; }
+      _evtPageShown = page.length;
+      const lw = $("#evtList"); if (lw) lw.innerHTML = evtDaysHtml(page, _evtSeen0);
+      const mw = $("#evtMoreWrap"); if (mw) mw.innerHTML = evtMoreHtml(page.total, page.length);
+      evtBindRows();
+      evtBindMore(list, store, owner);
+    };
   }
 
-  // v163b：事件瞬时卡（.evt-pop）的 drain + 渲染（非阻塞，约 6s 后淡出，点任意处提前关闭）
+  /* ============================================================
+   * v174-C2A：事件卡单张队列（§1）—— drain → 入队 → 逐张消费
+   *   ⛔ 同一时刻只挂 1 张 DOM（旧版一次性 append 全部 ⇒ 叠卡 bug）
+   *   ⛔ 弹层直挂 <body>（不塞进 .view，否则被裁剪 / 层级错乱，规范 §4.4）
+   *   ⛔ UI 只读 p.level / p.go / p.iconKey（数据层给的），⛔ 不按 type 猜级别
+   * ============================================================ */
+  let _evtState = { cur: null, queue: [] };   // 待播状态机（见上方纯函数）
+  let _evtCurEl = null;                        // 当前挂在 body 上的卡根节点
+  let _evtTimer = null;                        // 当前卡的自动收定时器
+  let _evtHiding = false;                      // 出场过渡中（防重入 / 防抢跑）
+  let _evtEscOn = false;                       // Esc 监听是否已挂（只挂一次）
   function flushEventPops() {
     try {
       const pops = Spirits.drainEventPops();
-      pops.forEach((p) => {
-        const el = document.createElement("div");
-        el.className = "evt-pop";
-        el.innerHTML = '<div class="evt-pop-ico">' + (p.icon || "✦") + '</div>' +
-          '<div class="evt-pop-body"><div class="evt-pop-title">' + esc(p.title || "") + '</div>' +
-          (p.summary ? '<div class="evt-pop-sum">' + esc(p.summary) + '</div>' : '') + '</div>';
-        document.body.appendChild(el);
-        const close = () => { if (el.classList.contains("leaving")) return; el.classList.add("leaving"); setTimeout(() => { try { el.remove(); } catch (e) {} }, 260); };
-        setTimeout(close, EVENT_TOAST_MS);
-        el.onclick = close;
-      });
-    } catch (e) { /* 忽略 */ }
+      if (pops && pops.length) _evtState = evtEnqueue(_evtState, pops);   // 入队（⛔ 不出队）
+      evtNext();                                                          // 空档才推进
+    } catch (e) { /* 忽略：事件卡永不因异常卡住 */ }
   }
+  function evtNext() {
+    const r = evtAdvance(_evtState);             // 正在播 ⇒ card=null（⛔ 不打断、也⛔ 不重复挂）
+    _evtState = r.state;
+    if (r.card) evtRenderCurrent(r.card);
+  }
+  function evtRenderCurrent(p) {
+    const lv = evtLevelOf(p);
+    let host;
+    if (lv === "l3") {                           // l3：全屏遮罩里居中一张（⛔ 点遮罩不关）
+      host = document.createElement("div");
+      host.className = "evt-card-mask";
+      host.innerHTML = evtCardHtml(p);
+    } else {                                     // l1/l2：卡片本身直接挂 body（无多余包裹层）
+      const tmp = document.createElement("div");
+      tmp.innerHTML = evtCardHtml(p);
+      host = tmp.firstElementChild || tmp.firstChild || tmp;
+    }
+    document.body.appendChild(host);             // ⛔ 直挂 <body>
+    _evtCurEl = host;
+    const card = host.querySelector("[data-evt-card]") || host;
+    card.onclick = (ev) => {
+      const t = (ev && ev.target) || {};
+      const tgt = (t.closest && (t.closest("[data-evt-go]") || t.closest("[data-evt-ok]"))) || null;
+      if (tgt) {
+        const gh = (tgt.getAttribute && tgt.getAttribute("data-evt-hash")) || "";
+        evtHideCurrent();
+        if (gh) location.hash = gh;
+        return;
+      }
+      if (lv !== "l3") evtHideCurrent();         // l1/l2 点卡片收；⛔ l3 必须点「记下了」
+    };                                            // ⛔ l3 点遮罩不关（遮罩自身无 handler）
+    evtInstallEsc();
+    if (_evtTimer) { clearTimeout(_evtTimer); _evtTimer = null; }
+    const dwell = EVT_DWELL[lv] || 0;
+    if (dwell > 0) _evtTimer = setTimeout(evtHideCurrent, dwell);   // l3=0 ⇒ 不自动收
+  }
+  function evtHideCurrent() {
+    if (_evtHiding) return;
+    _evtHiding = true;
+    const el = _evtCurEl;
+    _evtCurEl = null;
+    if (_evtTimer) { clearTimeout(_evtTimer); _evtTimer = null; }
+    const done = () => { _evtHiding = false; _evtState = { cur: null, queue: _evtState.queue }; evtNext(); };
+    if (!el) { done(); return; }
+    el.classList.add("leaving");
+    setTimeout(() => { try { el.remove(); } catch (e) { /* 忽略 */ } done(); }, 440);   // 出场 240 + 接棒停顿 200（§6）
+  }
+  function evtInstallEsc() {
+    if (_evtEscOn) return;
+    _evtEscOn = true;
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && _evtState && _evtState.cur) evtHideCurrent();
+    });
+  }
+  // 滚到底写一次未读（§2.2）
+  function evtOnScroll() {
+    if ((location.hash || "").indexOf("#/events") !== 0 || _evtSeenBottom) return;
+    const doc = document.documentElement || {};
+    if ((doc.scrollHeight || 0) - ((window.scrollY || 0) + (window.innerHeight || 0)) < 120) {
+      _evtSeenBottom = true;
+      try { Spirits.markEventsSeen(Date.now()); } catch (e) { /* 忽略 */ }
+    }
+  }
+  window.addEventListener("scroll", evtOnScroll, { passive: true });
 
   /* ============================================================
    * v164：可编辑面板基础设施
