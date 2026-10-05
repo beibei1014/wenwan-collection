@@ -503,7 +503,7 @@
     //   （旧逻辑每次 load 都把它拉回可达阶 ⇒ 用户的手动确认会被静默覆盖。）
     //   可达阶请用 stageOf(item, rec) 现算；⛔ 老存档的 rec.stage 不清除、不强行对齐（以用户点过为准）。
     // v163b：开沁里程碑事件（瞬时卡 + 回顾）
-    recordEvent(rec, { type: "milestone", title: "挂瓷开沁", summary: "它第一次睁开眼，认得你了", linked: [item.id], at: Date.now(), icon: "✨" });
+    recordEvent(rec, { type: "milestone", title: "挂瓷开沁", summary: "第一次睁开眼，认得你了。", linked: [item.id], at: Date.now(), icon: "✨" });
     save(store);
     gender = rec.gender;
     return { isNew: isNew, gender: gender, bornAt: rec.bornAt };
@@ -1510,7 +1510,7 @@
       row("颜色", "colorsText", colorText, "例：衣·柿红(#e0513a)；发·柿红") +
       row("特征", "featsText", featText, "例：明媚笑容、猫耳") +
       row("场景", "sceneZh", d.sceneZh || "素净背景，柔光", "例：素净背景，柔光") +
-      (ed ? row("补充", "extraZh", d.extraZh || "", "还想让它怎样？这里写的会原样进提示词", true) : "") +
+      (ed ? row("补充", "extraZh", d.extraZh || "", "还想让 ta 怎样？这里写的会原样进提示词", true) : "") +
       '<div class="cf-sep">── 以下两行只读，不可改 ──</div>' +
       '<div class="cf-row ro"><span class="cf-k">风格</span><span class="cf-v">中式古风（已锁定）</span></div>' +
       '<div class="cf-row ro"><span class="cf-k">一致</span><span class="cf-v">与旧像同人同色（已锁定）</span></div>' +
@@ -2223,21 +2223,21 @@
   }
   // 没有 AI key 时的本地"设定小作文"（照样显示在详情页）
   function profileLocal(item, lk, persona) {
-    const nm = (persona && persona.name) || (item && item.name) || "它";
+    const nm = (persona && persona.name) || (item && item.name) || "那只";
     const beadZh = (lk && lk.bead && lk.bead.zh) || COLOR_ZH[(item && item.color) || ""] || "温润";
-    const hairTxt = { bead: "跟本体珠子是一个色", auto: "是它自己长出来的颜色", pick: "是主人替它挑的", custom: "是主人给它定的" }[(lk && lk.hairSrc) || "bead"] || "";
+    const hairTxt = { bead: "跟本体珠子是一个色", auto: "是 ta 自己长出来的颜色", pick: "是主人替 ta 挑的", custom: "是主人给 ta 定的" }[(lk && lk.hairSrc) || "bead"] || "";
     const featTxt = (lk && lk.feats && lk.feats.length) ? ("头上还带着" + lk.feats.map((f) => f.zh).join("、")) : (lk && lk.noFeat ? "看着就是普普通通的人形" : "");
     const persTxt = (lk && lk.pers) ? lk.pers.zh : "温和";
     // v130：用户的一句话要**融进**设定（描述沁灵本人），不再是"主人说过…"的引用体
-    const baseTxt = (lk && lk.base) ? ("它是" + lk.base + "——这是主人一眼就认出来的性子。") : "";
+    const baseTxt = (lk && lk.base) ? ("ta 是" + lk.base + "——这是主人一眼就认出来的性子。") : "";
     // v153：色板选出来的色存的是 #hex（用户要求不要中文色名）→ 中文小作文里换成人话
     const hairZhRaw = (lk && lk.hairZh) ? String(lk.hairZh).replace(/^自动 · /, "") : "";
     const hairZhText = /^#/.test(hairZhRaw) ? "主人亲手挑的一种颜色" : (hairZhRaw || beadZh);
     return nm + "是从主人那串「" + ((item && item.name) || "手串") + "」里醒过来的小沁灵。" +
-      "它的头发是" + hairZhText + "，" + hairTxt + "；" +
+      "ta 的头发是" + hairZhText + "，" + hairTxt + "；" +
       (featTxt ? featTxt + "；" : "") +
       "衣服的色调跟着珠子的" + beadZh + "走，看久了很安稳。" +
-      "性子偏「" + persTxt + "」，平时话不多，但主人一伸手它就会靠过来。" + baseTxt;
+      "性子偏「" + persTxt + "」，平时话不多，但主人一开口，ta 就会凑过来。" + baseTxt;
   }
   // 用文字模型把"一句基础设定 + 选项"扩写成一小段（失败就退回本地模板）
   // v164：这段扩写 = 用户流程里「AI 润色的人设」，是要给用户**确认**、并最终显示在详情页的正稿。
@@ -2689,8 +2689,8 @@
     let p = null;
     if (getAiKey()) {
       try {
-        const sys = "你在为一个文玩收藏 App 写「沁灵」的设定。刚盘到挂瓷的手串会开沁，变成一尊 Q 版小生物。"
-          + "请根据它的颜色和软糯程度，给它一个可爱、有梗、有人味的中文设定。"
+        const sys = "你在为一个文玩收藏 App 写「沁灵」的设定。刚盘到挂瓷的手串会开沁，醒过来一位有脾气的小沁灵。"
+          + "请根据这串珠子的颜色与软糯程度，为这位沁灵起一个可爱、有梗、有人味的中文设定。"
           + "只输出 JSON，不要解释：{\"name\":\"2-3字昵称\",\"title\":\"6-12字称号\",\"traits\":[\"性格词1\",\"性格词2\",\"性格词3\"],\"line\":\"一句口头禅，15字以内\"}";
         const user = "颜色：" + (item.color || "未知") + "；软糯程度：" + (item.softness === "soft" ? "软糯" : item.softness === "slight" ? "微糯" : "未标注")
           + "；珠型：" + (item.beadShape || "未知") + "；名字：" + (item.name || "未命名") + "。请给出设定。";
@@ -2720,21 +2720,21 @@
   function localChat(spirits) {
     const lines = [];
     const seed = hashStr(spirits.map((s) => s.item.id).join("") + todayKey());
-    lines.push({ who: spirits[0].persona.name, text: pick(["今天谁来摸摸我？", "我好像又亮了一点点。", "谁把窗户打开了，风有点凉。"], seed) });
-    if (spirits[1]) lines.push({ who: spirits[1].persona.name, text: pick(["主人昨天先摸的是我。", "别炫耀了，你不过比我圆。", "安静点，我在晒太阳。"], seed + 3) });
-    if (spirits[2]) lines.push({ who: spirits[2].persona.name, text: pick(["你们吵到我了。", "我只想躺在抽屉最里面。", "听说主人今天不上班？"], seed + 7) });
-    lines.push({ who: spirits[0].persona.name, text: pick(["那我们商量一下，明天谁先被盘？", "要不今天一起装睡。", "猜拳吧，输的先上。"], seed + 11) });
-    if (spirits[1]) lines.push({ who: spirits[1].persona.name, text: pick(["我认输，你们上。", "行吧，我先来，但只盘十分钟。", "不许抢，排好队。"], seed + 13) });
+    lines.push({ who: spirits[0].persona.name, text: pick(["今天谁来陪我说说话？", "我好像又精神了一点。", "谁把窗户打开了，风有点凉。"], seed) });
+    if (spirits[1]) lines.push({ who: spirits[1].persona.name, text: pick(["主人昨天先来的是我这边。", "别炫耀了，你不过是比我早醒两天。", "安静点，我在晒太阳。"], seed + 3) });
+    if (spirits[2]) lines.push({ who: spirits[2].persona.name, text: pick(["你们吵到我了。", "我只想缩在屋里最里头。", "听说主人今天不上班？"], seed + 7) });
+    lines.push({ who: spirits[0].persona.name, text: pick(["那我们商量一下，明天谁先陪主人？", "要不今天一起装睡。", "猜拳吧，输的先上。"], seed + 11) });
+    if (spirits[1]) lines.push({ who: spirits[1].persona.name, text: pick(["我认输，你们上。", "行吧，我先去，但只待一小会儿。", "不许抢，排好队。"], seed + 13) });
     return lines;
   }
   async function chat(spirits) {
     if (!spirits.length) return [];
     if (!getAiKey() || spirits.length < 2) return localChat(spirits);
     try {
-      const sys = "你在写一个文玩 App 里的「沁灵小剧场」：主人的几串手串盘到挂瓷后变成了小生物，它们会背着你聊天。"
+      const sys = "你在写一个文玩 App 里的「沁灵小剧场」：主人的几串手串盘到挂瓷后，各自醒成了一位小沁灵，他们会在你背后聊天。"
         + "请写一段 4-6 句的日常小对话，轻松、可爱、有生活感、带点小吐槽，不要煽情，不要解释。"
         + "严格只输出 JSON：{\"lines\":[{\"who\":\"沁灵名字\",\"text\":\"说的话\"}]}";
-      const user = "出场沁灵：\n" + spirits.map((s) => spiritDesc(s.item, s.persona)).join("\n") + "\n" + ownerLine() + "\n请写它们今天的小剧场。";
+      const user = "出场沁灵：\n" + spirits.map((s) => spiritDesc(s.item, s.persona)).join("\n") + "\n" + ownerLine() + "\n请写这几只今天的小剧场。";
       const txt = await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 700);
       const m = txt.match(/\{[\s\S]*\}/);
       if (m) {
@@ -2750,24 +2750,24 @@
   /* ---------- 来信：沁灵给你写一封信 ---------- */
   function localLetter(spirit, userName) {
     const p = spirit.persona;
-    const t = p.title || "你的小宝贝";
+    const t = p.title || "你的小沁灵";
     const seed = hashStr(spirit.item.id + todayKey());
     const body = pick([
-      "今天你好像很忙。我趴在抽屉里听你走来走去，脚步声比平时快。忙完记得喝口水。",
-      "我数了一下，你已经 " + (spirit.idleDays != null ? spirit.idleDays : "好多") + " 天没摸我了。不是催你，就是有点想你手心的温度。",
-      "刚才有一点点阳光从缝里漏进来，照在我身上。我忽然觉得自己亮得挺好看的，想让你也看看。",
-      "我做了个梦，梦见自己变成了一颗星星，你把我别在衣领上出门了。醒来发现还在抽屉里，有点小失落，不过也还好。",
+      "今天你好像很忙。我在这头听你走来走去，脚步声比平时快。忙完记得喝口水。",
+      "我数了一下，你已经 " + (spirit.idleDays != null ? spirit.idleDays : "好多") + " 天没见着我了。不是催你，就是有点想你手心的温度。",
+      "刚才有一点点阳光从缝里漏进来，照在我身上。我忽然觉得今天自己精神不错，想让你也看看。",
+      "我做了个梦，梦见跟着你出了门，走在你旁边。醒来还在屋里，有点小失落，不过也还好。",
     ], seed);
     return (userName ? userName + "：" : "") + "\n\n" + body + "\n\n—— 你的" + (p.name || "小沁灵") + "（" + t + "）";
   }
   async function letter(spirit, userName) {
     if (!getAiKey()) return localLetter(spirit, userName);
     try {
-      const sys = "你在写一封「沁灵」写给主人的短信。沁灵是主人收藏的一串手串盘到挂瓷后变成的小生物，"
+      const sys = "你在写一封「沁灵」写给主人的短信。沁灵是主人收藏的一串手串盘到挂瓷后醒过来的一位小沁灵，"
         + "性格可爱、有点小脾气、关心主人但不会说教。用第一人称，简体中文，80-140 字，口语化，"
         + "落款写沁灵名字。不要用 Markdown 标题，不要解释。";
       const user = "沁灵设定：" + spiritDesc(spirit.item, spirit.persona) +
-        (spirit.idleDays != null ? ("\n它已经 " + spirit.idleDays + " 天没被盘了。") : "") +
+        (spirit.idleDays != null ? ("\n距上次与主人相处，已经过了 " + spirit.idleDays + " 天。") : "") +
         "\n" + ownerLine(userName) + "\n请写这封短信。";
       const txt = await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 500);
       if (txt) return txt;
@@ -3028,16 +3028,16 @@
     const hair = HAIR_ZH[ap.hair] || ap.hair, eyes = EYES_ZH[ap.eyes] || ap.eyes, acc = ACC_ZH[ap.acc] || ap.acc;
     const vibe = VIBE_ZH[ap.vibe] || ap.vibe;
     const extra = (TRAIT_ZH_EXTRA[item.softness || ""] || TRAIT_ZH_EXTRA[""])[hashStr(item.id) % 3];
-    const name = p.name || item.name || "它";
+    const name = p.name || item.name || "那只";
     return [
-      (p.name || item.name || "这只沁灵") + "的原型是主人收藏的一串「" + (item.name || "手串") + "」，" + colorName + "，" + softName + "。" +
-      "盘到挂瓷的那天晚上，它从珠子里醒了过来，现在是一尊" + def.name + "的" + (ap.gender === "boy" ? "小男孩" : "小女孩") + "沁灵。",
-      "外形上，它" + (ap.gender === "boy" ? "留着" : "梳着") + hair + "，" + eyes + "的眼睛，" + acc + "是它身上最像原串的记号；" +
+      (p.name || item.name || "这只沁灵") + "是从主人收藏的那串「" + (item.name || "手串") + "」里醒过来的，" + colorName + "，" + softName + "。" +
+      "挂瓷的那天晚上，ta 从那一串里醒了过来，现在是一位" + def.name + "的" + (ap.gender === "boy" ? "小男孩" : "小女孩") + "沁灵。",
+      "外形上，ta " + (ap.gender === "boy" ? "留着" : "梳着") + hair + "，" + eyes + "的眼睛，" + acc + "是 ta 身上最像原串的记号；" +
       "一身" + (ap.outfitZh || "中式长衫") + "的古风衣裳，颜色和头发都取自原来的珠子，" + (colorName.indexOf("多") === 0 ? "五颜六色，像一串会走路的多宝" : "就是那一种" + colorName + "，看久了很安稳") + "。",
       "性格" + vibe + "，说话" + (p.line ? "爱用「" + p.line + "」这种腔调" : "慢悠悠的") + "，" + extra + "。" +
-      "它不太会催人，主人忙的时候就自己找个角落待着，" + (plays > 12 ? "被盘得多了，已经很有底气" : "被摸得还不多，偶尔会小声提醒一下") + "。",
-      "到今天为止，它陪着主人 " + (days || 0) + " 天了，被正经盘过 " + (plays || 0) + " 次。" +
-      "它最喜欢的位置是主人的手心，其次是靠近窗户的那一小块桌子——那里下午会有光。",
+      "ta 不太会催人，主人忙的时候就自己找个角落待着，" + (plays > 12 ? "陪得多了，已经很有底气" : "陪得还不多，偶尔会小声提醒一下") + "。",
+      "到今天为止，ta 陪着主人 " + (days || 0) + " 天了，与主人正经相处过 " + (plays || 0) + " 回。" +
+      "ta 最爱待的地方，是主人手边；其次便是靠窗的那张小桌——那儿下午有光。",
     ].join("");
   }
   async function personaZh(item, ap, persona, stage, days, plays, force) {
@@ -3075,10 +3075,10 @@
           + "【瞳色/服装/配饰照下方给出的「固定人设」写；但**发型不受限制、自由发挥**】"
           + "中式古风发型多种多样（长直发、发髻、发冠、马尾、辫子、披发都可以），按沁灵的性别、性格和主人写的设定来定，"
           + "绝不要因为固定人设里没写发型、就生硬地套一个短发。"
-          + "【发色用中国传统色名写】下方若给出「它的发色」（如胭脂、天青、月白、秋香、藕荷、黛色），正文里就用这个中国色名来写头发颜色。"
+          + "【发色用中国传统色名写】下方若给出「这位沁灵的发色」（如胭脂、天青、月白、秋香、藕荷、黛色），正文里就用这个中国色名来写头发颜色。"
           + "【服装风格按这只沁灵自己的意象/名称/材质/胎性自定】（如玉/木/石/金属质感、石窟造像与壁画纹样、"
           + "敦煌飞天披帛与璎珞、飘带等皆可），保持古典东方气质即可，⛔ 不必一律汉服；"
-          + "⛔ 若它的意象/品类明显不属于中原衣冠，就顺着那个意象写，别套通用古装；"
+          + "⛔ 若这位沁灵的意象/品类明显不属于中原衣冠，就顺着那个意象写，别套通用古装；"
           + "绝对禁止出现任何现代/西式服装（夹克、运动服、卫衣、T恤、牛仔裤、西装、风衣等）。"
           + "【最重要】主人给的设定原话描述的都是**沁灵本人**的性格/身份/气质，必须原样体现在沁灵身上；"
           + "绝对禁止把设定安到主人头上（例如主人说「洒脱的江湖侠士」＝沁灵是侠士，不是主人是侠士），也不许另编一套和原话冲突的人设。"
@@ -3088,19 +3088,19 @@
         const hairEnW = lkP.hairEn || "";
         // v165：追加 名称/品类/胎性（同 4a，理由一致：服装此前与这只沁灵无任何关联）
         const user = "原型手串：" + (item.name || "未命名") + "；沁灵的名字：" + ((persona && persona.name) || item.name || "未命名") +
-          "；它的出处/意象（服装风格要顺着这个来）：" + (item.name || "未命名") +
+          "；这位沁灵的出处/意象（服装风格要顺着这个来）：" + (item.name || "未命名") +
           "；品类：" + ((item && (item.species || item.category)) || "未标注") +
           "；胎性：" + tiXingLabel(item) +
           "；珠子颜色：" + (COLOR_ZH[item.color] || "素色") +
-          "；它的发色：" + (hairCn ? (hairCn + (hairEnW ? "（" + hairEnW + "）" : "")) : (hairEnW || (COLOR_ZH[item.color] || "素色"))) +
+          "；这位沁灵的发色：" + (hairCn ? (hairCn + (hairEnW ? "（" + hairEnW + "）" : "")) : (hairEnW || (COLOR_ZH[item.color] || "素色"))) +
           "；软糯：" + (item.softness === "soft" ? "软糯" : item.softness === "slight" ? "微糯" : "未标注") +
           "；形态：" + stageDef(stage).name + "；陪伴 " + (days || 0) + " 天；盘玩 " + (plays || 0) + " 次；" +
           "固定人设（瞳色/服装/配饰照写；发型自由发挥，下方不含发型限制）：" + appearanceText(ap) + "；" + spiritGenderLine(ap) +
           "；性格基调：" + (VIBE_ZH[ap.vibe] || ap.vibe) +
           ((persona && persona.traits && persona.traits.length) ? "（" + persona.traits.join("、") + "）" : "") +
-          ((lk0.base) ? "。\n主人给它的设定原话（描述的是沁灵自己，必须原样体现）：" + lk0.base : "") +
+          ((lk0.base) ? "。\n主人给这位沁灵的设定原话（描述的是沁灵自己，必须原样体现）：" + lk0.base : "") +
           ((lk0.profile && lk0.profile !== lk0.base) ? "\n已有的融合设定（保持一致，不要矛盾）：" + lk0.profile : "") +
-          "。\n" + ownerLine() + "\n请写它的中文人物设定。";
+          "。\n" + ownerLine() + "\n请写这位沁灵的中文人物设定。";
         txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 700) || "").trim();
         txt = txt.replace(/^["「]|["」]$/g, "").trim();
       } catch (e) { txt = ""; }
@@ -3139,19 +3139,19 @@
     const def = stageDef(rec.stage || 1);
     const colorName = COLOR_ZH[item.color] || "素色";
     const pool = [
-      "今天主人路过的时候看了我一眼，没摸。我假装在睡觉，其实偷偷亮了一下。",
-      "擦桌子的时候我被挪了个位置，新位置能看到一点点窗外。挺好，能看见天。",
-      "主人手上有点汗，摸我的时候温温的。我不嫌弃，真的。",
-      "我在想一个很严肃的问题：我到底是" + colorName + "的，还是" + colorName + "里最亮的那一颗？",
-      "刚才和隔壁的聊了两句，它说它比我早挂瓷。可我觉得我比它圆。",
+      "今天主人路过的时候看了我一眼，没停下。我假装在睡觉，其实心里偷偷高兴了一下。",
+      "今天屋里拾掇的时候换了个地方，新位置能看到一点点窗外。挺好，能看见天。",
+      "主人今天回来，手是温的。我知道他心情不坏 —— 他的手一向比脸诚实。",
+      "我在想一个很严肃的问题：我是「" + colorName + "」这样的人，还是「" + colorName + " 里最不起眼的那个」？",
+      "刚才跟隔壁那只聊了两句，ta 比我早开沁。可我觉得，我比 ta 沉得住气。",
       "今天什么都没发生。什么都没发生的一天，也算一天。我记下来了。",
-      "主人好像有点累。我没敢说话，就把自己擦亮了一点点，让他一眼看到我。",
-      "我做了个梦，梦见自己被串成了一条项链，跟着主人出门了。醒来还在老地方。",
+      "主人好像有点累。我没敢说话，就在他坐下的时候，往他手边靠了靠。",
+      "我做了个梦，梦见跟着主人出了门，走在他前头。醒来，还在窗边这间屋。",
     ];
     const head = "第 " + ((ctx && ctx.dayNo) || 1) + " 天 · " + def.name;
     let body = pick(pool, seed);
-    if (idle != null && idle >= 3) body = "已经 " + idle + " 天没被盘了，我数得很清楚。不是催，就是记一下。";
-    if (ctx && ctx.playedToday) body = "今天被盘了 " + ctx.plays + " 次，身上暖暖的。我喜欢被盘完那一下的安静。";
+    if (idle != null && idle >= 3) body = "已经有 " + idle + " 天没见着主人了，我数得很清楚。不是催，就是记一下。";
+    if (ctx && ctx.playedToday) body = "今天主人陪我 " + ctx.plays + " 回了。我喜欢相处完那一下的安静。";
     // v155：主人回过一句 → 这篇日记里回应它（"记忆闭环"）
     const rep = (ctx && ctx.reply) ? String(ctx.reply) : "";
     if (rep) {
@@ -3172,11 +3172,11 @@
           + "简体中文，60-140 字，口语化、可爱、有生活细节，不要 Markdown、不要标题、不要解释，直接写正文。"
           + "注意：主人的性别必须按下面给的信息来写（称呼别搞错）。";
         const user = "沁灵设定：" + spiritDesc(item, p, rec.stage) + "；人设：" + appearanceText(ap) +
-          (ctx && ctx.playedToday ? "；今天被盘了 " + ctx.plays + " 次" : "") +
-          (ctx && ctx.idleDays != null ? "；已经 " + ctx.idleDays + " 天没被盘" : "") +
+          (ctx && ctx.playedToday ? "；今天与主人相处了 " + ctx.plays + " 回" : "") +
+          (ctx && ctx.idleDays != null ? "；已经有 " + ctx.idleDays + " 天没见到主人" : "") +
           "；今天是陪主人的第 " + ((ctx && ctx.dayNo) || 1) + " 天。" +
-          (rec.nickCall ? ("；它平时叫主人「" + rec.nickCall + "」，日记里自然地这么称呼就好。") : "") +
-          ((ctx && ctx.reply) ? ("\n主人上次回了它一句：「" + ctx.reply + "」，请在今天的日记里自然地回应这句话。") : "") +
+          (rec.nickCall ? ("；这位沁灵平时叫主人「" + rec.nickCall + "」，日记里自然地这么称呼就好。") : "") +
+          ((ctx && ctx.reply) ? ("\n主人上次回了这位沁灵一句：「" + ctx.reply + "」，请在今天的日记里自然地回应这句话。") : "") +
           "\n" + ownerLine() + "\n请写今天的日记。";
         const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 400) || "").trim();
         if (txt && txt.length >= 20) {
@@ -3287,7 +3287,7 @@
       stage: stageDef((rec && rec.stage) || 1).name,
       bead: (item && item.name) || "这串珠子",
       call: callOf(rec),
-      name: (rec && rec.persona && rec.persona.name) || (item && item.name) || "它",
+      name: (rec && rec.persona && rec.persona.name) || (item && item.name) || "那只",
       year: 0,
       // v163 新增（全小写无分隔，不混驼峰；台词里 {tixing} 与 {胎性} 等价）
       bond: bond, bondlv: bl.name, bondname: bl.name,
@@ -3306,23 +3306,23 @@
     // 刚开沁的头几天
     born: [
       "刚醒过来，手心还是热的。以后就跟着你了。",
-      "我认得你的手 —— 就是刚才把我盘热的那个。",
+      "我认得你的手。是这只手，把我从那串里唤出来的。",
       "我还在学怎么当一个好沁灵。你多担待。",
-      "昨天我还是一串珠子，今天会说话了。挺奇怪的，也挺好的。",
+      "昨天我还在那一串里，今天就能说话了。挺奇怪的，也挺好的。",
     ],
     // 3 天以上没被盘
     miss: [
-      "你上次摸我是 {idle} 天前了。我没生气，就是数得有点清楚。",
-      "{idle} 天了。我把自己擦得很亮，你回来就能一眼看见我。",
-      "不用急着盘我。就是……有空的话，看我一眼也行。",
-      "{idle} 天。我天天都在老地方，没挪窝。",
+      "你上回来看我，是 {idle} 天前了。我没生气，就是数得有点清楚。",
+      "{idle} 天了。我天天在门口候着，你回来就能一眼看见我。",
+      "不用急着陪我。就是……有空的话，来看我一眼也行。",
+      "{idle} 天。我天天都在家里，哪儿也没去。",
     ],
     // 今天盘过了
     played: [
-      "今天被你盘了 {plays} 次，身上暖烘烘的。我喜欢盘完那一下的安静。",
-      "刚才你手指停在我身上的时候，我差点笑出声 —— 忍住了。",
-      "被盘过就是不一样。我觉得我今天比昨天圆一点。",
-      "你今天的手法比上次稳。我记着呢。",
+      "今天你在那边动了 {plays} 回串。我在这头，都觉着了。",
+      "刚才你的手，停了一下。那一下，我听着呢。",
+      "你肯在我这儿花工夫，我知道。我心里有数。",
+      "你今天的手，比上回稳。我记着呢。",
     ],
     // 快能深沁了
     break_able: [
@@ -3332,19 +3332,19 @@
     ],
     // 平常日子
     plain: [
-      "今天也是待在抽屉里的一天。挺好的，这里我熟。",
+      "今天也是在家的一天。挺好的，这儿我熟。",
       "我数了数，这是陪你的第 {days} 天。这个数我记住了。",
       "早上有一小块光爬到我身上，我安静了一会儿。",
       "你刚才是不是叹气了？我没敢问。",
       "今天没什么大事。没大事的日子，我也想留一句话给你。",
-      "我在想，我到底是「{color}」这个颜色，还是「{color}里最亮的那一颗」。",
+      "我在想，我是「{color}」这样的性子，还是「{color}里最不显眼的那个」。",
       "{stage}的日子，无聊，但踏实。",
-      "抽屉里比外面安静。你不用管我，我自得其乐。",
+      "屋里比外头安静。你不用管我，我自得其乐。",
       "刚才听见有人上楼，我以为是{call}。结果是楼上的。",
       "我把今天听见的三句话都记下来了，一个字都没漏。",
     ],
   };
-  const GREET_MOOD = { born: "刚醒来", miss: "有点想你", played: "暖乎乎的", break_able: "跃跃欲试", plain: "安安静静" };
+  const GREET_MOOD = { born: "刚醒来", miss: "有点想你", played: "被陪过", break_able: "跃跃欲试", plain: "安安静静" };
   function greetKind(rec, ctx) {
     const d = Math.max(1, (ctx && ctx.dayNo) || 1);
     if (d <= 3) return "born";
@@ -3571,7 +3571,7 @@
   // ⚠️ 与 §13.2「每日任务」（净手/陪坐/看纹/守灯/应声）是两套不同系统：本表是「心迹区」的照料手段（§2.2 / §七-5）。
   const CARE_ACTS = [
     { id: "clean",  name: "擦净", line: "案上擦了擦，浮灰落了。" },
-    { id: "sit",    name: "静坐", line: "坐下来，陪它静了一会儿。" },
+    { id: "sit",    name: "静坐", line: "坐下来，静静陪了一会儿。" },
     { id: "thread", name: "理线", line: "把线顺了顺，松的地方收好。" },
   ];
   function careActOf(kind) { const k = String(kind || ""); for (let i = 0; i < CARE_ACTS.length; i++) if (CARE_ACTS[i].id === k) return CARE_ACTS[i]; return null; }
@@ -3610,16 +3610,16 @@
      ⛔ 口径（§3.5）：写{ta}做了什么小事，不写{ta}有多喜欢；按 §2.7 各型语言习惯。
      ⛔ 反应句不含占位符（说话人就是那只沁灵）。 */
   const GIFT_REACTIONS = {
-    dignified: { hit: "东西我收下了。规矩我记着。", miss: "放那儿吧。回头用得上。" },
-    scholar:   { hit: "嗯。这一件，我记在账上了。", miss: "……记一笔。" },
+    dignified: { hit: "收了。搁我手边。", miss: "搁下吧。我记着了。" },
+    scholar:   { hit: "嗯。这一件，我记在账上了。", miss: "对不上账。……也记一笔。" },
     cool:      { hit: "……还行。", miss: "嗯。" },
-    gentle:    { hit: "你从哪儿找来的。", miss: "搁这儿就好。" },
-    lively:    { hit: "我先看见的！我先看见的！", miss: "哦——那我也要。" },
-    mystery:   { hit: "谁家的都行。这一件，是你会挑的。", miss: "有心了。" },
-    sweet:     { hit: "这是给我的？真的？那我先拿着了！", miss: "……那我也收着。" },
-    cheeky:    { hit: "你们听说了没有——有人给我带东西了。", miss: "嗯，行吧。" },
+    gentle:    { hit: "我给你收在最里头了。", miss: "搁下就好。我来收。" },
+    lively:    { hit: "我先看见的！给我的！", miss: "哦——那我收着，也是好的！" },
+    mystery:   { hit: "……你会挑。这一件，正好。", miss: "有心了。" },
+    sweet:     { hit: "这是给我的？那我不客气啦！", miss: "……那我也收着。" },
+    cheeky:    { hit: "你们听说了没有——有人给我捎东西来啦。", miss: "行吧，那我就笑纳了。" },
   };
-  const GIFT_REACTION_FALLBACK = { hit: "……我会收好的。", miss: "搁这儿吧。" };
+  const GIFT_REACTION_FALLBACK = { hit: "……收下了。", miss: "搁这儿吧。" };
   // 按人格型 × 命中 → 反应句（未登记型走通用兜底）
   function giftReactionOf(rec, hit) {
     const pair = GIFT_REACTIONS[personaIdOf(rec)] || GIFT_REACTION_FALLBACK;
@@ -3628,11 +3628,11 @@
   /* 送礼/照料 UI 文案（防物化口径 §3.5；{ta} 由界面按沁灵名替换）。🔴 占位，待编剧定稿替换。 */
   const GIFT_COPY = {
     open: "递一件给它",
-    qualifying: "{ta}还没到接你东西的分上。",
-    emptyStock: "你手上还没有可递的东西。",
+    qualifying: "{ta}还没跟你熟到这份上。",
+    emptyStock: "你手边还没备下什么。",
     alreadyHeld: "{ta}已经收着呢。",
-    dayFull: "今天递得够多了。明天再说。",
-    hitNote: "{ta}会喜欢这一类。",
+    dayFull: "今天送到这儿吧。明天再说。",
+    hitNote: "这一件，正合{ta}。",
   };
 
   /* ---------- v165d 玩家级「当日已送件数」流水（供全局 ≤2/日 计数） ----------
@@ -4460,10 +4460,10 @@
       let need = "";
       if (!stageOk) need = "到「" + stageDef(c.stage).name + "」解锁";
       else if (!daysOk) need = "再陪 " + (c.days - days) + " 天解锁";
-      else if (!bondOk) need = whenNeed({ bond: c.bond }, env) || ("要跟它再熟一点（现在「" + bondLevel(bond).name + "」）");
-      else if (!playsOk) need = "再多盘它几回";
-      else if (!idleOk) need = "要冷落它 " + c.idle + " 天才会发生";
-      else if (!roomOk) need = "要给它找个同屋的伴";
+      else if (!bondOk) need = whenNeed({ bond: c.bond }, env) || ("要跟{ta}再熟一点（现在「" + bondLevel(bond).name + "」）");
+      else if (!playsOk) need = "再多陪{ta}几回";
+      else if (!idleOk) need = "要冷落{ta} " + c.idle + " 天才会发生";
+      else if (!roomOk) need = "要给{ta}找个同屋的伴";
       else if (!anyOk) need = "还差一个条件没满足";
       else if (!prevRead) need = "先看完上一章";
       out.push({ i: i, vol: c.vol, volName: c.volName, icon: c.icon, title: c.title, unlocked: unlocked, read: !!read[i], need: need });
@@ -4760,7 +4760,7 @@
           lines: [{ w: "B", t: "你要一个干干净净的我，还是要一个带着这道印子的我？" }],
           choices: [
             { t: "留着。这道印子是你的一部分。", go: "p1", tone: "warm" },
-            { t: "你自己介意的话，我就陪你把它养好。", go: "p2", tone: "cool" },
+            { t: "你自己介意的话，这道印子我陪你一起养。", go: "p2", tone: "cool" },
             { t: "……我都要。你先别问了。", go: "p3", tone: "fun" },
           ],
         },
@@ -4977,7 +4977,7 @@
     });
     return arr.slice(0, 3).map((it, i) => {
       const r = (store && store[String(it.id)]) || {};
-      return { slot: "ABC".charAt(i), id: String(it.id), name: (r.persona && r.persona.name) || it.name || "它", item: it };
+      return { slot: "ABC".charAt(i), id: String(it.id), name: (r.persona && r.persona.name) || it.name || "那只", item: it };
     });
   }
   function nightActOf(id) {
@@ -5017,7 +5017,7 @@
     const v = greetVars(item, rec, ctx);
     const by = {};
     (cast || []).forEach((c) => { by[c.slot] = c.name; });
-    v.A = by.A || "它";
+    v.A = by.A || "那只";
     v.B = by.B || "";
     v.C = by.C || "";
     v.LIST = (cast || []).map((c) => c.name).join("、");
@@ -5519,7 +5519,7 @@
     /* ---- 老 8 键：顺序与提示文案逐字保持原样 ---- */
     { k: "days", has: (w) => !!w.days, ok: (e, v) => e.days >= v, need: (e, v) => "再陪 " + (v - e.days) + " 天" },
     { k: "members", has: (w) => !!w.members, ok: (e, v) => e.members >= v, need: (e, v) => "要群里满 " + v + " 位成员（现在 " + e.members + "）" },
-    { k: "idle", has: (w) => !!w.idle, ok: (e, v) => e.idle >= v, need: () => "你很久没冷落它们时才会发生" },
+    { k: "idle", has: (w) => !!w.idle, ok: (e, v) => e.idle >= v, need: () => "你很久没冷落他们时才会发生" },
     { k: "plays", has: (w) => !!w.plays, ok: (e, v) => e.plays >= v, need: () => "今天先去盘一盘才会发生" },
     { k: "newFace", has: (w) => w.newFace != null, ok: (e, v) => e.newest <= v, need: () => "等有新成员进门" },
     {
@@ -5546,7 +5546,7 @@
       need: (e) => {
         const n = envNum(e, "bond", "bondMax");
         const nm = e.bondName || bondLevel(n || 0).name;
-        return "要跟它再熟一点（现在「" + nm + "」）";
+        return "要跟{ta}再熟一点（现在「" + nm + "」）";
       },
     },
     {
@@ -5560,17 +5560,17 @@
     {
       k: "stage", has: (w) => !!w.stage,
       ok: (e, v) => { const n = envNum(e, "stage", "stageMax"); return n != null && n >= v; },
-      need: (e, v) => "要等它「" + stageDef(v).name + "」",
+      need: (e, v) => "要等{ta}「" + stageDef(v).name + "」",
     },
     {
       k: "growth", has: (w) => !!w.growth,
       ok: (e, v) => { const n = envNum(e, "growth", "growthMax"); return n != null && n >= v; },
-      need: () => "再多盘它几回",
+      need: () => "再多陪{ta}几回",
     },
     {
       k: "room", has: (w) => !!w.room,
       ok: (e, v) => { const n = envNum(e, "room", "roomMax"); return n != null && n >= v; },
-      need: () => "要给它找个同屋的伴",
+      need: () => "要给{ta}找个同屋的伴",
     },
     {
       k: "gifted", has: (w) => !!w.gifted,
@@ -5603,7 +5603,7 @@
     {
       k: "canBreak", has: (w) => w.canBreak != null,
       ok: (e, v) => !!e.canBreak === !!v,
-      need: () => "要等它攒够了、能深沁了",
+      need: () => "要等{ta}攒够了、能深沁了",
     },
   ];
 
@@ -5624,7 +5624,7 @@
     const idle = (lp == null) ? -1 : Math.max(0, Math.floor((Date.now() - lp) / 86400000));   // -1 = 从未盘过（聚合时跳过）
     const bond = Number(r.bond) || 0;
     return {
-      id: String(id), item: item, name: (r.persona && r.persona.name) || (item && item.name) || "它",
+      id: String(id), item: item, name: (r.persona && r.persona.name) || (item && item.name) || "那只",
       title: (r.persona && r.persona.title) || "", line: (r.persona && r.persona.line) || "",
       trait: (r.persona && Array.isArray(r.persona.traits) && r.persona.traits[0]) || "",
       pers: ((r.look || {}).pers) || "", persZh: persZhOf(((r.look || {}).pers) || ""),
@@ -6233,7 +6233,7 @@
             { w: "A", t: "箱子拉链响了一晚上了。" },
             { w: "B", t: "要出门？" },
             { w: "A", t: "远吗？" },
-            { w: "C", t: "别问了。问了它更不好收拾。" },
+            { w: "C", t: "别问了。越问越不好收拾。" },
             { w: "B", t: "我就是想知道几天。" },
             { w: "A", t: "我知道。我也想知道。" },
           ],
@@ -6486,7 +6486,7 @@
           ],
         },
         e_warm: { ending: { key: "warm", name: "😤 谁都没真的走", text: "第二天早上他们挨在一起晒太阳。问他们昨天怎么了，一个说是误会，另一个说是他先动的手 —— 反正谁也没挪走。" } },
-        e_fun: { ending: { key: "fun", name: "😤 同步了", text: "从那以后它们养成了一个坏习惯：同时说话。你分不清是谁先开口的，但它们似乎也不打算改。" } },
+        e_fun: { ending: { key: "fun", name: "😤 同步了", text: "从那以后他们养成了一个坏习惯：同时说话。你分不清是谁先开口的，但他们似乎也不打算改。" } },
         e_cool: { ending: { key: "cool", name: "😤 嘴硬到底", text: "{A}至今不承认那天他在笑。{B}把这件事写进了回忆册，标题一行字：「证据在此」。" } },
       },
     },
@@ -6554,7 +6554,7 @@
         },
         e_warm: { ending: { key: "warm", name: "😨 陪到雷停", text: "雷声在后半夜散了。他们挤在你枕边睡着了，一个说梦话还在喊「快躲」。" } },
         e_fun: { ending: { key: "fun", name: "😨 两个胆小鬼", text: "第二天雨过天晴，两个装得跟没事人一样。直到下一次打雷 —— 又是他们俩最先发消息。" } },
-        e_cool: { ending: { key: "cool", name: "😨 装作很稳", text: "{A}后来跟别人说它那晚睡得很好。{B}在旁边听着，什么也没拆穿。" } },
+        e_cool: { ending: { key: "cool", name: "😨 装作很稳", text: "{A}后来跟别人说他那晚睡得很好。{B}在旁边听着，什么也没拆穿。" } },
       },
     },
 
@@ -6570,8 +6570,8 @@
             { w: "A", t: "今天不对劲。" },
             { w: "B", t: "都笑出声了。这种笑我上一次见是去年。" },
             { w: "A", t: "快说，什么事。" },
-            { w: "B", t: "别催。让它先高兴一会儿。" },
-            { w: "A", t: "我不是催，我是比它还想听。" },
+            { w: "B", t: "别催。让他先高兴一会儿。" },
+            { w: "A", t: "我不是催，我是比他还想听。" },
           ],
           next: "c1",
         },
@@ -7763,7 +7763,7 @@
     { day: 7,   icon: "👣",  title: "认得出你",                sub: "这一门静不下来，各有各的动静" },
     { day: 20,  icon: "🌗",  title: "岔口",                    sub: "这一步，谁定" },
     { day: 45,  icon: "📜",  title: "小岁除 · 第一张榜",       sub: "名字，一个一个写" },
-    { day: 62,  icon: "🔥",  title: "想往前走",                sub: "它想借一段力" },
+    { day: 62,  icon: "🔥",  title: "想往前走",                sub: "想借一段力" },
     { day: 78,  icon: "🌊",  title: "不同意",                  sub: "还差一颗" },
     { day: 95,  icon: "🛡",  title: "挡关",                    sub: "这一道关，你替谁顶" },
     { day: 108, icon: "🌑",  title: "不知道是谁顶的",          sub: "影子浅了" },
@@ -8732,22 +8732,22 @@ const CH09 = {
     const L = [];
     const who = (p) => {
       const lk = (p && p.look) || {};
-      const n = p ? String(p.name || (p.item && p.item.name) || "它") : "它";
+      const n = p ? String(p.name || (p.item && p.item.name) || "那只") : "那只";
       return "【" + n + "】服饰意象：" + (lk.outfitZh || "古风常服") + (lk.hairZh ? ("；发色意象：" + lk.hairZh) : "");
     };
     if (x.kind === "pair") {
       L.push("画面里有两只：" + who(x.a) + "；" + who(x.b));
-      L.push("这是它们第 " + ((Number(x.level) || 0) + 1) + " 段故事，关系：" + (x.levelName || "正在熟络") + "；地点：" + (x.roomName || "它们的小房间"));
+      L.push("这是它们第 " + ((Number(x.level) || 0) + 1) + " 段故事，关系：" + (x.levelName || "正在熟络") + "；地点：" + (x.roomName || "他们的小房间"));
       if (x.storyText) L.push("这段剧情讲的是：" + String(x.storyText).replace(/\s+/g, " ").slice(0, 150));
       L.push("构图：横版宽幅，两只同框，房间与院子的环境占满画面两侧。");
     } else {
       const lk = x.look || {};
       const sd = stageDef(Math.max(1, Number(x.stage) || 1));
-      const n = x.item ? String(x.item.name || "它") : "它";
+      const n = x.item ? String(x.item.name || "那只") : "那只";
       L.push("画面里只有一只：" + n + "；服饰意象：" + (lk.outfitZh || "古风常服") + (lk.hairZh ? ("；发色意象：" + lk.hairZh) : ""));
       L.push("形态：" + sd.name + "（" + (sd.sizeZh || "") + "）；称号/性格：" + ((x.persona && (x.persona.title || x.persona.name)) || "未定"));
       if (x.festName) L.push("节令：" + x.festName + "（场景：" + (x.festScene || "当令的中式院落") + "）");
-      L.push("构图：横版宽幅，它一个人站在场景里，环境占满画面两侧，全身都在画内。");
+      L.push("构图：横版宽幅，那只一个人站在场景里，环境占满画面两侧，全身都在画内。");
     }
     return L.join("\n");
   }
@@ -8756,17 +8756,17 @@ const CH09 = {
   function cgBriefLocal(o) {
     const x = o || {};
     if (x.kind === "pair") {
-      const na = (x.a && (x.a.name || (x.a.item && x.a.item.name))) || "它";
-      const nb = (x.b && (x.b.name || (x.b.item && x.b.item.name))) || "它";
-      return na + "和" + nb + "并排待在" + (x.roomName || "它们的小房间") + "里，屋里是木格窗、矮桌和一盏小灯，" +
-        "午后的光斜进来落在两个人中间。它们一个靠着桌沿、一个偏着头，谁都没说话，气氛是熟人才有的松弛。" +
+      const na = (x.a && (x.a.name || (x.a.item && x.a.item.name))) || "那只";
+      const nb = (x.b && (x.b.name || (x.b.item && x.b.item.name))) || "那只";
+      return na + "和" + nb + "并排待在" + (x.roomName || "他们的小房间") + "里，屋里是木格窗、矮桌和一盏小灯，" +
+        "午后的光斜进来落在两个人中间。他们一个靠着桌沿、一个偏着头，谁都没说话，气氛是熟人才有的松弛。" +
         "横版构图，两只同框，房间与窗外的院子占满画面两侧，暖色调，安静有人味。";
     }
     const lk = x.look || {};
-    const n = (x.item && x.item.name) || "它";
+    const n = (x.item && x.item.name) || "那只";
     const sd = stageDef(Math.max(1, Number(x.stage) || 1));
     return n + "独自站在" + (x.festName ? (x.festName + "的") : "") + "中式院子里，穿着" + (lk.outfitZh || "古风常服") +
-      "，廊下挂着一盏灯，石板地上有落影。它微微侧身，视线看向画外，神情安静而笃定。" +
+      "，廊下挂着一盏灯，石板地上有落影。那只微微侧身，视线看向画外，神情安静而笃定。" +
       "横版构图，人站在画面偏一侧，院墙、屋檐与远处的天色占满两侧，全身都在画内，" + sd.name + "的身形比例，暖色调。";
   }
 
@@ -9082,7 +9082,7 @@ const CH09 = {
     { icon: "🪁", t: "{a} 把风筝放断了线，{b} 说：断了就断了，明年再放。" },
     { icon: "🧵", t: "{b} 的袖口磨破了，{a} 用同色的线补上，不细看看不出来。" },
     { icon: "🌧", t: "下雨了，{b} 站在檐下不肯进去，{a} 就陪他站着。" },
-    { icon: "🍶", t: "{a} 把最后一盅让给了 {b}，说它今天高兴。" },
+    { icon: "🍶", t: "{a} 把最后一盅让给了 {b}，说他今天高兴。" },
     { icon: "🪶", t: "{a} 替 {b} 掸了掸肩上的灰，动作很轻。" },
     { icon: "🧺", t: "{a} 和 {b} 一起晒了被子，收的时候抢着抱同一床。" },
     { icon: "🪔", t: "灯芯烧短了，{a} 伸手挑亮，{b} 就着光看他。" },
