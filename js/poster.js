@@ -538,7 +538,7 @@
     ctx.fillText("回 忆 册", W / 2, 138);
     ctx.fillStyle = "rgba(184,134,11,.85)";
     ctx.font = "28px 'PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText("MEMOIR · " + escText(o.name || "它") + " 的故事", W / 2, 186);
+    ctx.fillText("MEMOIR · " + escText(o.name || "那只") + " 的故事", W / 2, 186);
 
     // 立绘（外链图可能没带 CORS 头 → 加载失败也不影响出图，退化成占位）
     const imgSize = 420, imgY = 240;
@@ -563,7 +563,7 @@
     // 名字 / 形态 / 陪伴天数
     ctx.fillStyle = "#3d2b1f";
     ctx.font = "bold 50px 'PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText(escText(o.name || "它").slice(0, 10), W / 2, imgY + imgSize + 88);
+    ctx.fillText(escText(o.name || "那只").slice(0, 10), W / 2, imgY + imgSize + 88);
     ctx.fillStyle = "rgba(184,134,11,.9)";
     ctx.font = "30px 'PingFang SC','Microsoft YaHei',sans-serif";
     ctx.fillText([o.stage, (o.days != null ? "陪伴 " + o.days + " 天" : ""), o.bond].filter(Boolean).join(" · "),

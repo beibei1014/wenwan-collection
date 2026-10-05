@@ -231,7 +231,7 @@
   const DAILY_TEMPLATES = [
     { id: "jingshou",  key: "greet", icon: "🫧", title: "净手", desc: "把手洗净了，再进这道门。",           cls: "ware",  gifts: ["ware_cup", "ware_ink"] },
     { id: "peizuo",    key: "play",  icon: "🍵", title: "陪坐", desc: "坐下，什么都不用说。",               cls: "human", gifts: ["human_tea", "human_snack"], want: "care" },
-    { id: "kanwen",    key: "greet", icon: "🔎", title: "看纹", desc: "看看它身上那道纹，今天走到哪儿了。", cls: "odd",   gifts: ["odd_glass", "odd_shell"], want: "look" },
+    { id: "kanwen",    key: "greet", icon: "🔎", title: "看纹", desc: "看看那只那道纹，今天走到哪儿了。", cls: "odd",   gifts: ["odd_glass", "odd_shell"], want: "look" },
     { id: "shoudeng",  key: "night", icon: "🏮", title: "守灯", desc: "把这盏灯，守到有人回来。",           cls: "cloth", gifts: ["cloth_pa", "cloth_stone"] },
     { id: "yingsheng", key: "reply", icon: "🔔", title: "应声", desc: "那头一喊，你就应一声。",             cls: "sound", gifts: ["sound_bell", "sound_drum"] },
   ];

@@ -1277,7 +1277,7 @@
           if (st === "done" && prev !== "done") {
             const b = Spirits.born(item);
             if (b.isNew) {
-              toast("🎉 它开沁了！是只" + (b.gender === "boy" ? "👦 男孩子" : "👧 女孩子") + "沁灵（性别出生即定，不能改哦）");
+              toast("🎉 开沁了！是只" + (b.gender === "boy" ? "👦 男孩子" : "👧 女孩子") + "沁灵（性别出生即定，不能改哦）");
             } else {
               toast("已切换为「" + beadStatusLabel(st) + "」");
             }
@@ -3433,7 +3433,7 @@
     if (!list.length) {
       view.innerHTML = emptyCardHtml({
         ill: "spirit", icon: "🍡", title: "还没有沁灵醒过来",
-        sub: "把一串盘到「已挂瓷」，它就会开沁",
+        sub: "把一串盘到「已挂瓷」，就会开沁",
         hint: "盘玩 → 已挂瓷 → 自动开沁",
       }) + '<button class="btn primary" id="spiritGoHome" style="width:100%;margin-top:12px">去盘串</button>';
       const g = $("#spiritGoHome");
@@ -4155,7 +4155,7 @@
     if (!list.length) {
       view.innerHTML = emptyCardHtml({
         ill: "spirit", icon: "🍡", title: "还没有沁灵醒过来",
-        sub: "把一串盘到「已挂瓷」，它就会开沁", hint: "盘玩 → 已挂瓷 → 自动开沁",
+        sub: "把一串盘到「已挂瓷」，就会开沁", hint: "盘玩 → 已挂瓷 → 自动开沁",
       });
       return;
     }
@@ -4415,7 +4415,7 @@
       '<button type="button" class="link-btn" id="spNewRoom" style="float:right;font-size:11px">＋ 新建房间</button></div>';
     if (!rooms.length) {
       h += '<div class="room-empty">还没有房间。建一间小屋把沁灵放进去，住在一起的沁灵会慢慢攒「契合度」，' +
-        "攒够了就会发生属于它们的故事 ✨</div>";
+        "攒够了就会发生属于这几只的故事 ✨</div>";
     } else {
       h += '<div class="room-grid">';
       rooms.forEach((r) => {
@@ -4430,7 +4430,7 @@
           (mem.length ? mem.slice(0, 5).map((it) => spiritThumbHtml(it, store[it.id] || {}, 42)).join("")
             : '<span class="room-none">还没有沁灵入住</span>') +
           (mem.length > 5 ? '<span class="room-more">+' + (mem.length - 5) + "</span>" : "") + "</div>" +
-          '<div class="room-foot">' + (mem.length < 2 ? "住满 2 只，它们才会慢慢熟起来"
+          '<div class="room-foot">' + (mem.length < 2 ? "住满 2 只，他们才会慢慢熟起来"
             : (aff.best ? "💞 最合拍：" + esc(nameOf(aff.best.a, store)) + " × " + esc(nameOf(aff.best.b, store)) + " · " + aff.best.aff : "")) + "</div>" +
           "</div>";
       });
@@ -4496,7 +4496,7 @@
       for (const q of pend) {
         const a = items.find((x) => x.id === q.a), b = items.find((x) => x.id === q.b);
         if (!a || !b) continue;
-        const room = Rooms.getRoom(q.roomId) || { name: "它们的小房间" };
+        const room = Rooms.getRoom(q.roomId) || { name: "他们的小房间" };
         const txt = await Spirits.roomStory(spiritSp(a), spiritSp(b), q.level, room.name, Rooms.affinityOf(q.a, q.b));
         Rooms.writeStory(q.a, q.b, q.level, "", txt);
         // v165-R2：⛔ **双人事件 CG 不再自动出图**（这一段整块删掉了）。
@@ -4755,7 +4755,7 @@
     modal.innerHTML = "<h3>🎋「" + esc(fx0.name) + "」限定插画</h3>" +
       '<div style="font-size:12px;color:var(--text-2);text-align:center;margin-bottom:10px">' +
       "先看要画什么 —— 描述可以改，改满意了再出图（消耗 1 次出图额度，每只沁灵每个节令只画一次）</div>" +
-      '<textarea class="cg-brief-ta" id="festCgBrief" rows="5" placeholder="点「🔤 生成画面描述」，或者自己写：它站在哪儿、穿什么、在做什么">' +
+      '<textarea class="cg-brief-ta" id="festCgBrief" rows="5" placeholder="点「🔤 生成画面描述」，或者自己写：那只站在哪儿、穿什么、在做什么">' +
       esc((fx0 && fx0.brief) || "") + "</textarea>" +
       '<div style="display:flex;gap:8px;margin-top:10px">' +
       '<button class="btn ghost" id="festCgGen" style="flex:1">🔤 生成画面描述</button>' +
@@ -5369,7 +5369,7 @@
     let h = '<div class="sd-top" style="text-align:center;padding:24px">' +
       '<div class="sd-name">' + esc(spiritName(it, store)) + '<span class="spirit-stage big">📿 手串</span></div>' +
       '<div class="sd-card" style="margin-top:16px;text-align:left"><div class="sd-line">这只串已设为「只当手串」——不会生成立绘和 CG，也不进沁灵巷 / 沁灵列表。</div>' +
-      '<button class="btn primary" id="sdEnableSpirit" style="width:100%;margin-top:10px">✨ 让它进化成沁灵</button></div></div>';
+      '<button class="btn primary" id="sdEnableSpirit" style="width:100%;margin-top:10px">✨ 让这串开沁成灵</button></div></div>';
     view.innerHTML = h;
     const en = $("#sdEnableSpirit");
     if (en) en.onclick = () => { rec.spirit = true; Spirits.save(store); renderSpiritDetailPage(id); };
@@ -5588,7 +5588,7 @@
             '<div class="room-track"><i style="width:' + li.pct + '%"></i></div></div></div>';
         }).join("") + "</div>";
       } else {
-        h += '<div class="room-none" style="margin-top:8px">目前自己住一间。再放一尊进去，它们就会开始攒契合度～</div>';
+        h += '<div class="room-none" style="margin-top:8px">目前自己住一间。再放一只进去，他们就会开始攒契合度～</div>';
       }
     } else {
       h += '<div class="room-none">还没入住。给它安排一间小屋，同住的沁灵会慢慢攒契合度 ✨</div>';
@@ -5598,7 +5598,7 @@
 
     h += '<div class="sd-card"><div class="sd-card-title">📔 日记本（' + diary.length + "）</div>";
     if (!diary.length) {
-      h += '<div class="room-none">还没写过日记。它们一天最多写 1 篇（不定时），明天再来看看～</div>';
+      h += '<div class="room-none">还没写过日记。他们一天最多写 1 篇（不定时），明天再来看看～</div>';
     } else {
       // v156：改成"翻页式日记本"——一次只摊开一篇，用 上一篇 / 下一篇 翻（内容由下面的 paintDiary 填）
       h += '<div class="sd-diary-nav">' +
@@ -5658,7 +5658,7 @@
     } else if (Spirits.needCg(si.stage)) {
       h += '<div class="cg-brief">' +
         '<div class="cg-brief-tip">先看要画什么 —— 这段描述可以直接改，改满意了再出图（出图消耗 1 次额度）</div>' +
-        '<textarea class="cg-brief-ta" id="sdCgBrief" rows="5" placeholder="点「🔤 生成画面描述」，或者干脆自己写：它站在哪儿、穿什么、在做什么、什么光、什么情绪">' +
+        '<textarea class="cg-brief-ta" id="sdCgBrief" rows="5" placeholder="点「🔤 生成画面描述」，或者干脆自己写：那只站在哪儿、穿什么、在做什么、什么光、什么情绪">' +
         esc(rec.cgBrief || "") + "</textarea>" +
         '<div style="display:flex;gap:8px;margin-top:8px">' +
         '<button class="btn ghost" id="sdCgBriefGen" style="flex:1">🔤 生成画面描述</button>' +
@@ -5680,7 +5680,7 @@
         '<small>' + (nOpen ? "有 " + nOpen + " 件事可以聊" : "今晚没动静 · 可以回看以前聊过的") + '</small></button>';
     }
     h += '<div class="sd-actions">' +
-      '<button class="btn ghost" id="sdChat">💬 它们聊天</button>' +
+      '<button class="btn ghost" id="sdChat">💬 他们聊天</button>' +
       '<button class="btn ghost" id="sdSpiritList">🍡 所有沁灵</button></div>';
 
     view.innerHTML = h;
@@ -5888,7 +5888,7 @@
           bond: bl.icon + " " + bl.name,
           milestones: Spirits.memoirOf(it, rec),
           owner: Spirits.getOwner().name || "",
-          line: "从一串珠子，到有脾气的它。",
+          line: "从一串珠子，到会跟你闹脾气的人。",
         });
         const r = await Poster.shareCanvas(cv, "回忆册-" + spiritName(it, store) + ".jpg");
         toast(r === "shared" ? "🎞 回忆卡已分享" : "🎞 回忆卡已保存");
@@ -6447,7 +6447,7 @@
           '<div class="town-ev-body"><div class="town-ev-text"><span class="town-ev-ico">' + esc(e.icon) + "</span>" + esc(e.text) + "</div>" +
           '<div class="town-ev-sub">' + (e.sameRoom ? "同一间屋子 · 住在一起" : "在院子里碰上") + "</div></div></div>";
       }).join("") + "</div>" +
-        '<div class="room-hint">住在一起，它们慢慢就熟了 —— 熟了会有自己的故事。</div>';
+        '<div class="room-hint">住在一起，他们慢慢就熟了 —— 熟了会有自己的故事。</div>';
     }
     h += "</div>";
 
@@ -6457,7 +6457,7 @@
     h += '<div class="sd-card"><div class="sd-card-title">🏠 小镇的屋子（' + rooms.length + "）" +
       '<button type="button" class="link-btn" id="townNewRoom" style="float:right;font-size:11px">＋ 新建房间</button></div>';
     if (!rooms.length) {
-      h += '<div class="room-none">还没有屋子。点上面「＋ 新建房间」建一间，把沁灵放进去，它们就会开始熟络。</div>';
+      h += '<div class="room-none">还没有屋子。点上面「＋ 新建房间」建一间，把沁灵放进去，他们就会开始熟络。</div>';
     } else {
       h += '<div class="room-grid">';
       rooms.forEach((r) => {
@@ -6469,7 +6469,7 @@
           '<div class="room-members">' +
           (mem.length ? mem.slice(0, 5).map((it) => spiritThumbHtml(it, store[it.id] || {}, 42)).join("")
             : '<span class="room-none">空着</span>') + "</div>" +
-          '<div class="room-foot">' + (mem.length < 2 ? "住满 2 只，它们才会慢慢熟起来" : "💞 平均契合 " + aff.avg) + "</div></div>";
+          '<div class="room-foot">' + (mem.length < 2 ? "住满 2 只，他们才会慢慢熟起来" : "💞 平均契合 " + aff.avg) + "</div></div>";
       });
       h += "</div>";
     }
@@ -6617,12 +6617,12 @@
     if (!S.threads.length) {
       view.innerHTML = emptyCardHtml({
         ill: "spirit", icon: "📱", title: "还没有开沁的串",
-        sub: "串挂瓷之后会「开沁」。夜里它们会借你的手机开群聊天 —— 你回一句，剧情就跟着你走。",
+        sub: "串挂瓷之后会「开沁」。夜里他们会借你的手机开群聊天 —— 你回一句，剧情就跟着你走。",
         hint: "先去把一串盘到挂瓷",
       });
       return;
     }
-    let h = '<div class="room-hint" style="margin-bottom:10px">夜里它们借你的手机开了几个群。' +
+    let h = '<div class="room-hint" style="margin-bottom:10px">夜里他们借你的手机开了几个群。' +
       "你回一句，剧情就跟着你走 —— 每个事件都有 <b>3 个结尾</b>。</div>";
     const groups = [
       { title: "全家福", tip: "所有开沁的串都在这儿", arr: S.threads.filter((t) => t.kind === "family") },
@@ -6654,7 +6654,7 @@
       h += "</div>";
     });
     if (openAll) h += '<div class="diary-hint">📱 有 <b>' + openAll + "</b> 件事可以聊了 · 点进去就开始</div>";
-    else h += '<div class="diary-hint" style="color:var(--text-2)">🌙 今晚没动静。别急 —— 谁生日了、进门了、天晴了，它们会来找你。</div>';
+    else h += '<div class="diary-hint" style="color:var(--text-2)">🌙 今晚没动静。别急 —— 谁生日了、进门了、天晴了，他们会来找你。</div>';
     view.innerHTML = h;
     bindSpiritImgFallback(view);
     view.querySelectorAll("[data-tid]").forEach((el) => {
@@ -6753,7 +6753,7 @@
         const open = threadOpenCount(threadNow(tid));
         return open
           ? '<div class="nt-end-final">📱 这个会话里还有 <b>' + open + "</b> 件事等着 —— 点「全部会话」接着聊。</div>"
-          : '<div class="nt-end-final">🌙 这个会话暂时没什么事了。等谁生日了、进门了，它们还会来找你。</div>';
+          : '<div class="nt-end-final">🌙 这个会话暂时没什么事了。等谁生日了、进门了，他们还会来找你。</div>';
       },
       backLabel: "回会话", backHash: "#/night/" + encodeURIComponent(tid),
       enter: () => get((rc) => Spirits.threadEnter(T.host.item, rc, T.ctx, T.th, evid)),
@@ -7512,7 +7512,7 @@
 
     h += '<div class="sd-card"><div class="sd-card-title">📖 剧情（' + stories.length + "）" +
       (stories.some((s) => s.story && s.story.img) ? '<button class="link-btn" id="rmManageCg" style="float:right">🗑 管理双人 CG</button>' : "") + "</div>";
-    if (!stories.length) h += '<div class="room-none">它们还没熟到会讲故事的程度。</div>';
+    if (!stories.length) h += '<div class="room-none">他们还没熟到会讲故事的程度。</div>';
     else h += stories.map((s) => {
       const a = items.find((x) => x.id === s.pair[0]), b = items.find((x) => x.id === s.pair[1]);
       const nm = (a ? nameOf(a, store) : "") + " × " + (b ? nameOf(b, store) : "");
@@ -7546,7 +7546,7 @@
     if (!st || !st.text) { toast("这段剧情还在酝酿…"); return; }
     const store = Spirits.load();
     const a = spiritItemById(parts[0]), b = spiritItemById(parts[1]);
-    const room = Rooms.getRoom(st.roomId) || { name: "它们的小房间", emoji: "🏠" };
+    const room = Rooms.getRoom(st.roomId) || { name: "他们的小房间", emoji: "🏠" };
     const mask = $("#modalMask"), modal = $("#modal");
     modal.innerHTML = "<h3>" + esc(room.emoji || "🏠") + " " + esc(room.name) + "</h3>" +
       '<div style="font-size:12px;color:var(--text-2);text-align:center;margin-bottom:10px">' +
@@ -7732,7 +7732,7 @@
       '<div class="pick-meta"><div class="pick-name">搬出去（不入住）</div><div class="pick-sub">仍是你的沁灵，只是不攒契合度</div></div>' +
       '<span class="pick-go">›</span></div>' +
       '<div class="pick-row" data-new-room="1"><span class="room-emoji">＋</span>' +
-      '<div class="pick-meta"><div class="pick-name">新建一间房</div><div class="pick-sub">给它们一个新地方</div></div><span class="pick-go">›</span></div>' +
+      '<div class="pick-meta"><div class="pick-name">新建一间房</div><div class="pick-sub">给他们一个新地方</div></div><span class="pick-go">›</span></div>' +
       "</div>" +
       '<button class="btn ghost" id="srCancel" style="width:100%;margin-top:12px">关闭</button>';
     mask.hidden = false;
@@ -7836,13 +7836,13 @@
     modal.innerHTML = "<h3>👤 主人设定</h3>" +
       '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:12px;text-align:center">' +
       "沁灵写日记、写剧情、聊天时都会照这里来称呼你，别让他们把你写成另一个性别 😆</p>" +
-      '<div class="form-group"><div class="form-label">昵称 <small>它们会这么叫你</small></div>' +
+      '<div class="form-group"><div class="form-label">昵称 <small>他们会这么叫你</small></div>' +
       '<input class="form-input" id="ownName" maxlength="12" placeholder="如：小北" value="' + esc(ow.name || "") + '"></div>' +
       '<div class="form-group"><div class="form-label">我是</div><div class="prov-row" id="ownGenderRow">' +
       '<button type="button" class="prov-chip' + (ow.gender !== "boy" ? " active" : "") + '" data-g="girl">👩 女生（用「她」）</button>' +
       '<button type="button" class="prov-chip' + (ow.gender === "boy" ? " active" : "") + '" data-g="boy">👨 男生（用「他」）</button>' +
       "</div></div>" +
-      '<div class="form-group"><div class="form-label">我的头像 <small>它们在群里看到的你</small></div>' +
+      '<div class="form-group"><div class="form-label">我的头像 <small>他们在群里看到的你</small></div>' +
       '<div style="display:flex;align-items:center;gap:11px">' +
       '<div id="ownAvPrev" class="nt-av nt-av-me" style="width:46px;height:46px;flex:none;font-size:13px">' + meAvatarHtml() + "</div>" +
       '<div style="flex:1;display:flex;gap:6px">' +
@@ -7872,7 +7872,7 @@
     $("#ownSave").onclick = () => {
       Spirits.setOwner({ name: ($("#ownName").value || "").trim(), gender: gender, avatar: avatar });
       close();
-      toast("已保存：以后它们会用「" + (gender === "boy" ? "他" : "她") + "」称呼你");
+      toast("已保存：以后他们会用「" + (gender === "boy" ? "他" : "她") + "」称呼你");
       renderSettings();
     };
   }
@@ -7880,7 +7880,7 @@
   /* ---------- 沁灵聊天（独立弹层，详情页用） ---------- */
   function showSpiritChatModal(item) {
     const mask = $("#modalMask"), modal = $("#modal");
-    modal.innerHTML = "<h3>💬 它们聊天</h3><div id=" + '"spChatOut"' + '><div class="spirit-loading">沁灵们正在凑到一起…</div></div>' +
+    modal.innerHTML = "<h3>💬 他们聊天</h3><div id=" + '"spChatOut"' + '><div class="spirit-loading">沁灵们正在凑到一起…</div></div>' +
       '<button class="btn ghost" id="chatClose" style="width:100%;margin-top:12px">关闭</button>';
     mask.hidden = false;
     modal.hidden = false;
