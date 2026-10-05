@@ -3464,7 +3464,7 @@
       return d.length && (rec.diarySeenAt || 0) < d[d.length - 1].at;
     }).length;
     if (diaryToday) {
-      html += '<div class="diary-hint" id="diaryHint">📔 今天有 <b>' + diaryToday + '</b> 只沁灵写了日记 · 点它的头像进去看</div>';
+      html += '<div class="diary-hint" id="diaryHint">📔 今天有 <b>' + diaryToday + '</b> 只沁灵写了日记 · 点{ta}的头像进去看</div>';
     }
     // v155：有新回响（纪念日信）—— 一年就那么几次，值得提醒一下
     // v163d：点名「是谁写的」—— 用户反馈只知道「今天有回响」却不知道是谁留的。
@@ -3484,11 +3484,11 @@
         const head = echoOwners.slice(0, 3).map((o) => esc(o.name)).join("、");
         echoWho = "<b>" + head + "</b>" + (echoOwners.length > 3 ? " 等 " + echoOwners.length + " 尊" : "") + " 给你留了";
       }
-      html += '<div class="diary-hint echo" id="echoHint">✦ ' + echoWho + " <b>" + echoN + "</b> 封回响信 · 点它进去看</div>";
+      html += '<div class="diary-hint echo" id="echoHint">✦ ' + echoWho + " <b>" + echoN + "</b> 封回响信 · 点{ta}进去看</div>";
     }
 
     html += '<div class="section-title">🍡 我的沁灵（' + list.length + '）' +
-      '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点它进详情页</small></div>';
+      '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点他们进详情页</small></div>';
     // v163b：先进「所有沁灵」网格（复用 #/spirits 卡片结构）
     html += '<div class="spirit-grid">';
     list.forEach((it) => {
@@ -3521,7 +3521,7 @@
       '<button class="btn primary" id="spTownBtn">🏘 沁灵巷（房间·纪事·CG）</button>' +
       '<button class="btn ghost" id="spEventsBtn">📜 事件回顾</button></div>';
     html += '<button class="btn ghost" id="spMainBtn" style="width:100%;margin-top:10px">📜 沁灵纪（主线主串设置）</button>';
-    view.innerHTML = html;
+    view.innerHTML = fillTa(html);
     bindSetupHint(setupHintHtml(list, store).first);
     bindSpiritImgFallback(view);
     view.querySelectorAll("[data-spirit]").forEach((c) => c.addEventListener("click", () => {
@@ -4179,7 +4179,7 @@
       { n: diaryCount, l: "日记总篇数" },
     ]);
     html += '<div class="section-title">🍡 我的沁灵（' + list.length + '）' +
-      '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点它进详情页</small>' +
+      '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点他们进详情页</small>' +
       '<button type="button" class="link-btn" id="spExportAll" style="float:right;font-size:11px;margin-right:8px;color:var(--wood);font-weight:700">📦 导出所有立绘</button>' +
       '<button type="button" class="link-btn" id="spRedrawAll" style="float:right;font-size:11px">🖌 全部重画</button>' +
       '<button type="button" class="link-btn" id="spRecoverOld" style="float:right;font-size:11px;margin-right:8px">🔙 恢复旧立绘</button></div>';
@@ -4221,7 +4221,7 @@
     html += '<button class="btn ghost" id="spBackRooms" style="width:100%;margin-top:14px">← 回到小房间</button>';
     const sh2 = setupHintHtml(list, store);
     if (sh2.html) html += sh2.html;
-    view.innerHTML = html;
+    view.innerHTML = fillTa(html);
     bindSetupHint(sh2.first);
     bindSpiritImgFallback(view);
     view.querySelectorAll(".spirit-card").forEach((c) => c.addEventListener("click", () => {
@@ -4276,7 +4276,7 @@
         const n = list.filter((it) => st0[it.id] && st0[it.id].imgUrl).length;
         if (!n) { toast("还没有立绘可重画"); return; }
         const yes = await confirmModal("要重画全部 " + n + " 只沁灵吗？",
-          "已有的立绘（含进化史里的旧图）都会作废、按最新形象设定重画，消耗 " + n + " 次出图额度（每只 1 张）。想只重画某一尊，进它的详情页点「🔁 换形象」。",
+          fillTa("已有的立绘（含进化史里的旧图）都会作废、按最新形象设定重画，消耗 " + n + " 次出图额度（每只 1 张）。想只重画某一尊，进{ta}的详情页点「🔁 换形象」。"),
           "重画 " + n + " 张", true);
         if (!yes) return;
         const st = Spirits.load();
@@ -4833,7 +4833,7 @@
       r._imgErr = ""; r._imgErrAt = 0;
       Spirits.save(s);
       const nap = Spirits.appearanceOf(item, r.appearanceSeed, r.gender || "");
-      toast("新样子定了，这就为它重画…");
+      toast(fillTa("新样子定了，这就为{ta}重画…", spiritName(item, s)));
       if (h.busy) h.busy(true, "正在重画…");
       if (h.refresh) h.refresh();
       const res = await Spirits.generateImage(item, r.variant || 0, null, r.stage || 1, { appearanceSeed: r.appearanceSeed, gender: r.gender || "" });
@@ -4986,7 +4986,7 @@
    *   送礼与照料提升的是「羁绊」(rec.bond)；心迹条展示「心意轨」(rec.heart，恋爱向，本批只读展示)。
    *   ⛔ 防物化红线（设计 §3.5）：按钮「递一件给它」；⛔ 不写占有/控制/物件化动作。
    * ========================================================= */
-  function fillTa(tpl, name) { return String(tpl == null ? "" : tpl).replace(/\{ta\}/g, name || "它"); }
+  function fillTa(tpl, name) { return String(tpl == null ? "" : tpl).replace(/\{ta\}/g, name || "那只"); }
   // 心迹条在「当前档 → 下一档」区间内的百分比（末档 100%）
   const XT_HEART_MARKS = [0, 40, 100, 190, 300];
   function xtHeartPct(v) {
@@ -5035,7 +5035,7 @@
     h += '<button type="button" class="btn primary xt-gift-btn" id="xtGiftOpen"' + (qualify ? "" : " disabled") + '>' +
       '<span class="xt-gift-ico">🎁</span>' + esc(Spirits.GIFT_COPY.open) + '</button>';
     h += '<div class="xt-sub">今日已递 ' + globalGiven + '/' + globalMax +
-      (givenN >= 1 ? '（今天已经给过它 ' + givenN + ' 件）' : "") + '</div>';
+      (givenN >= 1 ? '（今天已经给过{ta} ' + givenN + ' 件）' : "") + '</div>';
     if (!qualify) h += '<div class="xt-hint">' + esc(fillTa(Spirits.GIFT_COPY.qualifying, name)) + '</div>';
     h += '</div>';
     return h;
@@ -5117,14 +5117,14 @@
       const hstore = Spirits.load();
       const hrec = Spirits.ensureIn(hstore, it.id);
       const g = Spirits.GIFT_CATALOG[giftKey] || {};
-      const ok = await confirmModal("递一件给它？", "把「" + (g.name || "这件东西") + "」递过去。递出去就收不回来了。", "递过去");
+      const ok = await confirmModal(fillTa("送给{ta}？", name), fillTa("把「" + (g.name || "这件东西") + "」给{ta}。给出去了，就要不回来了。", name), "送过去");
       if (!ok) { paint(); return; }
       const globalGiven = Spirits.giftGivenToday(today);
       const gifts = Spirits.loadGifts();
       const res = Spirits.giveGift(gifts, hrec, giftKey, { dayKey: today, globalGiven: globalGiven });
       if (!res.ok) {
         if (res.reason === "day_global") toast(Spirits.GIFT_COPY.dayFull);
-        else if (res.reason === "day_per") toast("今天给它的够多了。");
+        else if (res.reason === "day_per") toast(fillTa("今天给{ta}的够多了。", name));
         else if (res.reason === "dup") toast(fillTa(Spirits.GIFT_COPY.alreadyHeld, name));
         else if (res.reason === "locked") toast(fillTa(Spirits.GIFT_COPY.qualifying, name));
         else if (res.reason === "no_stock") toast(Spirits.GIFT_COPY.emptyStock);
@@ -5419,7 +5419,7 @@
       ? '<img class="spirit-img big cg-as-art" id="sdArtCg" src="' + esc(_cgShown) + '" alt="CG">'
       : (rec.imgUrl
         ? spiritImgHtml(it, rec, 240, "spirit-img big")
-        : '<div class="sk sk-art"></div><div class="sd-gen-hint" style="margin-top:8px">正在画它的立绘…（约 15-20 秒）</div>');
+        : '<div class="sk sk-art"></div><div class="sd-gen-hint" style="margin-top:8px">正在画{ta}的立绘…（约 15-20 秒）</div>');
     // v164g：详情页上下切换（不用返回列表就能挨着看沁灵）
     const _allItems = spiritItems();
     const _curIdx = _allItems.findIndex((x) => String(x.id) === String(id));
@@ -5442,7 +5442,7 @@
       '<div class="sd-title" style="margin-top:4px">' +
       (rec.nameEdited
         ? '<span style="color:var(--text-2)">✏️ 名字改过了</span>'
-        : '<button type="button" class="link-btn" id="sdRename">✏️ 给它改个名字（只能改一次）</button>') +
+        : '<button type="button" class="link-btn" id="sdRename">✏️ 给{ta}改个名字（只能改一次）</button>') +
       "</div>" +
       '<div class="sd-line">“' + esc(p.line || "") + '”</div>' +
       '<div class="spirit-tags" style="justify-content:center">' + ((p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
@@ -5461,11 +5461,11 @@
         '<div class="cp-bond-head"><span>羁绊</span><b>' + bond.value + "</b><i>" + bond.icon + " " + esc(bond.name) + "</i></div>" +
         '<div class="cp-track"><i style="width:' + bond.pct + '%"></i></div>' +
         '<div class="cp-sub">' + (bond.isMax ? "已经是最熟的那一档了" : "再攒 " + bond.toNext + " 点到「" + esc(bond.next) + "」") +
-          " · 它陪了你 " + DB.daysWith(it) + " 天</div>" +
+          " · {ta}陪了你 " + DB.daysWith(it) + " 天</div>" +
         (rec.nickCall
-          ? '<div class="cp-sub">💛 它现在叫你「' + esc(rec.nickCall) + '」<button type="button" class="link-btn" id="sdCallReset" style="font-size:11px">改回叫「主人」</button></div>'
+          ? '<div class="cp-sub">💛 {ta}现在叫你「' + esc(rec.nickCall) + '」<button type="button" class="link-btn" id="sdCallReset" style="font-size:11px">改回叫「主人」</button></div>'
           : (bond.canCall && !rec.nickCallAsked
-            ? '<div class="cp-call">💛 你们已经熟了 —— 它想改口，不再喊「主人」了' +
+            ? '<div class="cp-call">💛 你们已经熟了 —— {ta}想改口，不再喊「主人」了' +
               '<button type="button" class="btn primary cp-call-btn" id="sdCallYes">好，叫我名字</button>' +
               '<button type="button" class="btn ghost cp-call-btn" id="sdCallNo">还是叫主人</button></div>'
             : "")) +
@@ -5477,7 +5477,7 @@
         : "") +
       (nxEcho
         ? '<div class="cp-echo">✦ 下一封回响：' + esc(nxEcho.label) + "（还有 " + nxEcho.days + " 天）</div>"
-        : '<div class="cp-echo">✦ 回响都写完了 —— 每一枚纪念日它都留了信给你</div>') +
+        : '<div class="cp-echo">✦ 回响都写完了 —— 每一枚纪念日{ta}都留了信给你</div>') +
       "</div>";
 
     // v165：🌸 心迹区（心迹条 + 羁绊条 + 照料三式 + 「递一件给它」）
@@ -5500,7 +5500,7 @@
         "</div>";
     } else {
       h += '<div class="room-none">今天不过节。' +
-        (nxFest ? "下一个是 " + esc(nxFest.emoji + " " + nxFest.name) + "（还有 " + nxFest.days + " 天）—— 到那天，它会说一句只属于这天的话。" : "") +
+        (nxFest ? "下一个是 " + esc(nxFest.emoji + " " + nxFest.name) + "（还有 " + nxFest.days + " 天）—— 到那天，{ta}会说一句只属于这天的话。" : "") +
         "</div>";
     }
     const festOld = fests.filter((fx) => fx.date !== Spirits.todayKey());
@@ -5516,7 +5516,7 @@
     h += '<div class="sd-card"><div class="sd-card-title">📝 人物设定' +
       '<button type="button" class="link-btn" id="sdSetup" style="float:right;font-size:11px">' +
       (lkNow.chosen ? "改设定" : "✨ 4 步定设定") + "</button></div>" +
-      '<div class="sd-persona" id="sdPersonaText">' + (rec.personaZh ? esc(rec.personaZh) : ((rec.look && rec.look.persona) ? esc(rec.look.persona) : '<span style="color:var(--text-2)">正在为它写设定…（第一次会调用一次文字模型，稍等几秒）</span>')) + "</div>" +
+      '<div class="sd-persona" id="sdPersonaText">' + (rec.personaZh ? esc(rec.personaZh) : ((rec.look && rec.look.persona) ? esc(rec.look.persona) : '<span style="color:var(--text-2)">正在为{ta}写设定…（第一次会调用一次文字模型，稍等几秒）</span>')) + "</div>" +
       '<div class="look-sum" style="margin-top:8px">' +
         '<span class="look-sw big" style="background:' + esc(lkNow.hairHex || "#ddd") + '"></span>' +
         "<span>" + esc(lkNow.hairZh || "跟珠子主色") + "</span>" +
@@ -5559,14 +5559,14 @@
         ? '<button class="btn primary" id="sdNewLook">✨ 按新设定重画</button>'
         : '<button class="btn ghost" id="sdNewLook">🔁 换形象</button>') +
       '<button class="btn ghost" id="sdReRoll">🎲 换外观设定</button>' +
-      '<button class="btn ghost" id="sdEvents">📜 它的纪事</button>' +
+      '<button class="btn ghost" id="sdEvents">📜 {ta}的纪事</button>' +
       '<button class="btn ghost" id="sdRecoverOld">🔙 恢复旧立绘</button>' +
       '<button class="btn ghost" id="sdCleanup">🧹 清理失效图</button>' +
       "</div>" +
-      (rec.lookStale ? '<div class="sd-stale">🆕 它还想再细致些 —— 点「✨ 按新设定重画」，照「人物设定」重新画一遍。</div>' : "") +
+      (rec.lookStale ? '<div class="sd-stale">🆕 {ta}还想再细致些 —— 点「✨ 按新设定重画」，照「人物设定」重新画一遍。</div>' : "") +
       // v165：本阶立绘欠着时的可点补画入口（⛔ 出图失败不抛错，改成这一行）
       (stageImgPending(rec, it) ? '<div class="sd-stale" id="sdStageImgTip">🖼 本阶立绘还没画出来 · <button type="button" class="link-btn" id="sdStageImgFix">点此画本阶立绘</button></div>' : "") +
-      '<div class="sd-gen">已为它画过 ' + (Number(rec.genCount) || 1) + " 张</div>" +
+      '<div class="sd-gen">已为{ta}画过 ' + (Number(rec.genCount) || 1) + " 张</div>" +
       (hist.length > 1 ? '<div class="spirit-hist">' + hist.map((x) => {
         const d = Spirits.stageDef(x.stage);
         return '<div class="spirit-hist-item' + (x.stage === si.stage ? " now" : "") + '" title="' + esc(d.name) + '">' +
@@ -5591,7 +5591,7 @@
         h += '<div class="room-none" style="margin-top:8px">目前自己住一间。再放一只进去，他们就会开始攒契合度～</div>';
       }
     } else {
-      h += '<div class="room-none">还没入住。给它安排一间小屋，同住的沁灵会慢慢攒契合度 ✨</div>';
+      h += '<div class="room-none">还没入住。给{ta}安排一间小屋，同住的沁灵会慢慢攒契合度 ✨</div>';
     }
     h += '<button class="btn ghost" id="sdRoomPick" style="width:100%;margin-top:10px;font-size:13px">' +
       (room ? "🏠 换房间 / 搬出去" : "🏠 安排入住") + "</button></div>";
@@ -5608,17 +5608,17 @@
         "</div>" +
         '<div class="sd-diary-paper" id="sdDiaryBook"></div>' +
         // v155：回信输入（默认收起，点「↩️ 回它一句」才展开）
-        '<div class="sd-rep-box" id="sdRepBox" hidden><textarea id="sdRepInput" maxlength="120" placeholder="写一句回它 —— 它下一篇日记会回应你"></textarea>' +
-        '<button class="btn primary" id="sdRepSend">回它</button></div>';
+        '<div class="sd-rep-box" id="sdRepBox" hidden><textarea id="sdRepInput" maxlength="120" placeholder="写一句回{ta} —— {ta}下一篇日记会回应你"></textarea>' +
+        '<button class="btn primary" id="sdRepSend">回{ta}</button></div>';
     }
     h += "</div>";
 
     // v155：✦ 回响 —— 纪念日信件（本地生成，只在这一天出现）
     const echoes = (Array.isArray(rec.echoes) ? rec.echoes : []).slice().reverse();
     h += '<div class="sd-card"><div class="sd-card-title">✦ 回响（' + echoes.length + "）" +
-      '<small style="font-weight:400;color:var(--text-2);font-size:11px"> 它替你记着的日子</small></div>';
+      '<small style="font-weight:400;color:var(--text-2);font-size:11px"> {ta}替你记着的日子</small></div>';
     if (!echoes.length) {
-      h += '<div class="room-none">还没有回响。它会在陪你的第 7 / 30 / 100 天，还有每年挂瓷那天，主动写一封信给你 —— 那些日子不用你记，它记着。</div>';
+      h += '<div class="room-none">还没有回响。{ta}会在陪你的第 7 / 30 / 100 天，还有每年挂瓷那天，主动写一封信给你 —— 那些日子不用你记，{ta}记着。</div>';
     } else {
       h += '<div class="sd-echo">' + echoes.map((e) =>
         '<div class="sd-echo-item' + (Number(rec.mailSeenAt) < (e.at || 0) ? " new" : "") + '">' +
@@ -5636,9 +5636,9 @@
     // v157：🎞 回忆册 —— 它陪你的时间线（本地推导，0 出图；可一键合成竖版长图）
     const memos = Spirits.memoirOf(it, rec);
     h += '<div class="sd-card"><div class="sd-card-title">🎞 回忆册（' + memos.length + "）" +
-      '<small style="font-weight:400;color:var(--text-2);font-size:11px"> 它替你记着的那些"第一次"</small></div>';
+      '<small style="font-weight:400;color:var(--text-2);font-size:11px"> {ta}替你记着的那些"第一次"</small></div>';
     if (!memos.length) {
-      h += '<div class="room-none">还没有可记的事。等它陪你久一点，这里会慢慢长出一条时间线。</div>';
+      h += '<div class="room-none">还没有可记的事。等{ta}陪你久一点，这里会慢慢长出一条时间线。</div>';
     } else {
       h += '<div class="memo-line">' + memos.slice().reverse().map((m) =>
         '<div class="memo-row"><span class="memo-dot">' + esc(m.icon) + "</span>" +
@@ -5667,7 +5667,7 @@
         (rec._cgErr ? '<div class="sd-gen-hint">上次出图失败：' + esc(rec._cgErr) + "</div>" : "") +
         "</div>";
     } else {
-      h += '<div class="room-none">它现在还是' + esc(si.name) + '，只有立绘；深沁到「蜕形」就会解锁一张专属 CG 🎬</div>';
+      h += '<div class="room-none">{ta}现在还是' + esc(si.name) + '，只有立绘；深沁到「蜕形」就会解锁一张专属 CG 🎬</div>';
     }
     h += "</div>";
 
@@ -5683,7 +5683,7 @@
       '<button class="btn ghost" id="sdChat">💬 他们聊天</button>' +
       '<button class="btn ghost" id="sdSpiritList">🍡 所有沁灵</button></div>';
 
-    view.innerHTML = h;
+    view.innerHTML = fillTa(h, spiritName(it, store));
     bindSpiritImgFallback(view);
     bindBrokenImgCleanup(view);
     // 原地刷新（保持滚动位置）/ 回到顶部（让用户第一时间看到新立绘）
@@ -5741,16 +5741,16 @@
           (isNew
             ? '<div class="sd-diary-text" id="sdDiaryNew" data-full="' + esc(raw) + '" data-at="' + (d.at || 0) + '" title="点一下立刻显示全文">' + esc(raw) + "</div>"
             : '<div class="sd-diary-text">' + esc(raw).replace(/\n/g, "<br>") + "</div>") +
-          (rep ? '<div class="sd-diary-rep">你回了它：「' + esc(rep.text) + "」" +
-            (Number(rec.replyAcked) >= rep.at ? "" : '<span class="rep-wait">· 等它下一篇日记回应</span>') + "</div>" : "") +
-          (isNew ? '<button type="button" class="link-btn sd-rep-btn" id="sdRepBtn" data-date="' + esc(d.date || "") + '">↩️ 回它一句</button>' : "") +
+          (rep ? '<div class="sd-diary-rep">你回了{ta}：「' + esc(rep.text) + "」" +
+            (Number(rec.replyAcked) >= rep.at ? "" : '<span class="rep-wait">· 等{ta}下一篇日记回应</span>') + "</div>" : "") +
+          (isNew ? '<button type="button" class="link-btn sd-rep-btn" id="sdRepBtn" data-date="' + esc(d.date || "") + '">↩️ 回{ta}一句</button>' : "") +
           "</div>";
       };
       const paintDiary = () => {
         const isNew = di === 0;
         const rbx = $("#sdRepBox");
         if (rbx) rbx.hidden = true;                  // 翻页后收起回信框（它只跟着当前这篇）
-        dBook.innerHTML = diaryPageHtml(diary[di], isNew);
+        dBook.innerHTML = fillTa(diaryPageHtml(diary[di], isNew), spiritName(it, store));
         if (dNo) dNo.textContent = String(diary.length - di);   // 按时间顺序编号：最新那篇 = 第 N 篇
         if (dPrev) dPrev.disabled = di >= diary.length - 1;     // 已经是第一篇了
         if (dNext) dNext.disabled = isNew;                      // 已经是最新一篇了
@@ -5934,12 +5934,12 @@
     if (repSend) repSend.onclick = () => {
       const ta = $("#sdRepInput");
       const t = ta ? String(ta.value || "").trim() : "";
-      if (!t) { toast("写一句再回它"); return; }
+      if (!t) { toast(fillTa("写一句再回{ta}", spiritName(it, store))); return; }
       const s5 = Spirits.load();
       const r5 = Spirits.ensureIn(s5, it.id);
       Spirits.replyDiary(it, r5, (repBox && repBox.dataset.date) || Spirits.todayKey(), t);
       Spirits.save(s5);
-      toast("💌 回它了，它下一篇日记会回应你");
+      toast(fillTa("💌 回了{ta}，{ta}下一篇日记会回应你", spiritName(it, store)));
       refresh();
     };
     // v155：改口（羁绊到「通意」后它会想叫你的名字）
@@ -5951,7 +5951,7 @@
       r6.nickCall = (o6 && o6.name) ? o6.name : "你";
       r6.nickCallAsked = 1;
       Spirits.save(s6);
-      toast("💛 它开始叫你「" + r6.nickCall + "」了");
+      toast(fillTa("💛 {ta}开始叫你「" + r6.nickCall + "」了", spiritName(it, store)));
       refresh();
     };
     const callNo = $("#sdCallNo");
@@ -5960,7 +5960,7 @@
       const r7 = Spirits.ensureIn(s7, it.id);
       r7.nickCall = ""; r7.nickCallAsked = 1;
       Spirits.save(s7);
-      toast("它还是叫你「主人」");
+      toast(fillTa("{ta}还是叫你「主人」", spiritName(it, store)));
       refresh();
     };
     const callReset = $("#sdCallReset");
@@ -5995,14 +5995,14 @@
   function showRenameModal(item) {
     const mask = $("#modalMask"), modal = $("#modal");
     const cur = spiritName(item, Spirits.load());
-    modal.innerHTML = "<h3>✏️ 给它改个名字</h3>" +
+    modal.innerHTML = fillTa("<h3>✏️ 给{ta}改个名字</h3>" +
       '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:12px;text-align:center">' +
-      "名字只能改一次，想好了再点保存哦～<br>（改完之后它写日记、写剧情、聊天都会用新名字）</p>" +
+      "名字只能改一次，想好了再点保存哦～<br>（改完之后{ta}写日记、写剧情、聊天都会用新名字）</p>" +
       '<div class="form-group"><div class="form-label">新名字 <small>2-6 个字最好看</small></div>' +
       '<input class="form-input" id="rnName" maxlength="6" placeholder="' + esc(cur) + '" value="' + esc(cur) + '"></div>' +
       '<div style="display:flex;gap:8px;margin-top:12px">' +
       '<button class="btn ghost" id="rnCancel" style="flex:1">取消</button>' +
-      '<button class="btn primary" id="rnSave" style="flex:2">就这个（不能改第二次）</button></div>';
+      '<button class="btn primary" id="rnSave" style="flex:2">就这个（不能改第二次）</button></div>', cur);
     mask.hidden = false;
     modal.hidden = false;
     modal.style.display = "";
@@ -6109,15 +6109,15 @@
       '<div class="setup-desc">比如想要「猫猫头」，就选「猫耳 + 猫尾」—— 我会明确写进提示词，不会漏画。预设里没有的就用「✏️ 自己填」。</div>' +
       '<div class="setup-chips" id="lkFeat">' + featChips + "</div>" +
       '<div id="lkFeatCustomWrap" style="display:' + (state.customFeat ? "" : "none") + '">' +
-      '<input class="form-input" id="lkFeatCustom" maxlength="30" placeholder="用一句话写它的特征，例：戴一顶小草帽、背一把小木剑" value="' + esc(state.customFeat) + '"></div>' +
+      '<input class="form-input" id="lkFeatCustom" maxlength="30" placeholder="用一句话写{ta}的特征，例：戴一顶小草帽、背一把小木剑" value="' + esc(state.customFeat) + '"></div>' +
       "</div>" +
       // ③ 性格
       '<div class="setup-sec"><div class="setup-t"><b>3</b> 性格</div>' +
-      '<div class="setup-desc">会影响它的表情、姿态和日记口吻。</div>' +
+      '<div class="setup-desc">会影响{ta}的表情、姿态和日记口吻。</div>' +
       '<div class="setup-chips" id="lkPers">' + persChips + "</div></div>" +
       // ④ 一句话（v164：改成多行、**不限字数** —— 用户说"这里是我主要补充的地方"）
       '<div class="setup-sec"><div class="setup-t"><b>4</b> 你想要的设定<small>随便写，多少都行</small></div>' +
-      '<div class="setup-desc">想让它什么样就写在这儿，<b>写得越具体画得越准</b>。<br>' +
+      '<div class="setup-desc">想让{ta}什么样就写在这儿，<b>写得越具体画得越准</b>。<br>' +
       '例：「柿红色的头发高高束起，穿着柿红色搭配鹅黄色的圆领袍，有着明媚笑容的少年郎，手里握着爱吃的柿子」。<br>' +
       '你写到的<b>发色、发型、衣服样式与颜色、手里拿的东西、神态、性别</b>我都会一条条提出来，' +
       '下一步给你确认、可以改；写到的<b>纹样</b>也会照你说的画（例：「衣服也有芭蕉叶的纹样」）。不写就按原来的随机来。</div>' +
@@ -6127,7 +6127,7 @@
       '<button class="btn ghost" id="lkSkip">先跳过（按自动的来）</button>' +
       '<button class="btn primary" id="lkNext">下一步：润色人设 →</button>' +
       "</div>" +
-      '<div class="setup-note">① 改设定 → ② 我按你写的润色出完整人设（你可改）→ ③ 确认出图要求 → 出图。<br>最后一步确认会重画它的立绘（消耗 1 次出图额度），蜕形/化形的 CG 也一起重画。</div>' +
+      '<div class="setup-note">① 改设定 → ② 我按你写的润色出完整人设（你可改）→ ③ 确认出图要求 → 出图。<br>最后一步确认会重画{ta}的立绘（消耗 1 次出图额度），蜕形/化形的 CG 也一起重画。</div>' +
       "</div>";
     let closed = false;
     const close = () => {
@@ -6228,7 +6228,7 @@
     if (skBtn) skBtn.onclick = () => doSkip();
     };   // ← bindStep1 结束
     renderStep1 = () => {
-      modal.innerHTML = step1Html();
+      modal.innerHTML = fillTa(step1Html(), spiritName(item, Spirits.load()));
       mask.hidden = false; modal.hidden = false; modal.style.display = "";
       bindStep1();
       mask.onclick = () => close();     // 第 1 步点遮罩 = 关掉（不落库、不出图）
@@ -6293,18 +6293,18 @@
           repolish = false;
           if (!state.persona) { toast("人设没生成出来，可以直接在这儿手写一段"); }
         }
-        const html = '<div class="look-confirm">' +
-          '<div class="look-confirm-head">📝 第 2 步 / 共 3 步 · 这是它的完整人设</div>' +
+        const html = fillTa('<div class="look-confirm">' +
+          '<div class="look-confirm-head">📝 第 2 步 / 共 3 步 · 这是{ta}的完整人设</div>' +
           '<div class="look-confirm-sub">我按你第 1 步写的东西润色成了下面这段。<b>哪里不对就直接点进去改</b> —— ' +
-          '改好的这段会显示在它的详情页，也是下一步出图要求的依据。<br>' +
+          '改好的这段会显示在{ta}的详情页，也是下一步出图要求的依据。<br>' +
           '第 1 步改过设定、觉得这版不对，点「🪄 重新润色」。</div>' +
           '<textarea class="form-input setup-ta" id="lkPersona" rows="9" placeholder="（可以留空，我再按设定写一版）">' +
           esc(state.persona) + "</textarea>" +
           '<div class="look-confirm-actions three">' +
           '<button class="btn ghost" data-p-alt>← 返回改设定</button>' +
           '<button class="btn ghost" id="lkRepolish">🪄 重新润色</button>' +
-          '<button class="btn primary" data-p-ok>就用它 →</button>' +
-          "</div></div>";
+          '<button class="btn primary" data-p-ok>就用{ta} →</button>' +
+          "</div></div>", spiritName(item, Spirits.load()));
         const res = await openEditPanel(
           html,
           (m) => ({ persona: ((m.querySelector("#lkPersona") || {}).value || "").trim() }),
