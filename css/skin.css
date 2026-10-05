@@ -26,6 +26,14 @@
   --tape-3: #f0d3d0;
   --ruled: rgba(120, 95, 70, .14);
   --font-hand: "Kaiti SC", "STKaiti", "KaiTi", "楷体", "Songti SC", serif;
+
+  /* v174-C3 —— 事件卡 / 纪事页 / 画册 / hub（全是尺寸，与主题无关 ⇒ 深色主题不用另写） */
+  --evt-ico: 34px;           /* 事件卡 / 纪事行 图标底 */
+  --evt-row-minh: 56px;      /* 纪事行最小高 */
+  --evt-card-w: 366px;       /* 事件卡宽度上限 */
+  --evt-queue-max: 3;        /* 待播队列上限（JS 读同值，⛔ 不两处硬编码） */
+  --hub-chip-h: 30px;        /* hub chip 高 */
+  --album-cell-ratio: 4 / 3; /* 画册格比例（对齐 CG 出图 4:3，⛔ 改 1:1 会切人物两头） */
 }
 
 /* ---------- 2. 浅色：文玩手账配色 ---------- */
@@ -925,7 +933,7 @@
 .memo-head { display: flex; align-items: baseline; gap: 8px; }
 .memo-head b { font-size: 13px; color: var(--wood-2); }
 .memo-head span { margin-left: auto; font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
-.memo-sub { margin-top: 2px; font-size: 11.5px; line-height: 1.6; color: var(--text-2); }
+.memo-sub { margin-top: 2px; font-size: 11.5px; line-height: 1.6; color: var(--wood-2); }
 
 /* ============================================================
    v157 · 沁灵巷（概览 + 本地动态 feed）
@@ -1202,6 +1210,9 @@ body.talk-open .topbar .icon-btn { color: #fdf6ea; background: rgba(0,0,0,.25); 
 @media (prefers-reduced-motion: reduce) {
   .talk-portrait, .scenebg, .nt-opt { transition: none !important; animation: none !important; }
   .talk-cue { animation: none; opacity: .8; }
+  /* v174-C3：事件卡 / 纪事页 / 画册 / hub —— 停留时长⛔ 不缩短（缩短会让没看清就没了），只去动画 */
+  .evt-card, .evt-card-mask, .evt-row, .evt-tab, .evt-day, .evt-list, .evt-more, .evt-head,
+  .album-cell, .album-more, .album-tabs, .hub-card, .hub-chip, .hub-main { transition: none !important; animation: none !important; }
 }
 
 /* —— 结局卡 —— */
@@ -1330,7 +1341,7 @@ body.talk-open .topbar .icon-btn { color: #fdf6ea; background: rgba(0,0,0,.25); 
 /* —— 事件回顾页（§D4：复用 .memo-* 视觉语言） —— */
 .memo-title { font-size: 13px; font-weight: 600; color: var(--wood-2); line-height: 1.35; }
 .memo-text { font-size: 11.5px; color: var(--text-2); line-height: 1.5; margin-top: 1px; }
-.memo-sub { font-size: 10.5px; color: var(--text-2); margin-top: 2px; }
+.memo-sub { font-size: 10.5px; color: var(--wood-2); margin-top: 2px; }
 
 /* —— 全主串 CG 墙（沁灵巷） —— */
 .cg-wall-row { padding: 8px 0; border-bottom: 1px dashed var(--line); }
@@ -1546,3 +1557,166 @@ body.route-night #aiFab { display: none !important; }
 @media (max-height: 420px) {
   .cast-sheet { max-height: min(64vh, 300px); }
 }
+
+/* ============================================================
+   v174-C3 · 事件卡片（三级 + 单张队列）/ 纪事页 / 画册 / hub 收敛（css）
+   · 级别双线索：描边/底色（明度）+ 装饰形状（无 / 左 3px 竖条 / 顶部通条 + 朱印）
+   · ⛔ 本批 0 个新色值：全用现有 token；--gold 只作图形（2.98:1），其上一律压 --text
+   · ⛔ 不改任何现有选择器（唯一例外：.memo-sub 的 --text-2 → --wood-2）
+   · ⚠️ 全项目唯一 LF 文件 —— 保持 CRLF 数 = 0
+   ============================================================ */
+
+/* ---- ① 事件卡（.evt-card · 三级别 · 单张队列） ---- */
+.evt-card {
+  position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
+  width: min(var(--evt-card-w), calc(100% - 24px)); z-index: 60;
+  display: grid; grid-template-columns: var(--evt-ico) minmax(0, 1fr) auto;
+  grid-auto-rows: min-content; column-gap: 10px; row-gap: 1px; align-items: start;
+  padding: 10px 12px; border-radius: var(--r-md); text-align: left; cursor: pointer;
+  background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow-2);
+  animation: evtIn .26s var(--ease-spring) both;
+}
+.evt-card.leaving { animation: evtOut .24s var(--ease-out) forwards; }
+.evt-ico {
+  grid-column: 1; grid-row: 1 / span 4; align-self: start;
+  width: var(--evt-ico); height: var(--evt-ico); display: grid; place-items: center;
+  border-radius: var(--r-sm); color: var(--wood-2);
+  background: color-mix(in srgb, var(--wood-2) 8%, var(--card));
+}
+.evt-ico svg { width: 18px; height: 18px; }
+.evt-title {
+  grid-column: 2 / 4; grid-row: 1; min-width: 0;
+  font-family: var(--font-hand); font-size: 14.5px; font-weight: 700; line-height: 1.3; color: var(--wood);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.evt-sum {
+  grid-column: 2 / 4; grid-row: 2; min-width: 0; margin-top: 2px;
+  font-size: 12.5px; font-weight: 400; line-height: 1.45; color: var(--wood-2);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.evt-time { grid-column: 2; grid-row: 3; align-self: center;
+  font-size: 11px; color: var(--wood-2); font-variant-numeric: tabular-nums; }
+.evt-who { grid-column: 2 / 4; grid-row: 4; min-width: 0;
+  font-size: 11px; color: var(--wood-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.evt-go {
+  grid-column: 3; grid-row: 3; align-self: center; justify-self: end;
+  height: 28px; padding: 0 12px; border-radius: 99px; font-family: inherit; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--wood-2); background: transparent;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--line));
+}
+.evt-go:active { transform: scale(.96); }
+/* l1 · 日常：--line 1px 描边 + --card 底 + 图标底 --wood-2 8% = #f3efe6（⛔ 无装饰、无按钮 —— 与 l2/l3 成双线索） */
+.evt-card.is-l1 { border: 1px solid var(--line); background: var(--card); }
+.evt-card.is-l1 .evt-ico { background: color-mix(in srgb, var(--wood-2) 8%, var(--card)); color: var(--wood-2); }
+/* l2 · 要事：--gold 描边 + 左 3px 竖条 */
+.evt-card.is-l2 { border-color: color-mix(in srgb, var(--gold) 45%, var(--line)); }
+.evt-card.is-l2 .evt-ico { background: color-mix(in srgb, var(--gold) 14%, var(--card)); color: var(--wood-2); }
+.evt-card.is-l2::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px;
+  border-radius: 0 2px 2px 0; background: var(--gold); }
+/* l3 · 节点：--gold 1.5px 描边 + --gold 8% 底 + 图标 --gold 实色（字用 --text）+ 顶部通条 + 朱印 + 全屏居中 + 遮罩 */
+.evt-card.is-l3 {
+  top: 50%; transform: translate(-50%, -50%); width: min(340px, 86vw); z-index: 70;
+  border: 1.5px solid var(--gold); background: color-mix(in srgb, var(--gold) 8%, var(--card));
+  border-radius: var(--r-xl); padding: 20px 18px 16px;
+  animation: evtL3In .3s var(--ease-spring) both;
+}
+.evt-card.is-l3 .evt-ico { background: var(--gold); color: var(--text); }
+.evt-card.is-l3::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+  border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--gold); }
+.evt-card.is-l3::after { content: ""; position: absolute; left: 12px; top: 12px; width: 10px; height: 10px;
+  border-radius: 2px; background: var(--gold); box-shadow: inset 0 0 0 1px rgba(24,18,14,.28); }
+.evt-card-mask { position: fixed; inset: 0; z-index: 69; background: rgba(24,18,14,.42);
+  animation: evtMaskIn .2s var(--ease-out) both; }
+@keyframes evtL3In { from { opacity: 0; transform: translate(-50%, -50%) scale(.94); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+@keyframes evtMaskIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---- ② 纪事页 #/events ---- */
+.evt-head { display: flex; align-items: center; gap: 12px; padding: 4px 2px 12px; }
+.evt-head-n { flex: none; font-family: var(--font-hand); line-height: 1; font-variant-numeric: tabular-nums; }
+.evt-head-n b { font-size: 30px; color: var(--wood); }
+.evt-head-n span { font-size: 14px; color: var(--wood-2); }
+.evt-head-meta { min-width: 0; }
+.evt-head-title { font-family: var(--font-hand); font-size: 14px; font-weight: 700; letter-spacing: 1px; color: var(--wood); }
+.evt-head-sub { font-size: 11.5px; color: var(--wood-2); margin-top: 3px; }
+.evt-tabs { display: flex; gap: 6px; height: 30px; margin: 2px 0 10px; overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none; position: sticky; top: 0; z-index: 2; background: var(--bg); }
+.evt-tabs::-webkit-scrollbar { display: none; }
+.evt-tab { flex: none; padding: 5px 11px; border-radius: 99px; font-family: inherit; cursor: pointer;
+  font-size: 11.5px; font-weight: 500; line-height: 1.2; color: var(--wood-2);
+  background: transparent; border: 1px solid var(--line);
+  transition: background .16s var(--ease-out), color .16s var(--ease-out), border-color .16s var(--ease-out); }
+.evt-tab.is-on { background: var(--gold); color: var(--text); border-color: var(--gold); }
+.evt-day { margin-top: 4px; }
+.evt-day-head { display: flex; align-items: baseline; justify-content: space-between;
+  padding: 10px 2px 4px; border-bottom: 1px solid var(--line); }
+.evt-day-head > span { font-size: 13px; font-weight: 700; color: var(--wood); }
+.evt-day-head small { font-size: 11px; color: var(--wood-2); font-variant-numeric: tabular-nums; }
+.evt-list { display: flex; flex-direction: column; }
+.evt-row { position: relative; display: flex; align-items: center; gap: 10px; width: 100%;
+  min-height: var(--evt-row-minh); padding: 9px 2px; text-align: left; font-family: inherit;
+  background: transparent; border: 0; border-bottom: 1px dashed var(--line); cursor: pointer;
+  transition: background .14s var(--ease-out); }
+.evt-row:active { background: color-mix(in srgb, var(--wood-2) 5%, transparent); }
+.evt-row-ico { flex: none; width: var(--evt-ico); height: var(--evt-ico); display: grid; place-items: center;
+  border-radius: var(--r-sm); color: var(--wood-2); background: color-mix(in srgb, var(--wood-2) 8%, var(--card)); }
+.evt-row-ico svg { width: 18px; height: 18px; }
+.evt-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.evt-row-title { min-width: 0; font-size: 14px; font-weight: 600; line-height: 1.35; color: var(--wood-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.evt-row-sum { min-width: 0; font-size: 12.5px; font-weight: 400; line-height: 1.4; color: var(--wood-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.evt-row-who { font-size: 11px; line-height: 1.4; color: var(--wood-2); font-variant-numeric: tabular-nums; }
+.evt-row-go { flex: none; font-size: 16px; line-height: 1; color: var(--wood-2); }
+/* 未读：左 3px --gold 竖条 + 标题 --text + 标题右侧【新】微标（--gold 底 --text 字，5.05:1） */
+.evt-row.is-new { box-shadow: inset 3px 0 0 var(--gold); }
+.evt-row.is-new .evt-row-title { color: var(--text); }
+.evt-row.is-new .evt-row-title::after { content: "新"; display: inline-block; margin-left: 6px;
+  padding: 1px 5px; vertical-align: 1px; border-radius: 4px; font-family: var(--font-hand);
+  font-size: 10px; font-weight: 500; line-height: 1.2; background: var(--gold); color: var(--text); }
+.evt-more { width: 100%; height: 44px; margin: 10px 0 24px; }
+.evt-empty { padding: 32px 0; text-align: center; font-size: 13px; color: var(--wood-2); }
+.evt-fail { background: var(--card); border-left: 3px solid var(--line); border-radius: var(--r-md);
+  padding: 14px; margin-top: 8px; }
+.evt-fail-title { font-size: 14px; font-weight: 700; color: var(--wood); }
+.evt-fail-sub { font-size: 12.5px; color: var(--wood-2); margin-top: 4px; }
+.evt-fail .btn { margin-top: 10px; }
+
+/* ---- ③ 画册 #/album（四册 tab 复用 .evt-tab chip；.album-grid 见既有，⛔ 不动列数） ---- */
+.album-tabs { margin-bottom: 12px; }
+.album-cell.is-cover { border: 1.5px solid var(--gold); }
+.album-cell.is-cover::before { content: ""; position: absolute; left: 4px; top: 4px; width: 12px; height: 12px;
+  border-radius: 2px; background: var(--gold); box-shadow: inset 0 0 0 1px rgba(24,18,14,.28); z-index: 2; }
+.album-cell-owner { position: absolute; left: 6px; bottom: 6px; right: 6px; font-size: 10px;
+  color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); text-align: left;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.album-cell-cover { position: absolute; left: 4px; bottom: 3px; padding: 1px 5px; border-radius: 99px;
+  font-size: 10px; line-height: 1.4; color: var(--card);
+  background: color-mix(in srgb, var(--wood) 72%, transparent); }
+.album-cell.is-cover .album-cell-owner { display: none; }
+/* 画册里「图名」标签挪到右下（规范 §3.2；新选择器，⛔ 未改既有 .album-cell-tag 规则） */
+.album-grid .album-cell-tag { left: auto; right: 4px; }
+.album-empty { padding: 32px 0; text-align: center; font-size: 13px; color: var(--wood-2); }
+.album-more { width: 100%; height: 44px; margin: 10px 0 24px; }
+.album-fail { background: var(--card); border-left: 3px solid var(--line); border-radius: var(--r-md);
+  padding: 14px; margin-top: 8px; }
+.album-fail-title { font-size: 14px; font-weight: 700; color: var(--wood); }
+.album-fail-sub { font-size: 12.5px; color: var(--wood-2); margin-top: 4px; }
+.album-fail .btn { margin-top: 10px; }
+
+/* ---- ④ hub 收敛（沁灵页 · .hub-card，房间/纪事/画册唯一正式入口） ---- */
+.hub-card { width: 100%; padding: 12px 14px; margin: 10px 0;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-1); }
+.hub-main { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.hub-ico { flex: none; width: 22px; height: 22px; display: grid; place-items: center; color: var(--wood-2); }
+.hub-ico svg { width: 22px; height: 22px; }
+.hub-meta { flex: 1; min-width: 0; }
+.hub-title { display: block; font-family: var(--font-hand); font-size: 15px; font-weight: 700; color: var(--text); }
+.hub-sub { display: block; font-size: 11.5px; color: var(--wood-2); margin-top: 2px; }
+.hub-go { flex: none; font-size: 16px; line-height: 1; color: var(--wood-2); }
+.hub-chips { display: flex; gap: 8px; margin-top: 10px; }
+.hub-chip { flex: 1; min-width: 0; height: var(--hub-chip-h); padding: 0 8px; border-radius: 99px;
+  font-family: inherit; font-size: 11.5px; font-weight: 500; color: var(--wood-2); cursor: pointer;
+  background: color-mix(in srgb, var(--gold) 10%, var(--card)); border: 1px solid transparent;
+  transition: transform .12s var(--ease-spring); }
+.hub-chip b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.hub-chip:active { transform: scale(.96); }
