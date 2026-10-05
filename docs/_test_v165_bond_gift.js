@@ -261,15 +261,15 @@ section("8. GIFT_CATALOG 正式物名 + desc（v165e §13.3）");
 }
 
 /* ============ 9. 照料三式 careAct（v165d） ============ */
-section("9. 照料三式 careAct（擦净/静坐/理线 · 各 1 次/日 · +2/次 · 合计 ≤+6 · harmed×0.5）");
+section("9. 照料三式 careAct（探看/静坐/叙话 · 各 1 次/日 · +2/次 · 合计 ≤+6 · harmed×0.5）");
 {
   const { S } = newSpirits();
   ok(Array.isArray(S.CARE_ACTS) && S.CARE_ACTS.length === 3, "CARE_ACTS 三式");
   if (typeof S.careAct === "function") {
-    ok(S.CARE_ACTS.map((a) => a.name).join("") === "擦净静坐理线", "三式名为 擦净/静坐/理线");
+    ok(S.CARE_ACTS.map((a) => a.name).join("") === "探看静坐叙话", "三式名为 探看/静坐/叙话");
     const r = { bond: 30 };
     const a = S.careAct(r, "clean", { dayKey: "2026-10-03" });
-    ok(a.ok && a.delta === 2 && r.bond === 32, "擦净 +2");
+    ok(a.ok && a.delta === 2 && r.bond === 32, "探看 +2");
     ok(!S.careAct(r, "clean", { dayKey: "2026-10-03" }).ok, "同一式当日重复 → 拦");
     S.careAct(r, "sit", { dayKey: "2026-10-03" });
     S.careAct(r, "thread", { dayKey: "2026-10-03" });
@@ -300,12 +300,12 @@ section("10. 心迹档位名 + 送礼反应台词（占位）+ 防物化红线")
   ok(S.heartLevel(0).name === "" && S.heartLevel(40).name === "微澜" && S.heartLevel(100).name === "动心" && S.heartLevel(190).name === "倾心" && S.heartLevel(300).name === "相许",
     "heartLevel 档名 = lv0 无档名(不上屏,空串)/微澜/动心/倾心/相许");
   if (typeof S.giftReactionOf === "function") {
-    ok(S.giftReactionOf({ look: { pers: "cool" } }, true) === "……还行。", "cool 命中 = 三字内短句");
+    ok(S.giftReactionOf({ look: { pers: "cool" } }, true) === "……收了。", "cool 命中 = 短句");
     const hi = S.giftReactionOf({ look: { pers: "gentle" } }, true), mi = S.giftReactionOf({ look: { pers: "gentle" } }, false);
     ok(hi && mi && hi !== mi, "命中/未命中反应不同");
     ok(S.giftReactionOf({ look: { pers: "unknown_x" } }, true) === S.GIFT_REACTION_FALLBACK.hit, "未登记型 → 通用兜底");
     ok(Object.keys(S.GIFT_REACTIONS).length >= 8, "反应台词覆盖 ≥8 型（每型命中/未命中各 1）");
-    ok(S.GIFT_COPY && S.GIFT_COPY.open === "递一件给它", "⛔ 按钮字面 = 「递一件给它」");
+    ok(S.GIFT_COPY && S.GIFT_COPY.open === "送给{ta}", "⛔ 按钮字面 = 「送给{ta}」");
     // 防物化红线：全部文案不得含「好感度」「送礼」主体句 / 物件化动作
     const allTxt = Object.keys(S.GIFT_REACTIONS).map((k) => S.GIFT_REACTIONS[k].hit + S.GIFT_REACTIONS[k].miss).join("") +
       Object.keys(S.GIFT_COPY).map((k) => S.GIFT_COPY[k]).join("");

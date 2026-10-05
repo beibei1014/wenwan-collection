@@ -3570,9 +3570,9 @@
   /* ---------- v165 照料三式（擦净 / 静坐 / 理线；纯函数，各 1 次/日、+2/次、合计 ≤+6） ---------- */
   // ⚠️ 与 §13.2「每日任务」（净手/陪坐/看纹/守灯/应声）是两套不同系统：本表是「心迹区」的照料手段（§2.2 / §七-5）。
   const CARE_ACTS = [
-    { id: "clean",  name: "擦净", line: "案上擦了擦，浮灰落了。" },
+    { id: "clean",  name: "探看", line: "过来看了看，顺手拾掇拾掇。" },
     { id: "sit",    name: "静坐", line: "坐下来，静静陪了一会儿。" },
-    { id: "thread", name: "理线", line: "把线顺了顺，松的地方收好。" },
+    { id: "thread", name: "叙话", line: "陪着说了几句话，说的都是小事。" },
   ];
   function careActOf(kind) { const k = String(kind || ""); for (let i = 0; i < CARE_ACTS.length; i++) if (CARE_ACTS[i].id === k) return CARE_ACTS[i]; return null; }
   // 该串今天已照料几种（O(3)）
@@ -3612,7 +3612,7 @@
   const GIFT_REACTIONS = {
     dignified: { hit: "收了。搁我手边。", miss: "搁下吧。我记着了。" },
     scholar:   { hit: "嗯。这一件，我记在账上了。", miss: "对不上账。……也记一笔。" },
-    cool:      { hit: "……还行。", miss: "嗯。" },
+    cool:      { hit: "……收了。", miss: "嗯。" },
     gentle:    { hit: "我给你收在最里头了。", miss: "搁下就好。我来收。" },
     lively:    { hit: "我先看见的！给我的！", miss: "哦——那我收着，也是好的！" },
     mystery:   { hit: "……你会挑。这一件，正好。", miss: "有心了。" },
@@ -3627,7 +3627,7 @@
   }
   /* 送礼/照料 UI 文案（防物化口径 §3.5；{ta} 由界面按沁灵名替换）。🔴 占位，待编剧定稿替换。 */
   const GIFT_COPY = {
-    open: "递一件给它",
+    open: "送给{ta}",
     qualifying: "{ta}还没跟你熟到这份上。",
     emptyStock: "你手边还没备下什么。",
     alreadyHeld: "{ta}已经收着呢。",
