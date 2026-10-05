@@ -4902,55 +4902,96 @@
     }, () => renderSpiritDetailPage(id),
     { onSetCover: (it2) => { items.forEach(x => x.cover = (x.url === it2.url)); rec.cgUrl = it2.url; Spirits.save(store); renderSpiritDetailPage(id); } });
   }
-  /* ---------- v173-ui：一键导出所有 AI 立绘（高清大图） ---------- */
+  /* ---------- v173-ui：一键导出所有 AI 立绘（高清大图） ----------
+   * v173-ui2：文件按「沁灵名字」命名 —— 形如「星月菩提·蜕形_进阶CG.png」，
+   * 一眼看出是谁的图，不用再对着 spirit_001_xxx 这种序号猜。 */
+  const EXPORT_STAGE_ZH = ["凝形", "开窍", "蜕形", "化形"];
+  // 文件名净化：Windows/macOS 非法字符 + 尾部点空格；空则回退
+  function exportSafeName(s, fallback) {
+    let t = String(s == null ? "" : s).replace(/[\\/:*?"<>|\r\n\t]/g, "_").replace(/\s+/g, " ").trim();
+    t = t.replace(/[. ]+$/g, "");
+    if (!t) t = fallback || "unnamed";
+    return t.slice(0, 60);
+  }
   async function exportAllSpiritImages() {
     try {
       const store = Spirits.load();
       const ids = Object.keys(store || {});
-      const urls = new Set();
-      const pushUrl = (u) => { if (u && (u.indexOf("http://") === 0 || u.indexOf("https://") === 0)) urls.add(u); };
+      // url -> { name }（同一张图被多处引用时，以第一次遇到的归属为准）
+      const map = new Map();
+      const push = (u, name) => {
+        if (!u || (u.indexOf("http://") !== 0 && u.indexOf("https://") !== 0)) return;
+        if (!map.has(u)) map.set(u, { name: name });
+      };
       for (const id of ids) {
         const r = store[id];
         if (!r || r.spirit === false) continue;
-        pushUrl(r.imgUrl);
-        if (r.exprs && r.exprs.base && r.exprs.base.url) pushUrl(r.exprs.base.url);
-        (r.imgHistory || []).forEach((h) => pushUrl(h && h.url));
-        pushUrl(r.cgUrl);
-        if (typeof Spirits.cgListRO === "function") (Spirits.cgListRO(r) || []).forEach(pushUrl);
+        const nm = exportSafeName(r.name || (r.persona && r.persona.name) || r.id || "沁灵", "沁灵");
+        const stg = EXPORT_STAGE_ZH[Math.min(4, Math.max(1, Number(r.stage) || 1)) - 1] || "";
+        const tag = (s) => (stg ? nm + "·" + stg + "_" + s : nm + "_" + s);
+        push(r.imgUrl, tag("立绘"));
+        if (r.exprs && r.exprs.base && r.exprs.base.url) push(r.exprs.base.url, tag("表情基"));
+        (r.imgHistory || []).forEach((h, i) => push(h && h.url, tag("旧立绘" + (i + 1))));
+        push(r.cgUrl, tag("进阶CG"));
+        const cl = (typeof Spirits.cgListRO === "function" ? Spirits.cgListRO(r) : null) || [];
+        cl.forEach((u, i) => push(u, tag("历史CG" + (i + 1))));
         const cgs = r.cgs || {};
-        Object.keys(cgs).forEach((k) => { const m = cgs[k]; if (m) { pushUrl(m.thumb); pushUrl(m.imgUrl); } });
+        Object.keys(cgs).forEach((k) => {
+          const m = cgs[k]; if (!m) return;
+          const lbl = tag("相册_" + exportSafeName(k, "图"));
+          push(m.thumb, lbl + "_缩略"); push(m.imgUrl, lbl);
+        });
         const fests = r.fests || {};
-        Object.keys(fests).forEach((dk) => { const fx = fests[dk]; if (fx) pushUrl(fx.cgUrl); });
-      }
-      // 双人事件 CG（房间剧情插画）
-      if (typeof Rooms !== "undefined" && Rooms.listRooms && Rooms.storiesOfRoom) {
-        (Rooms.listRooms() || []).forEach((rm) => {
-          (Rooms.storiesOfRoom(rm.id) || []).forEach((s) => { if (s && s.story && s.story.img) pushUrl(s.story.img); });
+        Object.keys(fests).forEach((dk) => {
+          const fx = fests[dk]; if (!fx) return;
+          push(fx.cgUrl, nm + "_节令CG_" + exportSafeName((fx.name || fx.emoji || "") + dk, dk));
         });
       }
-      const list = Array.from(urls);
+      // 双人事件 CG（房间剧情插画）—— 按房间名归类
+      if (typeof Rooms !== "undefined" && Rooms.listRooms && Rooms.storiesOfRoom) {
+        (Rooms.listRooms() || []).forEach((rm) => {
+          const rn = exportSafeName((rm && rm.name) || (rm && rm.id) || "房间", "房间");
+          (Rooms.storiesOfRoom(rm.id) || []).forEach((s, i) => {
+            if (s && s.story && s.story.img) push(s.story.img, rn + "_事件CG_" + (i + 1));
+          });
+        });
+      }
+      // 展开成下载列表；同名不同图时补序号，保证 Windows 不覆盖
+      const used = new Set();
+      const list = Array.from(map.entries()).map((e, i) => {
+        let fn = exportSafeName(e[1].name, "img") + ".png";
+        if (used.has(fn)) { let k = 2; while (used.has(base2(fn, k))) k++; fn = base2(fn, k); }
+        used.add(fn);
+        return { url: e[0], file: fn, i: i + 1 };
+      });
       if (!list.length) { toast("还没有可导出的立绘"); return; }
       const yes = await confirmModal("导出全部立绘？",
-        "将下载 " + list.length + " 张高清原图到本地（每张一次下载，浏览器可能依次弹出保存框）。", "开始下载", true);
+        "将下载 " + list.length + " 张高清原图到本地（每张一次下载，浏览器可能依次弹出保存框）。\n\n文件名按沁灵名字命名，例如：\n星月菩提·蜕形_进阶CG.png\n星月菩提·蜕形_立绘.png",
+        "开始下载", true);
       if (!yes) return;
       toast("开始下载 " + list.length + " 张…");
+      let ok = 0;
       for (let i = 0; i < list.length; i++) {
-        const u = list[i];
+        const it = list[i];
         try {
-          const res = await fetch(u, { mode: "cors" });
+          const res = await fetch(it.url, { mode: "cors" });
           const blob = await res.blob();
           const obj = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = obj;
-          const name = (u.split("/").pop() || "img").split("?")[0] || "img";
-          a.download = "spirit_" + String(i + 1).padStart(3, "0") + "_" + name;
+          a.download = it.file;
           document.body.appendChild(a); a.click(); a.remove();
           setTimeout(() => URL.revokeObjectURL(obj), 4000);
-        } catch (e2) { console.warn("下载失败", u, e2); }
+          ok++;
+        } catch (e2) { console.warn("下载失败", it.url, e2); }
         if (i % 8 === 7) await new Promise((r) => setTimeout(r, 400));   // 轻微节流，降低被浏览器拦截概率
       }
-      toast("下载完成（共 " + list.length + " 张；失败的见浏览器控制台）");
+      toast("下载完成：成功 " + ok + " / " + list.length + " 张（失败的见浏览器控制台）");
     } catch (e) { toast("导出失败：" + ((e && e.message) || "")); }
+  }
+  function base2(fname, k) {
+    const dot = fname.lastIndexOf(".");
+    return (dot > 0 ? fname.slice(0, dot) : fname) + "-" + k + (dot > 0 ? fname.slice(dot) : "");
   }
 
   // v165-C：管理「双人事件 CG」—— 房间内每段剧情的插画逐个删（同款删除弹层）
