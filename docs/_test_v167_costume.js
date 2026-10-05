@@ -36,11 +36,13 @@ if (SRC_OVERRIDE) {
 const SP = h.sandbox.Spirits;
 if (!SP) { console.error("Spirits 未加载"); process.exit(2); }
 
-/* 改动前基线（HEAD = V167-A，即未做服装去清代的版本）——用于 legacy 逐字节对照 */
+/* 改动前基线（**固定铆定 commit b31cd02 = V167-A**，即未做服装去清代的版本）——用于 legacy 逐字节对照
+   ⛔ 不用 HEAD：本测试写作期内 HEAD 恰好是"改前"，可一旦 V167-B 被提交，
+   HEAD 就变成"改后"，D 段的自指负向对照从此**永久假红**（v173 收尾实测 1 项假红）。 */
 let OLD_SP = null;
 {
   let oldSrc = "";
-  try { oldSrc = require("child_process").execSync("git show HEAD:js/spirits.js", { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 27 }); }
+  try { oldSrc = require("child_process").execSync("git show b31cd02:js/spirits.js", { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 27 }); }
   catch (e) { try { oldSrc = fs.readFileSync(path.join(__dirname, "_tmp/_pre_v167b_spirits.js"), "utf8"); } catch (e2) { oldSrc = ""; } }
   if (oldSrc) {
     const hOld = makeContext();

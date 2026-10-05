@@ -38,11 +38,14 @@ loadFile(h.ctx, "js/spirits.js");
 const SP = h.sandbox.Spirits;
 if (!SP) { console.error("Spirits 未加载"); process.exit(2); }
 
-/* 改动前的 HEAD 版 spirits.js（当前工作区改动尚未提交 → HEAD 就是"改前"），用于负向对照。
-   取法：优先 `git show HEAD:js/spirits.js`；失败（部分沙箱 EBUSY）→ 回落预导出基线文件；
+/* 改动前的基线 spirits.js（**固定铆定 commit 13959d0 = V165-E**，即做立绘比例手段 v2 之前的那一版），
+   用于负向对照 A 段。⛔ 不用 HEAD：本测试写作期内 HEAD 恰好是"改前"，
+   可一旦修复被提交，HEAD 就变成"改后"，A 段的自指负向对照从此**永久假红**
+   （v173 收尾实测：HEAD 版已含 FRAME_FILL×4 / NO_QING×27 → A1~A4 必假红）。
+   取法：优先 `git show <铆定 commit>`；失败（部分沙箱 EBUSY）→ 回落预导出基线文件；
    都没有 → 优雅跳过负向对照（与 _test_v164c_ratio.js 的可选负向对照同一口径），不误报失败。 */
 let OLD_SP = null, OLD_SRC = "";
-try { OLD_SRC = require("child_process").execSync("git show HEAD:js/spirits.js", { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 27 }); }
+try { OLD_SRC = require("child_process").execSync("git show 13959d0:js/spirits.js", { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 27 }); }
 catch (e) {
   try { OLD_SRC = fs.readFileSync(path.join(__dirname, "_tmp/_pre_v165f_spirits.js"), "utf8"); } catch (e2) { OLD_SRC = ""; }
 }
