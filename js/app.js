@@ -4461,6 +4461,39 @@
     return rec.name || (rec.persona && rec.persona.name) || it.name || "沁灵";   // v113：用户改过的名字优先
   }
   function spiritName(it, store) { return nameOf(it, store); }
+
+  /* ---------- v175：沁灵身份卡（姓名 / 字 / 人物诗 / 八字） ----------
+     数据逐字照录主理人裁定，⛔ 一个字都不改。
+     `bead`（原手串名）只用于**反查对应关系**，⛔ 绝不显示在姓名位。
+     alias = 额外可命中的旧名（主理人手抠立绘的旧键名：柿宝 / 金算盘）。 */
+  var SPIRIT_IDENTITIES = [
+    { name: "陆临崖", style: "瞻丹", bead: "莫高窟",   poem: "立戈壁危崖之下，对千壁丹青，听风沙诵古。",   eight: "崖观丹壁，风诵千年", alias: [] },
+    { name: "苏栖盏", style: "春酲", bead: "花间酒",   poem: "栖繁花深处，持盏浅酌，任落英沾衣，醉而不沉。", eight: "花间持盏，醉揽芳辰", alias: [] },
+    { name: "沈青舒", style: "承霖", bead: "芭蕉叶",   poem: "闲坐蕉阴，青叶承霖，静听一庭夜雨。",         eight: "蕉叶承雨，静守闲庭", alias: [] },
+    { name: "谢凝渲", style: "烟弥", bead: "烟雨墨",   poem: "烟雨入砚，落纸凝渲，笔下漫生云雾。",         eight: "烟雨研墨，渲染云烟", alias: [] },
+    { name: "楚柿遥", style: "秋晏", bead: "柿柿如意", poem: "剑过秋林，丹柿落肩，一笑便扫尽风尘。",       eight: "丹柿随身，笑赴山河", alias: ["柿宝"] },
+    { name: "萧景筹", style: "秉衡", bead: "黄金算盘", poem: "案上算珠轻响，谋定世间得失。",               eight: "筹量万象，掌定盈亏", alias: ["金算盘"] },
+    { name: "姜饴酌", style: "淳时", bead: "咸法酪",   poem: "盏中咸酪甘醇，嘴硬不肯道半句喜欢。",         eight: "咸甘一盏，口硬心柔", alias: [] },
+    { name: "顾时笙", style: "书砚", bead: "绿叶",     poem: "窗畔新叶初生，执砚翻书，待人皆是一片赤诚。", eight: "新叶伴砚，秉心温良", alias: [] }
+  ];
+  function identityKeysOf(idn) {
+    var out = [];
+    var push = function (s) { s = String(s || "").trim(); if (s && out.indexOf(s) < 0) out.push(s); };
+    push(idn && idn.name);
+    push(idn && idn.bead);
+    ((idn && idn.alias) || []).forEach(push);
+    return out;
+  }
+  // 按「当前显示名」反查身份 —— 可能是手串名 / 旧名 / 用户已改的名
+  function spiritIdentityOf(dispName) {
+    var k = String(dispName || "").trim();
+    if (!k) return null;
+    for (var i = 0; i < SPIRIT_IDENTITIES.length; i++) {
+      var idn = SPIRIT_IDENTITIES[i];
+      if (identityKeysOf(idn).indexOf(k) >= 0) return idn;
+    }
+    return null;
+  }
   function spiritSp(it) {
     const rec = spiritRecOf(it.id);
     return {
@@ -5568,10 +5601,19 @@
       else if (e.key === "ArrowRight" && _nextIt) location.hash = "#/spirit/" + encodeURIComponent(_nextIt.id);
     };
     document.addEventListener("keydown", _sdKeyHandler);
+    // v175：身份卡 —— 未改名 ⇒ 姓名位显示身份表的「姓名」（⛔ 不再显示手串名）；
+    //        用户已改名 ⇒ 尊重用户改的名字；命中不到 ⇒ 完全回落当前显示名（不留空白）
+    const _disp = spiritName(it, store);
+    const idCard = spiritIdentityOf(_disp);
+    const nameShown = (idCard && !rec.nameEdited) ? idCard.name : _disp;
     let h = spiritNavHtml(_curIdx, _prevIt, _nextIt, _allItems.length, store) + '<div class="sd-top"><div class="sd-art" id="sdArt">' + artInner + "</div>" +
       (_hasImg ? '<button type="button" class="link-btn" id="sdManageImg" style="margin-top:6px">🗑 管理立绘</button>' : "") +
-      '<div class="sd-name">' + esc(spiritName(it, store)) + '<span class="spirit-stage big">' + si.icon + " " + esc(si.name) + "</span></div>" +
-      '<div class="sd-title">' + esc(p.title || "") + "</div>" +
+      '<div class="sd-name">' + esc(nameShown) + '<span class="spirit-stage big">' + si.icon + " " + esc(si.name) + "</span></div>" +
+      '<div class="sd-title">' + (idCard ? "字 " + esc(idCard.style) : esc(p.title || "")) + "</div>" +
+      (idCard
+        ? '<div class="sd-line">' + esc(idCard.poem) + "</div>" +
+          '<div class="sd-title" style="margin-top:6px;letter-spacing:2px">' + esc(idCard.eight) + "</div>"
+        : "") +
       '<div class="sd-title" style="margin-top:4px">' +
       (rec.nameEdited
         ? '<span style="color:var(--text-2)">✏️ 名字改过了</span>'
@@ -6972,12 +7014,13 @@
         boxEl.classList.add("narration"); if (nameEl) nameEl.hidden = true;
       } else {
         boxEl.classList.remove("narration");
-        const nm = (m.w === "me") ? "我" : (m.name || "");
+        // v175：名牌大字显示**真实姓名**（castName），不再是行当设定名；拿不到真名才回落 m.name
+        const cn = (m.w === "me" || m.w === "sys") ? "" : String(m.castName || "");
+        const nm = (m.w === "me") ? "我" : (cn || m.name || "");
         if (nameEl) {
           nameEl.textContent = nm;
           nameEl.hidden = !nm;
-          // v172：名牌小字 —— 这一行当当下由哪只沁灵扮（chapLine 按 castOf 现算；⛔ m.name 不动）
-          const cn = (m.w === "me" || m.w === "sys") ? "" : String(m.castName || "");
+          // v172：名牌小字 —— 大字号已是真名时 ⛔ 不再挂那一小行（chapLine 的 m.name 未动）
           if (cn && cn !== nm && nm) {
             try {
               const sp = document.createElement("small");
@@ -7201,9 +7244,18 @@
     "陆临崖": { f: "assets/mainchars/mc-lulinyai.png",    h: 131.4, t:   7.5 },
     "顾时笙": { f: "assets/mainchars/mc-gushisheng.png",  h: 129.8, t:   9.0 }
   };
+  // v175：用户把三只改成了新姓名 —— 别名反查到旧键，⛔ 别让手抠立绘掉图
+  var MAINCHAR_ART_ALIAS = {
+    "楚柿遥": "柿宝",
+    "萧景筹": "金算盘",
+    "姜饴酌": "咸法酪"
+  };
   function maincharArtOf(rec) {
     var nm = String((rec && rec.name) || "").trim();
-    return nm ? (MAINCHAR_ART[nm] || null) : null;
+    if (!nm) return null;
+    if (MAINCHAR_ART[nm]) return MAINCHAR_ART[nm];          // 本名直接命中（旧数据 / 未改名）
+    var al = MAINCHAR_ART_ALIAS[nm];                        // 新名 → 旧键
+    return al ? (MAINCHAR_ART[al] || null) : null;
   }
   /* ============================================================
    * v172：主线选角（点戏 · 谁扮谁）
