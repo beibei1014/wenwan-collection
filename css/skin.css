@@ -1150,6 +1150,17 @@ body.talk-open .view { padding: 0; max-width: none; min-height: 0; animation: no
 .talk-portrait[data-cut="1"] img { object-fit: contain; object-position: center bottom;
   filter: drop-shadow(0 8px 22px rgba(0,0,0,.45)); }
 
+/* v174：主线立绘 · 膝上取景 —— 只露「膝盖以上」；本体头顶落层高 12%，膝盖线落层高 100% 被视口裁掉
+   · --knee-h / --knee-t 由 JS 按每张图的人体比例注入（h≈130~164%、t≈-24~9%）
+   · 竖屏下左右必然裁边 —— 与主理人参考图一致（参考图人物衣袖同样出画） */
+.talk-portrait[data-frame="knee"] { bottom: 0; overflow: hidden; }
+.talk-portrait[data-frame="knee"] img {
+  position: absolute; left: 50%; top: var(--knee-t, 6.7%);
+  width: auto; height: var(--knee-h, 131%); max-width: none;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 8px 22px rgba(0,0,0,.45));
+}
+
 /* v171：沁灵列表缩略图改用进阶 CG —— CG 取景失败时的保守兜底（cover + center 18%，硬保证不切头） */
 .spirit-img.cg18 { object-fit: cover; object-position: center 18%; }
 

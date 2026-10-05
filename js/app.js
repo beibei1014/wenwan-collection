@@ -6510,7 +6510,20 @@
           } else { pEl.classList.remove("hide"); }
           pEl.dataset.slot = side;                                   // slot(L/C/R/B) → 站位
           pEl.dataset.cut = cut ? "1" : "0";                         // v170：透明立绘 → contain/站底（见 CSS）
-        } else { pEl.classList.add("hide"); pEl.innerHTML = ""; pEl.dataset.url = ""; pEl.dataset.slot = ""; pEl.dataset.cut = ""; }
+          // v174：手抠立绘 → 膝上取景（h/t 由 JS 按每张图的人体比例注入 CSS 变量）
+          let fr = null;
+          try { fr = o.frame ? o.frame(m) : null; } catch (e) { fr = null; }
+          if (fr && fr.mode === "knee") {
+            pEl.dataset.frame = "knee";
+            try {
+              pEl.style.setProperty("--knee-h", (Number(fr.h) || 131) + "%");
+              pEl.style.setProperty("--knee-t", (Number(fr.t) || 6.7) + "%");
+            } catch (e) { /* 忽略 */ }
+          } else {
+            pEl.dataset.frame = "";
+            try { pEl.style.removeProperty("--knee-h"); pEl.style.removeProperty("--knee-t"); } catch (e) { /* 忽略 */ }
+          }
+        } else { pEl.classList.add("hide"); pEl.innerHTML = ""; pEl.dataset.url = ""; pEl.dataset.slot = ""; pEl.dataset.cut = ""; pEl.dataset.frame = ""; }
       }
       if (txtEl) txtEl.textContent = String(m.text || "");
       if (cueEl) cueEl.hidden = false;
@@ -6544,6 +6557,8 @@
     // v163e：inflight = 已从 added 取出、但尚未显示的那条（三点气泡期间在途）。
     //   它的下标就是 qi-1；不显式记账的话，点跳过时它既不在 DOM 上、qi 又已前移 = 被吞掉
     let qi = 0, timer = 0, waiting = false, inflight = null;
+    let awaiting = false;                            // v174：手动模式 —— 已显示完一条、正等玩家点
+    const MANUAL = !!o.manual;                       // v174：主线手动点击（⛔ 未传 = false → 夜话/房间/单串零变化）
     const append = (m) => {
       const d = document.createElement("div");
       d.innerHTML = msgHtml(m);
@@ -6589,13 +6604,18 @@
       scrollEnd();
     };
     const step = () => {
+      awaiting = false;                    // v174：本条开始播放 → 尚未「待点」
       if (qi >= r.added.length) { showFoot(); return; }
       const m = r.added[qi++];
       const dwell = talkDwell(m.text);     // v163d：按字长停留，别让所有气泡瞬间连成一片
       // v163d：整条一次性出现，不再逐字 —— 逐字每 45ms 重建整个 .nt-row，
       //   节点被销毁重建导致 .nt-row 的 320ms 入场动画永远播不完 = 闪烁
-      if (m.w === "me") { append(m); scrollEnd(); timer = setTimeout(step, dwell); return; }    // 我自己那条立刻出现
-      if (m.w === "sys") { append(m); scrollEnd(); timer = setTimeout(step, dwell); return; }   // 旁白不是"人在打字"，不给三点气泡
+      if (m.w === "me") { append(m); scrollEnd();
+        if (MANUAL) { awaiting = true; return; }   // v174：等玩家点
+        timer = setTimeout(step, dwell); return; }    // 我自己那条立刻出现
+      if (m.w === "sys") { append(m); scrollEnd();
+        if (MANUAL) { awaiting = true; return; }   // v174：等玩家点
+        timer = setTimeout(step, dwell); return; }   // 旁白不是"人在打字"，不给三点气泡
       pend.innerHTML = '<div class="nt-row"><div class="nt-av"></div>' +
         '<div class="nt-bub nt-typing"><i></i><i></i><i></i></div></div>';
       inflight = m;                        // v163e：记下在途消息（点跳过时要补回来）
@@ -6606,6 +6626,7 @@
         pend.innerHTML = "";
         append(m);
         scrollEnd();
+        if (MANUAL) { awaiting = true; return; }   // v174：等玩家点
         timer = setTimeout(step, dwell);
       }, TALK_LEAD_MS);
     };
@@ -6624,6 +6645,13 @@
     const advance = () => {
       if (waiting) return;
       clearTimeout(timer);
+      if (MANUAL) {                      // v174：主线 —— 一下一条
+        if (inflight) { pend.innerHTML = ""; append(inflight); inflight = null; awaiting = true; return; }
+        if (!awaiting) return;
+        awaiting = false;
+        step();
+        return;
+      }
       // v163e：先补回「正在输入」的那条（下标 = qi-1），再铺剩下的 —— 顺序反了会错序
       if (inflight) { pend.innerHTML = ""; append(inflight); inflight = null; }
       while (qi < r.added.length) append(r.added[qi++]);
@@ -6663,6 +6691,28 @@
       if (!it) return "";
       return spiritThumbHtml(it, Spirits.load()[c.id] || {}, 30);
     } catch (e) { return ""; }
+  }
+
+  /* v174：主线手抠立绘（主理人自己抠的 9 张，按沁灵本名自动挂）
+     · f=文件；h=渲染高度(占立绘层高%)；t=图片顶边距(占层高%，负=向上出画)
+     · 公式：h = 0.88*1024/(0.71*本体高)；t = 0.12 − 本体头顶y*h/1024
+       0.88 = 头顶留 12% 呼吸位；0.71 = 人体「头顶→膝盖」占身高比
+     · ⚠️ 谢凝渲撑伞 —— 本体头顶 y=226（伞顶 y≈48 不是头），故 h/t 显著异于其余 8 位
+     · ⛔ 换图必须重算 h/t（尤其带手持道具的） */
+  var MAINCHAR_ART = {
+    "咸法酪": { f: "assets/mainchars/mc-xianfalao.png",   h: 132.8, t:   6.4 },
+    "柿宝":   { f: "assets/mainchars/mc-shibao.png",      h: 132.6, t:   6.8 },
+    "沈青舒": { f: "assets/mainchars/mc-shenqingshu.png", h: 130.6, t:   8.4 },
+    "粉黛熊": { f: "assets/mainchars/mc-fendaixiong.png", h: 131.1, t:   7.9 },
+    "苏栖盏": { f: "assets/mainchars/mc-suqizhan.png",    h: 131.9, t:   7.1 },
+    "谢凝渲": { f: "assets/mainchars/mc-xieningxuan.png", h: 164.2, t: -24.2 },
+    "金算盘": { f: "assets/mainchars/mc-jinsuanpan.png",  h: 133.6, t:   5.7 },
+    "陆临崖": { f: "assets/mainchars/mc-lulinyai.png",    h: 131.4, t:   7.5 },
+    "顾时笙": { f: "assets/mainchars/mc-gushisheng.png",  h: 129.8, t:   9.0 }
+  };
+  function maincharArtOf(rec) {
+    var nm = String((rec && rec.name) || "").trim();
+    return nm ? (MAINCHAR_ART[nm] || null) : null;
   }
   /* ============================================================
    * v172：主线选角（点戏 · 谁扮谁）
@@ -6973,6 +7023,7 @@
     const back = "#/main";
     return renderTalkPage({
       title: ch.title,
+      manual: true,
       headAv: '<span class="main-av">📖</span>',
       headName: "沁灵纪 · 第 " + (i + 1) + " 章",
       headSub: ch.icon + " 第 " + ch.day + " 天 · " + (ch.sub || ""),
@@ -6988,6 +7039,9 @@
           const c = (Spirits.castOf() || {})[pid];
           if (!c || !c.id) return "";
           const rec = Spirits.load()[c.id] || {};
+          // v174：手抠立绘优先。⚠️ typeof 守卫：单测会「抽函数 + 沙箱」隔离运行本箭头，此时 maincharArtOf 不在作用域
+          const art = (typeof maincharArtOf === "function") ? maincharArtOf(rec) : null;
+          if (art) return art.f;
           return rec.imgCut || rec.imgUrl || "";
         } catch (e) { return ""; }
       },
@@ -7000,6 +7054,17 @@
           if (!c || !c.id) return false;
           return !!(Spirits.load()[c.id] || {}).imgCut;
         } catch (e) { return false; }
+      },
+      // v174：手抠立绘 → 膝上取景；其余照旧（透明抠图 contain 站底）
+      frame: (m) => {
+        try {
+          const pid = (m && m.ps && m.ps[0]) ? String(m.ps[0]) : "";
+          if (!pid) return null;
+          const c = (Spirits.castOf() || {})[pid];
+          if (!c || !c.id) return null;
+          const art = (typeof maincharArtOf === "function") ? maincharArtOf(Spirits.load()[c.id] || {}) : null;
+          return art ? { mode: "knee", h: art.h, t: art.t } : null;
+        } catch (e) { return null; }
       },
       nameOf: () => "",                            // 群像剧本：说话人名字由行级 who 给（chapLine 已写进 m.name）
       endTag: "第 " + (i + 1) + " 章 · 完",
