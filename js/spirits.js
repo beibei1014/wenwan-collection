@@ -8393,6 +8393,18 @@ const CH09 = {
     }
     return cgTidy(s);
   }
+
+  // v173：窄景别中和宽幅 token —— 当用户只想要特写 / 半身时，把 CG_STYLE 里焊死的
+  //   "HORIZONTAL LANDSCAPE COMPOSITION, 16:9 widescreen framing" 与 "detailed painted background with gentle bokeh"
+  //   中和掉，避免模型把窄景别跑成宽幅全身。wide 景别（shot.wide）不动。
+  function cgStyleForShot(styleText, shot) {
+    const wide = !(shot && !shot.wide);
+    if (wide) return String(styleText || "");
+    return String(styleText || "")
+      .replace("HORIZONTAL LANDSCAPE COMPOSITION, 16:9 widescreen framing, ", "")
+      .replace("detailed painted background with gentle bokeh", "plain soft bokeh background, no detailed scenery");
+  }
+
   // 单只沁灵的 CG（蜕形 / 化形用）
   function promptForCg(item, styleKey, stage, appearance, look, sceneText, shot) {
     const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
@@ -8403,8 +8415,11 @@ const CH09 = {
     const ap = _ab.ap;
     const color = lk.hairEn;
     const stageObj = stageDef(stage);
+    // v173：窄景别中和 CG_STYLE 的宽幅 token（保留 "not a portrait, not a vertical poster" 以免模型竖版）。
+    //   ⚠️ typeof 守卫：抽函数单测（_test_v166_cg_brief）不加载 cgStyleForShot → 静默回退 CG_STYLE。
+    const styleText = (typeof cgStyleForShot === "function") ? cgStyleForShot(CG_STYLE, shot) : CG_STYLE;
     const stageLook = stripPose(stageObj.look);   // v165-A：剥姿势词（姿势归画面描述）
-    const head = CG_STYLE + ", " + appearancePrompt(ap) + ", with " + color + " hair and " + lk.outfitEn + " themed outfit"
+    const head = styleText + ", " + appearancePrompt(ap) + ", with " + color + " hair and " + lk.outfitEn + " themed outfit"
       + (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") + lookExtra(lk) + ", " +
       stageLook
       + (lookHard(lk) ? (", " + lookHard(lk)) : "")
@@ -8430,14 +8445,48 @@ const CH09 = {
   //   景别必须听 brief，绝不能被 CG_STYLE / 通用模板里的 "wide scenery / full body" 悄悄压过。
   //   越靠前的规则越"窄"（先匹配特写/近景，再中景，最后才是全身/远景）。
   const SHOT_MAP = [
-    { re: /(半身入画|半身|近景|胸像|上半身|腰部以上|齐腰|bust shot|waist ?up)/i, en: "medium close-up shot, shown from the waist up", wide: false },
-    { re: /(大特写|脸部特写|面部特写|extreme close ?up)/i, en: "extreme close-up shot, the face fills most of the frame, very shallow depth of field", wide: false },
-    { re: /(特写|close ?up)/i, en: "close-up shot, head and shoulders", wide: false },
-    { re: /(七分身|大腿以上|膝盖以上|medium shot)/i, en: "medium shot, shown from mid-thigh up", wide: false },
-    { re: /(中景)/i, en: "medium shot, the character occupies much of the frame with some surroundings", wide: false },
-    { re: /(远景|大远景|全景|广角|wide shot|long shot|establishing shot|full shot)/i, en: "wide establishing shot, the character is small within a vast environment, the scenery dominates", wide: true },
-    { re: /(全身|full ?body)/i, en: "full body visible from head to toe", wide: true },
+    { re: /(半身入画|半身|近景|胸像|上半身|腰部以上|齐腰|bust shot|waist ?up)/i, en: "medium close-up shot, shown from the waist up", wide: false, key: "mcu" },
+    { re: /(大特写|脸部特写|面部特写|extreme close ?up)/i, en: "extreme close-up shot, the face fills most of the frame, very shallow depth of field", wide: false, key: "ecu" },
+    { re: /(特写|close ?up)/i, en: "close-up shot, head and shoulders", wide: false, key: "cu" },
+    { re: /(七分身|大腿以上|膝盖以上|medium shot)/i, en: "medium shot, shown from mid-thigh up", wide: false, key: "ms" },
+    { re: /(中景)/i, en: "medium shot, the character occupies much of the frame with some surroundings", wide: false, key: "ms" },
+    { re: /(远景|大远景|全景|广角|wide shot|long shot|establishing shot|full shot)/i, en: "wide establishing shot, the character is small within a vast environment, the scenery dominates", wide: true, key: "wide" },
+    { re: /(全身|full ?body)/i, en: "full body visible from head to toe", wide: true, key: "full" },
   ];
+  // v173：景别锁（framing lock）—— 根治「写特写却出半身/全景」的 bug。
+  //   用户写「肩部以上特写」，模型却画出全身 / 全景花园？根因是 CG_STYLE / 通用模板里焊死的
+  //   "full body / wide scenery / HORIZONTAL LANDSCAPE" 把窄景别悄悄压成了宽幅。
+  //   解法：在比例锁之后压**最末**一道景别锁（en 强裁切 + 占比 + 负面；zh 仅 ark 追加），
+  //   它最权威，任何宽幅 token 都盖不过它。key 对齐 SHOT_MAP。
+  //   ⚠️ full / wide 档虽然也定义了，但 cgPromptFromBrief 只对「窄景别」（ecu/cu/mcu/ms）追加本锁：
+  //      full / wide 已是用户想要的宽幅结果，默认装配本就给 full body / wide scenery，无需再锁
+  //      （锁了反而冗余；且若对 full 也追加会令既有 _test_v165r2_cgbrief 的 endsWith(prop) 断言变红）。
+  const SHOT_LOCK = {
+    ecu: {
+      en: "extreme close-up: only the face and a sliver of shoulders, the face fills about 85% of frame height, very shallow depth of field; absolutely no torso below the collarbone, no chest, no arms, no hands, no legs, no full body, no wide scenery, no multiple animals",
+      zh: "景别锁定：只拍面部与肩头一小截，面部占画面高度约 85%，景深极浅；绝对不出现锁骨以下躯干、胸部、手臂、手、腿、全身、远景与多只动物。",
+    },
+    cu: {
+      en: "close-up shot, head and shoulders only, cropped at the collarbone, the head/face occupies 60-70% of frame height, centered in the upper area, the character large in frame, background is pure soft bokeh; absolutely no chest below the clavicle, no waist, no legs, no full body, no wide scenery, no distant view, no multiple animals, no complex scene",
+      zh: "景别锁定：肩部以上特写，从锁骨上方裁切，头部占画面高度约 60-70%，居中偏上；背景高度虚化；绝对不出现胸部以下、腰部、腿部、全身、远景草地、树林、天空、多只动物、复杂场景。",
+    },
+    mcu: {
+      en: "medium close-up, from the chest up, upper body occupies 55-65% of frame height, background softly blurred; no waist below, no legs, no full body, no wide scenery",
+      zh: "景别锁定：胸口以上近景，上半身占画面高度约 55-65%，背景柔化；不出现腰部以下、腿部、全身、远景。",
+    },
+    ms: {
+      en: "medium shot, from mid-thigh up, the figure occupies most of the frame, surroundings minimal and blurred; no feet, no full-body far view",
+      zh: "景别锁定：膝盖以上中景，人物占画面大部分，环境极简虚化；不出现脚部、全身远景。",
+    },
+    full: {
+      en: "full body visible from head to toe, the character centered, wide scenery frames them on both sides",
+      zh: "景别：全身立绘，头到脚完整，人物居中，两侧有环境。",
+    },
+    wide: {
+      en: "wide establishing shot, the character is small within a vast environment, the scenery dominates",
+      zh: "景别：远景大场景，人物在宏大环境中显小，景物主导。",
+    },
+  };
   function shotClause(text) {
     const t = String(text || "");
     for (let i = 0; i < SHOT_MAP.length; i++) { if (SHOT_MAP[i].re.test(t)) return SHOT_MAP[i]; }
@@ -8450,9 +8499,12 @@ const CH09 = {
         ? ", wide scenery also flows around the character"
         : ", the character is large and fills much of the frame, the environment stays behind them as soft bokeh, do NOT shrink the character into a small distant figure, do NOT show a full-body far view"))
       : "full body visible from head to toe, wide scenery on both sides, generous environment around the character";
-    return ", " + shotEn + ", scene: " + sceneText +
-      ", the same character keeps hair color, eye color, outfit and accessories consistent, " +
+    // v173：窄景别时**不再**追加宽幅声明（HORIZONTAL LANDSCAPE COMPOSITION…），
+    //   构图交给景别锁（SHOT_LOCK，压在 cgPromptFromBrief 最末）；wide / 未写景别保持原样（避免模型竖版）。
+    const wideDecl = (shot && !shot.wide) ? "" : ", " +
       "HORIZONTAL LANDSCAPE COMPOSITION, 16:9 widescreen framing, not a portrait, not a vertical poster";
+    return ", " + shotEn + ", scene: " + sceneText +
+      ", the same character keeps hair color, eye color, outfit and accessories consistent" + wideDecl;
   }
   // 两只沁灵的事件 CG（房间剧情用）
   // v165-A：① 补上**漏掉的画面描述** —— 旧版收了 sceneText 参数、却从未拼进 prompt（用户确认的描述进了黑洞，
@@ -8468,15 +8520,22 @@ const CH09 = {
     const nmB = (b.persona && b.persona.name) || b.item.name || "second character";
     const mood = CG_MOOD[Math.min(CG_MOOD.length - 1, Math.max(0, Number(level) || 0))];
     const sc = String(sceneText || "").trim();
+    // v173：窄景别中和 CG_STYLE 的宽幅 token（保留 "not a portrait, not a vertical poster" 以免模型竖版）。
+    //   ⚠️ typeof 守卫：抽函数单测不加载 cgStyleForShot → 静默回退 CG_STYLE。
+    const styleText = (typeof cgStyleForShot === "function") ? cgStyleForShot(CG_STYLE, shot) : CG_STYLE;
+    // v173：窄景别时去掉宽幅声明，构图交给景别锁（cgPromptFromBrief 末尾压最末）。
+    const wideDecl = (shot && !shot.wide)
+      ? ""
+      : "HORIZONTAL LANDSCAPE COMPOSITION, 16:9 widescreen framing, not a portrait, not a vertical poster, ";
     const shotEn = sc
       ? ((shot ? shot.en : "landscape wide shot of the whole room") + ", scene: " + sc +
          ", the two characters keep their hair color, eye color, outfits and accessories consistent, " +
-         "HORIZONTAL LANDSCAPE COMPOSITION, 16:9 widescreen framing, not a portrait, not a vertical poster, ")
+         wideDecl)
       : ((shot ? (shot.en + ", ") : "landscape wide shot of the whole room, "));
     const poseBit = sc
       ? "the two of them together in the same scene, their poses and gestures exactly as the scene describes, "
       : "the two of them together in the room, side by side, ";
-    return CG_STYLE + ", " + mood + ", " +
+    return styleText + ", " + mood + ", " +
       "scene: a cozy ancient Chinese room called \"" + (roomName || "little room") + "\", " +
       // v165：traditional hanfu costume -> classical Chinese-inspired costume（各自随自己意象，⛔ 不锁汉服）
       "two ancient Chinese characters in classical Chinese-inspired costume together in the same scene: " +
@@ -8517,6 +8576,7 @@ const CH09 = {
     + "③ 自然融入古风意境与光线，基调温暖有人味，绝不阴森恐怖；"
     + "④ ⛔ 不要改用户的性别 / 人称设定，不要擅自加和用户冲突的元素（用户没提的武器、宠物、现代物一律不加）；"
     + "⑤ ⛔ 不许出现模型名、接口、额度、色值代码、按钮名、版本号这类「游戏是怎么做的」的信息；不要标题、不要引号、不要解释。"
+    + "⑥ 若用户意向里提到了景别（特写 / 半身 / 中景 / 全身 / 远景），必须在描述**最开头**用一句写明「横版构图，X 景别，从 Y 裁切，主体占画面高度约 Z%，居中」，并在描述**结尾**用「画面禁止出现：…」列出该档的负面项（如特写禁止全身 / 远景 / 腿部，远景禁止只有一只小动物等）；"
     + "只输出润色后的描述正文。";
 
   // 事实清单（喂给文本模型）：只给**世界观内**的素材，绝不塞实现细节
@@ -8583,7 +8643,21 @@ const CH09 = {
         { role: "system", content: sys },
         { role: "user", content: user },
       ], CG_BRIEF_CFG.tokens);
-      const s = String(txt || "").trim();
+      const s0 = String(txt || "").trim();
+      // v173：景别锁兜底 —— 用户意向命中窄景别（特写/半身/中景）但 AI 润色漏写负面项时，
+      //   把对应 SHOT_LOCK[].zh 的负面句追加到描述末尾，保证即使 AI 漏写也锁死裁切与负面。
+      //   ⚠️ typeof 守卫：cgBrief 会被 _test_v166 抽函数隔离运行，shotClause / SHOT_LOCK 不在作用域 → 静默跳过。
+      let s = s0;
+      if (intent && typeof shotClause === "function" && typeof SHOT_LOCK !== "undefined") {
+        const sc = shotClause(intent);
+        const k = sc && sc.key;
+        if (k && k !== "full" && k !== "wide" && SHOT_LOCK[k] && SHOT_LOCK[k].zh) {
+          const neg = SHOT_LOCK[k].zh;
+          const hasNeg = /(绝对不出现|禁止出现|不出现|不得出现)/.test(s) &&
+            /(全身|远景|腿部|脚部|腰部以下|胸部以下|复杂场景|多只动物|半身)/.test(s);
+          if (!hasNeg) s = (s + " " + neg).trim();
+        }
+      }
       if (s.length >= CG_BRIEF_CFG.minLen) return s.slice(0, CG_BRIEF_CFG.maxLen);
     } catch (e) { /* 回落本地模板 */ }
     return cgBriefLocal(x);
@@ -8628,9 +8702,16 @@ const CH09 = {
     const prop = cgPropFor(stage, shot);
     // v172-A：构图锚插在比例锁定块**之前**；PROPORTION LOCK 仍压在最末位。
     //   ⚠️ typeof 守卫：cgPromptFromBrief 会被单测以「抽函数 + 沙箱」方式隔离运行（_test_v166_cg_brief），
-    //      此时 zhAnchorEnabled / CG_COMPOSE_ZH 不在作用域 → 静默不加锚，⛔ 别让旧套件因取符号炸掉
+    //      此时 zhAnchorEnabled / CG_COMPOSE_ZH / SHOT_LOCK 不在作用域 → 静默不加，⛔ 别让旧套件因取符号炸掉
     const anchor = (typeof zhAnchorEnabled === "function" && typeof CG_COMPOSE_ZH !== "undefined" && zhAnchorEnabled()) ? CG_COMPOSE_ZH : "";
-    return base + (anchor ? (", " + anchor) : "") + (prop ? (", " + prop) : "");
+    // v173：景别锁（framing lock）—— 在比例锁之后压**最末**，比比例锁更权威：
+    //   它直接重写裁切 / 占比 / 负面，彻底盖过 CG_STYLE 与通用模板里残留的宽幅 token。
+    //   仅对窄景别生效（ecu/cu/mcu/ms）；full / wide 已是用户想要的宽幅结果，默认装配已给 full body / wide scenery，无需再锁。
+    //   ⚠️ 同样 typeof 守卫 SHOT_LOCK，避免抽函数单测取符号炸掉。
+    const shotKey = shot && shot.key;
+    const lock = (shotKey && shotKey !== "full" && shotKey !== "wide" && typeof SHOT_LOCK !== "undefined") ? SHOT_LOCK[shotKey] : null;
+    const zhAnchorOn = typeof zhAnchorEnabled === "function" && typeof SHOT_LOCK !== "undefined" && zhAnchorEnabled();
+    return base + (anchor ? (", " + anchor) : "") + (prop ? (", " + prop) : "") + (lock ? (", " + lock.en + (zhAnchorOn ? (", " + lock.zh) : "")) : "");
   }
 
   // 用**任意 prompt**出图（剧情 CG 用；沁灵主图仍走 generateImage）
