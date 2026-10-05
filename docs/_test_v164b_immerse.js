@@ -107,7 +107,8 @@ section("B. 成长卡里的机制说明也要去掉");
   ok(detailFn.indexOf("换形象/换设定各消耗 1 次出图额度；性别不会变") < 0,
     "去掉括号里的额度机制说明（出图确认卡上已经写了「确认即耗出图额度一」，重复且破坏沉浸）");
   ok(detailFn.indexOf("形象系统升级了") < 0, "去掉「形象系统升级了…」这种版本迁移说明");
-  ok(detailFn.indexOf("已为它画过") >= 0, "保留「已为它画过 N 张」—— 这是世界内数值，玩家看得懂");
+  // v174-B3：去物化后「它」→ {ta}（单只语境，renderSpiritDetailPage 末尾统一 fillTa 解析）
+  ok(detailFn.indexOf("已为{ta}画过") >= 0, "保留「已为{ta}画过 N 张」—— 这是世界内数值，玩家看得懂");
 }
 
 section("C. 「换外观设定」的提示不再吐技术串");
@@ -156,7 +157,8 @@ section("F. 沁灵首页 / 沁灵巷：空态的机制括号、无成本术语")
 {
   ok(FN.renderSpiritPage && FN.renderSpiritPage.indexOf("顺便去给它们标一下软糯程度") < 0,
     "沁灵首页空态去掉「（顺便去给它们标一下软糯程度，形象会跟着变）」");
-  ok(FN.renderSpiritPage && FN.renderSpiritPage.indexOf("把一串盘到「已挂瓷」，它就会开沁") >= 0,
+  // v174-B1b：去物化 —— 原「它就会开沁」去掉拟物主语，改「就会开沁」
+  ok(FN.renderSpiritPage && FN.renderSpiritPage.indexOf("把一串盘到「已挂瓷」，就会开沁") >= 0,
     "空态主文案保留");
   ok(!hasIn("renderTownPage", "不花额度"), "沁灵巷「今天的小镇」去掉「· 不花额度」");
   ok(!hasIn("renderTownPage", "+1 契合度"), "沁灵巷去掉「每天 +1 契合度；…当天 +2」这种规则说明");

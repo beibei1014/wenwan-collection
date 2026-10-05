@@ -120,7 +120,8 @@ section("C. 三式做完（今日 3/3）+ 今日已给过它 1 件");
   const { problems, stack } = parse(html);
   ok(problems.length === 0 && stack.length === 0, "标签平衡");
   ok(html.indexOf("今日 3/3") >= 0 && html.indexOf("今天照料得够了，明天再来。") >= 0, "三式做完 → 3/3 + 够了提示");
-  ok(html.indexOf("今天已经给过它 1 件") >= 0, "per-spirit 计数显示「今天已经给过它 1 件」");
+  // v174-B3：去物化 —— 单只语境「它」→ {ta}，由 heartCardHtml → 详情页末尾 fillTa 统一解析
+  ok(html.indexOf("今天已经给过{ta} 1 件") >= 0, "per-spirit 计数显示「今天已经给过{ta} 1 件」");
   ok(html.indexOf('class="xt-care-btn done"') >= 0, "已做过的照料键标记 done（置灰）");
 }
 
