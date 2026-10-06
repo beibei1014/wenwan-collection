@@ -3415,6 +3415,99 @@
   const CARE_CFG = { EACH: 2, DAILY_MAX: 6 };                     // 照料三式（第二批接 UI）
   const HEART_CFG = { MAX: 300, FREEZE_DAYS: 30 };
   const LOVE_CFG = { STAGE_MIN: 4, BOND_LV_MIN: 7 };
+  // v177：恋爱线状态枚举（⛔ 只此 5 个；婉拒不锁死 —— declined 可回 ready 再来一次）
+  const LOVE_STATES = ["none", "ready", "confessed", "accepted", "declined"];
+  /* v177：恋爱线门控（纯函数，只读不写盘）
+     · 入参 rec（逐串记录）/ item（可选，用于现算 stage；不传则读 rec.stage）/ ctx（可选，保留位）
+     · 🔴 v165c 裁定：**无天数门槛** —— 阶数与羁绊档达标即可告白，不锁章、不锁天。
+       ctx 一律不参与门槛判定（保留该形参只为与 stageOf / settleBond 等调用面签名一致）。
+     · 返回 { ok, reason, stage, bondLv, heartLv, state, canConfess, lovecall }
+       reason："" 放行 / "stage" 阶不足 / "bond" 羁绊档不足 */
+  function loveGate(rec, item, ctx) {
+    const r = rec || {};
+    const stage = Math.max(1, Number((item ? stageOf(item, r) : r.stage) || 1));
+    const lv1 = bondLevel(Number(r.bond) || 0).lv1;
+    const heart = heartLevel(Number(r.heart) || 0);
+    const state = String(r.loveState || "none");
+    const res = { ok:false, reason:"", stage:stage, bondLv:lv1, heartLv:heart.lv1,
+                  state:state, canConfess:false, lovecall:String(r.lovecall||"").trim() };
+    if (stage < LOVE_CFG.STAGE_MIN) { res.reason = "stage"; return res; }
+    if (lv1 < LOVE_CFG.BOND_LV_MIN) { res.reason = "bond"; return res; }
+    res.ok = true;
+    // ⛔ v165c 裁定：**无天数门槛** —— 达标即可告白，不锁章、不锁天
+    res.canConfess = (state === "none" || state === "ready" || state === "declined");
+    return res;
+  }
+
+  /* ---------- v177 恋爱线状态机（逐串独立；⛔ 可开后宫：多线并列，互不排斥） ----------
+     字段挂 rec 顶层（loveState / loveOn / loveAt，默认值见 normRecV165）：
+     ⛔ 不进 rec.marks（避开字典序裁剪 bug）／⛔ 不进 rec.flags（结局 flag 专属层）。
+     ⛔ 全局互斥一律不做：不限制「只能有一只 accepted」，各串各自记账、互不影响。 */
+  function loveRecOf(spiritId) {                  // 只读取 rec；⛔ 不建新串
+    const store = load();
+    const rec = store[String(spiritId)];
+    return (rec && typeof rec === "object") ? rec : null;
+  }
+  function loveStateOf(spiritId) {                // 恒返回对象，永不 null
+    const r = loveRecOf(spiritId) || {};
+    const st = String(r.loveState || "none");
+    return { state: LOVE_STATES.indexOf(st) >= 0 ? st : "none",
+             loveOn: !!r.loveOn, lovecall: String(r.lovecall || ""), at: String(r.loveAt || "") };
+  }
+  function openLoveLine(spiritId) {               // 玩家主动挑人开线：loveOn=true；none → ready
+    const id = String(spiritId == null ? "" : spiritId);
+    if (!id) return false;
+    const store = load();
+    const rec = ensureIn(store, id);
+    if (!rec) return false;
+    rec.loveOn = true;
+    if (String(rec.loveState || "none") === "none") rec.loveState = "ready";
+    if (!rec.loveAt) rec.loveAt = todayKey();
+    save(store);
+    return true;
+  }
+  function setLoveState(spiritId, state) {        // 只接受 LOVE_STATES 五枚举；非法值 false
+    if (LOVE_STATES.indexOf(state) < 0) return false;
+    const id = String(spiritId == null ? "" : spiritId);
+    if (!id) return false;
+    const store = load();
+    const rec = ensureIn(store, id);
+    if (!rec) return false;
+    rec.loveState = state;
+    rec.loveAt = todayKey();
+    save(store);
+    return true;
+  }
+  function acceptConfess(spiritId) {              // confessed → accepted（已是 accepted 则幂等成功）
+    const r = loveRecOf(spiritId);
+    if (!r) return false;
+    const st = String(r.loveState || "none");
+    if (st !== "confessed" && st !== "accepted") return false;
+    return setLoveState(spiritId, "accepted");
+  }
+  function declineConfess(spiritId) {             // confessed → declined（已是 declined 则幂等成功）
+    const r = loveRecOf(spiritId);
+    if (!r) return false;
+    const st = String(r.loveState || "none");
+    if (st !== "confessed" && st !== "declined") return false;
+    return setLoveState(spiritId, "declined");
+  }
+  /* 恋爱专属称呼唯一写入口：⛔ 填后不可改（一次定终身），空串/纯空白拒收。
+     返回 { ok, reason }；reason："" 成功 / "empty" 空值 / "locked" 已填过、不可改 */
+  function setLovecall(spiritId, text) {
+    const id = String(spiritId == null ? "" : spiritId);
+    if (!id) return { ok: false, reason: "empty" };
+    const store = load();
+    const rec = ensureIn(store, id);
+    if (!rec) return { ok: false, reason: "empty" };
+    if (String(rec.lovecall || "").trim()) return { ok: false, reason: "locked" };
+    const t = String(text == null ? "" : text).trim();
+    if (!t) return { ok: false, reason: "empty" };
+    rec.lovecall = t;
+    rec.lovecallOn = todayKey();
+    save(store);
+    return { ok: true, reason: "" };
+  }
   const HARM_CFG = { BOND_SLOW: 0.5, APPLY: true };               // v165d：带伤期间亲密度获取 ×0.5（启用，不清零不倒扣；不参与 scattered 判定）
   function bondLevel(n) {
     const v = Math.max(0, Math.floor(Number(n) || 0));
@@ -4019,6 +4112,12 @@
     rec.loveLine = !!rec.loveLine;
     if (rec.lovecall == null) rec.lovecall = "";
     if (rec.lovecallOn == null) rec.lovecallOn = "";
+    // v177：恋爱线状态机字段（⛔ 顶层字段；不进 marks / 不进 flags；逐串独立，可多线并列）
+    if (rec.loveState == null) rec.loveState = "none";
+    if (LOVE_STATES.indexOf(rec.loveState) < 0) rec.loveState = "none";
+    if (rec.loveOn == null) rec.loveOn = false;
+    rec.loveOn = !!rec.loveOn;
+    if (rec.loveAt == null) rec.loveAt = "";
     if (rec.nickCall == null) rec.nickCall = "";
     if (rec.trinket == null) rec.trinket = "";
     if (rec.bondLvSeen == null) rec.bondLvSeen = 1;
@@ -5363,7 +5462,10 @@
     SHIELD_MIN: 5,          // 通意：DECIDE 串 bondLv < 5 即「亲密度不足」→ 散
     HE_BOND: 6,             // 同心：全员 bondLv >= 6 视为「高亲密度」
     KEY_TOTAL: 3,           // 关键选择总数（ch7/ch11/ch19 三个 H3 挡关门）
-    HE_ALLOW_DECIDED: false // 设计裁定：纯 DECIDE 但全员存活高亲是否算 HE（默认否，严守不变量 I2）
+    HE_ALLOW_DECIDED: false,// 设计裁定：纯 DECIDE 但全员存活高亲是否算 HE（默认否，严守不变量 I2）
+    // v177 / v165c 裁定：恶人造成的伤害**永不致 BE**，只压「有效档位」
+    HARM_LV_DROP: 2,        // 带伤串「有效档位」−2（文档口径有效法力 −35；BOND_VAL 6→4 = 64−30 = 34 ≈ 35）
+    GRAND_NO_HARM: true     // 大团圆额外要求：全员 harmed=false（带伤可 HE，但不可大团圆）
   };
 
   // 周目级多结局 flag 默认值（写入 ww_story 时兜底；不持久化）
@@ -5431,7 +5533,8 @@
   /* 岁除判定纯函数（设计 §三）：相同 ww_story + 相同逐串 flags → 永远相同结局。
      输入：
        story   —— 周目级 ww_story（含 FORK_STANCE/KEY_CHOICES/JOINT_PREP/KEY_TOTAL）
-       spirits —— 逐串 flag 数组，每元素 { stance, bondLv }（scattered 由本函数派生，输入无需带）
+       spirits —— 逐串 flag 数组，每元素 { stance, bondLv, harmed? }（scattered 由本函数派生，输入无需带；
+                   v177：harmed 可选，缺省/老存档 = false —— 只压有效档位，**绝不入散/BE 判定**）
      输出： '大团圆' | 'HE' | 'NE' | 'BE'
      不变量：BE 仅当 ∃ 串 DECIDE && bondLv<SHIELD_MIN；系统绝不主动杀。 */
   function evaluateEnding(story, spirits) {
@@ -5441,24 +5544,32 @@
     const HE_ALLOW_DECIDED = ENDING_CFG.HE_ALLOW_DECIDED;
     const s = story || {};
     const list = Array.isArray(spirits) ? spirits : [];
-    let anyScattered = false, letCount = 0, decideCount = 0;
+    let anyScattered = false, letCount = 0, decideCount = 0, anyHarmed = false;
     let allHighBond = list.length > 0;
     for (let i = 0; i < list.length; i++) {
       const sp = list[i] || {};
       const stance = sp.stance;
       const bondLv = Number(sp.bondLv) || 1;
+      // v177：带伤标记（老存档 / 未传字段 = false，向后兼容）
+      const harmed = !!sp.harmed;
+      if (harmed) anyHarmed = true;
+      // v177：带伤只压「有效档位」（HARM_LV_DROP），不碰真实 bondLv
+      const effLv = Math.max(1, bondLv - (harmed ? ENDING_CFG.HARM_LV_DROP : 0));
       // 逐串散判定：仅 DECIDE + 亲密度不足 → 散（铁律 I4：系统绝不主动杀）
+      // 🔴 v165c 裁定：此处**只用 bondLv（真实亲密度）**，伤害绝不入 —— 带伤永不致 BE
       if (stance === "DECIDE" && bondLv < SHIELD_MIN) anyScattered = true;
       if (stance === "LET") letCount++;
       else if (stance === "DECIDE") decideCount++;
-      if (bondLv < HE_BOND) allHighBond = false;
+      if (effLv < HE_BOND) allHighBond = false;
     }
     // 裁定链（全覆盖，末行兜底 NE）
     if (anyScattered) return "BE";
     const dominantLet = (s.FORK_STANCE === "LET") || (letCount >= decideCount);
     const keysRight = (Number(s.KEY_CHOICES) || 0) >= KEY_TOTAL;
     const jointFull = (s.JOINT_PREP === "FULL");
-    if (dominantLet && allHighBond && keysRight && jointFull) return "大团圆";
+    // v177：大团圆额外要求全员无伤（GRAND_NO_HARM）；带伤撑不过则往下掉，末行兜底 NE
+    if (dominantLet && allHighBond && keysRight && jointFull &&
+        (!ENDING_CFG.GRAND_NO_HARM || !anyHarmed)) return "大团圆";
     const heOk = HE_ALLOW_DECIDED
       ? (allHighBond && keysRight)
       : (dominantLet && allHighBond && keysRight);
@@ -5484,7 +5595,8 @@
       const bondLv = (rec.flags.bondLv != null) ? Number(rec.flags.bondLv) : bondLevel(Number(rec.bond) || 0).lv1;
       rec.flags.bondLv = bondLv;
       const stance = rec.flags.stance || "UNSET";
-      spirits.push({ stance: stance, bondLv: bondLv });
+      // v177：带伤入参（只压有效档位；⛔ 散/BE 判定由 evaluateEnding 内部只用 bondLv 保证）
+      spirits.push({ stance: stance, bondLv: bondLv, harmed: !!rec.harmed });
       recs.push(rec);
     }
     const ending = evaluateEnding(w, spirits);
@@ -9210,6 +9322,8 @@ const CH09 = {
     // v165：羁绊八档升级 + 称呼 + 送礼 + 心迹 + 受伤（数据层与纯函数；⛔ 本批不接 UI）
     BOND_VAL, BOND_CFG, GIFT_CFG, CARE_CFG, HEART_CFG, LOVE_CFG, HARM_CFG, BOND_YOU_LV, BOND_NICK_LV,
     callFor, nurtureOf, normRecV165,
+    // v177：恋爱线门控 + 状态机（数据层与纯函数；⛔ 本批不接 UI，UI 层在 app.js 消费）
+    LOVE_STATES, loveGate, loveStateOf, openLoveLine, setLoveState, acceptConfess, declineConfess, setLovecall,
     GIFTS_KEY, loadGifts, saveGifts, addGift, giftListOf, giftClsOf, giftNameOf, giftDescOf, giftPrefOf, personaIdOf,
     GIFT_CATALOG, GIFT_CLASSES, giveGift,
     IMAGERY_OUTFITS, imageryOutfitOf,   // v165 修正：导出以便单测（此前未导出）
