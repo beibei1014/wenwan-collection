@@ -170,6 +170,31 @@ for (const c of CASES) {
   }
 }
 
+/* ---- V176a 负向扫描：禁用词全库必须为 0（不依赖具体行文案，防「等宽回滚」绕过） ----
+   ① 必须排除护栏行：AI prompt 里「⛔ 不准写盘我/摸我/捏我」这类禁止条款会自引禁用词，
+      不排除就常红失效。② 第 4 参 allow = 已裁定豁免的行内片段（旧 8 章 CHAP_SCRIPTS 死代码，
+      无调用点且被 _test_v165n2_script 锁成逐字节相同），只免这一条，别处再出现照样红。 */
+const NEG = [
+  ["spirits.js", "盘我",   "红线③ 沁灵自称被盘",   ["那时候虽然没人盘我"]],
+  ["spirits.js", "被盘",   "红线② 物件视角",       []],
+  ["spirits.js", "装睡",   "红线② 物件视角",       []],
+  ["spirits.js", "会走路", "红线④ 会走路的一串",   []],
+  ["spirits.js", "玩意",   "红线④ 称沁灵为玩意",   []],
+];
+const GUARD_LINE = (l) => l.includes("⛔") || /^\s*(\/\/|\*|\/\*)/.test(l);
+for (const [nf, word, why, allow] of NEG) {
+  const hits = (F[nf] || "").split("\n").map((l, i) => [i + 1, l])
+    .filter(([, l]) => l.includes(word) && !GUARD_LINE(l)
+      && !(allow || []).some((a) => l.includes(a)));
+  total++;
+  if (hits.length === 0) { green++; console.log("  ✓ " + nf + " · 负向扫描「" + word + "」= 0"); }
+  else {
+    red++;
+    console.log("  ✗ " + nf + " · 负向扫描「" + word + "」= " + hits.length +
+      "　⇒ " + why + "　首命中 L" + hits[0][0]);
+  }
+}
+
 console.log("------------------------------------------------------------");
 console.log("断言总数 " + total + " ｜ 红 " + red + " ｜ 绿 " + green);
 console.log(red > 0
