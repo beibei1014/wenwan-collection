@@ -34,14 +34,14 @@ const F = {
 const CASES = [
   // ---------- js/spirits.js ----------
   ["spirits.js", "GREET.born（＋停用词正则锚点）", `"我认得你的手 —— 就是刚才把我盘热的那个。",`, `"我认得你的手。是这只手，把我从那串里唤出来的。",`, "/^(一|个|种|些|这|那|它|我|你|他|她)$/"],
-  ["spirits.js", "GREET.played3", `今天被你盘了 {plays} 次`, `今天你在那边动了 {plays} 回串`],
+  ["spirits.js", "GREET.played3", `今天被你盘了 {plays} 次`, `今天你来我这儿坐了 {plays} 回`],
   ["spirits.js", "GREET.x5（量词颗）", `里最亮的那一颗」。`, `里最不显眼的那个」。`],
   ["spirits.js", "GREET_MOOD.played（键名不动）", `played: "暖乎乎的"`, `played: "被陪过"`, "const GREET_MOOD = {"],
-  ["spirits.js", "CARE.clean（id 不动）", `{ id: "clean",  name: "擦净", line: "案上擦了擦，浮灰落了。" },`, `{ id: "clean",  name: "探看", line: "过来看了看，顺手拾掇拾掇。" },`, `id: "clean"`],
+  ["spirits.js", "CARE.clean（id 不动）", `过来看了看，顺手拾掇拾掇。`, `{ id: "clean",  name: "探看", line: "过来看了看，顺手替我把桌上的东西归置了归置。" },`, `id: "clean"`],
   ["spirits.js", "CARE.sit（id 不动）", `name: "静坐", line: "坐下来，陪它静了一会儿。"`, `name: "静坐", line: "坐下来，静静陪了一会儿。"`, `id: "sit"`],
   ["spirits.js", "CARE.thread（id 不动）", `{ id: "thread", name: "理线", line: "把线顺了顺，松的地方收好。" },`, `{ id: "thread", name: "叙话", line: "陪着说了几句话，说的都是小事。" },`, `id: "thread"`],
   ["spirits.js", "GIFT.dignified", `hit: "东西我收下了。规矩我记着。"`, `hit: "收了。搁我手边。"`],
-  ["spirits.js", "GIFT.scholar.miss", `miss: "……记一笔。"`, `miss: "对不上账。……也记一笔。"`],
+  ["spirits.js", "GIFT.scholar.miss", `miss: "对不上账。……也记一笔。"`, `miss: "对不上脾性。……也记一笔。"`],
   ["spirits.js", "GIFT.cool.hit（测试:303 锁死）", `hit: "……还行。"`, `hit: "……收了。"`],
   ["spirits.js", "GIFT.gentle.hit", `hit: "你从哪儿找来的。"`, `hit: "我给你收在最里头了。"`],
   ["spirits.js", "GIFT.lively.hit", `hit: "我先看见的！我先看见的！"`, `hit: "我先看见的！给我的！"`],
@@ -98,7 +98,7 @@ const CASES = [
   ["app.js", "data-p-ok（不动）", `data-p-ok>就用它 →</button>`, `data-p-ok>就用{ta} →</button>`, `data-p-ok`],
   ["app.js", "送礼确认弹窗", `"递一件给它？"`, `"送给{ta}？"`],
   ["app.js", "房间回响脚注", `"攒够了就会发生属于它们的故事 ✨</div>";`, `"攒够了就会发生属于这几只的故事 ✨</div>";`],
-  ["app.js", "回忆卡 line", `line: "从一串珠子，到有脾气的它。",`, `line: "从一串珠子，到会跟你闹脾气的人。",`],
+  ["app.js", "回忆卡 line", `line: "从一串珠子，到会跟你闹脾气的人。",`, `line: "从一声不响，到会跟你闹脾气的人。",`],
   ["app.js", "详情·陪了N天", `" · 它陪了你 " + DB.daysWith(it)`, `" · {ta}陪了你 " + DB.daysWith(it)`],
   ["app.js", "详情·纪念日留信", `每一枚纪念日它都留了信给你`, `每一枚纪念日{ta}都留了信给你`],
   ["app.js", "设置·保存称呼", `已保存：以后它们会用「`, `已保存：以后他们会用「`],
@@ -113,7 +113,7 @@ const CASES = [
   ["poster.js", "回忆册长图·名字（×2）", `escText(o.name || "它")`, `escText(o.name || "那只")`],
 
   // ---------- js/game.js ----------
-  ["game.js", "看纹 desc（DAILY_TEMPLATES 字段不动）", `看看它身上那道纹，今天走到哪儿了。`, `看看那只那道纹，今天走到哪儿了。`, `id: "kanwen"`],
+  ["game.js", "看纹 desc（DAILY_TEMPLATES 字段不动）", `看看那只那道纹，今天走到哪儿了。`, `看看 {name} 今天的气色，走到哪儿了。`, `id: "kanwen"`],
 
   // ---------- V175 续：名字统一 + 去物化口头禅 + 全站复查 ----------
   ["app.js", "送礼流程名字解析（对齐详情页身份名）", `const name = spiritName(it, store);\n    const today = Spirits.todayKey();`, `const _idc0 = spiritIdentityOf(_disp0);\n    const name = (_idc0 && !rec.nameEdited) ? _idc0.name : _disp0;`],
@@ -127,6 +127,22 @@ const CASES = [
   ["app.js", "佩戴状态说明去物化", `一直在盘它）`, `一直戴着，不占盘玩计划）`],
   ["spirits.js", "人设口头禅禁物化指令（新增）", `__NONEXIST_V175_SPG__`, `口头禅（line）严禁把玩视角`],
   ["spirits.js", "签文去物化", `把手洗干净盘它`, `把手洗干净，慢慢盘这串`],
+
+  // ---------- V176a：房间双人剧情 + 夜话 + 沁灵栏目 · 物化文案再清一轮 ----------
+  ["spirits.js", "小剧场禁「装睡」", `要不今天一起装睡。`, `要不今天谁都别出声，各自歇着。`],
+  ["spirits.js", "夜话 a3 禁「装睡」", `{ w: "A", t: "你别装睡。" },`, `{ w: "A", t: "你别躲着不说话。" },`],
+  ["spirits.js", "房间剧情禁物件处置（搁在一处）", `有一天主人把两个都搁在一处，`, `有一天主人让他俩挨着坐到一处，`],
+  ["spirits.js", "夜话 f_lost 禁「放回原来的地方」", `放回原来的地方`, `陪他回到原来那间屋`],
+  ["spirits.js", "人设卡禁「会走路的一串」", `像一串会走路的多宝`, `像把一整串多宝都穿在了身上`],
+  ["spirits.js", "夜话 a3 禁「记账」", `不是脏，是记账。`, `那不是脏，是日子留下的。`],
+  ["spirits.js", "夜话 a4 禁「搁在一边」", `把我们搁在一边，不再理会了。`, `我们怕的是你哪天不再理会我们了。`],
+  ["spirits.js", "夜话 f_lost 标题禁「丢了」", `title: "差点把你丢了"`, `title: "差点寻不着你"`],
+  ["spirits.js", "节令禁「把我弄丢」", `只求你别把我弄丢`, `只求你别丢下我`],
+  ["app.js", "夜话列表 tip 禁「开沁的串」", `所有开沁的串都在这儿`, `开了沁的几位都在这儿`],
+  ["app.js", "进化卡去「它」", `不太喜欢它，就关掉`, `不太喜欢，就关掉`],
+  ["app.js", "反馈弹层按钮禁「搁下了」", `id='mOk' style='flex:1'>搁下了`, `id='mOk' style='flex:1'>知道了`],
+  ["app.js", "旧日记一次性清理函数（新增）", `__NONEXIST_V176A_PURGE__`, `function purgeObjectifiedDiaryOnce()`],
+  ["app.js", "日记清理挂点·防回滚（pullSpirits 尾部）", `__NONEXIST_V176A_HOOK1__`, `purgeObjectifiedDiaryOnce();`],
 ];
 
 let total = 0, red = 0, green = 0;

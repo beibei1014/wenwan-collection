@@ -60,7 +60,9 @@ const routerSrc = extractFn("router");
 section("A. renderTalkPage → 沉浸式外壳结构");
 ok(!!talkSrc, "抽到 renderTalkPage");
 if (talkSrc) {
-  ok(/class="nt-chat immersive"/.test(talkSrc), '根容器 = .nt-chat.immersive');
+  // v176：根容器改成 `'<div class="nt-chat' + (IMM ? ' immersive' : '') + '"'` 条件拼接 ⇒ 断言开关本身
+  ok(/class="nt-chat'\s*\+\s*\(IMM \? " immersive"/.test(talkSrc) && /o\.immersive !== false/.test(talkSrc),
+    '根容器 = .nt-chat[.immersive]，由 o.immersive 开关控制（默认 true = 沉浸）');
   ok(/scenebg blurpane/.test(talkSrc) && /id="sceneBgBlur"/.test(talkSrc), "双层 BG：模糊垫满层 .blurpane#sceneBgBlur");
   ok(/scenebg sharppane/.test(talkSrc) && /id="sceneBgLayer"/.test(talkSrc), "双层 BG：清晰 contain 层 .sharppane#sceneBgLayer");
   ok(/id="talkPortrait"/.test(talkSrc), "整屏立绘层 #talkPortrait");
@@ -68,7 +70,8 @@ if (talkSrc) {
     "底部对话框 #talkBox（含名牌 #talkName / 正文 #talkText / 继续指示 #talkCue）");
   ok(/nt-body" id="ntBody"/.test(talkSrc), "保留引擎输出位 #ntBody（沉浸态作透明点击层）");
   ok(/o\.portrait/.test(talkSrc), "present 使用 o.portrait（拿不到 = \"\"）");
-  ok(/try \{ document\.body\.classList\.add\("talk-open"\)/.test(talkSrc), "进剧情页 → document.body.classList.add(\"talk-open\")");
+  ok(/try \{ if \(IMM\) document\.body\.classList\.add\("talk-open"\)/.test(talkSrc),
+    "进沉浸剧情页 → document.body.classList.add(\"talk-open\")（⛔ 非沉浸不加）");
   // present 每消息唯一挂点：append 末尾 1 次；step 的 me/sys 分支不得重复调
   const appendBlock = /const append = \(m\) => \{[\s\S]*?\n    \};/.exec(talkSrc);
   ok(!!appendBlock && /present\(m\);/.test(appendBlock[0]), "present(m) 挂在 append(m) 末尾（每消息唯一钩子）");
@@ -85,6 +88,14 @@ ok(!!mainSrc && /portrait:/.test(mainSrc) && /Spirits\.castOf\(\)/.test(mainSrc)
   "renderMainTalkPage 传 portrait（castOf()[pid] → load()[id].imgUrl）");
 ok(!!chapSrc && /portrait:/.test(chapSrc) && /rc0\.imgUrl/.test(chapSrc), "renderChapTalkPage 传 portrait（rc0.imgUrl）");
 ok(!!nightSrc && !/portrait:/.test(nightSrc), "夜话页（renderNightTalkPage）不传 portrait → 回落 \"\"（只 BG + 对话框）");
+
+/* v176 红测：夜话 ⛔ 不进沉浸 —— 气泡流不能透明掉（.nt-chat.immersive .nt-body { opacity:0 }） */
+section("B2. v176 immersive 开关：夜话 false / 主线 true");
+ok(!!nightSrc && /immersive:\s*false/.test(nightSrc),
+  "夜话页 renderNightTalkPage 传 immersive: false（⛔ 不进沉浸 = 微信式群聊气泡）");
+ok(!!mainSrc && /immersive:\s*true/.test(mainSrc), "主线 renderMainTalkPage 显式传 immersive: true（行为不变）");
+ok(!!chapSrc && /immersive:\s*true/.test(chapSrc), "旧单串 renderChapTalkPage 显式传 immersive: true（行为不变）");
+ok(!!talkSrc && /const IMM = \(o\.immersive !== false\)/.test(talkSrc), "renderTalkPage 用 o.immersive !== false 作开关（默认沉浸）");
 
 /* ================= C. talk-open 的移除在中央路由 ================= */
 section("C. talk-open 进/出");
@@ -238,6 +249,28 @@ if (talkSrc) {
     ok(cnt(p._html, "<img") === 1, "D5 任何时刻立绘层只有 1 张图（无并排）");
     ok(p.dataset.slot === "R", "D5 换人后 data-slot 跟随（R）");
   } else { ok(false, "D5 跑失败" + (r && r.err ? " —— " + r.err.message : "")); }
+
+  // D7：v176 夜话 = 非沉浸（微信式群聊气泡）→ ⛔ 不加 talk-open / ⛔ 不输出立绘层与 AVG 对话框
+  r = run({
+    title: "T", headAv: "", headName: "H", headSub: "S", av: () => "", nameOf: () => "w",
+    immersive: false, listHash: "#/night", listLabel: "全部会话",
+    enter: () => ({ added: [{ w: "sp", name: "甲", text: "喂。" }], choices: null, ending: null, ended: false, log: [] }),
+    replay: () => ({ added: [], choices: null, ending: null, ended: false, log: [] }),
+    choose: () => ({ added: [], choices: null, ending: null, ended: false, log: [] }),
+  });
+  ok(r && !r.err, "D7 immersive:false 不抛异常" + (r && r.err ? " —— " + r.err.message : ""));
+  if (r && !r.err) {
+    const vh = r.view.innerHTML;
+    ok(/class="nt-chat"/.test(vh) && !/nt-chat immersive/.test(vh), "D7 根容器 = .nt-chat（⛔ 不带 immersive）");
+    ok(!/talk-portrait/.test(vh), "D7 非沉浸 ⛔ 不输出整屏立绘层 #talkPortrait");
+    ok(!/talk-box/.test(vh), "D7 非沉浸 ⛔ 不输出 AVG 对话框 #talkBox");
+    ok(/nt-chat-head/.test(vh), "D7 群聊顶栏 .nt-chat-head 保留（微信式）");
+    ok(/id="ntBody"/.test(vh) && /id="ntFoot"/.test(vh) && /id="ntListBtn"/.test(vh),
+      "D7 #ntBody / #ntFoot / #ntListBtn 都在（气泡流 + 选项 + 列表跳转依赖）");
+    ok(/id="sceneBgLayer"/.test(vh) && !/blurpane/.test(vh), "D7 背景只一层 #sceneBgLayer（⛔ 无 blurpane）");
+    ok(!r.sb.document.body.classList.contains("talk-open"),
+      "D7 非沉浸 ⛔ 不加 body.talk-open（否则锁滚动 + 藏 tabbar，气泡流滚不动）");
+  }
 
   // D6：无 bgUrl（未出图）→ noimg 兜底类，不阻塞
   const { sb: sb6, reg: reg6 } = makeSandbox();

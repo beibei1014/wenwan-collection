@@ -233,9 +233,9 @@
   //     global = 非单只行为（夜话）：不按沁灵 id 绑定
   //     desc 里的 {name} 由 buildDailyTasks 换成「当天那只」的名字。均属菩提根，池内 0 处他类别词。
   const DAILY_TEMPLATES = [
-    { id: "jingshou",  key: "greet", act: "clean", icon: "🫧", title: "净手", desc: "去看看 {name}，顺手拾掇一下（详情页 · 照料「探看」）",                 cls: "ware",  gifts: ["ware_cup", "ware_ink"], go: "spirit" },
+    { id: "jingshou",  key: "greet", act: "clean", icon: "🫧", title: "净手", desc: "去看看 {name}，陪他待一会儿（详情页 · 照料「探看」）",                 cls: "ware",  gifts: ["ware_cup", "ware_ink"], go: "spirit" },
     { id: "peizuo",    key: "play",  act: "play",  icon: "🍵", title: "陪坐", desc: "今天陪 {name} 坐一回（详情页 · 盘玩）",                              cls: "human", gifts: ["human_tea", "human_snack"], go: "spirit" },
-    { id: "kanwen",    key: "greet", act: "greet", icon: "🔎", title: "看纹", desc: "看看那只那道纹，今天走到哪儿了。今天去看 {name}（进详情页打个招呼）", cls: "odd",   gifts: ["odd_glass", "odd_shell"], go: "spirit" },
+    { id: "kanwen",    key: "greet", act: "greet", icon: "🔎", title: "看纹", desc: "看看 {name} 今天的气色，走到哪儿了。今天去看他（进详情页打个招呼）", cls: "odd",   gifts: ["odd_glass", "odd_shell"], go: "spirit" },
     { id: "shoudeng",  key: "night", act: "night", icon: "🏮", title: "守灯", desc: "把这盏灯守到有人回来 —— 今晚去夜话，看看 {name} 那边有没有动静",      cls: "cloth", gifts: ["cloth_pa", "cloth_stone"], go: "night", global: true },
     { id: "yingsheng", key: "reply", act: "reply", icon: "🔔", title: "应声", desc: "{name} 写了一句话 —— 回一声（详情页 · 日记回一句）",                  cls: "sound", gifts: ["sound_bell", "sound_drum"], go: "spirit" },
   ];

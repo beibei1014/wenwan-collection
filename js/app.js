@@ -5205,7 +5205,7 @@
     h += '<button type="button" class="btn primary xt-gift-btn" id="xtGiftOpen"' + (qualify ? "" : " disabled") + '>' +
       '<span class="xt-gift-ico">🎁</span>' + esc(Spirits.GIFT_COPY.open) + '</button>';
     h += '<div class="xt-sub">今日已递 ' + globalGiven + '/' + globalMax +
-      (givenN >= 1 ? fillTa('（今天已经给过{ta} ' + givenN + ' 件）', name) : "") + '</div>';
+      (givenN >= 1 ? '（今天已经给过{ta} ' + givenN + ' 件）' : "") + '</div>';
     if (!qualify) h += '<div class="xt-hint">' + esc(fillTa(Spirits.GIFT_COPY.qualifying, name)) + '</div>';
     h += '</div>';
     return h;
@@ -5216,7 +5216,7 @@
     modal.innerHTML = "<h3>" + esc(title) + "</h3>" +
       (quote ? '<div class="xt-quote">「' + esc(quote) + '」</div>' : "") +
       (subHtml ? '<div class="xt-quote-sub">' + subHtml + "</div>" : "") +
-      "<div style='display:flex;margin-top:14px'><button class='btn primary' id='mOk' style='flex:1'>搁下了</button></div>";
+      "<div style='display:flex;margin-top:14px'><button class='btn primary' id='mOk' style='flex:1'>知道了</button></div>";
     mask.hidden = false; modal.hidden = false; modal.style.display = "";
     return new Promise((resolve) => {
       const done = () => { mask.hidden = true; modal.hidden = true; modal.style.display = ""; resolve(true); };
@@ -5868,7 +5868,7 @@
       '<button class="btn ghost" id="sdChat">💬 他们聊天</button>' +
       '<button class="btn ghost" id="sdSpiritList">🍡 所有沁灵</button></div>';
 
-    view.innerHTML = fillTa(h, spiritName(it, store));
+    view.innerHTML = fillTa(h, nameShown);
     bindSpiritImgFallback(view);
     bindBrokenImgCleanup(view);
     // 原地刷新（保持滚动位置）/ 回到顶部（让用户第一时间看到新立绘）
@@ -6073,7 +6073,7 @@
           bond: bl.icon + " " + bl.name,
           milestones: Spirits.memoirOf(it, rec),
           owner: Spirits.getOwner().name || "",
-          line: "从一串珠子，到会跟你闹脾气的人。",
+          line: "从一声不响，到会跟你闹脾气的人。",
         });
         const r = await Poster.shareCanvas(cv, "回忆册-" + spiritName(it, store) + ".jpg");
         toast(r === "shared" ? "🎞 回忆卡已分享" : "🎞 回忆卡已保存");
@@ -6821,7 +6821,7 @@
     let h = '<div class="room-hint" style="margin-bottom:10px">夜里他们借你的手机开了几个群。' +
       "你回一句，剧情就跟着你走 —— 每个事件都有 <b>3 个结尾</b>。</div>";
     const groups = [
-      { title: "全家福", tip: "所有开沁的串都在这儿", arr: S.threads.filter((t) => t.kind === "family") },
+      { title: "全家福", tip: "开了沁的几位都在这儿", arr: S.threads.filter((t) => t.kind === "family") },
       { title: "同屋小群", tip: "住在一个房间里的", arr: S.threads.filter((t) => t.kind === "room") },
       { title: "两个人的事", tip: "谁生日、谁跟谁性格对上了才出现", arr: S.threads.filter((t) => t.kind === "duo") },
     ];
@@ -6934,6 +6934,7 @@
     const evObj = Spirits.eventOf(evid);
     const cast = evObj ? castPreview(evObj, T.th) : T.th.members;
     return renderTalkPage({
+      immersive: false,        // v176：夜话 = 微信式群聊气泡 —— ⛔ 不进沉浸（不加 talk-open、不出立绘 / AVG 对话框）
       title: T.th.name,
       headAv: cast.map((c) => spiritThumbHtml(c.item, T.S.store[c.id] || {}, 30)).join(""),
       headName: T.th.name,
@@ -6970,6 +6971,8 @@
 
   /* ---------- v161：通用对话页外壳（夜话 / 主线 共用） ----------
      o = {
+       immersive,                   // v176：外壳开关。默认 true = 沉浸 AVG（全屏 BG + 整屏立绘 + 底部对话框）；
+                                    //   显式 false = 微信式群聊气泡（夜话：可滚动 + 有 tabbar + 有群聊顶栏）
        title,                       // 顶栏标题
        headAv, headName, headSub,   // 聊天页顶部的头像组 / 名字 / 副标题
        listLabel, listHash,         // 右上角「全部…」按钮（可省）
@@ -6978,7 +6981,11 @@
        endTag, endingExtra(e), backLabel, backHash
      } */
   function renderTalkPage(o) {
-    try { document.body.classList.add("talk-open"); } catch (e) { /* v169：抽函数单测无 document.body → 忽略 */ }
+    // v176：immersive 开关 —— 主线 = 沉浸 AVG；夜话 = 微信式群聊气泡（⛔ 不进沉浸）
+    //   ⚠️ 夜话必须能滚动、要看得见 tabbar 与群聊顶栏 ⇒ ⛔ 绝不能加 body.talk-open
+    //      （body.talk-open 会 overflow:hidden 锁死滚动 + display:none 藏掉 tabbar，气泡流恰恰需要滚）
+    const IMM = (o.immersive !== false);                 // 默认 true；夜话显式传 immersive:false
+    try { if (IMM) document.body.classList.add("talk-open"); } catch (e) { /* v169：抽函数单测无 document.body → 忽略 */ }
     topbarTitle.textContent = o.title;
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
@@ -6987,25 +6994,32 @@
     //   ⚠️ 用 typeof 守卫：renderTalkPage 会被单测以「抽函数 + 沙箱」方式隔离运行，此时 sceneBgUrl 不在作用域
     let _bgUrl = "";
     try { if (typeof sceneBgUrl === "function") _bgUrl = sceneBgUrl(o.bg); } catch (e) { _bgUrl = ""; }
-    view.innerHTML = '<div class="nt-chat immersive">' +
-      '<div class="scenebg blurpane' + (_bgUrl ? "" : " noimg") + '" id="sceneBgBlur"></div>' +
-      '<div class="scenebg sharppane' + (_bgUrl ? "" : " noimg") + '" id="sceneBgLayer"></div>' +
-      '<div class="talk-portrait" id="talkPortrait"></div>' +
+    // v176：两套外壳 —— IMM = 沉浸 AVG；!IMM = v168 微信式群聊气泡（单层 BG + 顶栏 + 气泡流 + 选项）
+    //   ⛔ 不管沉浸与否，#ntBody / #ntFoot / #ntListBtn 都必须输出（msgHtml / showFoot / 列表跳转依赖）
+    view.innerHTML = '<div class="nt-chat' + (IMM ? " immersive" : "") + '">' +
+      (IMM
+        ? '<div class="scenebg blurpane' + (_bgUrl ? "" : " noimg") + '" id="sceneBgBlur"></div>' +
+          '<div class="scenebg sharppane' + (_bgUrl ? "" : " noimg") + '" id="sceneBgLayer"></div>' +
+          '<div class="talk-portrait" id="talkPortrait"></div>'
+        : '<div class="scenebg' + (_bgUrl ? "" : " noimg") + '" id="sceneBgLayer"></div>') +
       '<div class="nt-chat-head">' +
       '<div class="nt-head-av">' + o.headAv + "</div>" +
       '<div class="nt-head-meta"><b>' + esc(o.headName) + "</b><span>" + esc(o.headSub) + "</span></div>" +
       (o.listHash ? '<button class="link-btn" id="ntListBtn">' + esc(o.listLabel || "返回") + "</button>" : "") +
       "</div>" +
       '<div class="nt-body" id="ntBody"></div>' +
-      '<div class="talk-box" id="talkBox">' +
-      '<div class="talk-name" id="talkName" hidden></div>' +
-      '<div class="talk-text" id="talkText"></div>' +
-      '<i class="talk-cue" id="talkCue" hidden></i>' +
-      "</div>" +
+      (IMM
+        ? '<div class="talk-box" id="talkBox">' +
+          '<div class="talk-name" id="talkName" hidden></div>' +
+          '<div class="talk-text" id="talkText"></div>' +
+          '<i class="talk-cue" id="talkCue" hidden></i>' +
+          "</div>"
+        : "") +
       '<div class="nt-foot" id="ntFoot"></div></div>';
-    // v169：双层 BG（横版 16:9 进竖屏 9:16）—— 模糊垫满 + 清晰 contain，两张同源，走 JS 设值
+    // v169：双层 BG（横版 16:9 进竖屏 9:16）—— 模糊垫满 + 清晰 cover，两张同源，走 JS 设值
+    //   v176：非沉浸只有 #sceneBgLayer 一层（blurpane 压根没输出 ⇒ ⛔ 别去查它）
     if (_bgUrl) {
-      ["#sceneBgBlur", "#sceneBgLayer"].forEach(function (sel) {
+      (IMM ? ["#sceneBgBlur", "#sceneBgLayer"] : ["#sceneBgLayer"]).forEach(function (sel) {
         const el = $(sel);
         if (el) el.style.backgroundImage = "url(" + JSON.stringify(_bgUrl) + ")";
       });
@@ -7015,7 +7029,8 @@
     const body = $("#ntBody"), foot = $("#ntFoot");
     // v169：沉浸式呈现层 —— 每显示一条消息，同步刷新「整屏立绘 + 底部对话框 + 名牌 + 继续指示」
     //   ⛔ 抽函数单测（_test_talk_flow / 沙箱）里这些节点取不到 → present 直接静默返回，绝不影响消息流
-    const pEl = $("#talkPortrait"), boxEl = $("#talkBox");
+    //   v176：非沉浸 ⛔ HTML 里压根不输出这两层 → pEl/boxEl = null → present 静默返回，气泡流照旧
+    const pEl = IMM ? $("#talkPortrait") : null, boxEl = IMM ? $("#talkBox") : null;
     const nameEl = $("#talkName"), txtEl = $("#talkText"), cueEl = $("#talkCue");
     const present = (m) => {
       if (!m || !pEl || !boxEl) return;
@@ -7575,6 +7590,7 @@
     if (!ch || !ch.unlocked) { location.hash = "#/main"; return; }
     const back = "#/main";
     return renderTalkPage({
+      immersive: true,         // v176：主线 = 沉浸 AVG（默认就是 true，显式写出 ⛔ 免得以后被默认值坑）
       title: ch.title,
       manual: true,
       headAv: '<span class="main-av">📖</span>',
@@ -7653,6 +7669,7 @@
       return Object.assign(rr, { log: (rc.talk || {}).log || [] });
     };
     return renderTalkPage({
+      immersive: true,         // v176：旧单串同主线 = 沉浸 AVG（路由已废，仅保留兼容）
       title: act.title,
       headAv: spiritThumbHtml(it, rc0, 30),
       headName: nm,
@@ -9722,7 +9739,7 @@
       const _sr = Spirits.load()[it.id];
       const _isSpirit = !(_sr && _sr.spirit === false);
       html += '<div class="sd-card" style="margin-top:14px"><div class="sd-card-title">✨ 沁灵进化</div>' +
-        '<div class="sd-line">这只串可以开沁化成沁灵（出立绘 + CG）。不太喜欢它，就关掉，只当手串收藏。</div>' +
+        '<div class="sd-line">这只串可以开沁化成沁灵（出立绘 + CG）。不太喜欢，就关掉，只当手串收藏。</div>' +
         '<button class="btn ' + (_isSpirit ? "ghost" : "primary") + '" id="btnSpiritToggle" style="width:100%;margin-top:8px">' +
         (_isSpirit ? "📿 已开沁 · 点此改为只当手串" : "✨ 当前只当手串 · 点此重新开沁") + '</button></div>';
     }
@@ -10903,6 +10920,9 @@ else if (h.indexOf("#/night/") === 0) {                                         
         if (location.hash === "#/spirit" || location.hash === "#/spirits" || location.hash.indexOf("#/spirit/") === 0) rerenderSpiritView();
       }
     } catch (e) { /* 未配置/离线：静默 */ }
+    // v176a：云端旧日记可能在 init 清理之后才落地覆盖回来，所以每次拉完远端都再清一次
+    // （函数自带 try/catch，不可能打断 pullSpirits；ww_diaryver 保证只真正执行一次）
+    purgeObjectifiedDiaryOnce();
   }
   // 离开页面 / 切后台时把改动推上去；每 2 分钟兜底推一次（仅在有改动时）
   window.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") pushSpirits(); });
@@ -10998,6 +11018,33 @@ else if (h.indexOf("#/night/") === 0) {                                         
     } catch (e) { return false; }
   }
 
+  /* ---------- 一次性迁移 v176a：清空旧物化日记（之后按新口径重新生成） ----------
+     v175 修干净了 diaryWrite 的 prompt，但玩家浏览器里已存下来的旧日记不会自动更新。
+     ⛔ 只清日记本体；绝不碰 立绘 / CG / 设定 / 羁绊 / 心迹 / 回响 / 主人的回信。 */
+  const DIARY_VER = "v176a";
+  function purgeObjectifiedDiaryOnce() {
+    try {
+      if (localStorage.getItem("ww_diaryver") === DIARY_VER) return 0;
+      const s = Spirits.load();
+      let n = 0;
+      Object.keys(s).forEach((k) => {
+        const r = s[k];
+        if (!r || typeof r !== "object") return;
+        if (!Array.isArray(r.diary) || !r.diary.length) return;
+        n += r.diary.length;
+        r.diary = [];
+        r.diaryAt = 0;        // 让 ensureDiary 的「开篇日记」分支立刻补 1 篇，日记本不会空着
+        r.diarySeenAt = 0;    // 否则新日记被判成已读，红点不亮
+        // ⛔ 不动 r.replies（主人自己写的回信，是用户资产）/ r.replyAcked / r.echoes / r.echoSent / r.mailSeenAt
+        // ⛔ 回响绝不能清：rec.echoSent 没有时间戳字段，删掉后回响永远不会重发、不可逆
+      });
+      Spirits.save(s);        // 内部会 dispatch ww:spirits-changed → 自动推云端
+      try { localStorage.setItem("ww_diaryver", DIARY_VER); } catch (e2) { /* 忽略 */ }
+      updateStoryDot();
+      return n;
+    } catch (e) { return 0; }
+  }
+
   async function init() {
     try {
       initTheme();
@@ -11033,6 +11080,9 @@ else if (h.indexOf("#/night/") === 0) {                                         
             ? ("已清空 " + list.length + " 只沁灵的形象，进「沁灵」页一尊一尊定设定吧 ✨（定完才会出图）")
             : "形象已重置");
         }
+        // v176a：首启兜底（离线 / 没拉到云端时也要清一次）
+        const dn = purgeObjectifiedDiaryOnce();
+        if (dn) toast("已清掉 " + dn + " 篇旧日记，沁灵会按新的说法重新写 ✨");
         if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
           navigator.serviceWorker.register("sw.js").then((reg) => {
             // 检测到新 SW 等待激活时，立即跳过等待并刷新页面

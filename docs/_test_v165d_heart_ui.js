@@ -65,6 +65,8 @@ function makeSandbox() {
     encodeURIComponent, decodeURIComponent,
     esc,
     spiritName: (it) => (it && it.name) || "它",
+    // v176a：heartCardHtml 现在会反查身份卡（对齐详情页显示名），沙箱里给个回落 null 即可
+    spiritIdentityOf: () => null,
     Spirits: {
       heartLevel: (n) => ({ value: n, lv: 1, lv1: 2, name: "微澜", atMax: false }),
       bondLevel: (n) => { const v = Math.max(0, Math.floor(Number(n) || 0)); const lv1 = v >= 280 ? 8 : v >= 200 ? 7 : v >= 140 ? 6 : v >= 90 ? 5 : v >= 55 ? 4 : v >= 30 ? 3 : v >= 12 ? 2 : 1; const nm = ["", "照面", "眼熟", "相熟", "同室", "通意", "同心", "相知", "沁透"][lv1]; return { value: v, lv: lv1 - 1, lv1: lv1, name: nm, pct: 50 }; },

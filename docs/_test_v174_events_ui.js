@@ -171,7 +171,10 @@ T("evtPump(null) 不抛错", () => { const st = V.evtPump(null); return st && st
 
 /* ============================ ⑨ HTML 结构 + 标签平衡 + 无 emoji ============================ */
 section("⑨ 事件卡 / 纪事页 HTML 结构 + 标签平衡 + ⛔ 无 emoji");
-const NOW = Date.now();
+// ⚠️ 固定到当天 12:00：原写法用 Date.now()，一旦跑在零点后一小时内，
+//    NOW-3600000 会跨到前一天 ⇒「同日进同一 .evt-day」误判为两天（跨零点 flaky）。
+const _nowD = new Date(); _nowD.setHours(12, 0, 0, 0);
+const NOW = _nowD.getTime();
 T("事件卡 HTML 标签平衡（l1/l2/l3）", () => ["l1", "l2", "l3"].every((lv) => { const h = V.evtCardHtml && V.evtCardHtml(mk(lv, NOW)); return h && balanced(h); }));
 T("l3 卡带 is-l3 类 + 「记下了」按钮", () => { const h = V.evtCardHtml(mk("l3", NOW)); return h && /evt-card is-l3/.test(h) && /记下了/.test(h); });
 T("l1 卡 ⛔ 无按钮", () => { const h = V.evtCardHtml(mk("l1", NOW)); return h && !/evt-go/.test(h); });
