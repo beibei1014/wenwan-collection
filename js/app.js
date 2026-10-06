@@ -1285,7 +1285,7 @@
     });
     html += "</div>";
     // 今日盘过（记录今天盘了 → 状态为盘玩中，放置时长从今天算起）
-    html += '<button type="button" id="btnPlayedToday" class="btn primary" style="width:100%;margin-top:12px">✅ 今日盘过（记录今天盘了它）</button>';
+    html += '<button type="button" id="btnPlayedToday" class="btn primary" style="width:100%;margin-top:12px">✅ 今日盘过（记录今天盘了这串）</button>';
     html += '<button type="button" id="mCancel" class="btn ghost" style="width:100%;margin-top:8px">关闭</button>';
 
     modal.innerHTML = html;
@@ -1401,7 +1401,7 @@
     const curVal = cur.getFullYear() + "-" + String(cur.getMonth() + 1).padStart(2, "0") + "-" + String(cur.getDate()).padStart(2, "0");
 
     let html = '<h3 style="text-align:center">设置首次盘玩时间</h3>';
-    html += '<p style="text-align:center;color:var(--text-2);font-size:12px;margin-bottom:12px">这是你第一次开始盘它的时间，用来算「从开始盘到盘好」用了多久</p>';
+    html += '<p style="text-align:center;color:var(--text-2);font-size:12px;margin-bottom:12px">这是你第一次开始盘这串的时间，用来算「从开始盘到盘好」用了多久</p>';
     html += '<input class="form-input" id="fpDate" type="date" value="' + curVal + '">';
     html += '<button type="button" id="fpSave" class="btn primary" style="width:100%;margin-top:10px">保存</button>';
     html += '<button type="button" id="fpClear" class="btn ghost" style="width:100%;margin-top:8px">清除首次盘玩时间</button>';
@@ -1666,7 +1666,7 @@
         const img = p ? '<img src="' + photoUrl(p) + '" loading="lazy" alt="">' : '<div class="placeholder">📿</div>';
         return '<div class="plan-cell" data-id="' + it.id + '" title="' + esc(it.name || "未命名") + '（点这里看详情）">' +
           '<div class="plan-photo">' + img +
-          '<button type="button" class="plan-done-btn" data-id="' + it.id + '" title="今天盘过它了？点一下打卡">✓</button>' +
+          '<button type="button" class="plan-done-btn" data-id="' + it.id + '" title="今天盘过这串了？点一下打卡">✓</button>' +
           "</div>" +
           '<div class="plan-name" title="' + esc(it.name || "未命名") + '">' + esc(clipName(it.name, NAME_MAX.plan)) + "</div>" +
           '<div class="plan-days' + (x.urgent ? " urgent" : "") + '">' + esc(x.text) + "</div>" +
@@ -5149,6 +5149,12 @@
    *   ⛔ 防物化红线（设计 §3.5）：按钮「递一件给它」；⛔ 不写占有/控制/物件化动作。
    * ========================================================= */
   function fillTa(tpl, name) { return String(tpl == null ? "" : tpl).replace(/\{ta\}/g, name || "那只"); }
+  // v175：物化口头禅过滤 —— 详情页/设定卡不展示「盘我/摸我/被盘/记人情账」这类把沁灵当物件盘弄的腔调
+  function isObjectifyingLine(line) {
+    var s = String(line || "");
+    if (!s) return true;
+    return /盘我|摸我|捏我|被盘|被摸|被捏|盘一下|摸一下|捏一下|人情账|记你一|欠你|记账|把我|把我当/.test(s);
+  }
   // 心迹条在「当前档 → 下一档」区间内的百分比（末档 100%）
   const XT_HEART_MARKS = [0, 40, 100, 190, 300];
   function xtHeartPct(v) {
@@ -5161,7 +5167,9 @@
   const XT_CLS_ZH = { cloth: "织物", sound: "声响", ware: "器物", odd: "奇异", tough: "坚韧", human: "人情" };
   // 心迹区整块 HTML（纯拼接，供 renderSpiritDetailPage 调用；亦便于布局自测）
   function heartCardHtml(it, rec, store) {
-    const name = spiritName(it, store);
+    const _disp = spiritName(it, store);
+    const _idc = spiritIdentityOf(_disp);
+    const name = (_idc && !rec.nameEdited) ? _idc.name : _disp;
     const hlv = Spirits.heartLevel(Number(rec.heart) || 0);
     const bl = Spirits.bondLevel(Number(rec.bond) || 0);
     const today = Spirits.todayKey();
@@ -5183,7 +5191,7 @@
     h += '<div class="xt-row"><span class="xt-label">羁绊</span>' +
       '<span class="xt-track bond"><i id="xtBondFill" style="width:' + bl.pct + '%"></i></span>' +
       '<span class="xt-lv">' + esc(bl.name) + '</span></div>';
-    h += '<div class="xt-hint">心迹慢，看的是它对你那点另外的意思；羁绊靠日子，是你们处出来的熟。两条各走各的。</div>';
+    h += '<div class="xt-hint">' + fillTa("心迹慢，看的是{ta}对你那点另外的意思；羁绊靠日子，是你们处出来的熟。两条各走各的。", name) + '</div>';
     // 照料三式
     h += '<div class="xt-sec">照料三式<span class="xt-sec-sub">今日 ' + careDone + '/' + acts.length + '</span></div>';
     h += '<div class="xt-care">' + acts.map((a) => {
@@ -5197,7 +5205,7 @@
     h += '<button type="button" class="btn primary xt-gift-btn" id="xtGiftOpen"' + (qualify ? "" : " disabled") + '>' +
       '<span class="xt-gift-ico">🎁</span>' + esc(Spirits.GIFT_COPY.open) + '</button>';
     h += '<div class="xt-sub">今日已递 ' + globalGiven + '/' + globalMax +
-      (givenN >= 1 ? '（今天已经给过{ta} ' + givenN + ' 件）' : "") + '</div>';
+      (givenN >= 1 ? fillTa('（今天已经给过{ta} ' + givenN + ' 件）', name) : "") + '</div>';
     if (!qualify) h += '<div class="xt-hint">' + esc(fillTa(Spirits.GIFT_COPY.qualifying, name)) + '</div>';
     h += '</div>';
     return h;
@@ -5238,7 +5246,9 @@
   function openGiftDrawer(it, host) {
     const store = Spirits.load();
     const rec = Spirits.ensureIn(store, it.id);
-    const name = spiritName(it, store);
+    const _disp0 = spiritName(it, store);
+    const _idc0 = spiritIdentityOf(_disp0);
+    const name = (_idc0 && !rec.nameEdited) ? _idc0.name : _disp0;
     const today = Spirits.todayKey();
     const cfg = Spirits.GIFT_CFG || {};
     const globalMax = cfg.DAILY_GLOBAL || 2;
@@ -5619,7 +5629,7 @@
         ? '<span style="color:var(--text-2)">✏️ 名字改过了</span>'
         : '<button type="button" class="link-btn" id="sdRename">✏️ 给{ta}改个名字（只能改一次）</button>') +
       "</div>" +
-      '<div class="sd-line">“' + esc(p.line || "") + '”</div>' +
+      (p.line && !isObjectifyingLine(p.line) ? '<div class="sd-line">“' + esc(p.line) + '”</div>' : "") +
       '<div class="spirit-tags" style="justify-content:center">' + ((p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
       '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div></div>";
 
@@ -9649,7 +9659,7 @@
     if (isBeadCat(it.category || "")) {
       if (it.playStatus === "wearing") {
         // 佩戴中：天天戴着的串只管戴不用盘 → 不显示盘玩时长/盘玩周期，只显示佩戴说明 + 历史盘玩次数
-        html += infoItem("佩戴状态", "🖐 正在佩戴 · 不参与盘玩计划与今日心选（挂着戴就是一直在盘它）", true);
+        html += infoItem("佩戴状态", "🖐 正在佩戴 · 不参与盘玩计划与今日心选（挂着戴就是一直戴着，不占盘玩计划）", true);
         html += infoItem("累计盘玩次数", (Number(it.playCount) || 0) + " 次", true);
       } else {
       if (it.lastPlayedAt) {

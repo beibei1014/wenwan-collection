@@ -114,6 +114,19 @@ const CASES = [
 
   // ---------- js/game.js ----------
   ["game.js", "看纹 desc（DAILY_TEMPLATES 字段不动）", `看看它身上那道纹，今天走到哪儿了。`, `看看那只那道纹，今天走到哪儿了。`, `id: "kanwen"`],
+
+  // ---------- V175 续：名字统一 + 去物化口头禅 + 全站复查 ----------
+  ["app.js", "送礼流程名字解析（对齐详情页身份名）", `const name = spiritName(it, store);\n    const today = Spirits.todayKey();`, `const _idc0 = spiritIdentityOf(_disp0);\n    const name = (_idc0 && !rec.nameEdited) ? _idc0.name : _disp0;`],
+  ["app.js", "心迹区名字解析（对齐详情页身份名）", `function heartCardHtml(it, rec, store) {\n    const name = spiritName(it, store);`, `const _idc = spiritIdentityOf(_disp);\n    const name = (_idc && !rec.nameEdited) ? _idc.name : _disp;`],
+  ["app.js", "心迹提示去「它对你」", `看的是它对你那点另外的意思`, `看的是{ta}对你那点另外的意思`],
+  ["app.js", "物化口头禅过滤函数（新增）", `__NONEXIST_V175_HELPER__`, `function isObjectifyingLine(line) {`],
+  ["app.js", "详情页口头禅行加过滤", `'<div class="sd-line">“' + esc(p.line || "") + '”</div>'`, `(p.line && !isObjectifyingLine(p.line) ? '<div class="sd-line">“' + esc(p.line) + '”</div>'`],
+  ["app.js", "今日盘过按钮去物化", `记录今天盘了它）`, `记录今天盘了这串）`],
+  ["app.js", "首次盘玩时间去物化", `开始盘它的时间`, `开始盘这串的时间`],
+  ["app.js", "计划打卡按钮去物化", `今天盘过它了？点一下打卡`, `今天盘过这串了？点一下打卡`],
+  ["app.js", "佩戴状态说明去物化", `一直在盘它）`, `一直戴着，不占盘玩计划）`],
+  ["spirits.js", "人设口头禅禁物化指令（新增）", `__NONEXIST_V175_SPG__`, `口头禅（line）严禁把玩视角`],
+  ["spirits.js", "签文去物化", `把手洗干净盘它`, `把手洗干净，慢慢盘这串`],
 ];
 
 let total = 0, red = 0, green = 0;
