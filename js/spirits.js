@@ -2725,10 +2725,17 @@
   function localChat(spirits) {
     const lines = [];
     const seed = hashStr(spirits.map((s) => s.item.id).join("") + todayKey());
-    lines.push({ who: spirits[0].persona.name, text: pick(["今天谁来陪我说说话？", "我好像又精神了一点。", "谁把窗户打开了，风有点凉。"], seed) });
-    if (spirits[1]) lines.push({ who: spirits[1].persona.name, text: pick(["主人昨天先来的是我这边。", "别炫耀了，你不过是比我早醒两天。", "安静点，我在晒太阳。"], seed + 3) });
-    if (spirits[2]) lines.push({ who: spirits[2].persona.name, text: pick(["你们吵到我了。", "我只想缩在屋里最里头。", "听说主人今天不上班？"], seed + 7) });
-    lines.push({ who: spirits[0].persona.name, text: pick(["那我们商量一下，明天谁先陪主人？", "要不今天谁都别出声，各自歇着。", "猜拳吧，输的先上。"], seed + 11) });
+    // v177b：写死模板里的「主人」按**说话的那一只**各自的称呼替换 —— 逐串不同，不统一成一个。
+    //   ⛔ 模板原文一字不动（_test_v174b 表B 逐字锁死那段文案），只在运行时换词；
+    //      称呼仍是「主人」时输出与旧版逐字一致，零回归。
+    const fill = (s, t) => {
+      const cw = callFor(recOfSpirit(s));
+      return (cw === "主人") ? String(t) : String(t).replace(/主人/g, cw);
+    };
+    lines.push({ who: spirits[0].persona.name, text: fill(spirits[0], pick(["今天谁来陪我说说话？", "我好像又精神了一点。", "谁把窗户打开了，风有点凉。"], seed)) });
+    if (spirits[1]) lines.push({ who: spirits[1].persona.name, text: fill(spirits[1], pick(["主人昨天先来的是我这边。", "别炫耀了，你不过是比我早醒两天。", "安静点，我在晒太阳。"], seed + 3)) });
+    if (spirits[2]) lines.push({ who: spirits[2].persona.name, text: fill(spirits[2], pick(["你们吵到我了。", "我只想缩在屋里最里头。", "听说主人今天不上班？"], seed + 7)) });
+    lines.push({ who: spirits[0].persona.name, text: fill(spirits[0], pick(["那我们商量一下，明天谁先陪主人？", "要不今天谁都别出声，各自歇着。", "猜拳吧，输的先上。"], seed + 11)) });
     if (spirits[1]) lines.push({ who: spirits[1].persona.name, text: pick(["我认输，你们上。", "行吧，我先去，但只待一小会儿。", "不许抢，排好队。"], seed + 13) });
     return lines;
   }
@@ -2741,9 +2748,14 @@
         + "他们是有灵性、会修行的修行者：各有脾气、各有心事，会过日子，和主人是一家人、彼此陪伴（⛔ 不是物件、不是玩物、不是把玩的对象）。"
         + "⛔ 严禁物件视角：不写被盘、被捏、被摸、被晾在一边、被把玩、装睡这类把玩对象的处境与心理。"
         + "⚠️ 每只沁灵的性别按下面给的信息写，同一句里不许混用他/她；⛔ 指代沁灵禁用「它」。"
+        // v177b：群戏称呼 —— 逐串不同，user 里按参与者逐条列出（⛔ 绝不能整段只给一个称呼）
+        + "⛔【称呼·最高优先级】沁灵提到玩家时，按下文「各沁灵对玩家的称呼」逐条照写：一只一条，"
+        + "不许自作主张写成「主人」，也不许把几只统一成同一个叫法；专属称谓只归它自己那只，不许串到别只嘴里。"
         + "请写一段 4-6 句的日常小对话，轻松、可爱、有生活感、带点小吐槽，不要煽情，不要解释。"
         + "严格只输出 JSON：{\"lines\":[{\"who\":\"沁灵名字\",\"text\":\"说的话\"}]}";
-      const user = "出场沁灵：\n" + spirits.map((s) => spiritDesc(s.item, s.persona)).join("\n") + "\n" + ownerLine() + "\n请写这几只今天的小剧场。";
+      // v177b：群戏逐串称呼 —— 每只各给一条，AI 才知道谁该叫「主人」、谁已改口叫「你」、谁叫专属称谓
+      const user = "出场沁灵：\n" + spirits.map((s) => spiritDesc(s.item, s.persona)).join("\n")
+        + "\n" + callBlockFor(spirits) + "\n" + ownerLine() + "\n请写这几只今天的小剧场。";
       const txt = await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 700);
       const m = txt.match(/\{[\s\S]*\}/);
       if (m) {
@@ -2773,15 +2785,19 @@
     if (!getAiKey()) return localLetter(spirit, userName);
     try {
       // v175：世界观口径统一 + 性别纪律（letter(spirit, userName) 拿不到 ap ⇒ 只做去物化 + 禁「它」 + 不许混用）
+      // v177b：称呼接入 —— 恋爱线填了专属称谓时，这封信必须叫专属称谓，不能一律硬编码「主人」
+      const cw = callFor(recOfSpirit(spirit), userName);
       const sys = "你在写一封「沁灵」写给主人的短信。沁灵是主人手上的一串珠子日久有灵、开了灵识之后醒过来的修行者："
         + "有脾气、有心事，会修行、会过日子，和主人是一家人、彼此陪伴（⛔ 不是物件、不是玩物、不是把玩的对象）。"
         + "性格可爱、有点小脾气、关心主人但不会说教。用第一人称，简体中文，80-140 字，口语化，"
         + "落款写沁灵名字。不要用 Markdown 标题，不要解释。"
         + "⛔ 严禁物件视角：不写被盘、被捏、被摸、被晾在一边、被把玩、装睡这类把玩对象的处境与心理。"
-        + "⚠️ 沁灵与主人的性别代词不许混用他/她；⛔ 指代沁灵禁用「它」。";
+        + "⚠️ 沁灵与主人的性别代词不许混用他/她；⛔ 指代沁灵禁用「它」。"
+        // v177b：称呼硬约束（与去物化约束并排放，不替换）—— 回落链 lovecall → {nick} → 「你」→「主人」
+        + "⛔【称呼·最高优先级】沁灵提到主人时，一律称呼「" + cw + "」" + callRuleTail(cw);
       const user = "沁灵设定：" + spiritDesc(spirit.item, spirit.persona) +
         (spirit.idleDays != null ? ("\n距上次与主人相处，已经过了 " + spirit.idleDays + " 天。") : "") +
-        "\n" + ownerLine(userName) + "\n请写这封短信。";
+        "\n" + ownerLine(userName, cw) + "\n请写这封短信。";
       const txt = await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 500);
       if (txt) return txt;
     } catch (e) { /* 兜底 */ }
@@ -2814,10 +2830,13 @@
     return next;
   }
   // 给所有"文字生成"用的一句话：明确主人是谁、性别怎么称呼（AI 默认会写成「他」）
-  function ownerLine(userName) {
+  function ownerLine(userName, callWord) {
     const o = getOwner();
+    // v177b：称呼透传 —— callWord 为空时与旧行为逐字一致（【主人】+ 昵称从句不变，性别代词逻辑一字未动）
+    const cw = String(callWord || "").trim() || "主人";
     const nm = (userName || o.name || "主人");
-    return "【主人】" + (nm && nm !== "主人" ? "昵称：" + nm + "；" : "") +
+    return "【" + cw + "】" + (nm && nm !== "主人" && nm !== cw ? "昵称：" + nm + "；" : "") +
+      (cw !== "主人" ? "沁灵对玩家的称呼就是「" + cw + "」，写台词时照用；" : "") +
       "性别：" + (o.gender === "boy" ? "男" : "女") + "，请用「" + (o.gender === "boy" ? "他" : "她") + "」称呼主人，" +
       "不要写成「" + (o.gender === "boy" ? "她" : "他") + "」，也不要把主人写成男性化的形象。";
   }
@@ -3155,20 +3174,23 @@
     const idle = ctx && ctx.idleDays != null ? ctx.idleDays : null;
     const def = stageDef(rec.stage || 1);
     const colorName = COLOR_ZH[item.color] || "素色";
+    // v177b：日记是第一人称，提到玩家的地方写 {call}（ASCII 占位符），按这只沁灵当前的称呼填
+    const cw = callFor(rec);
+    const fill = (t) => String(t).replace(/\{call\}/g, cw);
     const pool = [
-      "今天主人路过的时候看了我一眼，没停下。我本来想开口叫住，又忍住了 —— 反正明天还见得着。",
+      "今天{call}路过的时候看了我一眼，没停下。我本来想开口叫住，又忍住了 —— 反正明天还见得着。",
       "今天屋里拾掇了一遍。我给自己挪了个能看见窗的位置，坐着看了半天云。",
-      "主人今天回来，脚步比平时轻。我看一眼就知道，今天这日子过得去。",
+      "{call}今天回来，脚步比平时轻。我看一眼就知道，今天这日子过得去。",
       "我在想一个很严肃的问题：我是「" + colorName + "」这样的人，还是「" + colorName + " 里最不起眼的那个」？",
       "刚才跟隔壁那只聊了两句，ta 比我早开沁。可我觉得，我比 ta 沉得住气。",
       "今天什么都没发生。什么都没发生的一天，也算一天。我记下来了。",
-      "主人好像有点累。我没吭声，就挨着主人坐了一会儿，等那口气顺过来。",
-      "我做了个梦，梦见跟着主人出了门，走在前头带路。醒来还在窗边这间屋 —— 也没什么不好。",
+      "{call}好像有点累。我没吭声，就挨着{call}坐了一会儿，等那口气顺过来。",
+      "我做了个梦，梦见跟着{call}出了门，走在前头带路。醒来还在窗边这间屋 —— 也没什么不好。",
     ];
     const head = "第 " + ((ctx && ctx.dayNo) || 1) + " 天 · " + def.name;
-    let body = pick(pool, seed);
-    if (idle != null && idle >= 3) body = "已经有 " + idle + " 天没见着主人了，我数得很清楚。不是催，就是记一下。";
-    if (ctx && ctx.playedToday) body = "今天主人陪我 " + ctx.plays + " 回了。我喜欢相处完那一下的安静。";
+    let body = fill(pick(pool, seed));
+    if (idle != null && idle >= 3) body = fill("已经有 " + idle + " 天没见着{call}了，我数得很清楚。不是催，就是记一下。");
+    if (ctx && ctx.playedToday) body = fill("今天{call}陪我 " + ctx.plays + " 回了。我喜欢相处完那一下的安静。");
     // v155：主人回过一句 → 这篇日记里回应它（"记忆闭环"）
     const rep = (ctx && ctx.reply) ? String(ctx.reply) : "";
     if (rep) {
@@ -3183,6 +3205,8 @@
   }
   async function diaryWrite(item, rec, ap, ctx) {
     const p = rec.persona || {};
+    // v177b：称呼接入 —— 日记是第一人称，改口后必须叫「你」/ 昵称，不能一律硬编码「主人」
+    const cw = callFor(rec);
     if (getAiKey()) {
       try {
         // v175：沁灵是**有灵性的修行者**、与主人是家人/彼此陪伴（⛔ 不是被把玩的物件）
@@ -3192,14 +3216,17 @@
           + "用第一人称写，简体中文，60-140 字，口语化、有生活细节，不要 Markdown、不要标题、不要解释，直接写正文。"
           + "⛔ 严禁物件视角：不写被盘、被捏、被摸、被晾在一边、被把玩、装睡这类「被人把玩的东西」的处境与心理；"
           + "要写相处、陪伴、修行、过日子 —— 说话、走动、做事、心思、见闻都可以。"
-          + "⚠️ 沁灵与主人的性别代词必须严格按下面给的信息写，全文不许混用、不许写反。";
+          + "⚠️ 沁灵与主人的性别代词必须严格按下面给的信息写，全文不许混用、不许写反。"
+          // v177b：称呼硬约束（与去物化约束并排放，不替换）—— 回落链 lovecall → {nick} → 「你」→「主人」
+          + "⛔【称呼·最高优先级】沁灵提到主人时，一律称呼「" + cw + "」" + callRuleTail(cw);
         const user = "沁灵设定：" + spiritDesc(item, p, rec.stage) + "；人设：" + appearanceText(ap) +
           (ctx && ctx.playedToday ? "；今天与主人相处了 " + ctx.plays + " 回" : "") +
           (ctx && ctx.idleDays != null ? "；已经有 " + ctx.idleDays + " 天没见到主人" : "") +
           "；今天是陪主人的第 " + ((ctx && ctx.dayNo) || 1) + " 天。" +
-          (rec.nickCall ? ("；这位沁灵平时叫主人「" + rec.nickCall + "」，日记里自然地这么称呼就好。") : "") +
+          // v177b：仅当 nickCall **就是**这只沁灵当前的称呼时才写这句（否则会与 sys 里「一律称呼「cw」」打架）
+          ((rec.nickCall && cw === String(rec.nickCall || "").trim()) ? ("；这位沁灵平时叫主人「" + rec.nickCall + "」，日记里自然地这么称呼就好。") : "") +
           ((ctx && ctx.reply) ? ("\n主人上次回了这位沁灵一句：「" + ctx.reply + "」，请在今天的日记里自然地回应这句话。") : "") +
-          "\n" + ownerLine() + "\n" + spiritGenderLine(ap) + "\n请写今天的日记。";
+          "\n" + ((cw !== "主人") ? ownerLine(null, cw) : ownerLine()) + "\n" + spiritGenderLine(ap) + "\n请写今天的日记。";
         const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 400) || "").trim();
         if (txt && txt.length >= 20) {
           return "第 " + ((ctx && ctx.dayNo) || 1) + " 天 · " + stageDef(rec.stage || 1).name + "\n" + txt.replace(/^["「]|["」]$/g, "").trim();
@@ -3565,6 +3592,50 @@
     }
     if (lv1 >= BOND_YOU_LV) return "你";
     return "主人";
+  }
+
+  // v177b：把 callFor 的结果写成可直接塞进 sys prompt 的硬约束 —— 此前 callFor 零调用点，
+  //   沁灵说话一律硬编码「主人」，恋爱线填了 lovecall 也不生效。🔴 台词链路统一走这里，不许在别处另写一套回落。
+  //   · 称呼 = 「你」  ：不许再写「主人」，也不许加敬称（已改口的熟络叫法）。
+  //   · 称呼 = 昵称 / lovecall：这是只有这一位沁灵会用的叫法，其余角色一律不得使用
+  //     （防群戏里所有沁灵跟着叫同一个专属称谓）。
+  function callRuleTail(w) {
+    const c = String(w || "");
+    if (c === "你") return "，不许写成「主人」，也不要加「大人」「公子」这类敬称 —— 直接用「你」就好。";
+    if (c === "主人") return "，不许换成别的叫法（不许写成「你」，也不许自造称呼）。";
+    return "，不许写成「主人」，也不许用别的叫法；「" + c + "」是只有这位沁灵会用的叫法，其余角色一律不得使用。";
+  }
+  function callRule(rec, nickname) {
+    const w = callFor(rec, nickname);
+    return "⛔【称呼·最高优先级】沁灵提到主人时，一律称呼「" + w + "」" + callRuleTail(w);
+  }
+  // v177b：从「出场对象」里取 rec —— 群戏（chat）/ 来信（letter）传入的可能只有 {item,persona}，
+  //   rec 要回 store 查；查不到就给 {}（callFor 会安全回落「主人」，不崩）。
+  function recOfSpirit(s) {
+    if (!s) return {};
+    if (s.rec && typeof s.rec === "object") return s.rec;
+    const id = (s.item && s.item.id != null) ? s.item.id : (s.id != null ? s.id : "");
+    if (!id) return {};
+    try {
+      const st = (typeof load === "function") ? load() : null;
+      const r = st ? st[String(id)] : null;
+      return (r && typeof r === "object") ? r : {};
+    } catch (e) { return {}; }
+  }
+  // v177b：群戏逐串称呼块 —— 🔴 夜话 / 小剧场 / 房间剧情是多只沁灵一起，
+  //   每只对玩家的称呼可能不同（一只已改口叫昵称、一只还在叫「主人」、一只叫恋爱专属 lovecall）。
+  //   ⛔ 绝不能整段只给一个称呼：按参与者逐条列出「<沁灵名> 称玩家为「XXX」」。
+  function callBlockFor(spirits) {
+    const arr = (spirits || []).slice(0, 8);
+    const rows = [];
+    for (let i = 0; i < arr.length; i++) {
+      const s = arr[i];
+      const nm = (s && s.persona && s.persona.name) || (s && s.item && s.item.name) || ("第" + (i + 1) + "只");
+      rows.push("· " + nm + " 称玩家为「" + callFor(recOfSpirit(s)) + "」");
+    }
+    if (!rows.length) return "";
+    return "【各沁灵对玩家的称呼·逐串不同，必须逐条照写】\n" + rows.join("\n") +
+      "\n⛔ 不许把几只沁灵统一成同一个称呼；每只只用它自己那一条，也不许串到别的沁灵嘴里。";
   }
   // 该串当前档位对应的岁除滋养贡献（只读，v165 §4.2）
   function nurtureOf(rec) { const lv1 = bondLevel(Number((rec || {}).bond) || 0).lv1; return Number(BOND_VAL[lv1]) || 0; }
@@ -8587,11 +8658,14 @@ const CH09 = {
           + "住在同一间屋子里的几只沁灵，住得越久越有默契。"
           + "⛔ 严禁物件视角：不写被盘、被捏、被摸、被晾在一边、被把玩、装睡这类把玩对象的处境与心理。"
           + "⚠️ 每只沁灵的性别按下面给的信息写，同一句里不许混用他/她；⛔ 指代沁灵禁用「它」。"
+          // v177b：房间剧情是两只沁灵同场，称呼逐串不同（user 里按参与者逐条列出，⛔ 不给整段统一称呼）
+          + "⛔【称呼·最高优先级】沁灵提到玩家时，按下文「各沁灵对玩家的称呼」逐条照写：一只一条，"
+          + "不许自作主张写成「主人」，也不许把两只统一成同一个叫法；专属称谓只归它自己那只，不许串到别只嘴里。"
           + "请写一段 250-400 字的小故事：有场景、有动作、有 2-6 句对白，"
           + "温柔可爱、有生活质感、不要煽情说教；不要 Markdown、不要标题、不要分点、不要解释，直接输出正文。";
         const user = "房间：" + roomName + "；两只沁灵已经相处 " + (aff || 0) + " 天（默契等级 " + (level + 1) + "/5）。\n" +
           "甲：" + spiritDesc(a.item, a.persona, a.stage) + "\n乙：" + spiritDesc(b.item, b.persona, b.stage) +
-          "\n" + ownerLine() + "\n请写他们之间刚发生的这段故事。";
+          "\n" + callBlockFor([a, b]) + "\n" + ownerLine() + "\n请写他们之间刚发生的这段故事。";
         const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 900) || "").trim();
         if (txt && txt.length >= 80) return "【" + roomName + " · 第 " + (level + 1) + " 段】\n" + txt.replace(/^["「]|["」]$/g, "").trim();
       } catch (e) { /* 兜底 */ }
@@ -9322,6 +9396,8 @@ const CH09 = {
     // v165：羁绊八档升级 + 称呼 + 送礼 + 心迹 + 受伤（数据层与纯函数；⛔ 本批不接 UI）
     BOND_VAL, BOND_CFG, GIFT_CFG, CARE_CFG, HEART_CFG, LOVE_CFG, HARM_CFG, BOND_YOU_LV, BOND_NICK_LV,
     callFor, nurtureOf, normRecV165,
+    // v177b：称呼链路接入 —— callFor 此前零调用点，现接入 chat / letter / diaryWrite / roomStory + ownerLine
+    callRule, callRuleTail, recOfSpirit, callBlockFor,
     // v177：恋爱线门控 + 状态机（数据层与纯函数；⛔ 本批不接 UI，UI 层在 app.js 消费）
     LOVE_STATES, loveGate, loveStateOf, openLoveLine, setLoveState, acceptConfess, declineConfess, setLovecall,
     GIFTS_KEY, loadGifts, saveGifts, addGift, giftListOf, giftClsOf, giftNameOf, giftDescOf, giftPrefOf, personaIdOf,
