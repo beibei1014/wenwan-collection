@@ -5207,8 +5207,81 @@
     h += '<div class="xt-sub">今日已递 ' + globalGiven + '/' + globalMax +
       (givenN >= 1 ? '（今天已经给过{ta} ' + givenN + ' 件）' : "") + '</div>';
     if (!qualify) h += '<div class="xt-hint">' + esc(fillTa(Spirits.GIFT_COPY.qualifying, name)) + '</div>';
+    // v177：恋爱线（渲染在心迹卡片内；⛔ 未达标整块不渲染，不显示灰按钮、不提示还差多少）
+    // ⚠️ typeof 守卫：只抽 heartCardHtml 单独跑的场景（自测沙箱）里恋爱块缺席也不许崩
+    if (typeof loveCardHtml === "function") h += loveCardHtml(it, rec, name);
     h += '</div>';
     return h;
+  }
+  /* =========================================================
+   * v177 · 恋爱线 UI（渲染在「🌸 心迹」卡片内）
+   *   口径（用户裁定）：⛔ 可开后宫 —— 多线并列、互不排斥，逐串各自记账。
+   *   门槛只认 stage ≥ 4 + 羁绊档 ≥ 7（⛔ 不锁天数、不锁章）；
+   *   流程：玩家「挑明」→ **沁灵主动告白** → 玩家「应下」/「缓一缓」（⛔ 婉拒不锁死）
+   *        → 玩家填专属称谓（⛔ 一次定终身，填后不再渲染输入框）。
+   *   ⛔ 文案纪律：禁敬称（无「您」）、禁物化（无「盘 / 它 / 玩意 / 一串」）；沁灵一律用身份名。
+   * ========================================================= */
+  function loveCardHtml(it, rec, name) {
+    if (typeof Spirits.loveGate !== "function" || typeof Spirits.loveStateOf !== "function") return "";
+    let gate = null, ls = null;
+    try { gate = Spirits.loveGate(rec, it, null); ls = Spirits.loveStateOf(it.id); } catch (e) { return ""; }
+    if (!gate || !gate.ok || !ls) return "";   // 未达标 ⇒ 整块不渲染（⛔ 不留灰按钮、不留「还差多少」）
+    const sid = esc(String((it && it.id) || ""));
+    const st = String(ls.state || "none");
+    const call = String(ls.lovecall || "").trim();
+    const who = String(name || "那只");
+    const lbtn = (act, label, ghost) => '<button type="button" class="btn ' + (ghost ? "ghost" : "primary") +
+      ' xt-love-btn" data-love="' + act + '" data-id="' + sid + '">' + esc(label) + "</button>";
+    let h = '<div class="xt-love" style="margin-top:14px">';
+    if (!ls.loveOn || st === "none") {
+      h += '<div class="xt-hint">心迹走到这一步，有些话可以说清楚了。</div>' + lbtn("open", "挑明", false);
+    } else if (st === "confessed" || st === "ready") {
+      h += '<div class="xt-quote">「我这一片心迹，今天说给你听：往后的日子，我想和你一处过。」</div>';
+      h += '<div class="xt-hint">' + esc(fillTa("{ta}把话说到这份上，剩下的在你。", who)) + "</div>";
+      h += '<div style="display:flex;gap:8px;margin-top:8px">' + lbtn("accept", "应下", false) + lbtn("decline", "缓一缓", true) + "</div>";
+    } else if (st === "accepted") {
+      if (call) {
+        h += '<div class="xt-quote">' + esc(fillTa("如今{ta}唤你「" + call + "」。", who)) + "</div>";
+      } else {
+        h += '<div class="xt-hint">「从今天起，我该怎么唤你？」</div>';
+        h += '<input id="xtLovecallInput" class="xt-love-input" type="text" maxlength="12" placeholder="想一个只在你们之间叫的名字" style="width:100%;box-sizing:border-box;margin-top:8px;padding:9px 10px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;font-size:13px">';
+        h += lbtn("call", "确定", false);
+        h += '<div class="xt-sub">填下就改不了了，想清楚再定。</div>';
+      }
+    } else if (st === "declined") {
+      h += '<div class="xt-hint">缓一缓也行，往后再说。</div>' + lbtn("open", "挑明", false);
+    }
+    h += "</div>";
+    return h;
+  }
+  // v177：恋爱线交互（⛔ 只调 Spirits 已导出的入口，不自己改盘）
+  function loveAct(it, act, host) {
+    const id = String((it && it.id) || "");
+    if (!id) return;
+    const refresh = () => { try { host && host.refresh && host.refresh(); } catch (e) { /* 忽略 */ } };
+    if (act === "open") {
+      if (!Spirits.openLoveLine(id)) { toast("这件事没成。"); return; }
+      Spirits.setLoveState(id, "confessed");    // 挑明之后由沁灵先开口（⛔ 不让玩家再点一次）
+      refresh();
+      return;
+    }
+    if (act === "accept") {
+      try { if (Spirits.loveStateOf(id).state === "ready") Spirits.setLoveState(id, "confessed"); } catch (e) { /* 忽略 */ }
+      Spirits.acceptConfess(id);
+      refresh();
+      return;
+    }
+    if (act === "decline") { Spirits.declineConfess(id); refresh(); return; }
+    if (act === "call") {
+      const box = $("#xtLovecallInput");
+      const v = String((box && box.value) || "").trim();
+      const r = Spirits.setLovecall(id, v);
+      if (r && r.ok) { toast("就这么定了。"); refresh(); return; }
+      if (r && r.reason === "locked") { toast("已经定下过了，改不得。"); refresh(); return; }
+      toast("总得叫个什么，写一点吧。");
+      if (box) box.focus();
+      return;
+    }
   }
   // 一个只读的反馈弹层（送出 / 照料）：反应句 + 辅助小字，单按钮关闭
   function showActModal(title, quote, subHtml) {
@@ -5910,6 +5983,10 @@
     // v165：心迹区 —— 照料三式 + 「递一件给它」
     view.querySelectorAll(".xt-care-btn").forEach((b) => { if (!b.disabled) b.onclick = () => spiritCareDo(it, b.dataset.care, host); });
     const xtg = $("#xtGiftOpen"); if (xtg && !xtg.disabled) xtg.onclick = () => openGiftDrawer(it, host);
+    // v177：恋爱线（心迹区内）—— 挑明 / 应下 / 缓一缓 / 定称谓（事件委托，沿用既有 data-* 约定）
+    view.querySelectorAll("[data-love]").forEach((b) => { if (!b.disabled) b.onclick = () => loveAct(it, b.dataset.love, host); });
+    const lc = $("#xtLovecallInput");
+    if (lc) lc.onkeydown = (e) => { if (e.key === "Enter") loveAct(it, "call", host); };
     // v156：翻页式日记本 —— 一次摊开一篇，上一篇 / 下一篇（或左右滑动）翻
     const dBook = $("#sdDiaryBook");
     if (dBook && diary.length) {
