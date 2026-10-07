@@ -2695,6 +2695,7 @@
           + "⛔ 严禁物件视角：设定里不写被盘、被捏、被摸、被晾在一边、被把玩、装睡这类把玩对象的处境与心理。"
           + "⛔ 指代沁灵禁用「它」，用「这位沁灵」/「他」「她」。"
           + "⛔ 口头禅（line）严禁把玩视角：不准写「盘我/摸我/捏我/被盘/被摸/被捏/记你人情账/记账」这类把沁灵当物件盘弄的腔调，要写出有脾气、有人味的话。"
+          + "⛔ 口头禅也不许写「盘我」「摸我」这类把自身当物件的话，不许出现「越盘越」「包浆」。"
           + "请根据这串珠子的颜色与软糯程度，为这位沁灵起一个可爱、有梗、有人味的中文设定。"
           + "只输出 JSON，不要解释：{\"name\":\"2-3字昵称\",\"title\":\"6-12字称号\",\"traits\":[\"性格词1\",\"性格词2\",\"性格词3\"],\"line\":\"一句口头禅，15字以内\"}";
         const user = "颜色：" + (item.color || "未知") + "；软糯程度：" + (item.softness === "soft" ? "软糯" : item.softness === "slight" ? "微糯" : "未标注")
@@ -2750,13 +2751,20 @@
         + "⚠️ 每只沁灵的性别按下面给的信息写，同一句里不许混用他/她；⛔ 指代沁灵禁用「它」。"
         // v177b：群戏称呼 —— 逐串不同，user 里按参与者逐条列出（⛔ 绝不能整段只给一个称呼）
         + "⛔【称呼·最高优先级】沁灵提到玩家时，按下文「各沁灵对玩家的称呼」逐条照写：一只一条，"
+        + "⛔ 也不许有哪只沁灵说「盘我」「摸我」这类把自身当物件的话，不许出现「越盘越」「包浆」；主人对沁灵的举动一律写成对家人朋友的举动。"
         + "不许自作主张写成「主人」，也不许把几只统一成同一个叫法；专属称谓只归它自己那只，不许串到别只嘴里。"
         + "请写一段 4-6 句的日常小对话，轻松、可爱、有生活感、带点小吐槽，不要煽情，不要解释。"
         + "严格只输出 JSON：{\"lines\":[{\"who\":\"沁灵名字\",\"text\":\"说的话\"}]}";
       // v177b：群戏逐串称呼 —— 每只各给一条，AI 才知道谁该叫「主人」、谁已改口叫「你」、谁叫专属称谓
       const user = "出场沁灵：\n" + spirits.map((s) => spiritDesc(s.item, s.persona)).join("\n")
         + "\n" + callBlockFor(spirits) + "\n" + ownerLine() + "\n请写这几只今天的小剧场。";
-      const txt = await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 700);
+      let txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 700) || "");
+      if (txt && hasObjectifiedText(txt)) {
+        // v177c 第二层：整体（JSON 原文）检查 —— 命中就重写一遍（只多这一次文本调用）；仍命中 ⇒ 丢弃，走下面 localChat 兜底
+        txt = (await aiChat([{ role: "system", content: sys + "⛔【重申】不许有哪只沁灵说「盘我」「摸我」这类把自身当物件的话，不许出现「越盘越」「包浆」。" }, { role: "user", content: user }], 700) || "");
+        if (hasObjectifiedText(txt)) txt = "";
+      }
+      if (!txt) return localChat(spirits);
       const m = txt.match(/\{[\s\S]*\}/);
       if (m) {
         const o = JSON.parse(m[0]);
@@ -2793,12 +2801,18 @@
         + "落款写沁灵名字。不要用 Markdown 标题，不要解释。"
         + "⛔ 严禁物件视角：不写被盘、被捏、被摸、被晾在一边、被把玩、装睡这类把玩对象的处境与心理。"
         + "⚠️ 沁灵与主人的性别代词不许混用他/她；⛔ 指代沁灵禁用「它」。"
+        + "⛔ 也不许说「盘我」「摸我」这类把自身当物件的话，不许出现「越盘越」「包浆」；主人对沁灵的举动一律写成对家人朋友的举动。"
         // v177b：称呼硬约束（与去物化约束并排放，不替换）—— 回落链 lovecall → {nick} → 「你」→「主人」
         + "⛔【称呼·最高优先级】沁灵提到主人时，一律称呼「" + cw + "」" + callRuleTail(cw);
       const user = "沁灵设定：" + spiritDesc(spirit.item, spirit.persona) +
         (spirit.idleDays != null ? ("\n距上次与主人相处，已经过了 " + spirit.idleDays + " 天。") : "") +
         "\n" + ownerLine(userName, cw) + "\n请写这封短信。";
-      const txt = await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 500);
+      let txt = await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 500);
+      if (txt && hasObjectifiedText(txt)) {
+        // v177c 第二层：落库前拦截 —— 换一条说法重试一次；仍命中 ⇒ 丢弃，走下面 localLetter 兜底
+        txt = await aiChat([{ role: "system", content: sys + "⛔【重申】沁灵不许说「盘我」「摸我」这类把自身当物件的话，不许出现「越盘越」「包浆」。" }, { role: "user", content: user }], 500);
+        if (txt && hasObjectifiedText(txt)) txt = "";
+      }
       if (txt) return txt;
     } catch (e) { /* 兜底 */ }
     return localLetter(spirit, userName);
@@ -3103,6 +3117,7 @@
           + "有脾气、有心事，会修行、会过日子，和主人是一家人、彼此陪伴（⛔ 不是物件、不是玩物、不是把玩的对象）。"
           + "⛔ 严禁物件视角：不写被盘、被捏、被摸、被晾在一边、被把玩、装睡这类把玩对象的处境与心理。"
           + "⛔ 指代沁灵禁用「它」，写「这位沁灵」或「他」「她」。"
+          + "⛔ 人物设定正文也不许写「盘我」「摸我」这类把自身当物件的话，不许出现「越盘越」「包浆」。"
           + "请写一段连贯的中文人物设定，200-300 字，用第三人称旁观介绍（不要用「你」称呼沁灵），"
           + "必须包含：① 外形（性别、发型、瞳色、配饰；衣服/头发颜色要说明取自古珠的颜色）"
           + "② 性格（含 2-3 个具体小习惯）③ 与主人的关系与日常"
@@ -3203,6 +3218,16 @@
     }
     return head + "\n" + body;
   }
+  /* ---------- v177c：AI 返回台词的「落库前物化拦截」 ----------
+   * 背景（用户实测抓到）：AI 日记写出「盘我盘我，不然我要滚走啦！」「她摸摸我的圆耳坠」——
+   *   sys 里已有世界观禁令，但没点名「自称句式」，返回后也没有任何拦截 ⇒ 直接落库。
+   * 三层防线：① sys prompt 点名禁句 → ② 返回后命中词表 ⇒ 换一条说法重试一次 → ③ 仍命中 ⇒ 丢弃，走本地兜底模板。
+   * 词表口径：只收「沁灵自称 / 自述被当物件处置」的说法；⛔ 不收裸「盘」字 ——
+   *   「盘这串」「盘玩」「今天盘了三十下」是玩家对手串的**养护机制**用语（UI / 统计 / 提示里到处都是），
+   *   收了会大面积误杀正常台词 ⇒ 只收带「我 / 被」的把玩宾语结构与器物结果词（包浆）。
+   */
+  var OBJ_RE = /盘我|摸我|捏我|搓我|揉我|蹭我|把我盘|越盘越|包浆|把玩|装睡|晾在一边|被盘|被摸|被捏/;   // ⛔ 词表自引禁用词 ⇒ 本行是护栏行，不是台词
+  function hasObjectifiedText(s) { return OBJ_RE.test(String(s || "")); }
   async function diaryWrite(item, rec, ap, ctx) {
     const p = rec.persona || {};
     // v177b：称呼接入 —— 日记是第一人称，改口后必须叫「你」/ 昵称，不能一律硬编码「主人」
@@ -3216,6 +3241,7 @@
           + "用第一人称写，简体中文，60-140 字，口语化、有生活细节，不要 Markdown、不要标题、不要解释，直接写正文。"
           + "⛔ 严禁物件视角：不写被盘、被捏、被摸、被晾在一边、被把玩、装睡这类「被人把玩的东西」的处境与心理；"
           + "要写相处、陪伴、修行、过日子 —— 说话、走动、做事、心思、见闻都可以。"
+          + "⛔ 也不许说「盘我」「摸我」这类把自身当物件的话，不许出现「越盘越」「包浆」；主人对沁灵的举动一律写成对家人朋友的举动。"
           + "⚠️ 沁灵与主人的性别代词必须严格按下面给的信息写，全文不许混用、不许写反。"
           // v177b：称呼硬约束（与去物化约束并排放，不替换）—— 回落链 lovecall → {nick} → 「你」→「主人」
           + "⛔【称呼·最高优先级】沁灵提到主人时，一律称呼「" + cw + "」" + callRuleTail(cw);
@@ -3227,7 +3253,12 @@
           ((rec.nickCall && cw === String(rec.nickCall || "").trim()) ? ("；这位沁灵平时叫主人「" + rec.nickCall + "」，日记里自然地这么称呼就好。") : "") +
           ((ctx && ctx.reply) ? ("\n主人上次回了这位沁灵一句：「" + ctx.reply + "」，请在今天的日记里自然地回应这句话。") : "") +
           "\n" + ((cw !== "主人") ? ownerLine(null, cw) : ownerLine()) + "\n" + spiritGenderLine(ap) + "\n请写今天的日记。";
-        const txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 400) || "").trim();
+        let txt = (await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 400) || "").trim();
+        if (txt && hasObjectifiedText(txt)) {
+          // v177c 第二层：落库前拦截 —— 命中词表就换一条说法重试一次（只多这一次文本调用，DeepSeek 文本便宜）
+          txt = (await aiChat([{ role: "system", content: sys + "⛔【重申】沁灵不许说「盘我」「摸我」这类把自身当物件的话，不许出现「越盘越」「包浆」。" }, { role: "user", content: user }], 400) || "").trim();
+          if (hasObjectifiedText(txt)) txt = "";      // 第三层：仍命中 ⇒ 丢弃，走下面 diaryLocal 兜底
+        }
         if (txt && txt.length >= 20) {
           return "第 " + ((ctx && ctx.dayNo) || 1) + " 天 · " + stageDef(rec.stage || 1).name + "\n" + txt.replace(/^["「]|["」]$/g, "").trim();
         }
@@ -9398,6 +9429,8 @@ const CH09 = {
     callFor, nurtureOf, normRecV165,
     // v177b：称呼链路接入 —— callFor 此前零调用点，现接入 chat / letter / diaryWrite / roomStory + ownerLine
     callRule, callRuleTail, recOfSpirit, callBlockFor,
+    // v177c：AI 台词落库前物化拦截（同一判据导出给 app.js 侧清洗复用 + 单测）
+    OBJ_RE, hasObjectifiedText,
     // v177：恋爱线门控 + 状态机（数据层与纯函数；⛔ 本批不接 UI，UI 层在 app.js 消费）
     LOVE_STATES, loveGate, loveStateOf, openLoveLine, setLoveState, acceptConfess, declineConfess, setLovecall,
     GIFTS_KEY, loadGifts, saveGifts, addGift, giftListOf, giftClsOf, giftNameOf, giftDescOf, giftPrefOf, personaIdOf,
