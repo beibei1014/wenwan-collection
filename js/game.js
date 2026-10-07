@@ -278,6 +278,23 @@
   }
   function strHash(str) { let h = 0; const x = String(str || ""); for (let i = 0; i < x.length; i++) h = (h * 31 + x.charCodeAt(i)) | 0; return h >>> 0; }
 
+  /* ---------- v177c：沁灵显示名解析器（由 app.js 反向注入） ----------
+     今日任务文案要叫沁灵的**身份名**（楚柿遥），不能叫手串名（柿宝）。
+     game.js 是先加载的独立 IIFE，够不着 app.js 里的沁灵身份卡 ⇒ 由 app 注入解析器。
+     ⛔ 未注入 / 解析抛异常时一律回落到既有串名（向后兼容，任务页绝不因取名字炸掉）。 */
+  var nameResolver = null;
+  function setNameResolver(fn) { nameResolver = (typeof fn === "function") ? fn : null; }
+  function dailyNameOf(it, rec) {
+    var base = (rec && rec.name) || (rec && rec.persona && rec.persona.name) || (it && it.name) || "沁灵";
+    if (nameResolver) {
+      try {
+        var nm = nameResolver(it, rec);
+        if (nm) return String(nm);
+      } catch (e) { /* 忽略：任何异常都回落串名 */ }
+    }
+    return base;
+  }
+
   /* ---------- v175：目标沁灵 + 行为键（绑定真实动作 / 老数据向后兼容） ---------- */
   // 在册沁灵候选池（与 app.js 沁灵列表同口径：未送出 + 已挂瓷 + 未设「只当手串」）
   function spiritPool(items) {
@@ -292,7 +309,7 @@
       const rec = store[it.id] || {};
       if (rec.spirit === false) return;                 // v166：设了「只当手串」的不进沁灵列表
       seen[it.id] = 1;
-      out.push({ id: it.id, name: rec.name || (rec.persona && rec.persona.name) || it.name || "沁灵" });
+      out.push({ id: it.id, name: dailyNameOf(it, rec) });
     });
     return out;
   }
@@ -521,5 +538,6 @@
     // v165 每日任务改造（菩提根 5 条 + ww_daily 台账；领奖只发礼物）
     DAILY_CFG, DAILY_TEMPLATES, loadDaily, saveDaily, markDaily, claimTask, rewardGiftOf, buildDailyTasks,
     // v175：目标沁灵绑定 + 行为键（app.js 用 spiritPool/dailyTargets/actKeyOf 可自测）
-    spiritPool, dailyTargets, actKeyOf, actDoneOf, fillDailyName };
+    // v177c：setNameResolver —— app.js 注入身份名（楚柿遥）解析器，未注入则回落串名
+    spiritPool, dailyTargets, actKeyOf, actDoneOf, fillDailyName, setNameResolver, dailyNameOf };
 })();
