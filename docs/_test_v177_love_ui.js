@@ -1,25 +1,31 @@
 /* ============================================================
- * _test_v177_love_ui.js · V177 恋爱线 UI（详情页「🌸 心迹」卡片内）
+ * _test_v177_love_ui.js · V177d 恋爱线 UI（详情页「🌸 心迹」卡片内）
  * ------------------------------------------------------------
- * ⚠️ 本文件在 **V177 恋爱线 UI 落地前一直为红测**（red test）。覆盖：
+ * 🔴 V177d 形态变更（用户裁定）：告白**不再是详情页卡片里的一句提示** ——
+ *    演出整体搬进**夜话私聊**（#/night/dm_<沁灵id>，微信气泡一句句说）。
+ *    心迹区只留「入口」：未开线 ⇒ 「挑明」；已开线 ⇒ 关系状态一行 + 「去夜话」。
+ *    本轮断言随之演进（⛔ 不是"改前基线"，是与形态一起走的活断言）。
+ *
+ * 覆盖：
  *      A · 未达标（stage<4 / 羁绊档<7）⇒ 恋爱入口整块不渲染（⛔ 无灰按钮、无"还差多少"）
- *      B · 未开线 ⇒ 「挑明」（data-love="open"）
- *      C · confessed ⇒ 告白文案 + 应下 / 缓一缓（data-love="accept"/"decline"）
- *      D · accepted 未填 ⇒ 输入框 + 确定（data-love="call"）
- *      E · accepted 已填 ⇒ ⛔ 不再渲染 input，只展示既有称谓
- *      F · declined ⇒ 「缓一缓也行，往后再说」+ 可再「挑明」（⛔ 婉拒不锁死）
+ *      B · 未开线 ⇒ 「挑明」（data-love="open"）；⛔ 不演出告白 / 不出现应下·缓一缓·输入框
+ *      C · confessed ⇒ ⛔ 无告白文案、无「应下」/「缓一缓」、无输入框；只给状态行 + 去夜话入口
+ *      D · accepted 未填 ⇒ ⛔ 输入框搬到夜话私聊，心迹区不再有 input
+ *      E · accepted 已填 ⇒ 状态行「如今{ta}唤你「X」。」+ 去夜话回看入口
+ *      F · declined ⇒ 状态行 + 去夜话入口（⛔ 不再给「挑明」：主动权只在第一次）
  *      G · 去物化负向扫描：恋爱 UI 文案 您=0 / 盘=0 / 它=0 / 玩意·一串=0
  *      H · 身份名：只出身份名，⛔ 不出手串名
  *      I · lovecall 生效后沁灵对玩家的称呼走 lovecall（回落链逐档验）
- *      J · 标签栈平衡
+ *      J · ready 态 ⇒ 同样只给入口（⛔ 不重复给「挑明」）
+ *      K · 去夜话入口指向私聊路由 #/night/dm_<id>（新形态锚点）
  *
  * 只按「抽 app.js 真实源码 + vm 跑」的方式，不 require 整个 app.js、不依赖 DOM。
- * 基准：`2f7c527`（V177 恋爱线 UI 落地前）。
+ * 基准：`72aab30`（V177d 落地前 —— 告白还在心迹卡片里）。
  * 用法： node docs/_test_v177_love_ui.js
  * 负向对照（🔴 必做）：
- *   git worktree add /tmp/_base 2f7c527
+ *   git worktree add /tmp/_base 72aab30
  *   cp docs/_test_v177_love_ui.js /tmp/_base/docs/ && cd /tmp/_base && node docs/_test_v177_love_ui.js
- *   ⇒ 必须红（基线上 loveCardHtml 不存在，A~H 全红）
+ *   ⇒ 必须红（基线心迹区还在演出告白 + 应下/缓一缓 + 称谓输入框，C/D/E/F 全红，K 全红）
  * ============================================================ */
 "use strict";
 const fs = require("fs");
@@ -35,7 +41,7 @@ const FAILURES = [];
 function ok(c, m) { if (c) PASS++; else { FAIL++; FAILURES.push(m); console.log("  ✗ " + m); } }
 function section(t) { console.log("\n=== " + t + " ==="); }
 
-console.log("V177 恋爱线 UI 自测　源码：" + APP_PATH);
+console.log("V177d 恋爱线 UI 自测（心迹区 = 入口，演出在夜话私聊）　源码：" + APP_PATH);
 console.log("------------------------------------------------------------");
 
 /* ---------- 从源码抽函数 / 常量（跳过字符串与注释里的括号） ---------- */
@@ -102,8 +108,10 @@ function makeSandbox() {
     Array: Array, Object: Object, Error: Error, RegExp: RegExp, Promise: Promise, Intl: Intl,
     Map: Map, Set: Set, encodeURIComponent: encodeURIComponent, decodeURIComponent: decodeURIComponent,
     esc: esc,
+    location: { hash: "" },
     spiritName: (it) => (it && it.name) || "那只",
     spiritIdentityOf: (disp) => (String(disp || "") === BEAD ? { name: IDNAME, style: "瞻丹", bead: BEAD } : null),
+    // ⛔ 全程不定义 window.Love —— 断言必须证明「Love 缺席也不崩、走兜底文案」
     CUR: { state: "none", loveOn: false, lovecall: "" },
     Spirits: {
       heartLevel: (n) => ({ value: n, lv: 1, lv1: 2, name: "微澜", atMax: false }),
@@ -140,6 +148,21 @@ function makeSandbox() {
   return sb;
 }
 
+/* v177d：恋爱块依赖的源码件（常量 + 文案兜底 + 纯函数）—— 一并抽进沙箱 */
+const SRC_LIB = [
+  tryExtractConst("LOVE_DM_CFG"),
+  tryExtractConst("LOVE_FALLBACK_1"),
+  tryExtractConst("LOVE_FALLBACK_2"),
+  tryExtractConst("LOVE_KEYS"),
+  tryExtractFn("loveScript"),
+  tryExtractFn("loveCanReConfess"),
+  tryExtractFn("loveFill"),
+  tryExtractFn("loveRoundOf"),
+  tryExtractFn("loveDmTid"),
+  tryExtractFn("loveDmUrl"),
+  tryExtractFn("loveWhoOf"),
+].filter(Boolean).join("\n");
+
 const FN_LOVE = tryExtractFn("loveCardHtml");
 const FN_HEART = tryExtractFn("heartCardHtml");
 const FN_FILL = tryExtractFn("fillTa") || "function fillTa(t, n) { return String(t == null ? '' : t); }";
@@ -147,14 +170,14 @@ const FN_PCT = tryExtractFn("xtHeartPct");
 const CONST_MARKS = tryExtractConst("XT_HEART_MARKS");
 
 function renderLove(fixture, cur) {
-  if (!FN_LOVE) return "";
+  if (!FN_LOVE || !SRC_LIB) return "";
   const sb = makeSandbox();
   sb.CUR = cur;
   const ctx = vm.createContext(sb);
   try {
-    vm.runInContext(FN_FILL + "\n" + FN_LOVE + "\n;__fn = loveCardHtml;", ctx, { filename: "app.js#loveCardHtml" });
+    vm.runInContext(SRC_LIB + "\n" + FN_FILL + "\n" + FN_LOVE + "\n;__fn = loveCardHtml;", ctx, { filename: "app.js#loveCardHtml" });
     return String(sb.__fn({ id: "it1", name: BEAD }, fixture, IDNAME) || "");
-  } catch (e) { return ""; }
+  } catch (e) { console.log("    （renderLove 抛错： " + e.message + "）"); return ""; }
 }
 function renderCard(fixture, cur) {
   if (!FN_HEART || !FN_LOVE) return "";
@@ -162,10 +185,10 @@ function renderCard(fixture, cur) {
   sb.CUR = cur;
   const ctx = vm.createContext(sb);
   try {
-    vm.runInContext(CONST_MARKS + "\n" + FN_FILL + "\n" + FN_PCT + "\n" + FN_LOVE + "\n" + FN_HEART +
+    vm.runInContext(SRC_LIB + "\n" + CONST_MARKS + "\n" + FN_FILL + "\n" + FN_PCT + "\n" + FN_LOVE + "\n" + FN_HEART +
       "\n;__fn = heartCardHtml;", ctx, { filename: "app.js#heartCardHtml" });
     return String(sb.__fn({ id: "it1", name: BEAD }, fixture, {}) || "");
-  } catch (e) { return ""; }
+  } catch (e) { console.log("    （renderCard 抛错： " + e.message + "）"); return ""; }
 }
 
 const OKAY = { stage: 4, bond: 200, loveState: "none" };          // 阶 4 + 羁绊档 7 ⇒ 达标
@@ -183,8 +206,8 @@ section("A · 未达标（stage<4 / 羁绊档<7）⇒ 恋爱入口整块不渲�
   ok(a.indexOf("还差") < 0 && b.indexOf("还差") < 0, "⛔ 未达标时不出现「还差多少」这类鸡肋提示");
 }
 
-/* ================= B · 未开线 ⇒ 挑明 ================= */
-section("B · 达标未开线 ⇒ 「挑明」");
+/* ================= B · 未开线 ⇒ 只给「挑明」 ================= */
+section("B · 达标未开线 ⇒ 只给「挑明」（⛔ 演出不在详情页）");
 let B1 = "";
 {
   B1 = renderLove(OKAY, { state: "none", loveOn: false, lovecall: "" });
@@ -192,51 +215,58 @@ let B1 = "";
   ok(/data-love="open"/.test(B1), "按钮携带 data-love=\"open\"（供事件委托）");
   ok(/data-id="it1"/.test(B1), "按钮携带 data-id=\"it1\"（逐串定位）");
   ok(B1.indexOf("{ta}") < 0, "无残留 {ta} 占位符");
+  ok(B1.indexOf("应下") < 0 && B1.indexOf("缓一缓") < 0, "⛔ 未开线时不出现「应下 / 缓一缓」");
+  ok(!/<input/i.test(B1), "⛔ 未开线时不出现称谓输入框");
 }
 
-/* ================= C · confessed ⇒ 告白 + 应下 / 缓一缓 ================= */
-section("C · confessed ⇒ 告白文案 + 应下 / 缓一缓");
+/* ================= C · confessed ⇒ 只给状态行 + 去夜话入口 ================= */
+section("C · confessed ⇒ ⛔ 不演出告白，只给状态行 + 去夜话入口");
 let C1 = "";
 {
   C1 = renderLove(OKAY, { state: "confessed", loveOn: true, lovecall: "" });
-  ok(C1.indexOf("我这一片心迹") >= 0, "沁灵主动告白文案在（⛔ 不是玩家再点一次）");
-  ok(/data-love="accept"/.test(C1) && C1.indexOf("应下") >= 0, "「应下」按钮 + data-love=\"accept\"");
-  ok(/data-love="decline"/.test(C1) && C1.indexOf("缓一缓") >= 0, "「缓一缓」按钮 + data-love=\"decline\"");
-  ok(C1.indexOf("陆临崖把话说到这份上") >= 0, "告白提示点名身份名（{ta} → 陆临崖）");
-  ok(C1.indexOf("xtLovecallInput") < 0, "confessed 阶段⛔ 不出现称谓输入框");
+  ok(C1.indexOf("我这一片心迹") < 0, "⛔ 心迹区不再直接演出告白语（演出在夜话私聊）");
+  ok(!/data-love="accept"/.test(C1) && C1.indexOf("应下") < 0, "⛔ 不再渲染「应下」按钮");
+  ok(!/data-love="decline"/.test(C1) && C1.indexOf("缓一缓") < 0, "⛔ 不再渲染「缓一缓」按钮（缓一缓在夜话里）");
+  ok(!/<input/i.test(C1) && C1.indexOf("xtLovecallInput") < 0, "⛔ confessed 阶段不出现称谓输入框");
+  ok(/data-love="go"/.test(C1) && C1.indexOf("去夜话") >= 0, "给出去夜话入口（data-love=\"go\" + 「去夜话」）");
+  ok(C1.indexOf(IDNAME + "有话要说") >= 0, "状态行点名身份名：\"" + IDNAME + "有话要说\"（{ta} 已解析）");
   const r1 = parse(C1);
   ok(r1.problems.length === 0 && r1.stack.length === 0, "confessed 块标签栈平衡");
 }
 
-/* ================= D · accepted 未填 ⇒ 输入框 ================= */
-section("D · accepted 且未填称谓 ⇒ 输入框 + 确定");
+/* ================= D · accepted 未填 ⇒ 输入框已搬到夜话 ================= */
+section("D · accepted 且未填称谓 ⇒ ⛔ 心迹区无输入框，只有去夜话入口");
 let D1 = "";
 {
   D1 = renderLove(OKAY, { state: "accepted", loveOn: true, lovecall: "" });
-  ok(/<input[^>]*id="xtLovecallInput"/i.test(D1), "渲染出称谓输入框 id=\"xtLovecallInput\"");
-  ok(/data-love="call"/.test(D1) && D1.indexOf("确定") >= 0, "「确定」按钮 + data-love=\"call\"");
-  ok(D1.indexOf("从今天起，我该怎么唤你？") >= 0, "提示语「从今天起，我该怎么唤你？」在");
+  ok(!/<input/i.test(D1), "⛔ 心迹区不再渲染 <input>（称谓在夜话私聊里填）");
+  ok(D1.indexOf("xtLovecallInput") < 0, "⛔ 心迹区不再出现 xtLovecallInput");
+  ok(/data-love="go"/.test(D1) && D1.indexOf("去夜话") >= 0, "给出去夜话入口");
+  ok(D1.indexOf(IDNAME + "在等你一个称呼") >= 0, "状态行：「" + IDNAME + "在等你一个称呼。」");
 }
 
-/* ================= E · accepted 已填 ⇒ 不再渲染 input ================= */
-section("E · accepted 且已填称谓 ⇒ ⛔ 不再渲染输入框，只展示既有称谓");
+/* ================= E · accepted 已填 ⇒ 状态行 + 回看入口 ================= */
+section("E · accepted 且已填称谓 ⇒ 状态行「如今{ta}唤你「X」。」+ 去夜话回看");
 let E1 = "";
 {
   E1 = renderLove(OKAY, { state: "accepted", loveOn: true, lovecall: "阿砚" });
   ok(!/<input/i.test(E1), "⛔ 已填过 ⇒ 整块不再出现 <input>");
   ok(E1.indexOf("xtLovecallInput") < 0, "⛔ 已填过 ⇒ 输入框 id 不出现");
-  ok(E1.indexOf("如今陆临崖唤你「阿砚」。") >= 0, "展示既有称谓：如今陆临崖唤你「阿砚」。");
+  ok(E1.indexOf("如今" + IDNAME + "唤你「阿砚」。") >= 0, "展示既有称谓：如今" + IDNAME + "唤你「阿砚」。");
   ok(E1.indexOf("确定") < 0, "⛔ 已填过 ⇒ 不再出现「确定」按钮");
+  ok(/data-love="go"/.test(E1), "已填过仍给去夜话回看入口（那句话还能再看）");
 }
 
-/* ================= F · declined ⇒ 缓一缓也行 + 可再挑明 ================= */
-section("F · declined ⇒ 「缓一缓也行，往后再说」+ 可再挑明");
+/* ================= F · declined ⇒ 状态行 + 回看入口（⛔ 不再给挑明） ================= */
+section("F · declined ⇒ 状态行 + 去夜话入口（⛔ 不再给「挑明」）");
 let F1 = "";
 {
   F1 = renderLove(OKAY, { state: "declined", loveOn: true, lovecall: "" });
   ok(F1.indexOf("缓一缓也行，往后再说。") >= 0, "文案「缓一缓也行，往后再说。」在");
-  ok(/data-love="open"/.test(F1) && F1.indexOf("挑明") >= 0, "⛔ 婉拒不锁死 ⇒ 仍可再「挑明」");
-  ok(F1.indexOf("确定") < 0 && !/<input/i.test(F1), "declined 阶段不出现称谓输入");
+  ok(!/data-love="open"/.test(F1) && F1.indexOf("挑明") < 0,
+    "⛔ V177d 新裁定：心迹区不再给「挑明」（玩家主动权只在第一次；二次告白由沁灵在夜话里找上门）");
+  ok(/data-love="go"/.test(F1), "给出去夜话回看入口");
+  ok(!/<input/i.test(F1), "declined 阶段不出现称谓输入");
 }
 
 /* ================= G · 去物化 / 敬称 负向扫描 ================= */
@@ -253,6 +283,11 @@ section("G · 去物化 + 敬称 负向扫描（恋爱 UI 新渲染文案）");
   ok(srcBlk.length > 0, "app.js 能抽出 loveCardHtml（抽不到 ⇒ 未落地）");
   ok(srcBlk.indexOf("您") < 0 && srcBlk.indexOf("盘") < 0 && srcBlk.indexOf("它") < 0,
     "⛔ loveCardHtml 源码内 您/盘/它 全为 0");
+  // 兜底文案（Love 缺席时顶上）同样受纪律约束
+  const fb = (tryExtractConst("LOVE_FALLBACK_1") + tryExtractConst("LOVE_FALLBACK_2")) || "";
+  ok(fb.length > 50, "能抽到文案兜底常量（LOVE_FALLBACK_1 / 2）");
+  ok(fb.indexOf("您") < 0 && fb.indexOf("盘") < 0 && fb.indexOf("它") < 0 && fb.indexOf("玩意") < 0,
+    "⛔ 兜底文案内 您/盘/它/玩意 全为 0");
 }
 
 /* ================= H · 身份名（⛔ 不出手串名） ================= */
@@ -296,14 +331,29 @@ section("I · 沁灵对玩家的称呼回落链（真 spirits.js · callFor）")
 }
 
 /* ================= J · ready 态（开线后未告白的过渡态） ================= */
-section("J · ready 态 ⇒ 同样落到告白演出（不让玩家多点一次）");
+section("J · ready 态 ⇒ 同样只给去夜话入口");
 {
   const j = renderLove(OKAY, { state: "ready", loveOn: true, lovecall: "" });
-  ok(j.indexOf("我这一片心迹") >= 0 && /data-love="accept"/.test(j), "ready ⇒ 直接进告白 + 应下/缓一缓");
+  ok(/data-love="go"/.test(j) && j.indexOf("去夜话") >= 0, "ready ⇒ 去夜话入口在（沁灵在那边先开口）");
   ok(j.indexOf("挑明") < 0, "ready ⇒ ⛔ 不再重复渲染「挑明」");
+  ok(j.indexOf("应下") < 0 && !/<input/i.test(j), "ready ⇒ ⛔ 心迹区不出现「应下」与称谓输入框");
+}
+
+/* ================= K · 去夜话入口指向夜话私聊路由 ================= */
+section("K · 去夜话入口 ⇒ 夜话私聊路由 #/night/dm_<沁灵id>");
+{
+  const sb = makeSandbox();
+  const ctx = vm.createContext(sb);
+  try {
+    vm.runInContext(SRC_LIB + "\n;__tid = loveDmTid; __url = loveDmUrl;", ctx, { filename: "app.js#loveDm" });
+  } catch (e) { /* 留到断言里报 */ }
+  ok(typeof sb.__tid === "function", "能抽到 loveDmTid（抽不到 ⇒ 私聊路由未落地）");
+  ok(typeof sb.__tid === "function" && sb.__tid("it1") === "dm_it1", "loveDmTid(\"it1\") === \"dm_it1\"（实测 " + (sb.__tid ? sb.__tid("it1") : "-") + "）");
+  ok(typeof sb.__url === "function" && sb.__url("it1") === "#/night/dm_it1", "loveDmUrl(\"it1\") === \"#/night/dm_it1\"（实测 " + (sb.__url ? sb.__url("it1") : "-") + "）");
+  ok(APP.indexOf("#/night/") >= 0 && /indexOf\(LOVE_DM_CFG\.TID\)/.test(APP), "路由解析里接住了 dm_ 前缀（源码级：LOVE_DM_CFG.TID 判定在）");
 }
 
 console.log("\n----------------------------------------");
 console.log("断言总数 " + (PASS + FAIL) + " ｜ 红 " + FAIL + " ｜ 绿 " + PASS);
-console.log(FAIL > 0 ? "⇒ 红测（V177 恋爱线 UI 落地前为红，属预期）" : "⇒ 全绿：V177 恋爱线 UI 已落地");
+console.log(FAIL > 0 ? "⇒ 有红：V177d 心迹区改造未落地" : "⇒ 全绿：V177d 心迹区 = 入口，演出已搬进夜话私聊");
 process.exit(FAIL > 0 ? 1 : 0);

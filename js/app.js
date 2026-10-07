@@ -4583,6 +4583,7 @@
       const S = nightNow();
       S.threads.forEach((t) => { n += threadOpenCount(threadNow(t.id)); });
     } catch (e) { n = 0; }
+    try { n += loveDmUnreadCount(); } catch (e) { /* v177d：私聊未读也点亮夜话红点 */ }
     if (n) { if (!dot) { dot = document.createElement("span"); dot.className = "tab-dot"; tab.appendChild(dot); } }
     else if (dot) dot.remove();
   }
@@ -5257,13 +5258,136 @@
     return h;
   }
   /* =========================================================
-   * v177 · 恋爱线 UI（渲染在「🌸 心迹」卡片内）
-   *   口径（用户裁定）：⛔ 可开后宫 —— 多线并列、互不排斥，逐串各自记账。
-   *   门槛只认 stage ≥ 4 + 羁绊档 ≥ 7（⛔ 不锁天数、不锁章）；
-   *   流程：玩家「挑明」→ **沁灵主动告白** → 玩家「应下」/「缓一缓」（⛔ 婉拒不锁死）
-   *        → 玩家填专属称谓（⛔ 一次定终身，填后不再渲染输入框）。
+   * v177d · 恋爱线：告白搬进**夜话私聊**（心迹区只留「入口」）
+   * ---------------------------------------------------------
+   *   🔴 用户裁定（V177d）：不要详情页卡片里的一句提示 —— 要的是夜话版块里
+   *      **那只沁灵单独给你发消息**，用微信气泡一句句说。
+   *   口径（沿用 V165b/V165c 用户裁定）：⛔ 可开后宫 —— 多线并列、互不排斥，逐串各自记账。
+   *   门槛只认 stage ≥ 4 + 羁绊档 ≥ 7（⛔ 不锁天数、不锁章）。
+   *   流程：心迹区「挑明」→ **夜话私聊里沁灵告白** → 玩家「应下」/「缓一缓」（⛔ 婉拒不锁死）
+   *        → 私聊里填专属称谓（⛔ 一次定终身，填后不再渲染输入框）。
+   *   二次告白：⛔ 不由玩家点按钮触发 —— 沁灵自己找上门（判据走 Love.canReConfess）。
    *   ⛔ 文案纪律：禁敬称（无「您」）、禁物化（无「盘 / 它 / 玩意 / 一串」）；沁灵一律用身份名。
    * ========================================================= */
+  /* 私聊会话 —— 集中配置：前缀 / 分组 / 上限 / 选项文案一律在此，⛔ 组件里不许硬编码 */
+  const LOVE_DM_CFG = {
+    TID: "dm_",            // 会话 id 前缀 ⇒ 路由 #/night/dm_<沁灵id>
+    EV: "love_confess",    // 私聊里只有这一件事
+    SEC: "私聊",           // 夜话列表里的分组名
+    SEC_TIP: "谁单独找你说话",
+    BADGE: "找你",         // 未读角标
+    CALL_MAX: 12,          // 专属称谓字数上限（与数据层 setLovecall 同口径）
+    OPT_YES: "应下",       // 玩家选项（文案库只供沁灵台词，选项由 UI 出）
+    OPT_NO: "缓一缓",
+    GO: "去夜话",          // 心迹区入口按钮
+    HEAD_SUB: "只对你说的话",
+  };
+  /* v177d：文案兜底 —— js/love.js / window.Love 尚未落地时顶上（⛔ 绝不因 Love 缺席而白屏）
+     ⛔ 纪律：禁敬称（无「您」）／禁物化（无「盘 / 它 / 玩意 / 一串」）／沁灵自称一律「我」；
+        占位符只有 {ta}（沁灵身份名 · 第三人称）与 {call}（沁灵对你的称呼，运行时定）。
+     ⚠️ Love 一旦落地（window.Love.scriptFor），同名字段自动覆盖兜底 —— 这里不用再动。 */
+  const LOVE_FALLBACK_1 = {
+    hint: "心迹走到这一步，有些话可以说清楚了。",
+    confess: "我这一片心迹，今天说给你听：往后的日子，我想和你一处过。",
+    callAsk: "往后日子长，我该怎么唤你？",
+    accepted: "嗯。你应了，我就不走了。",
+    declined: "不急。你慢慢想，我在这儿。",
+  };
+  // 第二轮（沁灵自己找上门）⛔ 必须与首次不同
+  const LOVE_FALLBACK_2 = {
+    hint: "那日的话我还收着。",
+    confess: "那日的话我收着，今日还是想说与{call}听：往后的日子，我想和你一处过。",
+    callAsk: "这一次，我该怎么唤你？",
+    accepted: "嗯。你应了，我就不走了。",
+    declined: "不打紧。你想清楚了，我仍在这里。",
+  };
+  const LOVE_KEYS = ["hint", "confess", "callAsk", "accepted", "declined"];
+  // 文案单一入口：优先 Love.scriptFor（同事并行产出）；⛔ 拿不到 / 抛错 ⇒ 走兜底
+  function loveScript(rec, item, round) {
+    const r = (Number(round) === 2) ? 2 : 1;
+    const fb = (r === 2 ? LOVE_FALLBACK_2 : LOVE_FALLBACK_1);
+    const out = { round: r, variant: 0 };
+    LOVE_KEYS.forEach((k) => { out[k] = String(fb[k] || ""); });
+    try {
+      if (typeof Love !== "undefined" && Love && typeof Love.scriptFor === "function") {
+        const s = Love.scriptFor(rec, item) || {};
+        LOVE_KEYS.forEach((k) => {
+          const v = String((s && s[k] != null) ? s[k] : "").trim();
+          if (v) out[k] = v;
+        });
+        const sr = Number(s && s.round);
+        if (sr === 1 || sr === 2) out.round = sr;
+        const sv = Number(s && s.variant);
+        if (isFinite(sv)) out.variant = sv;
+      }
+    } catch (e) { /* Love 未就绪 / 抛错 ⇒ 用兜底，⛔ 绝不向上抛 */ }
+    return out;
+  }
+  // 二次告白能不能再来：判据单一真源在 Love.canReConfess；
+  //   ⛔ Love 未落地 ⇒ 一律 false（没有文案库就不许杜撰第二轮告白）
+  function loveCanReConfess(rec, item) {
+    try {
+      if (typeof Love === "undefined" || !Love || typeof Love.canReConfess !== "function") return false;
+      return !!Love.canReConfess(rec, item);
+    } catch (e) { return false; }
+  }
+  // {ta} → 身份名；{call} → 这只沁灵对你的称呼（lovecall → 昵称 → 你 → 主人）
+  function loveFill(t, ta, rec) {
+    let call = "你";
+    try { if (typeof Spirits.callFor === "function") call = Spirits.callFor(rec) || "你"; } catch (e) { call = "你"; }
+    return String(t == null ? "" : t).replace(/\{ta\}/g, ta || "那只").replace(/\{call\}/g, call);
+  }
+  // 第几轮：Love 说了算；Love 未落地 ⇒ 读逐串记账 rec.loveDmRound
+  function loveRoundOf(rec) {
+    let r = 1;
+    try { r = Math.max(1, Number(rec && rec.loveDmRound) || 1); } catch (e) { r = 1; }
+    return r >= 2 ? 2 : 1;
+  }
+  // 私聊会话 id / 路由（⛔ 与群聊 tid 天然不撞：群聊 id 一律不带 dm_ 前缀）
+  function loveDmTid(id) { return LOVE_DM_CFG.TID + String(id == null ? "" : id); }
+  function loveDmUrl(id) { return "#/night/" + encodeURIComponent(loveDmTid(id)); }
+  // 未读写号：状态 + 轮次 + 称谓 三元组变了 ⇒ 沁灵有新话要说
+  function loveDmToken(ls, round) {
+    return String((ls && ls.state) || "none") + ":" + (round >= 2 ? 2 : 1) + ":" + String((ls && ls.lovecall) || "").trim();
+  }
+  // 私聊消息序列（纯函数 · 可单测）：⛔ 一句句来，不一次性糊一大段
+  function loveDmMsgs(ls, sc, who) {
+    const st = String((ls && ls.state) || "none");
+    const call = String((ls && ls.lovecall) || "").trim();
+    const s = sc || {};
+    const out = [];
+    const A = (t) => { out.push({ w: "A", name: who, text: t }); };
+    if (st === "none") return out;                             // 还没挑明 ⇒ 私聊不存在
+    A(s.confess || "");                                        // ① 沁灵告白
+    if (st === "accepted") {
+      out.push({ w: "me", text: LOVE_DM_CFG.OPT_YES });         // ② 玩家应下
+      A(s.callAsk || "");                                       // ③ 沁灵问称谓
+      if (call) {
+        out.push({ w: "me", text: call });                      // ④ 玩家填称谓
+        A(s.accepted || "");                                    // ⑤ 沁灵接住
+      }
+    } else if (st === "declined") {
+      out.push({ w: "me", text: LOVE_DM_CFG.OPT_NO });
+      A(s.declined || "");
+    }
+    return out;
+  }
+  // ⛔ 一次定终身：只有「已应下 + 还没填称谓」才给输入框（填过 ⇒ locked ⇒ 不再给）
+  function loveDmNeedInput(ls) {
+    if (String((ls && ls.state) || "") !== "accepted") return false;
+    return !String((ls && ls.lovecall) || "").trim();
+  }
+  // 沁灵显示名：⛔ 一律身份名（V175 口径），用户改过名就尊重用户
+  function loveWhoOf(it) {
+    try {
+      const store = Spirits.load();
+      const rec = store[it.id] || {};
+      const disp = spiritName(it, store);
+      const idc = spiritIdentityOf(disp);
+      return (idc && !rec.nameEdited) ? idc.name : disp;
+    } catch (e) { return (it && it.name) || "那只"; }
+  }
+  // v177d：心迹区 —— 只留「入口」（⛔ 告白 / 应下 / 称谓输入 全在夜话私聊里）
   function loveCardHtml(it, rec, name) {
     if (typeof Spirits.loveGate !== "function" || typeof Spirits.loveStateOf !== "function") return "";
     let gate = null, ls = null;
@@ -5275,56 +5399,33 @@
     const who = String(name || "那只");
     const lbtn = (act, label, ghost) => '<button type="button" class="btn ' + (ghost ? "ghost" : "primary") +
       ' xt-love-btn" data-love="' + act + '" data-id="' + sid + '">' + esc(label) + "</button>";
-    let h = '<div class="xt-love" style="margin-top:14px">';
-    if (!ls.loveOn || st === "none") {
-      h += '<div class="xt-hint">心迹走到这一步，有些话可以说清楚了。</div>' + lbtn("open", "挑明", false);
-    } else if (st === "confessed" || st === "ready") {
-      h += '<div class="xt-quote">「我这一片心迹，今天说给你听：往后的日子，我想和你一处过。」</div>';
-      h += '<div class="xt-hint">' + esc(fillTa("{ta}把话说到这份上，剩下的在你。", who)) + "</div>";
-      h += '<div style="display:flex;gap:8px;margin-top:8px">' + lbtn("accept", "应下", false) + lbtn("decline", "缓一缓", true) + "</div>";
-    } else if (st === "accepted") {
-      if (call) {
-        h += '<div class="xt-quote">' + esc(fillTa("如今{ta}唤你「" + call + "」。", who)) + "</div>";
-      } else {
-        h += '<div class="xt-hint">「从今天起，我该怎么唤你？」</div>';
-        h += '<input id="xtLovecallInput" class="xt-love-input" type="text" maxlength="12" placeholder="想一个只在你们之间叫的名字" style="width:100%;box-sizing:border-box;margin-top:8px;padding:9px 10px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;font-size:13px">';
-        h += lbtn("call", "确定", false);
-        h += '<div class="xt-sub">填下就改不了了，想清楚再定。</div>';
-      }
-    } else if (st === "declined") {
-      h += '<div class="xt-hint">缓一缓也行，往后再说。</div>' + lbtn("open", "挑明", false);
+    if (!ls.loveOn || st === "none") {          // 未开线 ⇒ 只给「挑明」（⛔ 演出不在详情页）
+      return '<div class="xt-love" style="margin-top:14px">' +
+        '<div class="xt-hint">' + esc(loveScript(rec, it, 1).hint) + "</div>" +
+        lbtn("open", "挑明", false) + "</div>";
     }
-    h += "</div>";
-    return h;
+    let line = "";
+    if (st === "ready" || st === "confessed") line = "{ta}有话要说 —— 那句话{ta}只想单独说给你听。";
+    else if (st === "accepted") line = call ? ("如今{ta}唤你「" + call + "」。") : "{ta}在等你一个称呼。";
+    else if (st === "declined") line = "缓一缓也行，往后再说。";
+    else return "";
+    return '<div class="xt-love" style="margin-top:14px">' +
+      '<div class="xt-quote">' + esc(fillTa(line, who)) + "</div>" +
+      lbtn("go", LOVE_DM_CFG.GO, true) + "</div>";
   }
-  // v177：恋爱线交互（⛔ 只调 Spirits 已导出的入口，不自己改盘）
+  // v177d：恋爱线交互（心迹区只有「挑明」和「去夜话」；⛔ 只调 Spirits 已导出的入口）
   function loveAct(it, act, host) {
     const id = String((it && it.id) || "");
     if (!id) return;
     const refresh = () => { try { host && host.refresh && host.refresh(); } catch (e) { /* 忽略 */ } };
     if (act === "open") {
       if (!Spirits.openLoveLine(id)) { toast("这件事没成。"); return; }
-      Spirits.setLoveState(id, "confessed");    // 挑明之后由沁灵先开口（⛔ 不让玩家再点一次）
+      toast("去夜话，" + loveWhoOf(it) + "有话要说。");
       refresh();
+      try { updateNightDot(); } catch (e) { /* 忽略 */ }   // 挑明 ⇒ 立刻点亮夜话红点
       return;
     }
-    if (act === "accept") {
-      try { if (Spirits.loveStateOf(id).state === "ready") Spirits.setLoveState(id, "confessed"); } catch (e) { /* 忽略 */ }
-      Spirits.acceptConfess(id);
-      refresh();
-      return;
-    }
-    if (act === "decline") { Spirits.declineConfess(id); refresh(); return; }
-    if (act === "call") {
-      const box = $("#xtLovecallInput");
-      const v = String((box && box.value) || "").trim();
-      const r = Spirits.setLovecall(id, v);
-      if (r && r.ok) { toast("就这么定了。"); refresh(); return; }
-      if (r && r.reason === "locked") { toast("已经定下过了，改不得。"); refresh(); return; }
-      toast("总得叫个什么，写一点吧。");
-      if (box) box.focus();
-      return;
-    }
+    if (act === "go") { location.hash = loveDmUrl(id); return; }
   }
   // 一个只读的反馈弹层（送出 / 照料）：反应句 + 辅助小字，单按钮关闭
   function showActModal(title, quote, subHtml) {
@@ -6923,6 +7024,45 @@
     return "";
   }
 
+  /* v177d：夜话 · 私聊会话列表（逐只沁灵一条；⛔ 没挑明的不出现）
+     · 未读 = 沁灵有新话要说（状态 / 轮次 / 称谓 三元组变了）
+     · 二次告白：沁灵自己找上门 ⇒ 这条未读 + 置顶（⛔ 玩家不点任何按钮）
+     · ⛔ Love 未落地 ⇒ canReConfess 回落 false ⇒ declined 那一条不再置顶未读（不杜撰第二轮） */
+  function loveDmList() {
+    const out = [];
+    try {
+      if (typeof Spirits.loveGate !== "function" || typeof Spirits.loveStateOf !== "function") return out;
+      const store = Spirits.load();
+      (spiritItems() || []).forEach((it) => {
+        const rec = store[it.id] || {};
+        let gate = null, ls = null;
+        try { gate = Spirits.loveGate(rec, it, null); ls = Spirits.loveStateOf(it.id); } catch (e) { return; }
+        if (!gate || !gate.ok || !ls) return;                        // 未达标 ⇒ 不出现
+        const st = String(ls.state || "none");
+        if (st === "none") return;                                   // 没挑明 ⇒ 沁灵还没找上门
+        const round = loveRoundOf(rec);
+        // 沁灵要主动找上门 ⇒ 列表按「第二次开口」后的写号预演（打开私聊时由沁灵侧推进到 round 2）
+        const pend = (st === "declined" && loveCanReConfess(rec, it)) ? 2 : round;
+        let unread = (loveDmToken(ls, pend) !== String(rec.loveDmSeen || ""));
+        if (unread && st === "declined" && pend < 2) unread = false;   // ⛔ Love 未落地 ⇒ 不杜撰第二轮
+        const who = loveWhoOf(it);
+        const call = String(ls.lovecall || "").trim();
+        let sub = "";
+        if (st === "accepted") sub = call ? ("如今" + who + "唤你「" + call + "」") : "等你一个称呼";
+        else if (st === "declined") sub = "缓一缓 · 往后再说";
+        // ⚠️ 预览文案按「打开后会看到的那一轮」取（第二轮待开口 ⇒ 预览就是第二轮那句）
+        else sub = who + "：" + loveFill(loveScript(rec, it, pend).confess, who, rec);
+        out.push({ tid: loveDmTid(it.id), sid: String(it.id), name: who, item: it, rec: rec,
+                   unread: unread, sub: sub, round: pend, state: st });
+      });
+      out.sort((a, b) => ((b.unread ? 1 : 0) - (a.unread ? 1 : 0)));   // 未读置顶（sort 稳定 ⇒ 其余维持原序）
+    } catch (e) { return out; }
+    return out;
+  }
+  function loveDmUnreadCount() {
+    try { return loveDmList().filter((d) => d.unread).length; } catch (e) { return 0; }
+  }
+
   function renderNightPage() {
     topbarTitle.textContent = "夜话";
     btnBack.style.visibility = "visible";
@@ -6969,6 +7109,25 @@
       });
       h += "</div>";
     });
+    // v177d：私聊（沁灵单独找你说话）—— 告白就发生在这里（⛔ 不在详情页卡片里弹提示）
+    let dmOpen = 0;
+    const dms = loveDmList();
+    if (dms.length) {
+      h += '<div class="nt-sec"><span>' + esc(LOVE_DM_CFG.SEC) + "</span><small>" + esc(LOVE_DM_CFG.SEC_TIP) + "</small></div>";
+      h += '<div class="nt-list">';
+      dms.forEach((d) => {
+        if (d.unread) dmOpen++;
+        h += '<div class="nt-item' + (d.unread ? " hot" : "") + '" data-tid="' + esc(d.tid) + '">' +
+          '<div class="nt-th-av">' + spiritThumbHtml(d.item, d.rec, 30) + "</div>" +
+          '<div class="nt-item-body"><div class="nt-item-title">' + esc(d.name) +
+          (d.unread ? '<span class="nt-badge new">' + esc(LOVE_DM_CFG.BADGE) + "</span>" : "") +
+          "</div>" +
+          '<div class="nt-item-sub">' + esc(d.sub) + "</div></div>" +
+          '<span class="chap-arrow">›</span></div>';
+      });
+      h += "</div>";
+    }
+    openAll += dmOpen;
     if (openAll) h += '<div class="diary-hint">📱 有 <b>' + openAll + "</b> 件事可以聊了 · 点进去就开始</div>";
     else h += '<div class="diary-hint" style="color:var(--text-2)">🌙 今晚没动静。别急 —— 谁生日了、进门了、天晴了，他们会来找你。</div>';
     view.innerHTML = h;
@@ -7087,6 +7246,107 @@
     else if (ev.star === "newest") { star = ms[ms.length - 1] || null; }
     if (star) return [star].concat(ms.filter((m) => m.id !== star.id).slice(0, Math.max(0, need - 1)));
     return ms.slice(0, need);
+  }
+
+  /* ---------- v177d：夜话 · 私聊（一只沁灵单独找你说话） ----------
+     路由 #/night/dm_<沁灵id>（事件位可省）；外形复用 v176a 的微信气泡（⛔ 零 CSS 改动）。
+     ⛔ 玩家只点一次「挑明」；告白 / 应下 / 称谓 全在这段私聊里一句句发生。 */
+  function renderLoveDmPage(sid) {
+    sid = String(sid == null ? "" : sid);
+    if (!sid || typeof Spirits.loveGate !== "function" || typeof Spirits.loveStateOf !== "function") {
+      location.hash = "#/night"; return;
+    }
+    const store = Spirits.load();
+    const it = (spiritItems() || []).filter((x) => String(x.id) === sid)[0];
+    if (!it) { location.hash = "#/night"; return; }
+    let rec = store[sid] || {}, gate = null, ls = null;
+    try { gate = Spirits.loveGate(rec, it, null); ls = Spirits.loveStateOf(sid); } catch (e) { gate = null; }
+    if (!gate || !gate.ok || !ls) { location.hash = "#/night"; return; }
+    if (String(ls.state || "none") === "none") { location.hash = "#/spirit/" + encodeURIComponent(sid); return; }
+    const who = loveWhoOf(it);
+    // 二次告白：沁灵自己找上门 —— 在「打开私聊的这一下」由沁灵侧推进（⛔ 玩家不点任何按钮）
+    let round = loveRoundOf(rec);
+    if (String(ls.state) === "declined" && loveCanReConfess(rec, it)) {
+      try {
+        const s2 = Spirits.load();
+        const r2 = Spirits.ensureIn(s2, sid);
+        r2.loveDmRound = 2;
+        r2.loveState = "confessed";
+        Spirits.save(s2);
+        rec = r2;
+        ls = Spirits.loveStateOf(sid);
+        round = 2;
+      } catch (e) { /* 推进失败 ⇒ 按原状回看，⛔ 绝不白屏 */ }
+    }
+    const raw = loveScript(rec, it, round);
+    const sc = { round: raw.round, variant: raw.variant };
+    LOVE_KEYS.forEach((k) => { sc[k] = loveFill(raw[k], who, rec); });
+    try {                                     // 已读标记（看完红点就灭）
+      const s3 = Spirits.load();
+      const r3 = Spirits.ensureIn(s3, sid);
+      r3.loveDmSeen = loveDmToken(ls, round);
+      Spirits.save(s3);
+      updateNightDot();
+    } catch (e) { /* 忽略 */ }
+    const msgsOf = () => loveDmMsgs(Spirits.loveStateOf(sid), sc, who);
+    const wrap = (all, added) => {
+      const ls2 = Spirits.loveStateOf(sid);
+      const st = String((ls2 && ls2.state) || "none");
+      const call = String((ls2 && ls2.lovecall) || "").trim();
+      let ending = null;
+      if (st === "accepted" && call) ending = { name: "两心相照", text: "如今" + who + "唤你「" + call + "」。" };
+      else if (st === "declined") ending = { name: "缓一缓", text: "这件事先搁下。往后的日子还长。" };
+      let choices = [];
+      if (!ending && (st === "ready" || st === "confessed")) {
+        choices = [{ t: LOVE_DM_CFG.OPT_YES }, { t: LOVE_DM_CFG.OPT_NO }];
+      }
+      return { added: added, choices: choices, ending: ending, ended: !!ending, log: all };
+    };
+    const settle = (i) => {                   // 玩家点了「应下」/「缓一缓」
+      const before = msgsOf().length;
+      try { if (String(Spirits.loveStateOf(sid).state) === "ready") Spirits.setLoveState(sid, "confessed"); } catch (e) { /* 忽略 */ }
+      if (i === 0) Spirits.acceptConfess(sid); else Spirits.declineConfess(sid);
+      const all = msgsOf();
+      return wrap(all, all.slice(before));
+    };
+    return renderTalkPage({
+      immersive: false,          // v177d：私聊 = 微信式气泡（与夜话群聊同一套外壳）
+      title: who,
+      headAv: spiritThumbHtml(it, Spirits.load()[sid] || {}, 30),
+      headName: who,
+      headSub: LOVE_DM_CFG.HEAD_SUB,
+      listLabel: "全部会话", listHash: "#/night",
+      av: () => spiritThumbHtml(it, Spirits.load()[sid] || {}, 30),
+      nameOf: () => who,
+      endTag: "这件事聊完了",
+      endingExtra: () => '<div class="nt-end-final">🌙 回「全部会话」还能再看这段。</div>',
+      backLabel: "回全部会话", backHash: "#/night",
+      enter: () => { const all = msgsOf(); return wrap(all, all); },
+      choose: (i) => settle(i),
+      replay: () => { const all = msgsOf(); return wrap(all, all); },
+      onFoot: (footEl, rr) => {
+        try {
+          if (!rr || rr.ended) return;                                    // 有结局卡片 ⇒ 收工
+          const ls2 = Spirits.loveStateOf(sid);
+          if (!loveDmNeedInput(ls2)) return;                               // ⛔ 一次定终身：填过 ⇒ 不再给输入框
+          footEl.innerHTML = '<div class="nt-ask">想让' + esc(who) + "怎么唤你</div>" +
+            '<input id="ntLovecallInput" class="form-input" type="text" maxlength="' + LOVE_DM_CFG.CALL_MAX +
+            '" placeholder="想一个只在你们之间叫的名字" style="margin-bottom:8px">' +
+            '<button class="nt-opt" id="ntLovecallOk">就这么定了</button>';
+          const box = $("#ntLovecallInput"), bk = $("#ntLovecallOk");
+          const submit = () => {
+            const v = String((box && box.value) || "").trim();
+            const r2 = Spirits.setLovecall(sid, v);
+            if (r2 && r2.ok) { toast("就这么定了。"); renderLoveDmPage(sid); return; }
+            if (r2 && r2.reason === "locked") { toast("已经定下过了，改不得。"); renderLoveDmPage(sid); return; }
+            toast("总得叫个什么，写一点吧。");
+            if (box) box.focus();
+          };
+          if (bk) bk.onclick = submit;
+          if (box) box.onkeydown = (e) => { if (e.key === "Enter") submit(); };
+        } catch (e) { /* ⛔ 输入框挂不上也绝不白屏：气泡流照旧 */ }
+      },
+    });
   }
 
   /* ---------- v161：通用对话页外壳（夜话 / 主线 共用） ----------
@@ -7280,6 +7540,9 @@
           '<button class="nt-opt" data-i="' + i + '">' + esc(c.t) + "</button>").join("");
         foot.querySelectorAll(".nt-opt").forEach((b) => { b.onclick = () => pick(Number(b.dataset.i)); });
       } else { foot.innerHTML = ""; }
+      // v177d：选项/结局渲染完的扩展挂点（私聊的「填称谓」输入框走这里）
+      //   ⛔ 其它调用点一律不传 ⇒ 零变化
+      if (typeof o.onFoot === "function") { try { o.onFoot(foot, r); } catch (e) { /* ⛔ 挂不上也不许影响气泡流 */ } }
       scrollEnd();
     };
     const step = () => {
@@ -10867,7 +11130,9 @@
     else if (h === "#/night") renderNightPage();                                                 // v162：夜话（会话列表）
 else if (h.indexOf("#/night/") === 0) {                                                        // v162：#/night/<会话> 或 #/night/<会话>/<事件>
       const seg = decodeURIComponent(h.slice(8)).split("/");
-      if (seg.length >= 2 && seg[1]) renderNightTalkPage(seg[0], seg[1]);
+      if (String(seg[0] || "").indexOf(LOVE_DM_CFG.TID) === 0)          // v177d：夜话私聊 #/night/dm_<沁灵id>
+        renderLoveDmPage(String(seg[0]).slice(LOVE_DM_CFG.TID.length));
+      else if (seg.length >= 2 && seg[1]) renderNightTalkPage(seg[0], seg[1]);
       else renderThreadPage(seg[0]);
     }
     
