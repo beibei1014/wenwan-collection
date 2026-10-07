@@ -11143,7 +11143,7 @@ else if (h.indexOf("#/night/") === 0) {                                         
   /* ---------- 一次性迁移 v176a：清空旧物化日记（之后按新口径重新生成） ----------
      v175 修干净了 diaryWrite 的 prompt，但玩家浏览器里已存下来的旧日记不会自动更新。
      ⛔ 只清日记本体；绝不碰 立绘 / CG / 设定 / 羁绊 / 心迹 / 回响 / 主人的回信。 */
-  const DIARY_VER = "v176a";
+  const DIARY_VER = "v177c";   // v177c：AI 台词落库拦截上线，再清一轮旧日记（新日记按新拦截重写）
   function purgeObjectifiedDiaryOnce() {
     try {
       if (localStorage.getItem("ww_diaryver") === DIARY_VER) return 0;
