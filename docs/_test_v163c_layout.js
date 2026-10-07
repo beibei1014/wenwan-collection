@@ -63,8 +63,10 @@ const LIST = [
   { id: "it3", name: "油果果", lastPlayedAt: Date.now() - 9 * 86400000 },
 ];
 const STORE = {
-  it1: { persona: { title: "慢热掌柜", line: "盘我，太快喵~", traits: ["软糯", "慢热"] }, stage: 2 },
+  // v177c：it1 用**干净**口头禅（验证 line 仍在 .spirit-meta 内正常渲染）
+  it1: { persona: { title: "慢热掌柜", line: "慢慢来，我又不会跑~", traits: ["软糯", "慢热"] }, stage: 2 },
   it2: { persona: null, stage: 1, mail: 1 },
+  // v177c：it3 故意留**物化旧句**（早期 AI 产物），验证列表页已把它滤掉
   it3: { persona: { title: "见人就想包浆", line: "包浆给你看！", traits: ["油亮"] }, stage: 4, cgUrl: "data:x" },
 };
 
@@ -181,7 +183,12 @@ function runRenderer(name) {
   // ⚠️ 用 opt() 容错抽取：对「C2B 之前」的源码（负向对照基线）这两个函数不存在，
   //    必须静默跳过而不是抛错崩掉 —— 否则负向对照会变成「崩溃」而不是「干净 FAIL」。
   const opt = (n) => { try { return extractFn(n); } catch (e) { return ""; } };
-  const code = extractFn(name) + "\n" + extractFn(other) + "\n" +
+  // v177c：列表页口头禅会过 isPersonaLineBad —— 一并抽**真实源码**跑（少抽一件就 ReferenceError）；
+  //   同样用 opt()/tryRe() 容错：对「v177c 之前」的源码这三件不存在，必须静默跳过而不是崩掉。
+  const tryRe = (re) => { try { const m = re.exec(src); return m ? m[0] : ""; } catch (e) { return ""; } };
+  const code = tryRe(/const PERSONA_BAD_WORDS = \[[\s\S]*?\n  \];/) + "\n" +
+    opt("isObjectifyingLine") + "\n" + opt("isPersonaLineBad") + "\n" +
+    extractFn(name) + "\n" + extractFn(other) + "\n" +
     opt("hubCardHtml") + "\n" + opt("mainStoryEntryHtml") + "\n" +
     ";__fn = " + name + ";";
   vm.runInContext(code, ctx, { filename: "app.js#extracted" });
@@ -217,6 +224,12 @@ function checkPage(name, label) {
   const st = isInside(opens, "sp-stars", "spirit-name");
   if (name === "renderSpiritPage") ok(st.n > 0 && st.okAll, ".sp-stars 全部位于 .spirit-name 内部（命中 " + st.n + " 个）");
   else ok(st.n === 0 || st.okAll, ".sp-stars 若存在则位于 .spirit-name 内部（命中 " + st.n + " 个）");
+
+  // v177c：列表 / 图鉴页口头禅加了物化过滤 —— 干净句照常渲染，旧句（it3「包浆给你看！」）不再出现
+  ok(html.indexOf("慢慢来，我又不会跑~") >= 0,
+    "v177c 干净口头禅照常渲染（it1）");
+  ok(html.indexOf("包浆给你看！") < 0 && html.indexOf("盘我，太快喵~") < 0,
+    "v177c 物化旧口头禅不渲染（it3「包浆给你看！」已滤掉）");
 
   // v163d：回响提示必须点名「是谁留的信」——单尊时出现这一尊的名字 + 总封数
   //   （改 app.js 之前这条会 FAIL：旧文案「✦ 有 N 封回响信」不含名字 → 负向对照成立）

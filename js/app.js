@@ -3541,7 +3541,7 @@
         (needSetup ? '<span class="look-setup-tag" data-setup="' + esc(it.id) + '">✨ 定设定</span>' : "") +
         (wroteToday ? '<span class="spirit-break-tag" style="background:#e8f0ff;color:#3b5b9a">📔 写日记了</span>' : "") +
         '<div class="spirit-title">' + esc((p && p.title) || "正在酝酿性格…") + "</div>" +
-        '<div class="spirit-line">' + esc((p && p.line) || "") + "</div>" +
+        ((p && p.line && !isPersonaLineBad(p.line)) ? '<div class="spirit-line">' + esc(p.line) + "</div>" : "") +
         (si.isMax ? '<div class="spirit-prog max">已是化形 · 巅峰形态 👑</div>'
           : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
             '<span class="spirit-prog-txt">距下一阶：再盘 ' + si.toNext + " 次</span></div>") +
@@ -4338,7 +4338,7 @@
         (wroteToday ? '<span class="spirit-break-tag" style="background:#e8f0ff;color:#3b5b9a">📔 写日记了</span>' : "") + "</div>" +
         '<div class="spirit-title">' + esc((p && p.title) || "正在酝酿性格…") +
         (room ? ' · <span style="color:var(--text-2)">' + esc((room.emoji || "🏠") + room.name) + "</span>" : "") + "</div>" +
-        '<div class="spirit-line">' + esc((p && p.line) || "") + "</div>" +
+        ((p && p.line && !isPersonaLineBad(p.line)) ? '<div class="spirit-line">' + esc(p.line) + "</div>" : "") +
         (si.isMax ? '<div class="spirit-prog max">已是化形 · 巅峰形态 👑</div>'
           : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
             '<span class="spirit-prog-txt">再盘 ' + si.toNext + " 次 → " + esc(si.next) + "</span></div>") +
@@ -4494,6 +4494,29 @@
     }
     return null;
   }
+
+  /* ---------- v177c：给 game.js 注入「沁灵显示名」解析器 ----------
+     今日任务页要叫沁灵的**身份名**（楚柿遥），不能叫手串名（柿宝）。
+     game.js 是先加载的独立 IIFE，够不着这里的身份卡 ⇒ 由 app 反向注入解析器。
+     ⛔ 尊重玩家改名：rec.nameEdited 时不套身份名（与详情页 V175 做法完全同口径）。
+     game.js 在 index.html 里排在 app.js 之前 ⇒ 此处 Game 已就绪；万一没挂上，
+     任务页自动回落串名（老行为），不会白屏。 */
+  function installGameNameResolver() {
+    try {
+      if (typeof Game === "undefined" || !Game || typeof Game.setNameResolver !== "function") return false;
+      Game.setNameResolver(function (it, rec) {
+        try {
+          const r = rec || spiritRecOf(it.id);
+          const disp = spiritName(it);
+          const idc = spiritIdentityOf(disp);
+          return (idc && r && !r.nameEdited) ? idc.name : disp;
+        } catch (e) { return (it && it.name) || "沁灵"; }
+      });
+      return true;
+    } catch (e) { return false; }
+  }
+  installGameNameResolver();
+
   function spiritSp(it) {
     const rec = spiritRecOf(it.id);
     return {
@@ -5154,6 +5177,26 @@
     var s = String(line || "");
     if (!s) return true;
     return /盘我|摸我|捏我|被盘|被摸|被捏|盘一下|摸一下|捏一下|人情账|记你一|欠你|记账|把我|把我当/.test(s);
+  }
+  /* v177c：沁灵口头禅「像不像人话」判定 —— 列表页 / 图鉴页渲染 + 一次性清洗共用同一口径。
+     早期 AI 生成的旧数据里存着「盘我盘我，越盘越亮哦~」「盘我一天，包浆给你看！」这类
+     把沁灵当物件盘弄的腔调；详情页早有 isObjectifyingLine 拦着，**列表页与图鉴页漏了**。
+     ⛔ 不动 isObjectifyingLine（被 _test_v174b_antiobject 逐字锚定），另写本函数并复用它。
+     ⛔ 反例必须放行：「今天盘了三十下」「我就在这儿等你回来」这类人话不算物化。 */
+  const PERSONA_BAD_WORDS = [
+    /盘我/, /摸我/, /捏我/, /搓我/, /揉我/, /蹭我/, /抱着我晃/,                 // 邀请主人上手摆弄自己
+    /被盘/, /被摸/, /被捏/, /被搓/, /被上手/,
+    /被\S{0,3}(盘|摸|捏|搓|揉|撸)/,                                              // 「被主人揉了一下午」
+    /盘一下/, /摸一下/, /捏一下/, /盘一盘/, /盘出来/, /盘了就/,
+    /越盘越/, /越摸越/, /越亮越好/, /包浆给你/, /盘出包浆/, /上包浆/, /盘亮/,     // 物件养成腔
+    /把我/, /把我当/, /当成件/, /我是一串/, /一串珠子/,                           // 自称是物件
+    /人情账/, /记你一/, /记账/, /欠你/                                          // 记账腔（沿用 V175）
+  ];
+  function isPersonaLineBad(line) {
+    const s = String(line == null ? "" : line).trim();
+    if (!s) return true;
+    if (isObjectifyingLine(s)) return true;
+    return PERSONA_BAD_WORDS.some((re) => re.test(s));
   }
   // 心迹条在「当前档 → 下一档」区间内的百分比（末档 100%）
   const XT_HEART_MARKS = [0, 40, 100, 190, 300];
@@ -11000,6 +11043,8 @@ else if (h.indexOf("#/night/") === 0) {                                         
     // v176a：云端旧日记可能在 init 清理之后才落地覆盖回来，所以每次拉完远端都再清一次
     // （函数自带 try/catch，不可能打断 pullSpirits；ww_diaryver 保证只真正执行一次）
     purgeObjectifiedDiaryOnce();
+    // v177c：同上 —— 云端旧口头禅（persona.line）回灌后再清一次（ww_persver 保证只跑一次）
+    purgeObjectifiedPersonaOnce();
   }
   // 离开页面 / 切后台时把改动推上去；每 2 分钟兜底推一次（仅在有改动时）
   window.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") pushSpirits(); });
@@ -11122,6 +11167,34 @@ else if (h.indexOf("#/night/") === 0) {                                         
     } catch (e) { return 0; }
   }
 
+  /* ---------- 一次性迁移 v177c：清掉旧物化口头禅（persona.line） ----------
+     早期 AI 生成的 persona.line 已写进存档，不会自己更新；列表页 / 图鉴页即便加了过滤，
+     玩家还会从云端拿到旧句 ⇒ 一次性清空，之后按新口径重新生成。
+     ⛔ 只清 persona.line 这一个字段；persona 其余字段 / personaZh / diary / marks /
+        flags / 羁绊 / 心迹 一律不动（用户资产）。
+     版本键 ww_persver：跑过一次就跳过，云端旧数据回灌也只清一次。 */
+  const PERS_VER = "v177c";
+  function purgeObjectifiedPersonaOnce() {
+    try {
+      if (localStorage.getItem("ww_persver") === PERS_VER) return 0;
+      const s = Spirits.load();
+      let n = 0;
+      Object.keys(s || {}).forEach((k) => {
+        const r = s[k];
+        if (!r || typeof r !== "object") return;
+        const p = r.persona;
+        if (!p || typeof p !== "object") return;
+        if (typeof p.line !== "string" || !p.line) return;
+        if (!isPersonaLineBad(p.line)) return;
+        p.line = "";
+        n++;
+      });
+      if (n > 0) Spirits.save(s);   // 内部会 dispatch ww:spirits-changed → 自动推云端
+      try { localStorage.setItem("ww_persver", PERS_VER); } catch (e2) { /* 忽略 */ }
+      return n;
+    } catch (e) { return 0; }
+  }
+
   async function init() {
     try {
       initTheme();
@@ -11160,6 +11233,9 @@ else if (h.indexOf("#/night/") === 0) {                                         
         // v176a：首启兜底（离线 / 没拉到云端时也要清一次）
         const dn = purgeObjectifiedDiaryOnce();
         if (dn) toast("已清掉 " + dn + " 篇旧日记，沁灵会按新的说法重新写 ✨");
+        // v177c：同上 —— 清掉旧物化口头禅（列表 / 图鉴页不再出现「盘我盘我」）
+        const pn = purgeObjectifiedPersonaOnce();
+        if (pn) toast("已清掉 " + pn + " 句旧口头禅 ✨");
         if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
           navigator.serviceWorker.register("sw.js").then((reg) => {
             // 检测到新 SW 等待激活时，立即跳过等待并刷新页面
