@@ -101,7 +101,7 @@ function stubBondLevel(n) {
 }
 const BEAD = "莫高窟", IDNAME = "陆临崖";      // 手串名 ≠ 身份名（身份名夹具）
 
-function makeSandbox() {
+function makeSandbox(love) {
   const sb = {
     console: console, Date: Date, Math: Math, JSON: JSON, parseInt: parseInt, parseFloat: parseFloat,
     isNaN: isNaN, isFinite: isFinite, String: String, Number: Number, Boolean: Boolean,
@@ -144,6 +144,8 @@ function makeSandbox() {
       loveStateOf: () => sb.CUR,
     },
   };
+  // 🔴 F 段要证明「冷却已过 ⇒ 给挑明 / 冷却未到 ⇒ 不给」⇒ 只有那两条断言注入 window.Love
+  if (love) sb.Love = love;
   sb.window = sb; sb.self = sb; sb.globalThis = sb;
   return sb;
 }
@@ -156,6 +158,8 @@ const SRC_LIB = [
   tryExtractConst("LOVE_KEYS"),
   tryExtractFn("loveScript"),
   tryExtractFn("loveCanReConfess"),
+  tryExtractFn("loveCanRetry"),
+  tryExtractFn("loveDaysSinceDeclined"),
   tryExtractFn("loveFill"),
   tryExtractFn("loveRoundOf"),
   tryExtractFn("loveDmTid"),
@@ -169,9 +173,9 @@ const FN_FILL = tryExtractFn("fillTa") || "function fillTa(t, n) { return String
 const FN_PCT = tryExtractFn("xtHeartPct");
 const CONST_MARKS = tryExtractConst("XT_HEART_MARKS");
 
-function renderLove(fixture, cur) {
+function renderLove(fixture, cur, love) {
   if (!FN_LOVE || !SRC_LIB) return "";
-  const sb = makeSandbox();
+  const sb = makeSandbox(love);
   sb.CUR = cur;
   const ctx = vm.createContext(sb);
   try {
@@ -257,16 +261,78 @@ let E1 = "";
   ok(/data-love="go"/.test(E1), "已填过仍给去夜话回看入口（那句话还能再看）");
 }
 
-/* ================= F · declined ⇒ 状态行 + 回看入口（⛔ 不再给挑明） ================= */
-section("F · declined ⇒ 状态行 + 去夜话入口（⛔ 不再给「挑明」）");
+/* ================= F · declined ⇒ 冷却未到无「挑明」 / 冷却已过有「挑明」 =================
+      🔴 v177e 用户裁定（v165c「婉拒不锁死」）：婉拒之后**玩家主动权要留住** ——
+         冷却满了就把「挑明」还给玩家（走 round 2，⛔ 不是首告）；冷却没到 ⇒ 只给状态行 + 去夜话。
+      ⛔ 本段两条是**更严**的活断言：不再是「一律不给挑明」，而是「按冷却分叉、两边都验」。 */
+section("F · declined ⇒ 冷却未到 ⛔ 无「挑明」；冷却已过 ⇒ ✅ 有「挑明」");
 let F1 = "";
+const DECL = { state: "declined", loveOn: true, lovecall: "" };
+function dateAgo(n) {                                  // n 天前的 YYYY-MM-DD
+  const d = new Date(Date.now() - n * 86400000);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+// 真 love.js 的 canReConfess 口径：declined + 冷却 ≥7 天 + 次数 <2 + （羁绊升档 或 善意）
+const LOVE_LIB = (function () {
+  try { return require("../js/love.js"); } catch (e) { return null; }
+})();
+function mkLove() {                                    // 沙箱里的 Love：直接吃真 love.js
+  return LOVE_LIB || {
+    scriptFor: () => ({ hint: "{ta}有话憋不住。", confess: "再告：那日的话我收着。", callAsk: "再唤你一次？",
+                        accepted: "嗯。", declined: "好。", round: 2, variant: 0 }),
+    canReConfess: (rec) => (String((rec && rec.loveState) || "") === "declined" &&
+      Math.max(0, Number(rec.loveTries) || 0) < 2 &&
+      /^(\d{4})-(\d{1,2})-(\d{1,2})/.test(String(rec.loveDeclinedAt || "")) &&
+      (Date.now() - new Date(String(rec.loveDeclinedAt)).getTime()) / 86400000 >= 7),
+    fillAll: (s, rec, ta) => String(s || "").replace(/\{ta\}/g, ta || "那只").replace(/\{call\}/g, "你"),
+    RECONFESS_CFG: { COOLDOWN_DAYS: 7, NEED_BOND_UP: true, MAX_TRIES: 2 },
+  };
+}
 {
-  F1 = renderLove(OKAY, { state: "declined", loveOn: true, lovecall: "" });
-  ok(F1.indexOf("缓一缓也行，往后再说。") >= 0, "文案「缓一缓也行，往后再说。」在");
-  ok(!/data-love="open"/.test(F1) && F1.indexOf("挑明") < 0,
-    "⛔ V177d 新裁定：心迹区不再给「挑明」（玩家主动权只在第一次；二次告白由沁灵在夜话里找上门）");
-  ok(/data-love="go"/.test(F1), "给出去夜话回看入口");
+  ok(!!LOVE_LIB, "能 require 真 js/love.js（🔴 用真文案库的 canReConfess 判，不用假替身）");
+  // 🔴 真 love.js 的 bondLvOf 靠**全局** Spirits.bondLevel 取羁绊档 ⇒ 断言期间临时挂上，用完即摘
+  const HAD_SP = typeof globalThis.Spirits !== "undefined";
+  const OLD_SP = globalThis.Spirits;
+  globalThis.Spirits = { bondLevel: stubBondLevel };
+  // ① 冷却未到（3 天 < 7 天）⇒ ⛔ 不给按钮
+  const coolNo = Object.assign({}, OKAY, { loveState: "declined", loveTries: 1,
+    loveDeclinedAt: dateAgo(3), loveBondLvAt: 6 });
+  F1 = renderLove(coolNo, DECL, mkLove());
+  ok(F1.indexOf("缓一缓也行，往后再说。") >= 0, "文案「缓一缓也行，往后再说。」在（冷却未到也照旧）");
+  ok(F1.indexOf("挑明") < 0, "🔴 冷却未到（3 天 < 7 天）⇒ ⛔ 不给「挑明」按钮（实测含挑明=" + (F1.indexOf("挑明") >= 0) + "）");
+  ok(!/data-love="retry"/.test(F1), "🔴 冷却未到 ⇒ ⛔ 无 data-love=\"retry\" 按钮");
+  ok(/data-love="go"/.test(F1), "冷却未到 ⇒ 只给去夜话入口");
   ok(!/<input/i.test(F1), "declined 阶段不出现称谓输入");
+
+  // ② 冷却已过（10 天 ≥ 7 天）+ 羁绊升档 ⇒ ✅ 给按钮（走 round 2）
+  //    🔴 loveBondLvAt 是 **0-based** 档位（love.js 的 bondLvOf 读 Spirits.bondLevel().lv）：
+  //       婉拒时羁绊 200（档7 ⇒ lv=6）记下 6；如今 280（档8 ⇒ lv=7）⇒ 7 > 6 ⇒ 升档成立
+  const coolYes = Object.assign({}, OKAY, { bond: 280, loveState: "declined", loveTries: 1,
+    loveDeclinedAt: dateAgo(10), loveBondLvAt: 6 });
+  const F2 = renderLove(coolYes, DECL, mkLove());
+  ok(/data-love="retry"/.test(F2), "🔴 冷却已过（10 天）+ 羁绊升档 ⇒ ✅ 给「挑明」按钮 data-love=\"retry\"");
+  ok(F2.indexOf("挑明") >= 0, "按钮上写着「挑明」（实测含挑明=" + (F2.indexOf("挑明") >= 0) + "）");
+  ok(/data-love="go"/.test(F2), "有挑明的同时，去夜话回看入口也在（⛔ 两条路都留着）");
+  ok(F2.indexOf("缓一缓也行，往后再说。") >= 0, "状态行照旧（缓一缓也行，往后再说。）");
+  ok(!/<input/i.test(F2), "declined + 冷却已过 ⇒ 仍不出现称谓输入框");
+
+  // ③ 次数到顶（loveTries=2）⇒ ⛔ 不再给（最多两次告白）
+  const topped = Object.assign({}, OKAY, { loveState: "declined", loveTries: 2,
+    loveDeclinedAt: dateAgo(30), loveBondLvAt: 6 });
+  const F3 = renderLove(topped, DECL, mkLove());
+  ok(F3.indexOf("挑明") < 0, "⛔ 次数到顶（loveTries=2 ≥ MAX_TRIES）⇒ 不再给「挑明」");
+
+  // ④ Love 缺席 ⇒ 本地冷却兜底（LOVE_DM_CFG.RETRY_COOLDOWN_DAYS）照样分叉
+  const noLoveNo = renderLove(Object.assign({}, OKAY, { loveState: "declined", loveTries: 1,
+    loveDeclinedAt: dateAgo(3) }), DECL, null);
+  const noLoveYes = renderLove(Object.assign({}, OKAY, { loveState: "declined", loveTries: 1,
+    loveDeclinedAt: dateAgo(10) }), DECL, null);
+  ok(noLoveNo.indexOf("挑明") < 0, "Love 缺席 + 冷却未到 ⇒ ⛔ 无「挑明」（本地冷却兜底同样守门）");
+  ok(/data-love="retry"/.test(noLoveYes), "Love 缺席 + 冷却已过 ⇒ ✅ 走本地冷却兜底给「挑明」（⛔ 不让玩家白等）");
+  // ⑤ 没被婉拒过（无 loveDeclinedAt）⇒ ⛔ 一律不给（老档 / 数据不全不许偷偷放行）
+  const noDate = renderLove(Object.assign({}, OKAY, { loveState: "declined", loveTries: 0 }), DECL, mkLove());
+  ok(noDate.indexOf("挑明") < 0, "⛔ 没有 loveDeclinedAt（没被婉拒过）⇒ 不给「挑明」");
+  if (HAD_SP) globalThis.Spirits = OLD_SP; else { try { delete globalThis.Spirits; } catch (e) { /* 忽略 */ } }
 }
 
 /* ================= G · 去物化 / 敬称 负向扫描 ================= */

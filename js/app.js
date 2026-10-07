@@ -5253,7 +5253,7 @@
     if (!qualify) h += '<div class="xt-hint">' + esc(fillTa(Spirits.GIFT_COPY.qualifying, name)) + '</div>';
     // v177：恋爱线（渲染在心迹卡片内；⛔ 未达标整块不渲染，不显示灰按钮、不提示还差多少）
     // ⚠️ typeof 守卫：只抽 heartCardHtml 单独跑的场景（自测沙箱）里恋爱块缺席也不许崩
-    if (typeof loveCardHtml === "function") h += loveCardHtml(it, rec, name);
+    if (typeof loveCardHtml === "function") h += loveCardHtml(it, rec, name, store);
     h += '</div>';
     return h;
   }
@@ -5281,6 +5281,13 @@
     OPT_NO: "缓一缓",
     GO: "去夜话",          // 心迹区入口按钮
     HEAD_SUB: "只对你说的话",
+    // v177e：婉拒不锁死 —— 玩家主动权要留住
+    RETRY: "挑明",             // 冷却过了 ⇒ 心迹区把「挑明」还给玩家（走 round 2，⛔ 不是首告）
+    RETRY_COOLDOWN_DAYS: 7,    // 距上次被婉拒满 N 天才谈「再告」（⛔ 阈值只此一处，与 Love.RECONFESS_CFG.COOLDOWN_DAYS 同值）
+    RETRY_MAX_TRIES: 2,        // 最多主动告白 2 次（⛔ 与 Love.RECONFESS_CFG.MAX_TRIES 同值）
+    TIP_KEY: "love_dm_tip",    // 进夜话列表时的提示去重键（⛔ 同一天只弹一次，走日期键）
+    TIP_ONE: "{ta}有话要跟你说。",
+    TIP_MANY: "{ta}有话要跟你说，还有 {n} 位在等你。",
   };
   /* v177d：文案兜底 —— js/love.js / window.Love 尚未落地时顶上（⛔ 绝不因 Love 缺席而白屏）
      ⛔ 纪律：禁敬称（无「您」）／禁物化（无「盘 / 它 / 玩意 / 一串」）／沁灵自称一律「我」；
@@ -5303,14 +5310,25 @@
   };
   const LOVE_KEYS = ["hint", "confess", "callAsk", "accepted", "declined"];
   // 文案单一入口：优先 Love.scriptFor（同事并行产出）；⛔ 拿不到 / 抛错 ⇒ 走兜底
-  function loveScript(rec, item, round) {
+  //   store（第 4 参，可选）= ww_spirits **活着的那一个对象**。
+  //   🔴 为什么必须传活的：Love.scriptFor 会把变体号（rec.loveVariant）**写回 rec**，
+  //      传副本 ⇒ 变体号写进一个马上被丢掉的影子 ⇒ 下次进游戏重抽，同型两只可能撞同一句。
+  //      没传 ⇒ 这里现取一份活的（owned），用完落盘，⛔ 不把剧本数据留在内存里蒸发。
+  function loveScript(rec, item, round, store) {
     const r = (Number(round) === 2) ? 2 : 1;
     const fb = (r === 2 ? LOVE_FALLBACK_2 : LOVE_FALLBACK_1);
     const out = { round: r, variant: 0 };
     LOVE_KEYS.forEach((k) => { out[k] = String(fb[k] || ""); });
+    let st = (store && typeof store === "object") ? store : null;
+    let owned = false;
+    if (!st) {
+      try {
+        if (typeof Spirits !== "undefined" && Spirits && typeof Spirits.load === "function") { st = Spirits.load() || {}; owned = true; }
+      } catch (e) { st = null; }
+    }
     try {
       if (typeof Love !== "undefined" && Love && typeof Love.scriptFor === "function") {
-        const s = Love.scriptFor(rec, item) || {};
+        const s = Love.scriptFor(rec, item, st || {}) || {};
         LOVE_KEYS.forEach((k) => {
           const v = String((s && s[k] != null) ? s[k] : "").trim();
           if (v) out[k] = v;
@@ -5321,9 +5339,16 @@
         if (isFinite(sv)) out.variant = sv;
       }
     } catch (e) { /* Love 未就绪 / 抛错 ⇒ 用兜底，⛔ 绝不向上抛 */ }
+    if (st) {                                    // 变体号已经落在 rec 上 ⇒ 跟着 store 一起落盘
+      try {
+        const id = String((item && item.id != null) ? item.id : "");
+        if (owned && id && rec && typeof rec === "object" && st[id] == null) st[id] = rec;
+        if (typeof Spirits !== "undefined" && Spirits && typeof Spirits.save === "function") Spirits.save(st);
+      } catch (e) { /* 沙箱 / 配额 ⇒ 静默，⛔ 绝不向上抛 */ }
+    }
     return out;
   }
-  // 二次告白能不能再来：判据单一真源在 Love.canReConfess；
+  // 二次告白能不能再来（沁灵**自己找上门**那条路径）：判据单一真源在 Love.canReConfess；
   //   ⛔ Love 未落地 ⇒ 一律 false（没有文案库就不许杜撰第二轮告白）
   function loveCanReConfess(rec, item) {
     try {
@@ -5331,16 +5356,55 @@
       return !!Love.canReConfess(rec, item);
     } catch (e) { return false; }
   }
-  // {ta} → 身份名；{call} → 这只沁灵对你的称呼（lovecall → 昵称 → 你 → 主人）
-  function loveFill(t, ta, rec) {
-    let call = "你";
-    try { if (typeof Spirits.callFor === "function") call = Spirits.callFor(rec) || "你"; } catch (e) { call = "你"; }
-    return String(t == null ? "" : t).replace(/\{ta\}/g, ta || "那只").replace(/\{call\}/g, call);
+  // v177e：距上次被婉拒过了几天（本地判据；⛔ 无日期 / 非法 ⇒ -1 ⇒ 一律不放行）
+  function loveDaysSinceDeclined(rec) {
+    const s = String((rec && rec.loveDeclinedAt) || "").trim();
+    const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!m) return -1;
+    try {
+      const t0 = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      const n = new Date();
+      const t1 = Date.UTC(n.getFullYear(), n.getMonth(), n.getDate());
+      return Math.round((t1 - t0) / 86400000);
+    } catch (e) { return -1; }
   }
-  // 第几轮：Love 说了算；Love 未落地 ⇒ 读逐串记账 rec.loveDmRound
+  // v177e：玩家主动「挑明」的门禁（与 Love.canReConfess 同阈值，Love 缺席 ⇒ 本地按冷却天数兜底）
+  //   三关：① 只认 declined 态 ② 次数没到顶（RETRY_MAX_TRIES） ③ 冷却天数够了
+  //   ⛔ 阈值全在 LOVE_DM_CFG，函数体里不许出现 7 / 2 这类魔数
+  function loveCanRetry(rec, item) {
+    const r = rec || {};
+    if (String(r.loveState || "none") !== "declined") return false;      // ① 只有被婉拒过才谈「再来」
+    try {
+      if (typeof Love !== "undefined" && Love && typeof Love.canReConfess === "function") return !!Love.canReConfess(r, item);
+    } catch (e) { /* Love 抛错 ⇒ 掉到本地判据 */ }
+    const tries = Math.max(0, Number(r.loveTries) || 0);                 // ② 次数
+    if (tries >= (Number(LOVE_DM_CFG.RETRY_MAX_TRIES) || 2)) return false;
+    return loveDaysSinceDeclined(r) >= (Number(LOVE_DM_CFG.RETRY_COOLDOWN_DAYS) || 7);   // ③ 冷却
+  }
+  // 🔴 v177e：{call} 口径统一 —— 全仓只有一条回落链：Spirits.callFor(rec)
+  //    （lovecall → 昵称 → 你 → 主人）。此前 app 侧回落「你」、Love.fillAll 回落「主人」，
+  //     同一句文案两条链路会叫出两个称呼 ⇒ 现在两条链路都走 callFor，拿不到才回落「主人」。
+  //    {ta} → 沁灵身份名（第三人称）
+  function loveFill(t, ta, rec) {
+    const s = String(t == null ? "" : t);
+    if (s.indexOf("{") < 0) return s;
+    try {
+      if (typeof Love !== "undefined" && Love && typeof Love.fillAll === "function") return Love.fillAll(s, rec, ta);
+    } catch (e) { /* Love 缺席 / 抛错 ⇒ 走下面的本地同口径替换 */ }
+    let call = "主人";
+    try {
+      if (typeof Spirits !== "undefined" && Spirits && typeof Spirits.callFor === "function") call = Spirits.callFor(rec) || "主人";
+    } catch (e) { call = "主人"; }
+    const ta2 = (ta == null || String(ta) === "") ? "那只" : String(ta);
+    return s.replace(/\{(ta|call)\}/g, (m, k) => (k === "ta" ? ta2 : call));
+  }
+  // 第几轮：**app 层演到第几轮**记在 rec.loveDmRound（镜像）；
+  //   loveTries 是「Love 判 round 用的权威计数」，两者各记各的、凡写一处就两处一起写（见 loveMark*）。
+  //   loveDmRound 缺失（老档）⇒ 用 loveTries 兜底：告过一次（≥1）⇒ 再告。
   function loveRoundOf(rec) {
     let r = 1;
     try { r = Math.max(1, Number(rec && rec.loveDmRound) || 1); } catch (e) { r = 1; }
+    if (r < 2) { try { if (Math.max(0, Number(rec && rec.loveTries) || 0) >= 1) r = 2; } catch (e) { /* 保持 1 */ } }
     return r >= 2 ? 2 : 1;
   }
   // 私聊会话 id / 路由（⛔ 与群聊 tid 天然不撞：群聊 id 一律不带 dm_ 前缀）
@@ -5388,7 +5452,7 @@
     } catch (e) { return (it && it.name) || "那只"; }
   }
   // v177d：心迹区 —— 只留「入口」（⛔ 告白 / 应下 / 称谓输入 全在夜话私聊里）
-  function loveCardHtml(it, rec, name) {
+  function loveCardHtml(it, rec, name, store) {
     if (typeof Spirits.loveGate !== "function" || typeof Spirits.loveStateOf !== "function") return "";
     let gate = null, ls = null;
     try { gate = Spirits.loveGate(rec, it, null); ls = Spirits.loveStateOf(it.id); } catch (e) { return ""; }
@@ -5400,8 +5464,9 @@
     const lbtn = (act, label, ghost) => '<button type="button" class="btn ' + (ghost ? "ghost" : "primary") +
       ' xt-love-btn" data-love="' + act + '" data-id="' + sid + '">' + esc(label) + "</button>";
     if (!ls.loveOn || st === "none") {          // 未开线 ⇒ 只给「挑明」（⛔ 演出不在详情页）
+      // 🔴 文案一律过 loveFill（{ta} → 身份名 / {call} → 称呼）：Love 的 A 列带 {ta}，不过滤会漏出字面量
       return '<div class="xt-love" style="margin-top:14px">' +
-        '<div class="xt-hint">' + esc(loveScript(rec, it, 1).hint) + "</div>" +
+        '<div class="xt-hint">' + esc(loveFill(loveScript(rec, it, 1, store).hint, who, rec)) + "</div>" +
         lbtn("open", "挑明", false) + "</div>";
     }
     let line = "";
@@ -5409,9 +5474,13 @@
     else if (st === "accepted") line = call ? ("如今{ta}唤你「" + call + "」。") : "{ta}在等你一个称呼。";
     else if (st === "declined") line = "缓一缓也行，往后再说。";
     else return "";
-    return '<div class="xt-love" style="margin-top:14px">' +
+    let hx = '<div class="xt-love" style="margin-top:14px">' +
       '<div class="xt-quote">' + esc(fillTa(line, who)) + "</div>" +
-      lbtn("go", LOVE_DM_CFG.GO, true) + "</div>";
+      lbtn("go", LOVE_DM_CFG.GO, true);
+    // v177e：婉拒不锁死 —— 冷却过了 ⇒ 把「挑明」还给玩家（走 round 2 的告白，⛔ 不是首告）
+    //        冷却没到 ⇒ 只留状态行 + 去夜话，⛔ 不给按钮
+    try { if (st === "declined" && loveCanRetry(rec, it)) hx += lbtn("retry", LOVE_DM_CFG.RETRY, false); } catch (e) { /* 门禁抛错 ⇒ 不给按钮，⛔ 绝不白屏 */ }
+    return hx + "</div>";
   }
   // v177d：恋爱线交互（心迹区只有「挑明」和「去夜话」；⛔ 只调 Spirits 已导出的入口）
   function loveAct(it, act, host) {
@@ -5420,12 +5489,112 @@
     const refresh = () => { try { host && host.refresh && host.refresh(); } catch (e) { /* 忽略 */ } };
     if (act === "open") {
       if (!Spirits.openLoveLine(id)) { toast("这件事没成。"); return; }
+      loveMarkRound(id, 1);                                  // 🔴 记账点①：这条线从「首告」这一轮演起
       toast("去夜话，" + loveWhoOf(it) + "有话要说。");
       refresh();
       try { updateNightDot(); } catch (e) { /* 忽略 */ }   // 挑明 ⇒ 立刻点亮夜话红点
       return;
     }
+    // v177e：婉拒不锁死 —— 冷却过了 ⇒ 玩家可以把「挑明」要回来，走 round 2 的告白
+    if (act === "retry") {
+      try {
+        const s0 = Spirits.load();
+        const r0 = Spirits.ensureIn(s0, id);
+        if (!loveCanRetry(r0, it)) { toast("还没到再开口的时候。"); return; }
+        Spirits.openLoveLine(id);
+        loveMarkRound(id, 2);                                // 🔴 记账点②：这一轮演的是「再告」
+        Spirits.setLoveState(id, "confessed");               // 私聊里沁灵要重新开口（⛔ 自带 load/save）
+      } catch (e) { toast("这件事没成。"); return; }
+      toast("去夜话，" + loveWhoOf(it) + "在等你。");
+      try { updateNightDot(); } catch (e) { /* 忽略 */ }
+      location.hash = loveDmUrl(id);
+      return;
+    }
     if (act === "go") { location.hash = loveDmUrl(id); return; }
+  }
+  /* =========================================================
+   * v177e ·🔴 恋爱线记账（逐串字段，⛔ 不进 rec.marks / rec.flags）
+   * ---------------------------------------------------------
+   *   loveTries      Love 判 round 用的权威计数。口径（与 love.js 注释一致）：
+   *                    0 = 没告过 ⇒ round 1（首告）
+   *                    1 = 告过一次**并被婉拒** ⇒ round 2（再告）
+   *                    2 = 到顶（RETRY_MAX_TRIES）⇒ 不再告
+   *   loveDeclinedAt 上次被婉拒的日期（冷却起点）
+   *   loveBondLvAt   上次告白时的羁绊档（「羁绊升了一档」契机判定）
+   *   loveDmRound    app 层镜像：这条私聊**当前演到第几轮**（1=首告 / 2=再告）
+   *
+   *   ⛔ 为什么「loveTries」不在「沁灵开口那一刻」+1（与最初设想不同，已实测）：
+   *      Love.scriptFor 靠 loveTries>=1 判 round。若在首告开口时就 +1，玩家还没答、
+   *      重进私聊（或应下之后回看）时 Love 会立刻给「再告」那句 —— 那句写的是
+   *      「那日说缓一缓，我记着」，可玩家根本没婉拒 ⇒ 首告文本被吞、语义错乱。
+   *      ⇒ 只有当「这一次告白真的被缓下来」时才 +1；第二次答完再 +1 封顶。
+   * ========================================================= */
+  // 记账点①②：写「这条线演到第几轮」。⛔ 只动 loveDmRound，不动 loveTries（轮次 ≠ 已告次数）
+  function loveMarkRound(id, round) {
+    try {
+      const s = Spirits.load();
+      const r = Spirits.ensureIn(s, id);
+      r.loveDmRound = (Number(round) === 2) ? 2 : 1;
+      Spirits.save(s);
+      return r;
+    } catch (e) { return null; }
+  }
+  // v177e：进夜话列表那一刻 —— 有未读恋爱私聊 ⇒ 提示一次（⛔ 同一天只弹一次，走日期键去重）
+  //   ⛔ 文案纪律：用身份名、去物化、无敬称；模板在 LOVE_DM_CFG.TIP_ONE / TIP_MANY
+  function loveDmTipOnce(dms) {
+    try {
+      const un = (dms || []).filter((d) => d && d.unread);
+      if (!un.length) return;
+      if (loveDmTipShown()) return;                       // 今天已经弹过 ⇒ 不再打扰
+      const who = String((un[0] && un[0].name) || "").trim();
+      if (!who) return;
+      const tpl = (un.length > 1) ? LOVE_DM_CFG.TIP_MANY : LOVE_DM_CFG.TIP_ONE;
+      toast(String(tpl || "").replace(/\{ta\}/g, who).replace(/\{n\}/g, String(un.length - 1)));
+      loveDmTipMark();
+    } catch (e) { /* ⛔ 提示挂了也不许挡住列表渲染 */ }
+  }
+  function loveTodayKey() {
+    try { if (typeof Spirits !== "undefined" && Spirits && typeof Spirits.todayKey === "function") return String(Spirits.todayKey() || ""); } catch (e) { /* 退回本地算 */ }
+    const n = new Date();
+    return n.getFullYear() + "-" + String(n.getMonth() + 1) + "-" + String(n.getDate());
+  }
+  function loveDmTipShown() {                             // 今天弹过了吗
+    try {
+      const tk = loveTodayKey();
+      if (typeof Game !== "undefined" && Game && typeof Game.loadDaily === "function") {
+        const d = Game.loadDaily() || {};
+        if (String(d.day || "") === tk) return !!(d.acts && d.acts[LOVE_DM_CFG.TIP_KEY]);
+      }
+      if (typeof localStorage !== "undefined" && localStorage) return !!localStorage.getItem(LOVE_DM_CFG.TIP_KEY + ":" + tk);
+    } catch (e) { /* 读不到 ⇒ 当作没弹过（宁可多弹一次，也不许永远不弹） */ }
+    return false;
+  }
+  function loveDmTipMark() {
+    try {
+      if (typeof Game !== "undefined" && Game && typeof Game.markDaily === "function") { Game.markDaily(LOVE_DM_CFG.TIP_KEY); return; }
+    } catch (e) { /* 退回 localStorage */ }
+    try { if (typeof localStorage !== "undefined" && localStorage) localStorage.setItem(LOVE_DM_CFG.TIP_KEY + ":" + loveTodayKey(), "1"); } catch (e) { /* 忽略 */ }
+  }
+  // 记账点③：这一次告白答完了 —— 婉拒 ⇒ loveTries+1 + 冷却起点 + 当时的羁绊档；
+  //           已经是第二轮 ⇒ 答完即封顶（⛔ 最多两次告白）
+  function loveSettleBook(id, round, declined) {
+    try {
+      const s = Spirits.load();
+      const r = Spirits.ensureIn(s, id);
+      const rd = (Number(round) === 2) ? 2 : 1;
+      r.loveDmRound = rd;
+      if (declined) r.loveTries = (Number(r.loveTries) || 0) + 1;
+      else if (rd >= 2) r.loveTries = Math.max(Number(r.loveTries) || 0, 2);
+      if (declined) {
+        try { if (typeof Spirits.todayKey === "function") r.loveDeclinedAt = Spirits.todayKey(); } catch (e) { /* 拿不到日期 ⇒ 冷却判定自然为 false */ }
+        // ⛔ 0-based（.lv，不是 .lv1）：love.js 的 bondLvOf 读的正是 Spirits.bondLevel().lv，
+        //    而 canReConfess 拿 loveBondLvAt 与它**直接比大小**。写 .lv1 会整体差一档 ⇒
+        //    「羁绊升了一档」永远判不出来 ⇒ 再告永不触发（只剩 loveKindled 一条路，而没人写它）。
+        try { if (typeof Spirits.bondLevel === "function") r.loveBondLvAt = Spirits.bondLevel(Number(r.bond) || 0).lv; } catch (e) { /* 同上 */ }
+      }
+      Spirits.save(s);
+      return r;
+    } catch (e) { return null; }
   }
   // 一个只读的反馈弹层（送出 / 照料）：反应句 + 辅助小字，单按钮关闭
   function showActModal(title, quote, subHtml) {
@@ -7051,7 +7220,7 @@
         if (st === "accepted") sub = call ? ("如今" + who + "唤你「" + call + "」") : "等你一个称呼";
         else if (st === "declined") sub = "缓一缓 · 往后再说";
         // ⚠️ 预览文案按「打开后会看到的那一轮」取（第二轮待开口 ⇒ 预览就是第二轮那句）
-        else sub = who + "：" + loveFill(loveScript(rec, it, pend).confess, who, rec);
+        else sub = who + "：" + loveFill(loveScript(rec, it, pend, store).confess, who, rec);
         out.push({ tid: loveDmTid(it.id), sid: String(it.id), name: who, item: it, rec: rec,
                    unread: unread, sub: sub, round: pend, state: st });
       });
@@ -7112,6 +7281,7 @@
     // v177d：私聊（沁灵单独找你说话）—— 告白就发生在这里（⛔ 不在详情页卡片里弹提示）
     let dmOpen = 0;
     const dms = loveDmList();
+    try { loveDmTipOnce(dms); } catch (e) { /* ⛔ 提示挂掉也不许挡住列表 */ }
     if (dms.length) {
       h += '<div class="nt-sec"><span>' + esc(LOVE_DM_CFG.SEC) + "</span><small>" + esc(LOVE_DM_CFG.SEC_TIP) + "</small></div>";
       h += '<div class="nt-list">';
@@ -7256,7 +7426,7 @@
     if (!sid || typeof Spirits.loveGate !== "function" || typeof Spirits.loveStateOf !== "function") {
       location.hash = "#/night"; return;
     }
-    const store = Spirits.load();
+    let store = Spirits.load();               // 🔴 liveStore：全程只用这一份，Love 写回的变体号才不会蒸发
     const it = (spiritItems() || []).filter((x) => String(x.id) === sid)[0];
     if (!it) { location.hash = "#/night"; return; }
     let rec = store[sid] || {}, gate = null, ls = null;
@@ -7270,22 +7440,21 @@
       try {
         const s2 = Spirits.load();
         const r2 = Spirits.ensureIn(s2, sid);
-        r2.loveDmRound = 2;
+        r2.loveDmRound = 2;                   // 🔴 记账点②（沁灵上门这一路）：这一轮演的是「再告」
         r2.loveState = "confessed";
         Spirits.save(s2);
-        rec = r2;
+        store = s2; rec = r2;                 // ⛔ 换 store 必须连 rec 一起换，否则 Love 的变体号写进旧对象
         ls = Spirits.loveStateOf(sid);
         round = 2;
       } catch (e) { /* 推进失败 ⇒ 按原状回看，⛔ 绝不白屏 */ }
     }
-    const raw = loveScript(rec, it, round);
+    const raw = loveScript(rec, it, round, store);
     const sc = { round: raw.round, variant: raw.variant };
     LOVE_KEYS.forEach((k) => { sc[k] = loveFill(raw[k], who, rec); });
     try {                                     // 已读标记（看完红点就灭）
-      const s3 = Spirits.load();
-      const r3 = Spirits.ensureIn(s3, sid);
+      const r3 = Spirits.ensureIn(store, sid);   // ⛔ 沿用 liveStore：换一份新的会把刚写上的变体号冲掉
       r3.loveDmSeen = loveDmToken(ls, round);
-      Spirits.save(s3);
+      Spirits.save(store);
       updateNightDot();
     } catch (e) { /* 忽略 */ }
     const msgsOf = () => loveDmMsgs(Spirits.loveStateOf(sid), sc, who);
@@ -7306,6 +7475,7 @@
       const before = msgsOf().length;
       try { if (String(Spirits.loveStateOf(sid).state) === "ready") Spirits.setLoveState(sid, "confessed"); } catch (e) { /* 忽略 */ }
       if (i === 0) Spirits.acceptConfess(sid); else Spirits.declineConfess(sid);
+      loveSettleBook(sid, sc.round, i !== 0);   // 🔴 记账点③：这次告白答完了（婉拒 ⇒ 冷却起点 + 羁绊档 + 次数）
       const all = msgsOf();
       return wrap(all, all.slice(before));
     };
