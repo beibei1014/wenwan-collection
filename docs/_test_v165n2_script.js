@@ -6,7 +6,7 @@
  *   3. end:true 恰好 9 处
  *   4. who 170 处 / go 25 处
  *   5. 与 docs/v165-第1-9章-剧本.md §4 的 js 代码块**逐字节一致**
- *   6. 旧 8 章 CHAP_SCRIPTS **逐字节未动**（与 N3 commit bfb4ee4 的源码逐字节比对）
+ *   6. v178：旧 8 章 CHAP_SCRIPTS / CHAP_ACTS **已删除**（悬空引用清零）；新 9 章 MAIN_SCRIPTS 完好
  *
  * 二、ch1 真跑一遍（不是"理论上能跑"）：进章 → 有台词 → 有选项 → 选第一条 → 继续推进
  *
@@ -117,34 +117,17 @@ function mdBlocks() {
     ok(diff === 0, "9 章正文与 md 逐字节一致（不一致 " + diff + " 章）");
   }
 
-  /* ============ 断言 6：旧 8 章逐字节未动 ============ */
-  section("断言6 · 旧 8 章 CHAP_SCRIPTS 逐字节未动");
+  /* ============ 断言 6（v178）：旧 8 章正文已删，新 9 章独立存放 ============ */
+  section("断言6（v178）· 旧 8 章 CHAP_SCRIPTS / CHAP_ACTS 已移除");
   {
-    // 基线：N2 合并前的那一版（140c925 = v166 线）。优先用 git 取；取不到则回落快照文件。
-    let pre = "";
-    try {
-      pre = require("child_process").execSync("git show 140c925:js/spirits.js", { cwd: ROOT, maxBuffer: 1 << 28 }).toString("utf8");
-    } catch (e) {
-      try { pre = fs.readFileSync(path.join(ROOT, "docs", "_tmp", "_pre_n2_spirits.js"), "utf8"); } catch (e2) { pre = ""; }
-    }
-    const cut = (s) => {
-      const n = s.replace(/\r\n/g, "\n");
-      const a = n.indexOf("const CHAP_SCRIPTS = [");
-      const b = n.indexOf("const CHAP_ACTS =");
-      return a >= 0 && b > a ? n.slice(a, b) : "";
-    };
-    const oldNow = cut(spSrc), oldPre = cut(pre);
-    ok(oldNow.length > 1000, "当前源码里切到了 CHAP_SCRIPTS 块（" + oldNow.length + " 字节）");
-    if (oldPre.length > 1000) {
-      ok(oldNow === oldPre, "CHAP_SCRIPTS 块与 140c925（N2 合并前）逐字节相同");
-    } else {
-      console.log("  ⚠️ 取不到 140c925 基线，跳过逐字节比对（仅查结构）");
-    }
-    // 顺带：旧 8 章的元数据与方法也都在
-    ok(S.CHAPTERS.length === 8, "CHAPTERS 仍 8 条");
-    ok(S.CHAP_ACTS.length === 8, "CHAP_ACTS 仍 8 条");
-    ok((spSrc.match(/const CHAP_SCRIPTS = \[/g) || []).length === 1, "CHAP_SCRIPTS 只有一份（没被新剧本顶掉）");
+    ok(spSrc.indexOf("const CHAP_SCRIPTS = [") < 0, "CHAP_SCRIPTS 已从源码删除（旧 8 章正文）");
+    ok(spSrc.indexOf("const CHAP_ACTS =") < 0, "CHAP_ACTS 已从源码删除（派生表）");
+    ok(typeof S.CHAP_ACTS === "undefined", "Spirits.CHAP_ACTS 不再导出");
+    ok(typeof S.chapActOf === "undefined", "Spirits.chapActOf 不再导出（悬空引用已清零）");
+    // CHAPTERS 元数据保留：readChapter 仍复用它取章末事件标题（v178 判定：仍被活代码引用 → 保留）
+    ok(S.CHAPTERS.length === 8, "CHAPTERS 元数据仍 8 条（readChapter 复用，未删）");
     ok((spSrc.match(/const MAIN_SCRIPTS = \[/g) || []).length === 1, "MAIN_SCRIPTS 只有一份（新 9 章独立存放）");
+    ok(S.MAIN_SCRIPTS.length === 9 && S.MAIN_ACTS.length === 9, "新 9 章正文与剧本表完好（未受影响）");
   }
 
   /* ============ ch1 真跑一遍 ============ */
