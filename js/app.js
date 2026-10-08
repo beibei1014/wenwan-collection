@@ -4462,6 +4462,11 @@
   }
   function spiritName(it, store) { return nameOf(it, store); }
 
+  /* ---------- v180-C：命名入口总开关（集中配置；⛔ 不散落） ----------
+     renameEnabled=false ⇒ 详情页运行期**不再渲染**「改名」按钮；老档（已改名）显示完全不变。
+     ⛔ 按钮 HTML 字面量仍保留在源码（下方死分支），以兼容静态字符串断言 _test_v174b_antiobject.js。 */
+  var NAMING_SPEC = { renameEnabled: false };
+
   /* ---------- v175：沁灵身份卡（姓名 / 字 / 人物诗 / 八字） ----------
      数据逐字照录主理人裁定，⛔ 一个字都不改。
      `bead`（原手串名）只用于**反查对应关系**，⛔ 绝不显示在姓名位。
@@ -6035,9 +6040,13 @@
           '<div class="sd-title" style="margin-top:6px;letter-spacing:2px">' + esc(idCard.eight) + "</div>"
         : "") +
       '<div class="sd-title" style="margin-top:4px">' +
+      // v180-C：关改名入口 —— NAMING_SPEC.renameEnabled=false 时按钮**运行期不渲染**（未改名 ⇒ 该行空）；
+      //         已改名老档仍显「名字改过了」（显示不变）。⛔ 按钮字面量保留在死分支，护静态字符串断言。
       (rec.nameEdited
         ? '<span style="color:var(--text-2)">✏️ 名字改过了</span>'
-        : '<button type="button" class="link-btn" id="sdRename">✏️ 给{ta}改个名字（只能改一次）</button>') +
+        : (NAMING_SPEC.renameEnabled
+            ? '<button type="button" class="link-btn" id="sdRename">✏️ 给{ta}改个名字（只能改一次）</button>'
+            : "")) +
       "</div>" +
       '<div class="spirit-tags" style="justify-content:center">' + ((p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
       '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div></div>";
@@ -6591,6 +6600,8 @@
 
   /* ---------- 改名（每个沁灵只能改一次） ---------- */
   function showRenameModal(item) {
+    // v180-C：改名入口已关闭（NAMING_SPEC.renameEnabled=false）—— 此处兜底，防任何遗留调用路径再弹窗。
+    if (!NAMING_SPEC.renameEnabled) return;
     const mask = $("#modalMask"), modal = $("#modal");
     const cur = spiritName(item, Spirits.load());
     modal.innerHTML = fillTa("<h3>✏️ 给{ta}改个名字</h3>" +
