@@ -25,6 +25,13 @@ const APP = read(path.join(ROOT, "js", "app.js"));
 const SP = read(path.join(ROOT, "js", "spirits.js"));
 const HTML = read(path.join(ROOT, "index.html"));
 const BOOK_PATH = process.env.V180_BOOK_SRC || path.join(ROOT, "js", "book-jieqi.js");
+/* 身份表（js/app.js 的 SPIRIT_IDENTITIES）⇒ 全篇「正式姓名」的唯一真源 */
+const IDENT = {};
+{
+  const reId = /\{ name: "([^"]+)", style: "([^"]+)"/g;
+  let mi;
+  while ((mi = reId.exec(APP))) IDENT[mi[1]] = mi[2];
+}
 
 let PASS = 0, FAIL = 0;
 const FAILURES = [];
@@ -80,7 +87,8 @@ ok(BOOK && typeof BOOK.id === "string" && BOOK.id.length > 0, "篇有 id（实�
 ok(BOOK && typeof BOOK.name === "string" && BOOK.name.length > 0, "篇有篇名（实得 " + (BOOK && BOOK.name) + "）");
 ok(BOOK && Array.isArray(BOOK.chapters), "篇有 chapters 数组");
 const CHS = (BOOK && Array.isArray(BOOK.chapters)) ? BOOK.chapters : [];
-ok(CHS.length === 4, "本批 = 4 章（实得 " + CHS.length + "）");
+ok(CHS.length === 8, "v180-G2：全篇 = 8 章（实得 " + CHS.length + "）");
+ok(String(BOOK.sub || "").indexOf("1–8") >= 0, "篇副标题写明第 1–8 章（实得 " + BOOK.sub + "）");
 CHS.forEach((c, i) => {
   const tag = "章" + (i + 1);
   ok(!!c && typeof c.id === "string" && c.id, tag + " 有 id");
@@ -141,6 +149,60 @@ const chText = (i) => (CHS[i] && (CHS[i].lines || []).map((l) => String(l.t || "
 ok(chText(2).indexOf("主人") >= 0, "第 3 章出现「主人」（结契之后一律称主人）");
 ok(chText(3).indexOf("主人") >= 0, "第 4 章出现「主人」");
 ok(TEXT.indexOf("主人") > 0, "全篇出现「主人」（共 " + (TEXT.split("主人").length - 1) + " 处）");
+/* v180-G2：称呼档位**烤死在正文** ⇒ 结契（第 3 章）之前一律「你」，⛔ 第 1–2 章不许出现「主人」 */
+ok(chText(0).indexOf("主人") < 0, "⛔ 第 1 章无「主人」（结契前称「你」；实得 " + (chText(0).split("主人").length - 1) + "）");
+ok(chText(1).indexOf("主人") < 0, "⛔ 第 2 章无「主人」（实得 " + (chText(1).split("主人").length - 1) + "）");
+ok((chText(4) + chText(5) + chText(6) + chText(7)).indexOf("主人") > 0, "第 5–8 章有「主人」（结契后）");
+
+/* ---------- (3b) 第 5–8 章补齐（v180-G2） ---------- */
+section("3b · 第 5–8 章补齐（章数 / 段数 / 字数 / 真名点破 / 新角色）");
+const NEW4 = [4, 5, 6, 7];
+NEW4.forEach((i) => {
+  const c = CHS[i];
+  const seg = (c && c.lines || []).length;
+  const chars = (c && c.lines || []).reduce((s, l) => s + String(l.t || "").replace(/\s/g, "").length, 0);
+  ok(seg > 40, "章" + (i + 1) + " 段数 > 40（实得 " + seg + "）");
+  ok(chars > 900, "章" + (i + 1) + " 正文 > 900 字（实得 " + chars + "）");
+  ok(!!c && /认人|第一顿饭|一处可回的地方/.test(String(c.title || "")), "章" + (i + 1) + " 章名为「" + (c && c.title) + "」");
+});
+const TOTAL_SEG = CHS.reduce((s, c) => s + ((c && c.lines) || []).length, 0);
+ok(TOTAL_SEG > 400, "全篇段数 > 400（实得 " + TOTAL_SEG + "）");
+/* 真名点破的先后：第 1–4 章名牌**不得**用正式姓名（会剧透「认人·中/下」的揭名）；
+   第 5–8 章名牌**一律**正式姓名。 */
+const FORMAL = Object.keys(IDENT);        // 16 位正式姓名（身份表真源，⛔ 不手写名单）
+ok(FORMAL.length >= 16, "身份表抽出 ≥16 个正式姓名（实得 " + FORMAL.length + "）");
+let earlyFormal = 0, lateDescriptive = 0;
+const LATE_OK = ["有人", "门槛上那位"];   // ⛔ 唯一豁免：正文压着名没点破的（戚衔蝉头两句）
+/* 第 1–4 章提前点名的两位：**季未晚**（视角人物，正文一路直呼其名）、
+   **邵盈牧**（第 1 章就自报家门）—— 稿子本身就这么写，⛔ 不是抽取漏改，也不算剧透。
+   除这两位外，核心十位的真名必须压到「认人·中/下」才出现。 */
+const EARLY_OK = ["季未晚", "邵盈牧"];
+CHS.forEach((c, i) => (c.lines || []).forEach((l) => {
+  if (l.k !== "d") return;
+  const w = String(l.who || "");
+  if (i < 4 && FORMAL.indexOf(w) >= 0 && EARLY_OK.indexOf(w) < 0) earlyFormal++;
+  if (i >= 4 && FORMAL.indexOf(w) < 0 && LATE_OK.indexOf(w) < 0) lateDescriptive++;
+}));
+ok(earlyFormal === 0, "⛔ 第 1–4 章名牌无核心十位真名（季未晚/邵盈牧例外；实得 " + earlyFormal + " 条）");
+/* 反过来钉住：核心十位的真名必须**在正文里**出现过（认人·中/下 点破） */
+const CORE10 = ["顾时笙", "苏栖盏", "萧景筹", "陆临崖", "楚柿遥", "江冽茗", "温茸之", "沈青舒", "姜饴酌", "谢凝渲"];
+const lateText = NEW4.map((i) => chText(i)).join("\n");
+CORE10.forEach((n) => ok(lateText.indexOf(n) >= 0, "核心十位「" + n + "」的真名在第 5–8 章正文里出现（认人·中/下 点破）"));
+ok(lateDescriptive === 0, "第 5–8 章名牌已切正式姓名（残留描述性称谓 " + lateDescriptive + " 条）");
+/* 新角色：乔纹栗（第 5 章探得旧驿）/ 戚衔蝉（第 7 章门槛上听脚步） */
+ok(chText(4).indexOf("乔纹栗") >= 0, "第 5 章出现乔纹栗（探路打前站的 · 首次出场）");
+ok(chText(6).indexOf("戚衔蝉") >= 0, "第 7 章出现戚衔蝉（望风值夜的 · 首次出场）");
+ok(TEXT.indexOf("乔纹栗") > 0 && TEXT.indexOf("戚衔蝉") > 0, "全篇出现乔纹栗 / 戚衔蝉");
+/* 六只第二批姓名出现；旧占位称谓一律 0 残留（文成章修订稿已换掉） */
+["邵盈牧", "季未晚", "闵琥珀", "俞酥棠", "戚衔蝉", "乔纹栗"].forEach((n) => {
+  ok(TEXT.indexOf(n) >= 0, "第二批姓名「" + n + "」出现在正文");
+});
+["新契的", "接引的", "怯阵的", "残道的", "望风值夜的", "探路打前站的"].forEach((w) => {
+  ok(TEXT.indexOf(w) < 0, "⛔ 旧占位称谓「" + w + "」0 残留（实得 " + (TEXT.split(w).length - 1) + "）");
+});
+/* 第 5–8 章不该有玩家行（这四章玩家只被称呼，不开口）⇒ 若有则说明抽取错了 */
+const meLate = NEW4.reduce((s, i) => s + (((CHS[i] && CHS[i].lines) || []).filter((l) => l.k === "me").length), 0);
+ok(meLate === 0, "第 5–8 章无玩家行（实得 " + meLate + "）");
 
 /* ---------- (4) BG / CG：只读不出图 ---------- */
 section("4 · BG 只读已有 key；CG 只登记不出图");
@@ -166,7 +228,8 @@ ok(/bg:\s*Spirits\.bookBgKeys\(BOOK_ID, i\)/.test(APP), "BG 走 Spirits.bookBgKe
 ok(/function bookBgUrl[\s\S]*?bgGet\(keys\[i\]\)/.test(SP) && !/ensureBg/.test(/function bookBgUrl[\s\S]*?\n  \}/.exec(SP) ? /function bookBgUrl[\s\S]*?\n  \}/.exec(SP)[0] : ""),
   "⛔ Spirits.bookBgUrl 只读 bgGet，不调 ensureBg");
 const CG = (BOOK && Array.isArray(BOOK.cgCandidates)) ? BOOK.cgCandidates : [];
-ok(CG.length > 0, "CG 候选已登记（" + CG.length + " 条，⛔ 本批不出图）");
+ok(CG.length === 8, "CG 候选已登记 8 条（1–8 章各 1；实得 " + CG.length + "，⛔ 只登记不出图）");
+ok(CG.filter((x) => Number(x.ch) >= 5).length === 4, "其中第 5–8 章 4 条也登记了（实得 " + CG.filter((x) => Number(x.ch) >= 5).length + "）");
 
 /* ---------- (5) 立绘口径 ---------- */
 section("5 · 立绘口径（核心 10 位走 MAINCHAR_ART · ⛔ 未新增键 / 未加错别名）");
@@ -182,16 +245,23 @@ ok(/r\.imgCut \|\| r\.imgUrl \|\| ""/.test(APP), "无专属立绘键者回落 re
 ok(/maincharArtOf\(\{ name: nm \}\)/.test(APP), "核心 10 位走 maincharArtOf（MAINCHAR_ART / 别名反查）");
 /* 数据侧：每条对白的 role 必须是**身份表里的正式姓名**（立绘反查的单一真源），
    ⛔ 描述性称谓（温声的 / 添柴的那位）只作显示名 who，不参与立绘解析 */
-const IDENT = {};
-const reId = /\{ name: "([^"]+)", style: "([^"]+)"/g;
-let mi;
-while ((mi = reId.exec(APP))) IDENT[mi[1]] = mi[2];
 ok(Object.keys(IDENT).length >= 16, "抽出身份表 ≥16 行（实得 " + Object.keys(IDENT).length + "）");
 const ROLES = {};
 CHS.forEach((c) => (c.lines || []).forEach((l) => { if (l.k === "d") ROLES[String(l.role || l.who || "")] = (ROLES[String(l.role || l.who || "")] || 0) + 1; }));
 const roleKeys = Object.keys(ROLES);
 ok(roleKeys.length > 0, "数据里解析出说话角色（" + roleKeys.length + " 位）");
-roleKeys.forEach((r) => ok(!!IDENT[r], "⛔ 对白 role「" + r + "」在身份表里有正式姓名（立绘可反查）"));
+/* ⛔ 唯一豁免：正文自己写「有人X」的无名台词（如「有的吃就不错。」有人顶回去）——
+   不是抽取漏配，是稿子就没给名；这类行不给 role（无立绘），⛔ 也不许冒名顶替。 */
+const ANON = "有人";
+const anonN = CHS.reduce((s, c) => s + (c.lines || []).filter((l) => l.k === "d" && String(l.who) === ANON).length, 0);
+ok(anonN > 0 && anonN <= 6, "无名台词「有人」共 " + anonN + " 条（≤6，⛔ 多了说明说话人表漏配）");
+roleKeys.filter((r) => r !== ANON).forEach((r) => ok(!!IDENT[r], "⛔ 对白「" + r + "」在身份表里有正式姓名（立绘可反查）"));
+/* 第 5–8 章新上场的乔纹栗 / 戚衔蝉：⛔ 无专属立绘键 ⇒ 走 rec.imgCut||rec.imgUrl（A 批口径），
+   且**不许**给它们新加 MAINCHAR_ART 键或别名（上面已断言 9 键 / 4 别名不变） */
+["乔纹栗", "戚衔蝉"].forEach((n) => {
+  ok(!!IDENT[n], "新角色「" + n + "」在身份表里（立绘走 rec 回落）");
+  ok(artKeys.indexOf(n) < 0 && aliasKeys.indexOf(n) < 0, "⛔「" + n + "」未新增立绘键 / 别名");
+});
 
 /* ---------- (6) 引擎与界面接线 ---------- */
 section("6 · 引擎 / 路由 / 入口接线");
@@ -250,7 +320,7 @@ section("8 · 引擎真跑（vm 沙箱实调 Spirits.book*）");
     ok(all[0] && String(all[0].name).indexOf("结契") >= 0, "篇名含「结契」（实得 " + (all[0] && all[0].name) + "）");
 
     const b = Spirits.bookOf("jieqi");
-    ok(!!b && b.chapters.length === 4, "bookOf('jieqi') = 4 章（实得 " + ((b && b.chapters) || []).length + "）");
+    ok(!!b && b.chapters.length === 8, "bookOf('jieqi') = 8 章（实得 " + ((b && b.chapters) || []).length + "）");
     ok(Spirits.bookOf("nope") === null, "bookOf(未知 id) = null");
 
     const L0 = Spirits.bookLines("jieqi", 0);
@@ -258,12 +328,20 @@ section("8 · 引擎真跑（vm 沙箱实调 Spirits.book*）");
     ok(L0.length === ((b && b.chapters[0].lines) || []).length, "bookLines 与数据文件段数一致");
 
     /* 链式解锁：初始只有章 1 解锁 */
-    Spirits.bookReset("jieqi", 0); Spirits.bookReset("jieqi", 1);
-    Spirits.bookReset("jieqi", 2); Spirits.bookReset("jieqi", 3);
+    for (let i = 0; i < 8; i++) Spirits.bookReset("jieqi", i);
     let st = Spirits.bookChapterState("jieqi");
-    ok(st.length === 4, "bookChapterState = 4 章状态");
+    ok(st.length === 8, "bookChapterState = 8 章状态");
     ok(st[0].unlocked === true && st[1].unlocked === false, "⛔ 链式解锁：章 1 开、章 2 锁（实得 " + st[0].unlocked + "/" + st[1].unlocked + "）");
     ok(st[3].unlocked === false, "章 4 仍锁（先看前章）");
+    ok(st[7].unlocked === false, "章 8 仍锁（新补齐的第 5–8 章同样走链式）");
+    // 逐章读完 ⇒ 一路解锁到第 8 章
+    (function () {
+      const s2 = Spirits.bookChapterState("jieqi");
+      for (let i = 0; i < 7; i++) Spirits.bookMark("jieqi", i, s2[i].total);
+      const s3 = Spirits.bookChapterState("jieqi");
+      ok(s3[7].unlocked === true, "读完 1–7 章 ⇒ 第 8 章解锁（链式一路通）");
+      for (let i = 0; i < 8; i++) Spirits.bookReset("jieqi", i);
+    })();
     ok(Spirits.bookUnreadCount("jieqi") === 1, "初始未读 = 1（实得 " + Spirits.bookUnreadCount("jieqi") + "）");
 
     /* 读到一半：done=false，进度记段号 */
@@ -299,7 +377,7 @@ section("8 · 引擎真跑（vm 沙箱实调 Spirits.book*）");
 
     /* CG / BG：登记与只读 */
     const cg = Spirits.bookCgCandidates("jieqi");
-    ok(cg.length === 4, "bookCgCandidates = 4 条（⛔ 只登记，不出图；实得 " + cg.length + "）");
+    ok(cg.length === 8, "bookCgCandidates = 8 条（⛔ 只登记，不出图；实得 " + cg.length + "）");
     const keys = Spirits.bookBgKeys("jieqi", 0);
     ok(keys.length > 0 && keys.every((k) => !!catalogKeys[k]), "bookBgKeys 全在 BG_CATALOG（" + keys.join(",") + "）");
     const u = Spirits.bookBgUrl("jieqi", 0);
@@ -370,7 +448,7 @@ section("9 · 界面真跑（入口卡 / 篇目页 真出 HTML）");
       const h1 = String(ctx2.bookEntryHtml() || "");
       ok(h1.indexOf('data-goto="#/book"') >= 0, "入口卡 data-goto=#/book（玩家点它进篇）");
       ok(h1.indexOf("结契") >= 0, "入口卡显示篇名（含「结契」）");
-      ok(h1.indexOf("已看完 0/4") >= 0, "入口卡副行「已看完 0/4」（实得片段：" + (h1.match(/已看完[^<]*/) || [""])[0] + "）");
+      ok(h1.indexOf("已看完 0/8") >= 0, "入口卡副行「已看完 0/8」（实得片段：" + (h1.match(/已看完[^<]*/) || [""])[0] + "）");
       ok(h1.indexOf("章新") >= 0, "入口卡有「N 章新」角标");
 
       /* ② #/book 篇目页 */
@@ -379,7 +457,7 @@ section("9 · 界面真跑（入口卡 / 篇目页 真出 HTML）");
       ok(h2.length > 200, "篇目页真的渲染出 HTML（" + h2.length + " 字符）");
       ok(h2.indexOf("chap-list") >= 0, "篇目页有 .chap-list");
       CHS.forEach((c, i) => ok(h2.indexOf(c.title) >= 0, "章" + (i + 1) + "「" + c.title + "」出现在篇目页"));
-      ok((h2.match(/chap-item locked/g) || []).length === 3, "⛔ 篇目页：章 1 开、章 2–4 锁（实得锁 " + (h2.match(/chap-item locked/g) || []).length + " 个）");
+      ok((h2.match(/chap-item locked/g) || []).length === 7, "⛔ 篇目页：章 1 开、章 2–8 锁（实得锁 " + (h2.match(/chap-item locked/g) || []).length + " 个）");
       ok(h2.indexOf('data-ch="0"') >= 0, "章 1 是 data-ch=0（点它进 #/bookread/0）");
       ok(h2.indexOf("CG 候选") >= 0, "篇目页列出 CG 候选（⛔ 只登记不出图）");
       ok(h2.indexOf("〔") < 0 && h2.indexOf("〕") < 0, "⛔ 篇目页不出现〔〕原文");

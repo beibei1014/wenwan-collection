@@ -8584,7 +8584,7 @@
       nameOf: () => "",
       endTag: "第 " + ch.no + " 章 · 完",
       endingExtra: () => (i === list.length - 1)
-        ? '<div class="nt-end-final">🕯 〈' + esc(bk.name) + '〉第 1–4 章读完了。后面的，等正文写完再续。</div>' : "",
+        ? '<div class="nt-end-final">🕯 〈' + esc(bk.name) + '〉第 1–' + list.length + ' 章读完了。后面的，等正文写完再续。</div>' : "",
       enter: () => {
         const st = (Spirits.bookChapterState(BOOK_ID) || [])[i] || { seg: 0, done: false };
         const s = st.done ? 0 : Math.max(0, Math.min(Number(st.seg) || 0, total));
