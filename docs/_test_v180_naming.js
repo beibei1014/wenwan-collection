@@ -6,6 +6,7 @@
  *   ② 候选不含已用名 / 已用字（清单见下 USED）
  *   ③ 姓名 3 字、字 2 字、诗含逗号、八字 4+4
  *   ④ 字库池抽满仍不合时不抛错、退回合法候选（含字库整个缺失的极端态）
+ *   ⑤ LLM 优先：{{...}} 注入 / §四 temperature·max_tokens / 解析失败重试≤2 / 异常回落本地
  *
  * 做法：把 spirits.js 的 v180-D8 生成器代码块 + namespec-data.js 抽出，在 vm 沙箱里真跑。
  *       ⛔ 不 require/运行整个 app.js；不依赖 DOM。stub getAiKey()⇒""（模拟无 key）。
@@ -38,13 +39,14 @@ const USED = {
   surnames: ["陆", "苏", "沈", "谢", "楚", "萧", "姜", "顾", "江", "温", "邵", "秦", "方", "程", "季", "石", "梁", "梅", "姚", "华", "薛", "柏", "霍", "龚", "沙", "宋", "黎", "卓"],
 };
 
-function makeCtx() {
-  const ctx = vm.createContext({
+function makeCtx(extra) {
+  const ctx = vm.createContext(Object.assign({
     window: {},
     console,
-    getAiKey: () => "",                            // 模拟无 key
+    getAiKey: () => "",                            // 默认模拟无 key
     aiChat: async () => { throw new Error("no-key"); },
-  });
+    textChat: async () => { throw new Error("no-key"); },
+  }, extra || {}));
   vm.runInContext(WB, ctx);
   vm.runInContext(m[0], ctx);
   return ctx;
@@ -123,6 +125,51 @@ const ITEMS = [{ name: "油果果" }, { name: "冰红茶" }, { name: "多多牛"
     let threw = false;
     try { ctx.nameSpecLocal(null, null); ctx.nameSpecLocal({}, null); } catch (e) { threw = true; }
     ok(!threw, "④-c item=null / used=null ⇒ 不抛错");
+  }
+
+  /* ---------- ⑤ LLM 优先：注入定稿 prompt / §四 参数 / 重试 / 回落 ---------- */
+  section("⑤ · LLM 优先（注入 prompt · §四 参数 · 重试 · 回落）");
+  const LLM_REPLY = JSON.stringify([
+    { name: "白知安", style: "慎之", poem: "檐下青叶，静守闲庭。", eight: "茸憨抱朴，安之若素", reason: "取冰茶之清冽" },
+    { name: "云疏涧", style: "望舒", poem: "月色入庭，笑赴山河。", eight: "酥栗含香，长随相守", reason: "取果之润" },
+  ]);
+  {
+    const captured = [];
+    const ctxL = makeCtx({
+      getAiKey: () => "fake-key",
+      textChat: async (msgs, maxTokens, opts) => { captured.push({ msgs: msgs, maxTokens: maxTokens, opts: opts }); return LLM_REPLY; },
+    });
+    const cands = await ctxL.nameSpecCandidates({ name: "冰红茶" }, USED);
+    ok(Array.isArray(cands) && cands.length === 2, "⑤ LLM 返回 2 条 ⇒ 直接采用（实得 " + (cands && cands.length) + "）");
+    ok(cands.every((c) => c.src === "llm"), "⑤ 候选 src = llm");
+    ok(cands[0].name === "白知安" && cands[1].name === "云疏涧", "⑤ LLM 候选名被采用");
+    ok(cands[0].why === "取冰茶之清冽", "⑤ 读入 reason 字段（→ why）");
+    ok(captured.length === 1, "⑤ 一次成功 ⇒ 只调一次（实得 " + captured.length + "）");
+    const c0 = captured[0] || {};
+    ok(c0.maxTokens === 400, "⑤ §四 max_tokens≈400（实得 " + c0.maxTokens + "）");
+    ok(c0.opts && c0.opts.temperature === 0.8, "⑤ §四 temperature≈0.8（实得 " + JSON.stringify(c0.opts) + "）");
+    const u = (c0.msgs && c0.msgs[0] && c0.msgs[0].content) || "";
+    ok(u.indexOf("冰红茶") >= 0, "⑤ {{bead}} 已注入手串名");
+    ok(u.indexOf("温茸之") >= 0, "⑤ {{used_names}} 已注入已用名");
+    ok(u.indexOf("朴安") >= 0, "⑤ {{used_styles}} 已注入已用字");
+    ok(u.indexOf("{{") < 0, "⑤ 占位符已全部替换（无残留 {{ }}）");
+  }
+  // ⑤-b：LLM 一直返回垃圾 ⇒ 重试 2 次后回落本地
+  {
+    let calls = 0;
+    const ctxR = makeCtx({ getAiKey: () => "fake-key", textChat: async () => { calls++; return "这不是 JSON"; } });
+    const cands = await ctxR.nameSpecCandidates({ name: "白蜜蜡" }, USED);
+    ok(calls === 3, "⑤-b 解析失败重试 2 次 ⇒ 共调 3 次（实得 " + calls + "）");
+    ok(Array.isArray(cands) && cands.length >= 2, "⑤-b 仍回落本地 ⇒ ≥2 条（实得 " + (cands && cands.length) + "）");
+    ok(cands.every((c) => c.src === "local"), "⑤-b 回落候选 src = local");
+  }
+  // ⑤-c：textChat 抛异常（网络失败）⇒ 回落本地、不抛错
+  {
+    const ctxE = makeCtx({ getAiKey: () => "fake-key", textChat: async () => { throw new Error("net"); } });
+    let threw = false, res = null;
+    try { res = await ctxE.nameSpecCandidates({ name: "天珠" }, USED); } catch (e) { threw = true; }
+    ok(!threw, "⑤-c 网络异常 ⇒ 不抛错");
+    ok(Array.isArray(res) && res.length >= 2, "⑤-c 回落本地 ⇒ ≥2 条");
   }
 
   /* ---------- 负向对照：无生成器时不该绿 ---------- */

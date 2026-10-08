@@ -2639,17 +2639,20 @@
     };
   }
   // 统一的文字请求入口（OpenAI 兼容；关掉思考模式只要结论）
-  async function textChat(messages, maxTokens) {
+  async function textChat(messages, maxTokens, opts) {
     const info = textInfo();
     if (!info.key) { const e = new Error("no-key"); e.code = "no-key"; throw e; }
     if (!info.endpoint) throw new Error("还没填接口地址");
+    // v180-D：可选 opts（如 {temperature}）—— ⛔ 不传时请求体与旧版逐字一致（护 _test_v177c_ai 等）
+    const body = {
+      model: info.model, messages: messages, max_tokens: maxTokens || 700, stream: false,
+      thinking: { type: "disabled" },
+    };
+    if (opts && opts.temperature != null) body.temperature = opts.temperature;
     const resp = await fetch(info.endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + info.key },
-      body: JSON.stringify({
-        model: info.model, messages: messages, max_tokens: maxTokens || 700, stream: false,
-        thinking: { type: "disabled" },
-      }),
+      body: JSON.stringify(body),
     });
     if (!resp.ok) {
       let m = "HTTP " + resp.status;
@@ -2719,8 +2722,54 @@
    *   nameSpecCandidates(item, used) ：LLM 优先 + 本地兜底（对齐 persona() 同构）
    *   ⛔ 无 key / 调用失败 / 解析失败 / 字库缺失 ⇒ 一律回落本地；⛔ 绝不抛错/白屏
    * ============================================================ */
-  // AI prompt（单一可替换数据源；⛔ 占位：文成章定稿 prompt 到位后直接替换此常量，勿散落别处）
-  var NAMESPEC_PROMPT = "你在为一个文玩收藏 App 写「沁灵」的正式名字。按「取字四步」：拆手串名意象 → 选古雅名用字 → 定「姓＋两字名」→ 配「两字表字」；再拟一句人物诗（逗号分句）与「四字＋四字」的八字。只输出 JSON 数组，不要解释。";
+  // AI prompt（单一可替换数据源；正文逐字取自 docs/v180-命名prompt定稿.md §一，{{...}} 由 nsBuildPrompt 运行时注入）
+  var NAMESPEC_PROMPT = [
+    "你是「沁灵命名师」，为文玩 AVG《沁灵纪》中【刚开沁的沁灵】取名。",
+    "",
+    "【任务】",
+    "为该沁灵产出 2 到 3 组「姓名／字／人物诗／八字」四件套候选。",
+    "只输出 JSON，不要任何解释、不要代码围栏、不要多余文字。",
+    "",
+    "【输出格式】严格为 JSON 数组（2 到 3 个元素），每个元素字段如下：",
+    '[{"name":"三字姓名","style":"两字表字","poem":"一句含逗号的人物诗","eight":"四字，四字","reason":"一句话取材理由"}]',
+    "字段含义：name=姓1字＋名2字；style=两字表字；poem=一句、用逗号分句；eight=四字＋四字（共8字）；reason=一句说清从哪里取的意象。",
+    "",
+    "【本次输入】",
+    "- 手串名与原注意象：{{bead}}",
+    "- 性别：{{gender}}",
+    "- 角色性格：{{persona}}",
+    "- 已用姓名（禁止复用）：{{used_names}}",
+    "- 已用表字（禁止复用）：{{used_styles}}",
+    "",
+    "【硬性约束｜逐条遵守】",
+    "1. 姓名 name＝姓（1字）＋名（2字）＝共 3 字，须像真人的中文姓名；不叠字、不口语化。",
+    "2. 字 style＝两字，古雅、可作表字。",
+    "3. 人物诗 poem＝一句，用逗号分句（2 到 3 分句），写「风骨＋画面」，可带一点心绪；不写大白话、不写成对联。",
+    "4. 八字 eight＝四字＋四字＝共 8 字，前半写「形／物」，后半写「心／志」。",
+    "5. 取材：姓名与人物诗取自「手串名的意象」（见 {{bead}}），取其神、不取其字面。",
+    "   5a. 绝不把整条手串名当人名。正例：手串名「冰红茶」→「江冽茗」（冽取冰、茗取茶）；反例：「冰红茶／红茶／茶茶」。",
+    "   5b. 古风、不出西式。即便原型是异域物（如美洲豹、琥珀、焦糖），也只取古风可容纳的字（捷／斑／纹／迅／珀／玳），不出直译词、不出音译词。",
+    "6. 避重：name 不得出现在 {{used_names}} 中；style 不得出现在 {{used_styles}} 中；一条都不许撞。",
+    "7. 禁用：不得出现「您」及一切敬称（可用「你／尔／君」；禁「您／阁下／尊驾／大人」）。",
+    "8. 禁物化词：这些沁灵是【已修道成仙的人】，不是器物、不是灵石。禁用「采气／炼化／孕灵／属性／加成／它」等词；不写「可取／可摘／娇弱」一类。性别为女时走「灵俏／韧」一路，不写娇弱、不写女儿态。",
+    "9. 性别口径按 {{gender}}：男＝朴实、端正（「憨／软／守」一类可作男孩子的反差萌）；女＝灵俏／韧。",
+    "10. 每条给 reason：一句话说明取材（哪个字对应哪个意象）。",
+    "",
+    "【风格参照｜已定 10 位，照此质感，勿照抄】",
+    "- 冰红茶 → 江冽茗／澄观｜诗「冰瓯浮丹，微甘入喉，懒问人间谁负谁。」｜八字「冰瓯澄观，懒看浮生」",
+    "- 花间酒 → 苏栖盏／春酹｜诗「栖繁花深处，持盏浅酌，任落英沾衣，醉而不沉。」｜八字「花间持盏，醉揽芳辰」",
+    "- 黄金算盘 → 萧景筹／秉衡｜诗「案上算珠轻响，谋定世间得失。」｜八字「筹量万象，掌定盈亏」",
+    "- 粉黛熊 → 温茸之／朴安｜诗「一团茸软，憨坐檐前，谁唤他一声便笑；谁的好，他记半生。」｜八字「茸憨抱朴，安之若素」",
+    "",
+    "【再次强调】只输出 JSON 数组本身：首字符为 [，末字符为 ]，其间不得有任何说明文字或代码围栏。",
+  ].join("\n");
+  // §三 校验失败时的重试指令（最多重试 2 次，仍失败 ⇒ 回落 nameSpecLocal）
+  var NAMESPEC_RETRY = "你上一次的输出不合规（可能是：JSON 解析失败／字段缺失／name 非 3 字／style 非 2 字／poem 无逗号／eight 非四字＋四字／命中已用姓名或表字／出现敬称或物化词）。"
+    + "\n请只重出 JSON 数组，逐条修正上述问题，其余合规项保持不变，并重新确认全部约束："
+    + "\n- name 3 字、style 2 字、poem 一句含逗号、eight 四字＋四字；"
+    + "\n- name 不在已用姓名，style 不在已用表字；"
+    + "\n- 不含「您」及敬称，不含物化词，性别口径按前述；"
+    + "\n- 首字符为 [、末字符为 ]，不写任何说明或代码围栏。";
 
   // 极小内置兜底池：字库缺失（未挂 namespec-data.js）时也能产出合法候选 —— ⛔ 绝不放任白屏
   var NAMESPEC_TINY = {
@@ -2872,26 +2921,64 @@
     }
     return out.slice(0, 3);
   }
-  // LLM 优先 + 本地兜底（对齐 persona() 同构：无 key/失败/解析失败 ⇒ 本地）
+  // §二 变量注入：{{bead}}/{{gender}}/{{persona}}/{{used_names}}/{{used_styles}}（+可选 used_surnames）
+  function nsBeadDesc(item) {
+    const nm = String((item && item.name) || "");
+    const W = nameSpecWordbank() || NAMESPEC_TINY;
+    const pts = [];
+    Object.keys(W.imagery || {}).forEach((k) => { if (nm && nm.indexOf(k) >= 0) pts.push(k); });
+    return "手串名：" + nm + (pts.length ? "；意象点：" + pts.join("／") : "；意象点：无");
+  }
+  function nsGenderZh(item) {
+    const g = String((item && item.gender) || "").toLowerCase();
+    if (g === "boy" || g === "male" || g === "男") return "男";
+    if (g === "girl" || g === "female" || g === "女") return "女";
+    return "未指定（中性）";
+  }
+  function nsPersonaZh(item) {
+    if (!item) return "未指定";
+    return String(item.personaTitle || (item.persona && item.persona.title) || item.personaLabel || "未指定");
+  }
+  function nsBuildPrompt(item, U) {
+    return String(NAMESPEC_PROMPT || "").replace(/\{\{(\w+)\}\}/g, (mm, k) => {
+      if (k === "bead") return nsBeadDesc(item);
+      if (k === "gender") return nsGenderZh(item);
+      if (k === "persona") return nsPersonaZh(item);
+      if (k === "used_names") return U.names.join("，");
+      if (k === "used_styles") return U.styles.join("，");
+      if (k === "used_surnames") return U.surnames.join("，");
+      return mm;
+    });
+  }
+  // §四 解析：非 [ 开头 ⇒ 提取首个 [ ... ] 片段再 JSON.parse
+  function nsParseArray(txt) {
+    const s = String(txt == null ? "" : txt).trim();
+    if (!s) return null;
+    let frag = s;
+    if (s.charAt(0) !== "[") {
+      const a = s.indexOf("["), b = s.lastIndexOf("]");
+      if (a < 0 || b <= a) return null;
+      frag = s.slice(a, b + 1);
+    }
+    try { const o = JSON.parse(frag); return Array.isArray(o) ? o : null; } catch (e) { return null; }
+  }
+  // LLM 优先 + 本地兜底（对齐 persona() 同构）：§四 temperature≈0.8 / max_tokens≈400；
+  //   ⛔ 解析/校验失败最多重试 2 次 ⇒ 仍失败回落 nameSpecLocal（永不白屏/抛错）
   async function nameSpecCandidates(item, used) {
     const U = nsUsed(used);
     if (getAiKey()) {
-      try {
-        const sys = NAMESPEC_PROMPT || "为一只文玩手串化生的沁灵取名。";
-        const user = "手串名：" + ((item && item.name) || "") +
-          "；已用姓名（⛔ 禁重复）：" + U.names.join("、") +
-          "；已用表字（⛔ 禁重复）：" + U.styles.join("、") +
-          "。请给 2-3 组候选，只输出 JSON 数组：" +
-          '[{"name":"3字姓名","style":"2字表字","poem":"一句含逗号","eight":"四字，四字","why":"一句话理由"}]';
-        const txt = await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 800);
-        const m = txt.match(/\[[\s\S]*\]/);
-        if (m) {
-          const arr = JSON.parse(m[0]);
-          const valid = (Array.isArray(arr) ? arr : []).map((o) => nsCandidateFrom(o, U, "llm")).filter(Boolean);
+      const user = nsBuildPrompt(item, U);
+      for (let attempt = 0; attempt <= 2; attempt++) {
+        try {
+          const msgs = [{ role: "user", content: user }];
+          if (attempt > 0) msgs.push({ role: "user", content: NAMESPEC_RETRY });
+          const txt = await textChat(msgs, 400, { temperature: 0.8 });
+          const arr = nsParseArray(txt);
+          const valid = (arr || []).map((o) => nsCandidateFrom(o, U, "llm")).filter(Boolean);
           if (valid.length >= 2) return valid.slice(0, 3);
-          if (valid.length === 1) return valid.concat(nameSpecLocal(item, used)).slice(0, 3);
-        }
-      } catch (e) { /* 用本地字库兜底 */ }
+          if (valid.length === 1 && attempt >= 2) return valid.concat(nameSpecLocal(item, used)).slice(0, 3);
+        } catch (e) { /* 网络/解析异常 ⇒ 继续重试，最终本地兜底 */ }
+      }
     }
     return nameSpecLocal(item, used);
   }
