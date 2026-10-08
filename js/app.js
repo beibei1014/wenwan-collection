@@ -4520,6 +4520,23 @@
   }
   installGameNameResolver();
 
+  /* ---------- v180-B：给 spirits.js 注入「主线显示名」解析器 ----------
+     主线选角的名字条走 castDispNameOf（spirits.js）—— 让主线名字条对 C6/C7 显**正式姓名**
+     （冰红茶 → 江冽茗），不再是手串名。与 installGameNameResolver 完全同口径：
+     ⛔ 尊重玩家改名（rec.nameEdited 时不套身份名）。spirits.js 排在 app.js 之前 ⇒ 此处 Spirits 已就绪；
+     未挂上 ⇒ 主线回落串名（v179 老行为），不白屏。 */
+  function installCastNameResolver() {
+    try {
+      if (typeof Spirits === "undefined" || !Spirits || typeof Spirits.setCastNameResolver !== "function") return false;
+      Spirits.setCastNameResolver(function (id, rec, fallback) {
+        const idc = spiritIdentityOf(fallback);              // fallback 多为手串名 / 当前显示名
+        return (idc && !(rec && rec.nameEdited)) ? idc.name : fallback;   // 与详情页 V175 同口径
+      });
+      return true;
+    } catch (e) { return false; }
+  }
+  installCastNameResolver();
+
   function spiritSp(it) {
     const rec = spiritRecOf(it.id);
     return {

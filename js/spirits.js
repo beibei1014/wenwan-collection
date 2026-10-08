@@ -7180,9 +7180,19 @@
      存储：ww_story.castManual = { "<persona>": { id: "<spiritId>" } }
      ⛔ 落 ww_story（不是新 key）—— packSync() 已把 readStory() 整包推云端，换设备不丢；
      ⛔ 绝不写进 ww_spirits 的逐串 rec（资产库禁区）。 */
+  /* v180-B：主线显示名解析器（由 app.js 反向注入）—— 对齐 game.js:286 setNameResolver 同一套模式。
+     主线选角的名字条要叫沁灵的**正式姓名**（冰红茶→江冽茗），不能叫手串名。
+     spirits.js 够不着 app.js 的身份卡 ⇒ 由 app 注入 resolver。
+     ⛔ 未注入 / 解析抛异常时一律回落既有串名 ⇒ 与 v179 逐字一致（_test_v172_cast / _test_v165_engine 沙箱内不注入，故不回归）。 */
+  var _castNameResolver = null;
+  function setCastNameResolver(fn) { _castNameResolver = (typeof fn === "function") ? fn : null; }
   function castDispNameOf(id, rec) {
     const r = rec || {};
-    return String(r.name || (r.persona && r.persona.name) || "");
+    let nm = String(r.name || (r.persona && r.persona.name) || "");
+    if (_castNameResolver) {
+      try { const x = _castNameResolver(id, r, nm); if (x) nm = String(x); } catch (e) { /* 忽略：任何异常都回落串名 */ }
+    }
+    return nm;
   }
   function castManualRead() {
     try {
@@ -8985,6 +8995,8 @@ const CH09 = {
     chapTaSet, chapTaGet, chapTaNameOf,
     // v165 批次3A P1：casting（出场表）+ 演出层字段读取
     CHAP_CAST_CFG, CHAP_CAST_NAME, CHAP_AT_ZH, castOf, castBuild, castPick, castNearest,
+    // v180-B：主线显示名解析器（app.js 注入；⛔ 未注入时 castDispNameOf 行为与 v179 一致）
+    castDispNameOf, setCastNameResolver,
     // v172：选角文案（单一可替换数据源 + 两个导出别名）+ 无 persona 标记
     CHAP_CAST_COPY, CHAP_CAST_DESC, CHAP_CAST_ROW_COPY, CAST_NO_PERSONA_TAG,
     // v172：手动选角写入口（⛔ 只写 ww_story，绝不碰 ww_spirits 逐串 rec）
