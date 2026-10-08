@@ -3333,6 +3333,8 @@
     if (reach <= confirmed) { toast("还没到下一阶 —— 再盘一些日子。"); return false; }
     r.stage = reach;
     Spirits.save(s);
+    // v179：破阶即对账来源（该阶的开光物立即到库存；幂等，重复进阶不重复发）
+    try { Spirits.reconcileGiftSources(item, r, null); } catch (e) { /* 静默 */ }
     toast("✨ 进阶到「" + Spirits.stageDef(reach).name + "」了！本阶立绘还没画 —— 点「🖼 画本阶立绘」再画。");
     return true;
   }
@@ -4756,6 +4758,8 @@
         if (Spirits.ensureEcho(it, r3, ctx)) { dirty = true; changed = true; }   // 有新回响 → 要重渲染
         // v158：节令事件（全本地；只有当天有节令才写，写一次就够）
         if (Spirits.ensureFest(it, r3, ctx)) { dirty = true; changed = true; }
+        // v179：礼物来源发放对账（节令/破阶/章末/签；幂等，落 ww_gifts + ww_story.giftSeeded）
+        try { if (Spirits.reconcileGiftSources(it, r3, ctx).length) changed = true; } catch (e) { /* 静默：来源发放绝不影响主流程 */ }
         if (dirty) Spirits.save(st2);
       }
       if (changed) rerenderSpiritView();
@@ -5618,6 +5622,7 @@
       else toast("这个先做不了。");
       return;
     }
+    rec.loveKindled = true;                    // v179：照料成功 ⇒ 释放善意（Love.canReConfess 条件③-b；⛔ 不自动触发告白，仅写标记）
     Spirits.save(store);
     // v175：今日任务「净手」= 照料·探看（clean）；sit / thread 也各记各的键
     try { Game.markDaily(kind + ":" + it.id); } catch (e) { /* 忽略 */ }
@@ -5691,6 +5696,7 @@
       }
       Spirits.saveGifts(gifts);
       Spirits.noteGiftGiven(it.id, giftKey, today);
+      hrec.loveKindled = true;                  // v179：送礼成功 ⇒ 释放善意（Love.canReConfess 条件③-b；⛔ 不自动触发告白，仅写标记）
       Spirits.save(hstore);
       const react = Spirits.giftReactionOf(hrec, res.hit);
       const sub = "羁绊 <b>+" + res.delta + "</b>" + (res.second ? "（同一只第二件，折半了）" : "") +
@@ -8828,6 +8834,7 @@
       try {
         await DB.putSpiritStore(packSync());
         await pullSpirits();
+        try { _giftsDirty = true; await pushGifts(); await pullGifts(); } catch (e) { /* 礼物同步失败不拦沁灵同步 */ }   // v179：顺带把礼物台账一起同步
         syncStatus.textContent = "✅ 已同步到云端";
       } catch (e) { syncStatus.textContent = "⚠️ 失败：" + ((e && e.message) || "未配置 Supabase 云端"); }
     };
@@ -9064,6 +9071,7 @@
     refreshNetBar();
     checkLevelUp();
     pullSpirits().catch(() => {});   // 跨手机同步：登录后先把云端沁灵拉回本地
+    pullGifts().catch(() => {});     // v179：礼物台账也拉一次（表不存在/未配置时 pullGifts 内部静默）
     return true;
   }
 
@@ -11437,6 +11445,55 @@ else if (h.indexOf("#/night/") === 0) {                                         
   window.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") pushSpirits(); });
   window.addEventListener("beforeunload", () => { try { pushSpirits(); } catch (e) {} });
   setInterval(() => { pushSpirits(); }, 120000);
+
+  /* ---------- v179 · 礼物台账跨设备同步（ww_gifts + ww_gift_log + ww_daily → gift_store） ----------
+     完全照抄上面 spirits 那一套：本地优先、云端只做「换手机不丢」、任何异常一律静默降级（不弹窗、不阻断）。
+     合并策略复用 DB.mergeGiftStores（按 giftKey 取 max / log 取较新 ymd），⛔ 不另造同步机制。
+     表不存在 / 未登录 / 离线 ⇒ getGiftStore/putGiftStore 抛错被 swallow，静默跳过。 */
+  let _giftsDirty = false;
+  let _giftSyncTimer = null;
+  let _giftApplying = false;     // 应用远端期间抑制本地事件，避免「拉回 → 又触发推送」的空转
+  window.addEventListener("ww:gifts-changed", () => { if (_giftApplying) return; _giftsDirty = true; scheduleGiftPush(); });
+  window.addEventListener("ww:daily-changed", () => { if (_giftApplying) return; _giftsDirty = true; scheduleGiftPush(); });
+  function scheduleGiftPush() {
+    if (_giftSyncTimer) return;
+    _giftSyncTimer = setTimeout(() => { _giftSyncTimer = null; pushGifts(); }, 4000);
+  }
+  // 打包：库存 + 发放账本 + 每日任务台账（形态与 DB.mergeGiftStores 对齐）
+  function packGiftSync() {
+    let daily = {};
+    try { if (typeof Game !== "undefined" && Game && Game.loadDaily) daily = Game.loadDaily(); } catch (e) { daily = {}; }
+    return { gifts: Spirits.loadGifts(), log: Spirits.loadGiftDay(), daily: daily };
+  }
+  async function pushGifts() {
+    if (!_giftsDirty) return;                                    // 没改动就不必写云端
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    try {
+      let bundle = packGiftSync();
+      // 先与云端取 max 合并（防「A/B 两台同时加库存互相覆盖」，设计 §七-15）
+      try { const remote = await DB.getGiftStore(); if (remote && remote.data && typeof remote.data === "object") bundle = DB.mergeGiftStores(bundle, remote.data); } catch (e) { /* 远端读失败：直接推本地 */ }
+      await DB.putGiftStore(bundle);
+      _giftsDirty = false;
+    } catch (e) { /* 未配置/未登录/离线/表不存在：静默降级，不阻断玩家操作 */ }
+  }
+  async function pullGifts() {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    try {
+      const remote = await DB.getGiftStore();
+      if (remote && remote.data && Object.keys(remote.data).length) {
+        const merged = DB.mergeGiftStores(packGiftSync(), remote.data);   // 本地与云端取 max ⇒ 不丢本地更大的库存
+        _giftApplying = true;
+        try {
+          Spirits.saveGifts(merged.gifts || {});
+          if (merged.log) Spirits.saveGiftDay(merged.log);
+          try { if (merged.daily && typeof Game !== "undefined" && Game && Game.saveDaily) Game.saveDaily(merged.daily); } catch (e2) { /* 静默 */ }
+        } finally { _giftApplying = false; }
+      }
+    } catch (e) { /* 未配置/未登录/离线/表不存在：静默降级 */ }
+  }
+  window.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") pushGifts(); });
+  window.addEventListener("beforeunload", () => { try { pushGifts(); } catch (e) {} });
+  setInterval(() => { pushGifts(); }, 120000);
 
   /* 底部导航 */
   const tabbar = $("#tabbar");
