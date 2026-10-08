@@ -502,10 +502,24 @@
     [a.claimed, b.claimed].forEach((m) => { if (m && typeof m === "object") Object.keys(m).forEach((k) => { if (out.claimed[k] == null || String(m[k]) > String(out.claimed[k])) out.claimed[k] = m[k]; }); });
     return out;
   }
+  // v179：礼物发放账本合并（ww_gift_log，{ymd, keys}）—— 取较新 ymd 的整份；同 ymd 则 keys 并集。
+  function mergeGiftLog(a, b) {
+    const A = (a && typeof a === "object") ? a : null;
+    const B = (b && typeof b === "object") ? b : null;
+    if (!A) return { ymd: B ? String(B.ymd || "") : "", keys: Object.assign({}, (B && B.keys) || {}) };
+    if (!B) return { ymd: String(A.ymd || ""), keys: Object.assign({}, A.keys || {}) };
+    const ya = String(A.ymd || ""), yb = String(B.ymd || "");
+    if (ya !== yb) return ya > yb ? { ymd: ya, keys: Object.assign({}, A.keys || {}) } : { ymd: yb, keys: Object.assign({}, B.keys || {}) };
+    const keys = Object.assign({}, A.keys || {});
+    Object.keys(B.keys || {}).forEach((k) => { keys[k] = B.keys[k]; });
+    return { ymd: ya, keys: keys };
+  }
   function mergeGiftStores(a, b) {
     const A = (a && typeof a === "object") ? a : {};
     const B = (b && typeof b === "object") ? b : {};
     const out = { v: Math.max(Number(A.v) || 1, Number(B.v) || 1), gifts: {}, gifted: {}, at: Math.max(Number(A.at) || 0, Number(B.at) || 0) };
+    // v179：礼物发放账本 ww_gift_log（{ymd, keys}）随 gift_store.data 一并同步（形态同 mergeGiftDaily：取较新 ymd）
+    out.log = mergeGiftLog(A.log, B.log);
     ["gifts", "gifted"].forEach((field) => {
       [A[field], B[field]].forEach((m) => {
         if (!m || typeof m !== "object") return;
