@@ -3541,7 +3541,6 @@
         (needSetup ? '<span class="look-setup-tag" data-setup="' + esc(it.id) + '">✨ 定设定</span>' : "") +
         (wroteToday ? '<span class="spirit-break-tag" style="background:#e8f0ff;color:#3b5b9a">📔 写日记了</span>' : "") +
         '<div class="spirit-title">' + esc((p && p.title) || "正在酝酿性格…") + "</div>" +
-        ((p && p.line && !isPersonaLineBad(p.line)) ? '<div class="spirit-line">' + esc(p.line) + "</div>" : "") +
         (si.isMax ? '<div class="spirit-prog max">已是化形 · 巅峰形态 👑</div>'
           : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
             '<span class="spirit-prog-txt">距下一阶：再盘 ' + si.toNext + " 次</span></div>") +
@@ -4338,7 +4337,6 @@
         (wroteToday ? '<span class="spirit-break-tag" style="background:#e8f0ff;color:#3b5b9a">📔 写日记了</span>' : "") + "</div>" +
         '<div class="spirit-title">' + esc((p && p.title) || "正在酝酿性格…") +
         (room ? ' · <span style="color:var(--text-2)">' + esc((room.emoji || "🏠") + room.name) + "</span>" : "") + "</div>" +
-        ((p && p.line && !isPersonaLineBad(p.line)) ? '<div class="spirit-line">' + esc(p.line) + "</div>" : "") +
         (si.isMax ? '<div class="spirit-prog max">已是化形 · 巅峰形态 👑</div>'
           : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
             '<span class="spirit-prog-txt">再盘 ' + si.toNext + " 次 → " + esc(si.next) + "</span></div>") +
@@ -6015,7 +6013,6 @@
         ? '<span style="color:var(--text-2)">✏️ 名字改过了</span>'
         : '<button type="button" class="link-btn" id="sdRename">✏️ 给{ta}改个名字（只能改一次）</button>') +
       "</div>" +
-      (p.line && !isObjectifyingLine(p.line) ? '<div class="sd-line">“' + esc(p.line) + '”</div>' : "") +
       '<div class="spirit-tags" style="justify-content:center">' + ((p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
       '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div></div>";
 
@@ -6198,10 +6195,8 @@
     }
     h += "</div>";
 
-    /* v165-N3：⛔ 详情页里进入**旧 8 章主线**的入口已按用户裁定取消
-       （原话：「以前的主线剧情，就是从每个沁灵的详情页进入那个，取消。全面用新的剧情来取代，走独立的入口。」）
-       ⛔ 只删入口：`CHAP_SCRIPTS` / `CHAPTERS` / `chapterState` / `rec.chapters` / `rec.talk`
-         数据与方法**全部原样保留**（CG 相册仍按索引消费 chapterState），一行没动。
+    /* v178：旧 8 章（串与我）已整体删除 —— app.js 侧消费方（renderChapTalkPage 等）一并移除。
+       #/talk 旧深层链接仅保留 → 回沁灵页的兜底。
        新 9 章《沁灵纪》走**独立入口**：首页「📖 沁灵纪 · 主线」→ #/main。 */
 
     // v157：🎞 回忆册 —— 它陪你的时间线（本地推导，0 出图；可一键合成竖版长图）
@@ -6440,7 +6435,7 @@
       if (fx0.cgUrl) { openSpiritViewer(fx0.cgUrl); return; }
       openFestCgBriefModal(it, dk, fx0);
     };
-    // v165-N3：旧 8 章的章节列表点击跳转已随入口一并取消（数据保留）。
+    // v178：旧 8 章已整体删除（原章节列表点击跳转早已取消）。
     //   新 9 章用 data-main 承载章号，见 renderMainPage。
     // v158：节令插画点开看大图
     view.querySelectorAll(".ft-cgimg").forEach((el) => {
@@ -7780,7 +7775,7 @@
      用户裁定：「以前的主线剧情，就是从每个沁灵的详情页进入那个，取消。全面用新的剧情来取代，走独立的入口。」
      · 入口放在**首页**（宝贝列表上方的大卡片，一眼能找到），路由 #/main
      · 章节对话页 #/maintalk/<i>；状态全在 ww_story（全局一条），⛔ 不进任何一只的 rec
-     · 旧 8 章 CHAP_SCRIPTS / CHAPTERS 数据原样保留，只是入口取消了 */
+     · v178：旧 8 章（串与我）已整体删除 —— 数据与 app.js 侧消费方一并移除。 */
   function mainStoryCtx() {
     // 全局天数：新主线是「一门人的故事」，不是某一只的 —— 取你陪得最久那只的天数
     let maxDay = 1;
@@ -8199,49 +8194,8 @@
     });
   }
 
-  /* ---------- v161：主线「串与我」· 对话页（单串，一章一聊） ----------
-     v165-N3：⛔ **入口已按用户裁定取消**（不再挂在沁灵详情页）。
-     函数与它依赖的 CHAP_SCRIPTS / CHAPTERS / chapTalk* 全部原样保留 —— 用户没让删数据。 */
-  function renderChapTalkPage(spiritId, chIdx) {
-    const i = Math.max(0, Number(chIdx) || 0);
-    const it = spiritItems().filter((x) => String(x.id) === String(spiritId))[0];
-    if (!it) { location.hash = "#/spirit"; return; }
-    const act = Spirits.CHAP_ACTS[i];
-    if (!act) { location.hash = "#/spirit/" + encodeURIComponent(it.id); return; }
-    const st0 = Spirits.load();
-    const rc0 = Spirits.ensureIn(st0, it.id);
-    const ch = Spirits.chapterState(rc0, diaryCtx(it, rc0), roomCountOf(rc0))[i];
-    if (!ch || !ch.unlocked) { location.hash = "#/spirit/" + encodeURIComponent(it.id); return; }
-    const nm = nameOf(it, st0);
-    const back = "#/spirit/" + encodeURIComponent(it.id);
-    const get = (fn) => {
-      const s = Spirits.load();
-      const rc = Spirits.ensureIn(s, it.id);
-      const rr = fn(rc);
-      Spirits.save(s);
-      return Object.assign(rr, { log: (rc.talk || {}).log || [] });
-    };
-    return renderTalkPage({
-      immersive: true,         // v176：旧单串同主线 = 沉浸 AVG（路由已废，仅保留兼容）
-      title: act.title,
-      headAv: spiritThumbHtml(it, rc0, 30),
-      headName: nm,
-      headSub: act.icon + " " + act.volName + " · 第 " + (i + 1) + " 章",
-      listLabel: "回到它", listHash: back,
-      bg: Spirits.bgForChapter("ch" + (i + 1)),   // v165：章节 → BG key 映射（卷一 ch1–ch5；未覆盖 = 渐变兜底）
-      av: () => spiritThumbHtml(it, rc0, 30),
-      portrait: (m) => (m && m.w === "sp") ? (rc0.imgCut || rc0.imgUrl || "") : "",   // v169：单串剧本 → 该串立绘；v170：优先透明抠图
-      portraitCut: (m) => !!(m && m.w === "sp" && rc0.imgCut),          // v170：是否透明抠图（切 contain/站底）
-      nameOf: () => nm,
-      endTag: "第 " + (i + 1) + " 章 · 完",
-      endingExtra: () => (i === Spirits.CHAP_ACTS.length - 1)
-        ? '<div class="nt-end-final">🪢 主线到这里就走完了一遍。以后没有新章了 —— 剩下的日子，就是每天在，每天亮一点。</div>' : "",
-      backLabel: "回到它", backHash: back,
-      enter: () => get((rc) => Spirits.chapTalkEnter(it, rc, diaryCtx(it, rc), i)),
-      choose: (k) => get((rc) => Spirits.chapTalkChoose(it, rc, diaryCtx(it, rc), k)),
-      replay: () => get((rc) => Spirits.chapTalkReplay(it, rc, diaryCtx(it, rc), i)),
-    });
-  }
+  /* ---------- v178：旧 8 章主线「串与我」· 对话页已删除 ----------
+     renderChapTalkPage 及其对 CHAP_ACTS / chapterState / chapTalk* 的消费全部移除。 */
   function renderRoomPage(roomId) {
     const room = Rooms.getRoom(roomId);
     if (!room) { location.hash = "#/spirit"; return; }
@@ -11478,8 +11432,6 @@ else if (h.indexOf("#/night/") === 0) {                                         
     // v176a：云端旧日记可能在 init 清理之后才落地覆盖回来，所以每次拉完远端都再清一次
     // （函数自带 try/catch，不可能打断 pullSpirits；ww_diaryver 保证只真正执行一次）
     purgeObjectifiedDiaryOnce();
-    // v177c：同上 —— 云端旧口头禅（persona.line）回灌后再清一次（ww_persver 保证只跑一次）
-    purgeObjectifiedPersonaOnce();
   }
   // 离开页面 / 切后台时把改动推上去；每 2 分钟兜底推一次（仅在有改动时）
   window.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") pushSpirits(); });
@@ -11602,34 +11554,6 @@ else if (h.indexOf("#/night/") === 0) {                                         
     } catch (e) { return 0; }
   }
 
-  /* ---------- 一次性迁移 v177c：清掉旧物化口头禅（persona.line） ----------
-     早期 AI 生成的 persona.line 已写进存档，不会自己更新；列表页 / 图鉴页即便加了过滤，
-     玩家还会从云端拿到旧句 ⇒ 一次性清空，之后按新口径重新生成。
-     ⛔ 只清 persona.line 这一个字段；persona 其余字段 / personaZh / diary / marks /
-        flags / 羁绊 / 心迹 一律不动（用户资产）。
-     版本键 ww_persver：跑过一次就跳过，云端旧数据回灌也只清一次。 */
-  const PERS_VER = "v177c";
-  function purgeObjectifiedPersonaOnce() {
-    try {
-      if (localStorage.getItem("ww_persver") === PERS_VER) return 0;
-      const s = Spirits.load();
-      let n = 0;
-      Object.keys(s || {}).forEach((k) => {
-        const r = s[k];
-        if (!r || typeof r !== "object") return;
-        const p = r.persona;
-        if (!p || typeof p !== "object") return;
-        if (typeof p.line !== "string" || !p.line) return;
-        if (!isPersonaLineBad(p.line)) return;
-        p.line = "";
-        n++;
-      });
-      if (n > 0) Spirits.save(s);   // 内部会 dispatch ww:spirits-changed → 自动推云端
-      try { localStorage.setItem("ww_persver", PERS_VER); } catch (e2) { /* 忽略 */ }
-      return n;
-    } catch (e) { return 0; }
-  }
-
   async function init() {
     try {
       initTheme();
@@ -11668,9 +11592,6 @@ else if (h.indexOf("#/night/") === 0) {                                         
         // v176a：首启兜底（离线 / 没拉到云端时也要清一次）
         const dn = purgeObjectifiedDiaryOnce();
         if (dn) toast("已清掉 " + dn + " 篇旧日记，沁灵会按新的说法重新写 ✨");
-        // v177c：同上 —— 清掉旧物化口头禅（列表 / 图鉴页不再出现「盘我盘我」）
-        const pn = purgeObjectifiedPersonaOnce();
-        if (pn) toast("已清掉 " + pn + " 句旧口头禅 ✨");
         if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
           navigator.serviceWorker.register("sw.js").then((reg) => {
             // 检测到新 SW 等待激活时，立即跳过等待并刷新页面

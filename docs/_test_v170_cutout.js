@@ -131,8 +131,8 @@ section("C. 剧情页 o.portrait（imgCut 优先 / 不混 CG）");
 ok(!!mainSrc && /portrait:/.test(mainSrc) && /rec\.imgCut \|\| rec\.imgUrl/.test(mainSrc),
   "renderMainTalkPage.portrait：优先 imgCut，回落 imgUrl");
 ok(!!mainSrc && /portraitCut:/.test(mainSrc), "renderMainTalkPage 传 portraitCut（透明切换信号）");
-ok(!!chapSrc && /rc0\.imgCut \|\| rc0\.imgUrl/.test(chapSrc) && /portraitCut:/.test(chapSrc),
-  "renderChapTalkPage.portrait/portraitCut：imgCut 优先");
+ok(chapSrc === null,
+  "v178：renderChapTalkPage 已删除（旧 8 章对话页整体移除，无 imgCut 消费方）");
 ok(!!talkSrc && /o\.portraitCut/.test(talkSrc) && /pEl\.dataset\.cut = cut \? "1" : "0"/.test(talkSrc),
   "present：读 o.portraitCut → pEl.dataset.cut = \"1\"/\"0\"（⛔ 不靠猜）");
 // 行为断言：真跑 renderMainTalkPage 里的 portrait 取数器 —— 断言 imgCut 优先、且**永不返回 cgUrl**

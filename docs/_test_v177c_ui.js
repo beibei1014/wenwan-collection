@@ -1,18 +1,18 @@
 /* ============================================================
- * _test_v177c_ui.js · V177c「任务页身份名 + 口头禅物化残留」回归红测
+ * _test_v177c_ui.js · 「任务页身份名」+「口头禅渲染 / 清洗已移除」回归
  * ------------------------------------------------------------
- * ⚠️ 本文件在 **V177c 落地前一直为红测**（red test）：它断言
- *      (1) 今日任务页叫「身份名」（楚柿遥）而不是手串名（柿宝）
- *      (2) 列表页 / 图鉴页口头禅带过滤，物化旧句不渲染
- *      (3) 已存 persona.line 一次性清洗（只清 line，其余字段不动）
- *     落地前这些断言全不成立 ⇒ 全红。
+ * 演变：
+ *   · V177c：断言列表/图鉴页口头禅带物化过滤 + persona.line 一次性清洗（落地前为红测）。
+ *   · V178：口头禅功能**整体移除** —— C/D 两块断言**反转**为：
+ *       (C) ⛔ 列表 / 图鉴页不再产出 .spirit-line（源码 0 处）
+ *       (D) ⛔ purgeObjectifiedPersonaOnce / PERS_VER / ww_persver / 两处挂点 已删除
+ *     A（任务页身份名）与 B（保留的 isPersonaLineBad 词表 —— 该函数被测试锚定，故保留）不变。
  *
- * 基准：`d56db34`（显式 commit，⛔ 绝不用 git show HEAD）。
- * 取样方式：**把源码里的真函数抽进 vm 沙箱跑**，不是只 grep 字符串 ——
- *      所以能验证"粘贴"行为（resolver 真的落地、渲染真的滤掉、清洗真的只动 line）。
+ * 基准：反转后的 C/D 断言在改动前（7e63093：口头禅仍在渲染、清洗函数仍在）必须报红。
+ * 取样方式：**把源码里的真函数抽进 vm 沙箱跑**，不是只 grep 字符串。
  * 用法： node docs/_test_v177c_ui.js                       （默认读 ../js）
- * 负向对照： git worktree add /tmp/_base d56db34
- *           V177C_SRC_DIR=/tmp/_base/js node docs/_test_v177c_ui.js   ⇒ 必须全红
+ * 负向对照： git worktree add /tmp/_base 7e63093
+ *           V177C_SRC_DIR=/tmp/_base/js node docs/_test_v177c_ui.js   ⇒ C/D 必须报红
  * ============================================================ */
 "use strict";
 const fs = require("fs");
@@ -40,6 +40,8 @@ function grab(re, src, label) {
   if (!m) { FAIL++; FAILURES.push(label + "：源码里抽不到"); console.log("  ✗ " + label + "：源码里抽不到"); return null; }
   return m[0];
 }
+// v178：容错抽取 —— 目标已（按预期）被删除时返回 null，交由断言判红，而不是在这里就崩
+function maybe(re, src) { const m = re.exec(src || ""); return m ? m[0] : null; }
 
 console.log("V177c 任务页身份名 + 口头禅物化回归　基准目录：" + SRC);
 console.log("------------------------------------------------------------");
@@ -56,8 +58,8 @@ const APPF = {
   isObj: grab(/function isObjectifyingLine\(line\) \{[\s\S]*?\n  \}/, APP, "isObjectifyingLine"),
   words: grab(/const PERSONA_BAD_WORDS = \[[\s\S]*?\n  \];/, APP, "PERSONA_BAD_WORDS"),
   isBad: grab(/function isPersonaLineBad\(line\) \{[\s\S]*?\n  \}/, APP, "isPersonaLineBad"),
-  persVer: grab(/const PERS_VER = "[^"]*";/, APP, "PERS_VER"),
-  purge: grab(/function purgeObjectifiedPersonaOnce\(\) \{[\s\S]*?\n  \}/, APP, "purgeObjectifiedPersonaOnce"),
+  persVer: maybe(/const PERS_VER = "[^"]*";/, APP),
+  purge: maybe(/function purgeObjectifiedPersonaOnce\(\) \{[\s\S]*?\n  \}/, APP),
 };
 
 function fakeStorage() {
@@ -202,101 +204,22 @@ if (BADFN) {
     "B 内部复用 isObjectifyingLine（V175 口径不重复维护，只在其上扩词）");
 }
 
-/* ================= C · 列表页 / 图鉴页渲染过滤 ================= */
-section("C · 列表页 + 图鉴页口头禅渲染");
-const LINE_RE = /\(\(p && p\.line && !isPersonaLineBad\(p\.line\)\) \? '<div class="spirit-line">' \+ esc\(p\.line\) \+ "<\/div>" : ""\)/g;
-const lineHits = APP ? (APP.match(LINE_RE) || []) : [];
-ok(lineHits.length === 2,
-  "C1 spirit-line 渲染处恰好 2 处（列表页 + 图鉴页）且都带 isPersonaLineBad 过滤（实得 " + lineHits.length + "）");
-ok(APP.indexOf("'<div class=\"spirit-line\">' + esc((p && p.line) || \"\") + \"</div>\"") < 0,
-  "C2 旧的无过滤写法（列出空串也渲染）已不存在");
-function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
-function render(p) {
-  const expr = lineHits[0];
-  if (!expr) return "__NOEXPR__";
-  return vm.runInNewContext("(" + expr + ")", { p: p, esc: esc, isPersonaLineBad: BADFN });
-}
-ok(render({ line: "我就在这儿等你回来" }).indexOf('<div class="spirit-line">') >= 0
-  && render({ line: "我就在这儿等你回来" }).indexOf("我就在这儿等你回来") >= 0,
-  "C3 干净口头禅照常渲染（实得：" + render({ line: "我就在这儿等你回来" }) + "）");
-ok(render({ line: "盘我盘我，越盘越亮哦~" }) === "",
-  "C4 物化旧句不渲染（实得：" + JSON.stringify(render({ line: "盘我盘我，越盘越亮哦~" })) + "）");
-ok(render({ line: "瑕不掩瑜，盘我别急~" }) === "" && render({ line: "盘我一天，包浆给你看！" }) === "",
-  "C4b 截图③/④ 同样不渲染");
-ok(render({ line: "" }) === "" && render(null) === "",
-  "C5 空 line / 无 persona 时不再多渲染一行空 div");
+/* ================= C · 列表页 / 图鉴页：口头禅已不再渲染 ================= */
+section("C · 列表页 + 图鉴页口头禅渲染 —— 已移除（v178）");
+const spiritLineHits = APP ? (APP.match(/<div class="spirit-line">/g) || []) : [];
+ok(spiritLineHits.length === 0,
+  "C1 ⛔ .spirit-line 渲染已整体移除（源码中 0 处产出，实得 " + spiritLineHits.length + "）");
+ok(APP.indexOf("isPersonaLineBad(p.line)") < 0,
+  "C2 ⛔ 列表 / 图鉴页不再调用 isPersonaLineBad 过滤（渲染已删，过滤无处可用）");
 
-/* ================= D · 已存 persona.line 一次性清洗 ================= */
-section("D · purgeObjectifiedPersonaOnce（只清 persona.line，其余字段一律不动）");
-ok(APPF.persVer === 'const PERS_VER = "v177c";',
-  "D1 版本键 PERS_VER = \"v177c\"（跑过一次就跳过）　实得：" + APPF.persVer);
-const purgeFn = (function () {
-  if (!APPF.purge || !APPF.persVer || !BADFN) return null;
-  try {
-    const sb = { console, Math, JSON, Date, Object, Array, String, Number, Boolean, RegExp, Error };
-    vm.createContext(sb);
-    return vm.runInContext([APPF.persVer, APPF.purge, "purgeObjectifiedPersonaOnce"].join("\n"), sb);
-  } catch (e) { return null; }
-})();
-ok(!!purgeFn && typeof purgeFn === "function", "D1 purgeObjectifiedPersonaOnce 可独立求值（能从源码抽出真跑）");
-function mkFixture() {
-  return {
-    it1: {
-      persona: { name: "柿宝", title: "守柿人", line: "盘我盘我，越盘越亮哦~", traits: ["话少"], gender: "boy" },
-      personaZh: { hair: "黑", wear: "长衫" },
-      diary: [{ date: "2027-01-17", text: "今天陪主人坐了很久" }],
-      marks: ["m1", "m2"],
-      flags: { firstMet: 1 },
-      bond: 42, heart: 88, stage: 2, nameEdited: false, echoes: [{ id: "e1" }],
-    },
-    it2: {
-      persona: { name: "多多牛", line: "我就在这儿等你回来", traits: ["憨"] },
-      diary: [], marks: [], flags: {},
-    },
-  };
-}
-if (purgeFn) {
-  const store = mkFixture();
-  const before = JSON.parse(JSON.stringify(store));
-  const ls = fakeStorage();
-  const saved = { n: 0 };
-  const ctx = {
-    localStorage: ls,
-    Spirits: { load() { return store; }, save() { saved.n++; } },
-    isPersonaLineBad: BADFN, console, Math, JSON, Date, Object, Array, String, Number, Boolean, RegExp, Error,
-  };
-  vm.createContext(ctx);
-  const run = vm.runInContext([APPF.persVer, APPF.purge, "purgeObjectifiedPersonaOnce"].join("\n"), ctx);
-  const n1 = run();
-  ok(n1 === 1, "D2 坏的 persona.line 被清空，返回计数 1（实得 " + n1 + "）");
-  ok(store.it1.persona.line === "", "D2 persona.line 已清空（实得 " + JSON.stringify(store.it1.persona.line) + "）");
-  const others = Object.assign({}, store.it1.persona);
-  delete others.line;
-  const beforeOthers = Object.assign({}, before.it1.persona);
-  delete beforeOthers.line;
-  ok(JSON.stringify(others) === JSON.stringify(beforeOthers),
-    "D3 persona 其余字段原样（name/title/traits/gender）　实得：" + JSON.stringify(others));
-  ok(JSON.stringify(store.it1.personaZh) === JSON.stringify(before.it1.personaZh), "D4 personaZh 未动");
-  ok(JSON.stringify(store.it1.diary) === JSON.stringify(before.it1.diary), "D4 diary 未动");
-  ok(JSON.stringify(store.it1.marks) === JSON.stringify(before.it1.marks), "D4 marks 未动");
-  ok(JSON.stringify(store.it1.flags) === JSON.stringify(before.it1.flags), "D4 flags 未动");
-  ok(store.it1.bond === 42 && store.it1.heart === 88 && store.it1.stage === 2 && store.it1.echoes.length === 1,
-    "D4 bond / heart / stage / echoes 未动");
-  ok(store.it2.persona.line === "我就在这儿等你回来",
-    "D5 干净口头禅不动（实得「" + store.it2.persona.line + "」）");
-  ok(ls.getItem("ww_persver") === "v177c", "D6 版本键 ww_persver 已写入 v177c");
-  saved.n = 0;
-  const n2 = run();
-  ok(n2 === 0 && saved.n === 0, "D6 二次调用返回 0 且不重复写库（幂等）　实得 n=" + n2 + " save=" + saved.n);
-  store.it1.persona.line = "新写的一句人话";
-  ok(run() === 0 && store.it1.persona.line === "新写的一句人话",
-    "D6 以后新生成的口头禅永不被误清");
-}
+/* ================= D · 已存 persona.line 一次性清洗 —— 已移除（v178） ================= */
+section("D · purgeObjectifiedPersonaOnce 清洗迁移 —— 已移除（v178）");
+ok(APPF.persVer === null, "D1 ⛔ PERS_VER 常量已删除（不再有清洗版本键）　实得：" + APPF.persVer);
+ok(APPF.purge === null, "D1 ⛔ purgeObjectifiedPersonaOnce 函数已删除");
+ok(APP.indexOf("ww_persver") < 0, "D2 ⛔ ww_persver 版本键读写已随函数一并移除（源码 0 引用）");
 {
-  const hookPull = (APP.match(/purgeObjectifiedPersonaOnce\(\);/g) || []).length;
-  const hookToast = /const pn = purgeObjectifiedPersonaOnce\(\);[\s\S]{0,120}旧口头禅/.test(APP);
-  ok(hookPull >= 1, "D7 挂点① pullSpirits 尾部（防云端旧数据回灌）　实得 " + hookPull + " 处调用");
-  ok(hookToast, "D7 挂点② init() 里 toast 汇总「已清掉 N 句旧口头禅 ✨」");
+  const hookPull = (APP.match(/purgeObjectifiedPersonaOnce/g) || []).length;
+  ok(hookPull === 0, "D7 ⛔ 两处挂点（pullSpirits 尾 / init）已随函数一并移除（源码引用实得 " + hookPull + "）");
 }
 
 console.log("------------------------------------------------------------");

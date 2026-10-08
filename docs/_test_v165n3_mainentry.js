@@ -44,7 +44,7 @@ const spSrc = fs.readFileSync(path.join(ROOT, "js/spirits.js"), "utf8");
     .forEach((f) => ok(typeof S[f] === "function", "旧方法仍导出：" + f));
   ok(Array.isArray(S.CHAP_ACTS) && S.CHAP_ACTS.length === 8, "CHAP_ACTS 仍是 8 条（实测 " + (S.CHAP_ACTS || []).length + "）");
   ok(S.CHAPTERS.length === 8, "CHAPTERS 仍是 8 条（⛔ 没被 8→9 加长）");
-  ok(appSrc.indexOf("function renderChapTalkPage") >= 0, "renderChapTalkPage 函数保留（只是没有入口了）");
+  ok(appSrc.indexOf("function renderChapTalkPage") < 0, "v178：renderChapTalkPage 已删除（旧 8 章整体移除）");
   // 旧 8 章行为零变化：chapWalk 仍走 chapActOf（新增的 actOf 是可选第 4 参）
   ok(spSrc.indexOf("const act = (actOf || chapActOf)(t.chapId)") >= 0, "chapWalk 不传 actOf 时仍走 chapActOf");
   ok(spSrc.indexOf("const act = (actOf || chapActOf)(t && t.chapId)") >= 0, "chapTalkChoose 同上");

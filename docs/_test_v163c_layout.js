@@ -3,7 +3,7 @@
      1) 标签开闭完全平衡（不许多余 </div>、不许错配）
      2) .spirit-card 的直接子元素恰好 2 个（缩略图 + 元信息块）—— 元信息块一旦被提前闭合，
         title/line/prog/tags 会变成 flex row 的兄弟项，CJK 文本塌成 1 字宽竖排（线上崩过一次）
-     3) title/line/prog/tags/stage 都在 .spirit-meta 内部；stars 在 .spirit-name 内部
+     3) title/prog/tags/stage 都在 .spirit-meta 内部；stars 在 .spirit-name 内部
 
    用法： node docs/_test_v163c_layout.js
    负向对照（证明这个测试真的抓得住 bug）：
@@ -63,10 +63,10 @@ const LIST = [
   { id: "it3", name: "油果果", lastPlayedAt: Date.now() - 9 * 86400000 },
 ];
 const STORE = {
-  // v177c：it1 用**干净**口头禅（验证 line 仍在 .spirit-meta 内正常渲染）
+  // v178：it1 的口头禅字段仍留在夹具里，但渲染已移除（不再产出 .spirit-line）
   it1: { persona: { title: "慢热掌柜", line: "慢慢来，我又不会跑~", traits: ["软糯", "慢热"] }, stage: 2 },
   it2: { persona: null, stage: 1, mail: 1 },
-  // v177c：it3 故意留**物化旧句**（早期 AI 产物），验证列表页已把它滤掉
+  // v178：it3 留物化旧句做回归——无论如何都不该渲出到列表页
   it3: { persona: { title: "见人就想包浆", line: "包浆给你看！", traits: ["油亮"] }, stage: 4, cgUrl: "data:x" },
 };
 
@@ -217,7 +217,7 @@ function checkPage(name, label) {
   const metas = opens.filter((o) => classesOf(o.cls).indexOf("spirit-meta") >= 0).length;
   ok(metas === LIST.length, ".spirit-meta 数量 = 数据条数（" + metas + " / " + LIST.length + "）");
 
-  ["spirit-title", "spirit-line", "spirit-prog", "spirit-tags", "spirit-stage"].forEach((c) => {
+  ["spirit-title", "spirit-prog", "spirit-tags", "spirit-stage"].forEach((c) => {
     const r = isInside(opens, c, "spirit-meta");
     ok(r.n > 0 && r.okAll, "." + c + " 全部位于 .spirit-meta 内部（命中 " + r.n + " 个）");
   });
@@ -225,11 +225,9 @@ function checkPage(name, label) {
   if (name === "renderSpiritPage") ok(st.n > 0 && st.okAll, ".sp-stars 全部位于 .spirit-name 内部（命中 " + st.n + " 个）");
   else ok(st.n === 0 || st.okAll, ".sp-stars 若存在则位于 .spirit-name 内部（命中 " + st.n + " 个）");
 
-  // v177c：列表 / 图鉴页口头禅加了物化过滤 —— 干净句照常渲染，旧句（it3「包浆给你看！」）不再出现
-  ok(html.indexOf("慢慢来，我又不会跑~") >= 0,
-    "v177c 干净口头禅照常渲染（it1）");
-  ok(html.indexOf("包浆给你看！") < 0 && html.indexOf("盘我，太快喵~") < 0,
-    "v177c 物化旧口头禅不渲染（it3「包浆给你看！」已滤掉）");
+  // v178：口头禅（persona.line）渲染已整体移除 —— 列表 / 图鉴页都不再产出 .spirit-line
+  ok(html.indexOf("慢慢来，我又不会跑~") < 0 && html.indexOf("包浆给你看！") < 0,
+    "v178 口头禅不再渲染（persona.line 已从列表 / 图鉴页移除）");
 
   // v163d：回响提示必须点名「是谁留的信」——单尊时出现这一尊的名字 + 总封数
   //   （改 app.js 之前这条会 FAIL：旧文案「✦ 有 N 封回响信」不含名字 → 负向对照成立）
