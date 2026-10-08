@@ -8466,6 +8466,103 @@ const CH09 = {
     };
   }
 
+  /* ============================================================
+   * v180-G：《沁灵纪》「篇」层 —— **篇 ＞ 章 ＞ 段**（⛔ 与老 9 章**并存**，老数据一个字不动）
+   *   数据：**篇/章/段全在 window.BOOK_JIEQI**（js/book-jieqi.js，由 md 机械抽取）
+   *        ⇒ 改剧情改 md 重跑抽取器即可，⛔ 引擎不识剧情、剧情不识引擎。
+   *   进度：ww_story.book[<bookId>].chapters[i] = { seg, done }
+   *        —— ⛔ 全局一条，**不进任何逐串 rec**（与 ww_story.mainTalk 同口径）
+   *   解锁：链式的（上一章看完才开下一章）；⛔ 不引天数锚点（结契篇是序章，不等日子）
+   *   ⛔ BG 只读 bgGet（已出好的静态/云端图），**绝不调 ensureBg**（会触发出图 API 与费用）
+   *   ⛔ CG 只登记候选清单，**本批不出图**
+   * ============================================================ */
+  function booksAll() {
+    try {
+      const g = (typeof window !== "undefined") ? window : (typeof globalThis !== "undefined" ? globalThis : null);
+      const b = g ? g.BOOK_JIEQI : null;
+      return (b && Array.isArray(b.chapters) && b.chapters.length) ? [b] : [];
+    } catch (e) { return []; }
+  }
+  function bookOf(id) {
+    const all = booksAll();
+    for (let i = 0; i < all.length; i++) if (String(all[i].id) === String(id)) return all[i];
+    return null;
+  }
+  function bookShim() {
+    const w = readStory();
+    if (!w.book || typeof w.book !== "object") w.book = {};
+    return w;
+  }
+  // 进度对象（读到第几章第几段）；长度按章数补齐
+  function bookProg(bookId) {
+    const b = bookOf(bookId);
+    if (!b) return { chapters: [] };
+    const w = bookShim();
+    let p = w.book[bookId];
+    if (!p || typeof p !== "object") p = { chapters: [] };
+    if (!Array.isArray(p.chapters)) p.chapters = [];
+    while (p.chapters.length < b.chapters.length) p.chapters.push({ seg: 0, done: false });
+    w.book[bookId] = p;
+    return p;
+  }
+  function bookLines(bookId, chIdx) {
+    const b = bookOf(bookId);
+    const ch = (b && b.chapters) ? b.chapters[Number(chIdx)] : null;
+    return (ch && Array.isArray(ch.lines)) ? ch.lines : [];
+  }
+  function bookChapterState(bookId) {
+    const b = bookOf(bookId);
+    if (!b) return [];
+    const p = bookProg(bookId);
+    const out = [];
+    let prevDone = true;
+    for (let i = 0; i < b.chapters.length; i++) {
+      const c = b.chapters[i];
+      const total = Array.isArray(c.lines) ? c.lines.length : 0;
+      const st = p.chapters[i] || { seg: 0, done: false };
+      const seg = Math.max(0, Math.min(Number(st.seg) || 0, total));
+      const unlocked = prevDone;
+      out.push({
+        i: i, id: c.id, no: c.no, title: c.title, sub: c.sub || "",
+        unlocked: unlocked, done: !!st.done, seg: seg, total: total,
+        read: !!st.done || seg > 0,
+        need: unlocked ? "" : "先看完上一章",
+      });
+      prevDone = unlocked ? !!st.done : false;
+    }
+    return out;
+  }
+  function bookMark(bookId, chIdx, seg) {
+    const w = bookShim();
+    const p = bookProg(bookId);
+    const total = bookLines(bookId, chIdx).length;
+    const s = Math.max(0, Math.min(Number(seg) || 0, total));
+    p.chapters[Number(chIdx)] = { seg: s, done: (total > 0 && s >= total) };
+    w.book[bookId] = p;
+    writeStory(w);
+    return p.chapters[Number(chIdx)];
+  }
+  function bookReset(bookId, chIdx) { return bookMark(bookId, chIdx, 0); }
+  function bookUnreadCount(bookId) {
+    return bookChapterState(bookId).filter((c) => c.unlocked && !c.done).length;
+  }
+  // ⛔ CG 候选**只登记不出图**：本函数只是把清单交出去，绝不调用任何出图接口
+  function bookCgCandidates(bookId) {
+    const b = bookOf(bookId);
+    return (b && Array.isArray(b.cgCandidates)) ? b.cgCandidates.slice() : [];
+  }
+  // BG：只从章节声明的 key 里挑「已出好」的那张（⛔ 只读 bgGet —— 绝不 ensureBg）
+  function bookBgKeys(bookId, chIdx) {
+    const b = bookOf(bookId);
+    const ch = (b && b.chapters) ? b.chapters[Number(chIdx)] : null;
+    return (ch && Array.isArray(ch.bg)) ? ch.bg.slice() : [];
+  }
+  function bookBgUrl(bookId, chIdx) {
+    const keys = bookBgKeys(bookId, chIdx);
+    for (let i = 0; i < keys.length; i++) { const u = bgGet(keys[i]); if (u) return u; }
+    return "";
+  }
+
 
   /* ---------- 房间剧情（两只沁灵的故事） ---------- */
   function storyLocal(a, b, level, roomName, aff) {
@@ -9287,6 +9384,9 @@ const CH09 = {
     MAIN_STORY_OPEN, MAIN_CHAPTERS, MAIN_SCRIPTS, MAIN_ACTS, mainActOf,
     mainChapterState, mainUnreadCount, mainReadChapter, mainReadMap,
     mainTalkEnter, mainTalkChoose, mainTalkReplay, mainTalkBrief,
+    // v180-G：「篇」层（篇 ＞ 章 ＞ 段）—— 与老 9 章并存；进度落 ww_story.book（⛔ 不进逐串 rec）
+    booksAll, bookOf, bookProg, bookLines, bookChapterState, bookMark, bookReset,
+    bookUnreadCount, bookCgCandidates, bookBgKeys, bookBgUrl,
     // v160：夜话（跨串大剧情 · 互动对话）—— 本地剧本 + 本地状态机，0 出图 0 模型调用
     NIGHT_ACTS, NIGHT_GROUP, NIGHT_CAP, nightCast, nightActs, nightEnter, nightReplay, nightChoose, nightBrief,
     // v162：夜话 2.0 —— 多会话（全家群 / 房间群 / 双人组）+ 按条件触发的事件

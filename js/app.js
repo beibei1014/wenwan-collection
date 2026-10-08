@@ -7865,6 +7865,8 @@
       }
       if (txtEl) txtEl.textContent = String(m.text || "");
       if (cueEl) cueEl.hidden = false;
+      // v180-G：逐段进度挂点（「篇」层用它记「读到第几段」）。其它调用点一律不传 ⇒ 零变化
+      if (typeof o.onLine === "function") { try { o.onLine(m); } catch (e) { /* ⛔ 挂不上也不许影响气泡流 */ } }
     };
     const msgHtml = (m) => {
       if (m.w === "sys") {
@@ -8337,6 +8339,7 @@
       (Spirits.MAIN_STORY_OPEN ? "" : " · 正文装帧中") + "</div></div></div>" +
       '<div class="chap-prog"><i style="width:' + Math.round((read / Math.max(1, list.length)) * 100) + '%"></i></div>';
     h += castEntryHtml();                          // v172：点戏入口卡（.chap-prog 后、.chap-list 前）
+    h += bookEntryHtml();                          // v180-G：〈结契篇〉入口卡（篇层；⛔ 与老 9 章并存、不取代）
     h += '<div class="chap-list">';
     list.forEach((ch) => {
       if (!ch.unlocked) {
@@ -8431,6 +8434,176 @@
       enter: () => Spirits.mainTalkEnter(ctx, i),
       choose: (k) => Spirits.mainTalkChoose(ctx, k),
       replay: () => Spirits.mainTalkReplay(ctx, i),
+    });
+  }
+
+  /* ============================================================
+   * v180-G：《沁灵纪》「篇」层 —— **篇 ＞ 章 ＞ 段**
+   *   入口：#/main（沁灵纪 · 主线）页加一张〈结契篇〉入口卡 → #/book（篇目）→ #/bookread/<章>（阅读）
+   *   数据：Spirits.book*（读 window.BOOK_JIEQI，由 md 机械抽取）；进度落 ww_story.book（⛔ 不进逐串 rec）
+   *   演出：复用 renderTalkPage —— 沉浸 AVG（BG + 立绘 + 对话框 + 手动点一下推进一段）
+   *   ⛔ 与老 9 章**并存**（老数据 / 老消费方 / 老入口一个字不动）
+   *   ⛔ BG 只走 Spirits.bgGet（已出好的静态图），**绝不 ensureBg**
+   *   ⛔ CG 只登记清单，**本批不出图**
+   * ============================================================ */
+  const BOOK_ID = "jieqi";
+
+  // 段 → 演出消息：旁白/场景 ⇒ sys；对白 ⇒ sp（带说话人）；玩家行 ⇒ me
+  function bookMsgOf(L, seg) {
+    const t = String((L && L.t) || "");
+    if (L && L.k === "me") return { w: "me", text: t, seg: seg };
+    if (L && L.k === "d") {
+      const who = String(L.who || "");
+      return { w: "sp", name: who, castName: who, speaker: String(L.role || who), text: t, slot: "C", seg: seg };
+    }
+    return { w: "sys", text: t, seg: seg };
+  }
+  // 立绘解析：① 核心 10 位走 MAINCHAR_ART（手抠）；② 其余按显示名找那一串 ⇒ rec.imgCut || rec.imgUrl
+  //   ⛔ 无专属立绘键者（在册同伴 6 只）一律走 ②；⛔ 不新增 MAINCHAR_ART 键、不加错别名
+  function bookArtOf(speaker, who) {
+    const nm = String(speaker || who || "").trim();
+    if (!nm) return { src: "", cut: false, knee: null };
+    try {
+      const art = (typeof maincharArtOf === "function") ? maincharArtOf({ name: nm }) : null;
+      if (art && art.f) return { src: art.f, cut: false, knee: { mode: "knee", h: art.h, t: art.t } };
+    } catch (e) { /* 抽函数单测里 maincharArtOf 不在作用域 ⇒ 静默回落 */ }
+    try {
+      const store = Spirits.load();
+      for (let i = 0; i < allItems.length; i++) {
+        const it = allItems[i];
+        const r = store[it.id] || {};
+        const cur = String(r.name || (r.persona && r.persona.name) || "").trim();
+        let hit = "";
+        if (typeof spiritIdentityOf === "function") {
+          const a = cur ? spiritIdentityOf(cur) : null;
+          if (a && a.name) hit = a.name;
+          if (!hit) { const b2 = spiritIdentityOf(String(it.name || "").trim()); if (b2 && b2.name) hit = b2.name; }
+        }
+        if (hit && hit === nm) return { src: r.imgCut || r.imgUrl || "", cut: !!r.imgCut, knee: null };
+        if (cur && cur === nm) return { src: r.imgCut || r.imgUrl || "", cut: !!r.imgCut, knee: null };
+      }
+    } catch (e) { /* 读档异常 ⇒ 无立绘，⛔ 不报错 */ }
+    return { src: "", cut: false, knee: null };
+  }
+
+  // #/main 页的〈结契篇〉入口卡
+  function bookEntryHtml() {
+    let bks = [];
+    try { if (Spirits && typeof Spirits.booksAll === "function") bks = Spirits.booksAll() || []; } catch (e) { bks = []; }
+    if (!bks.length) return "";                 // 数据没挂上 ⇒ 入口整块不渲染（⛔ 绝不显示半成品）
+    const b = bks[0];
+    let list = [], unread = 0;
+    try { list = Spirits.bookChapterState(b.id) || []; unread = Spirits.bookUnreadCount(b.id) || 0; } catch (e) { /* 静默 */ }
+    const done = list.filter((c) => c.done).length;
+    const badge = unread ? '<span class="cast-entry-badge">' + unread + " 章新</span>" : "";
+    return '<div class="cast-entry" data-goto="#/book">' +
+      '<span class="cast-entry-ico">' + esc(b.icon || "🕯") + "</span>" +
+      '<div class="cast-entry-meta"><div class="cast-entry-title">' + esc(b.name) + "</div>" +
+      '<div class="cast-entry-sub">' + esc((b.sub || "") + " · 已看完 " + done + "/" + list.length) + "</div></div>" +
+      badge + '<span class="chap-arrow">›</span></div>';
+  }
+
+  function renderBookPage() {
+    const bk = Spirits.bookOf(BOOK_ID);
+    if (!bk) { location.hash = "#/main"; return; }          // 数据缺失 ⇒ 退回主线，⛔ 不白屏
+    topbarTitle.textContent = "📖 " + bk.name;
+    btnBack.style.visibility = "visible";
+    btnSettings.style.visibility = "hidden";
+    const list = Spirits.bookChapterState(BOOK_ID);
+    const done = list.filter((c) => c.done).length;
+    let h = '<div class="main-head">' +
+      '<div class="main-head-icon">' + esc(bk.icon || "🕯") + "</div>" +
+      '<div class="main-head-meta"><div class="main-head-title">' + esc(bk.name) + "</div>" +
+      '<div class="main-head-sub">' + esc(bk.sub || "") + " · 已看完 " + done + "/" + list.length + "</div></div></div>" +
+      '<div class="chap-prog"><i style="width:' + Math.round((done / Math.max(1, list.length)) * 100) + '%"></i></div>' +
+      '<div class="chap-list">';
+    list.forEach((c) => {
+      if (!c.unlocked) {
+        h += '<div class="chap-item locked"><span class="chap-ico">🔒</span>' +
+          '<div class="chap-body"><div class="chap-title">' + esc(c.title) + "</div>" +
+          '<div class="chap-need">' + esc(c.need || "还没到时候") + "</div></div></div>";
+        return;
+      }
+      const badge = c.done ? '<span class="chap-done">已看完</span>'
+        : (c.seg > 0 ? '<span class="nt-badge on">看到一半</span>' : '<span class="chap-new">新</span>');
+      const sub = c.done ? "点开可以再看一遍"
+        : (c.seg > 0 ? ("接着看 · 第 " + c.seg + "/" + c.total + " 段") : (c.sub || ("第 " + c.no + " 章")));
+      h += '<div class="chap-item talk' + (c.done ? "" : " unread") + '" data-ch="' + c.i + '">' +
+        '<span class="chap-ico">' + esc(c.no) + "</span>" +
+        '<div class="chap-body"><div class="chap-title">' + esc(c.title) + badge + "</div>" +
+        '<div class="chap-sub">' + esc(sub) + "</div></div>" +
+        '<span class="chap-arrow">›</span></div>';
+    });
+    h += "</div>";
+    const cg = Spirits.bookCgCandidates(BOOK_ID) || [];
+    if (cg.length) {
+      h += '<div class="sd-card" style="margin:12px 0"><div class="sd-card-title">🖼 CG 候选（⛔ 只登记 · 本批不出图）</div>' +
+        cg.map((x) => '<div class="chap-sub" style="padding:4px 0">· ' + esc(x.at) + " —— " + esc(x.note) + "</div>").join("") +
+        "</div>";
+    }
+    view.innerHTML = h;
+    view.querySelectorAll(".chap-item[data-ch]").forEach((el) => {
+      el.onclick = () => { location.hash = "#/bookread/" + Number(el.dataset.ch); };
+    });
+    window.scrollTo(0, 0);
+  }
+
+  function renderBookReadPage(chIdx) {
+    const i = Math.max(0, Number(chIdx) || 0);
+    const bk = Spirits.bookOf(BOOK_ID);
+    if (!bk) { location.hash = "#/main"; return; }
+    const list = Spirits.bookChapterState(BOOK_ID);
+    const ch = list[i];
+    if (!ch || !ch.unlocked) { location.hash = "#/book"; return; }
+    const lines = Spirits.bookLines(BOOK_ID, i) || [];
+    const total = lines.length;
+    const msgs = lines.map(bookMsgOf);
+    const artCache = {};
+    const artOf = (m) => {
+      const key = String((m && (m.speaker || m.name)) || "");
+      if (!key) return { src: "", cut: false, knee: null };
+      if (!artCache[key]) artCache[key] = bookArtOf(m.speaker, m.name);
+      return artCache[key];
+    };
+    const isDone = () => {
+      try { const st = (Spirits.bookChapterState(BOOK_ID) || [])[i]; return !!(st && st.done); } catch (e) { return false; }
+    };
+    return renderTalkPage({
+      immersive: true,              // 沉浸 AVG（BG + 立绘 + 对话框）
+      manual: true,                 // 手动推进：点一下 → 下一段
+      title: bk.name + " · " + ch.title,
+      headAv: '<span class="main-av">' + esc(bk.icon || "🕯") + "</span>",
+      headName: bk.name + " · 第 " + ch.no + " 章",
+      headSub: ch.sub || "",
+      listLabel: "回到篇目", listHash: "#/book", backLabel: "回到篇目", backHash: "#/book",
+      bg: Spirits.bookBgKeys(BOOK_ID, i),     // ⛔ 只传 key，由 sceneBgUrl → Spirits.bgGet 取「已出好」的那张
+      av: () => '<span class="main-av">' + esc(bk.icon || "🕯") + "</span>",
+      portrait: (m) => artOf(m).src,
+      portraitCut: (m) => artOf(m).cut,
+      frame: (m) => artOf(m).knee,
+      nameOf: () => "",
+      endTag: "第 " + ch.no + " 章 · 完",
+      endingExtra: () => (i === list.length - 1)
+        ? '<div class="nt-end-final">🕯 〈' + esc(bk.name) + '〉第 1–4 章读完了。后面的，等正文写完再续。</div>' : "",
+      enter: () => {
+        const st = (Spirits.bookChapterState(BOOK_ID) || [])[i] || { seg: 0, done: false };
+        const s = st.done ? 0 : Math.max(0, Math.min(Number(st.seg) || 0, total));
+        return {
+          log: msgs.slice(0, s),
+          added: msgs.slice(s),
+          choices: [],
+          ended: s >= total,
+          // 读完最后一段后（onLine 已把进度写到 total）⇒ 才给「章末」卡；⛔ 进章时不提前显示
+          get ending() { return isDone() ? { name: ch.title, text: "第 " + ch.no + " 章 · " + (ch.sub || "") } : null; },
+        };
+      },
+      choose: () => ({ log: msgs, added: [], choices: [], ending: null, ended: true }),
+      replay: () => {
+        try { Spirits.bookReset(BOOK_ID, i); } catch (e) { /* 存不下不影响重看 */ }
+        return { log: [], added: msgs.slice(), choices: [], ending: null, ended: false };
+      },
+      // v180-G：逐段落进度（读到第几段）—— ww_story.book，⛔ 不进逐串 rec
+      onLine: (m) => { try { Spirits.bookMark(BOOK_ID, i, (Number(m.seg) || 0) + 1); } catch (e) { /* 静默 */ } },
     });
   }
 
@@ -11510,6 +11683,8 @@ else if (h.indexOf("#/night/") === 0) {                                         
     else if (h === "#/main") renderMainPage();                                                   // v165-N3：沁灵纪 · 主线（独立入口 · 9 章）
     else if (h === "#/maincast") renderMainCastPage();                                            // v172：主线选角（点戏 · 谁扮谁）
     else if (h.indexOf("#/maintalk/") === 0) renderMainTalkPage(Number(h.slice(11)) || 0);        // v165-N3：新 9 章对话页
+    else if (h === "#/book") renderBookPage();                                                   // v180-G：篇目页（篇 ＞ 章 ＞ 段）
+    else if (h.indexOf("#/bookread/") === 0) renderBookReadPage(Number(h.slice(11)) || 0);        // v180-G：章内阅读页
     else if (h.indexOf("#/talk/") === 0) {                                                        // v161：旧 8 章（⛔ 入口已取消，直接回沁灵页）
       location.hash = "#/spirit/" + h.slice(7).split("/")[0];
     }
@@ -11628,6 +11803,8 @@ else if (h.indexOf("#/night/") === 0) {                                         
       return;
     }
     if (h.indexOf("#/maintalk/") === 0) { location.hash = "#/main"; return; }   // v165-N3：章节对话 → 主线列表
+    if (h.indexOf("#/bookread/") === 0) { location.hash = "#/book"; return; }   // v180-G：章内阅读 → 篇目
+    if (h === "#/book") { location.hash = "#/main"; return; }                   // v180-G：篇目 → 主线列表
     if (h === "#/main") { location.hash = "#/"; return; }                       // v165-N3：主线列表 → 首页
     if (h === "#/maincast") { location.hash = "#/main"; return; }                // v172：选角页 → 主线列表
     if (h === "#/spirits") { location.hash = "#/spirit"; return; }        // 全部沁灵 → 回到小房间

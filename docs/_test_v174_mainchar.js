@@ -8,7 +8,7 @@
  * 本测试钉住：
  *   1. assets/mainchars/ 恰好 9 个 .png（ASCII 名）
  *   2. js/app.js 的 MAINCHAR_ART：9 个 key = 9 名；每个 f 在磁盘真实存在；h∈[125,170]、t∈[-30,12]
- *   3. js/app.js 里 `manual: true` 恰 1 次（只主线开手动）
+ *   3. js/app.js 里 `manual: true` 恰 2 次（主线 1 + 〈结契篇〉阅读页 1；⛔ 新增阅读器要同步这里）
  *   4. js/app.js 含 const MANUAL / awaiting / data-frame / --knee-h / --knee-t
  *   5. css/skin.css 含两条 [data-frame="knee"] 选择器，且在 [data-cut="1"] **之后**（靠后覆盖）
  *   6. 负向对照：同套标记断言跑在**铆定 commit 03c473c**（⛔ 绝不用 HEAD，避免自指假红）→ 必须 FAIL
@@ -40,7 +40,9 @@ function extractArt(src) {
 /* 同套标记断言（当前区 / 铆定基线 共用） */
 function markers(appSrc, cssSrc) {
   return [
-    { n: "manual: true 恰 1 次", p: (appSrc.match(/manual:\s*true/g) || []).length === 1 },
+    /* v180-G：〈结契篇〉阅读页也走「点一下推一段」⇒ 手动档位从 1 处变 2 处。
+       ⛔ 仍是**精确计数**（不是 ≥1）：新增/丢失一个手动阅读器都会红，比原来更严。 */
+    { n: "manual: true 恰 2 次（主线 + 结契篇阅读页）", p: (appSrc.match(/manual:\s*true/g) || []).length === 2 },
     { n: "含 const MANUAL", p: appSrc.indexOf("const MANUAL") >= 0 },
     { n: "含 awaiting", p: appSrc.indexOf("awaiting") >= 0 },
     { n: "含 dataset.frame（→ DOM data-frame 属性）", p: appSrc.indexOf("dataset.frame") >= 0 },
