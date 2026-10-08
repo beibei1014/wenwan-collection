@@ -6687,7 +6687,18 @@
         if (st) out.styles.push(String(st));
       });
     } catch (e) { /* 读档异常不阻塞命名 */ }
-    return out;
+    // v180-F2：并入身份表（单一真源）—— 16 位的 name / style 与 name 首字（姓），去重并集。
+    //   以后身份表再扩 ⇒ 自动同步，不再依赖手工刷 usedBaseline（⛔ 引擎侧 nsUsed 的 union 行为保持不变）。
+    try {
+      (SPIRIT_IDENTITIES || []).forEach((row) => {
+        if (!row) return;
+        const nm = String(row.name || "");
+        if (nm) { out.names.push(nm); out.surnames.push(nm.charAt(0)); }
+        if (row.style) out.styles.push(String(row.style));
+      });
+    } catch (e) { /* 身份表异常不影响存档汇总 */ }
+    const uniq = (a) => { const o = []; (a || []).forEach((x) => { const t = String(x == null ? "" : x).trim(); if (t && o.indexOf(t) < 0) o.push(t); }); return o; };
+    return { names: uniq(out.names), styles: uniq(out.styles), surnames: uniq(out.surnames) };
   }
 
   // 选择落地（架构方案 §2.3）：四件套入 rec.naming，同时写 rec.name 让所有既有命名消费者零改动生效

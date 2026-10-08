@@ -173,6 +173,35 @@ if (SRC_NORM.length) {
   ok(bare.naming === null && bare.naming !== undefined, "naming 归一为 null（不残留 undefined）");
 }
 
+/* ---------- (3b) namingUsedNow 覆盖身份表 16 条（v180-F2 单一真源） ---------- */
+section("3b · namingUsedNow 并入身份表 16 条（name/style/姓，去重并集）");
+const SRC_IDENT = extract(/var SPIRIT_IDENTITIES = \[[\s\S]*?\n  \];/, APP);
+ok(SRC_IDENT.length > 0 && SRC_USED.length > 0, "能抽出 SPIRIT_IDENTITIES + namingUsedNow");
+if (SRC_IDENT.length && SRC_USED.length) {
+  const store3b = { A: { naming: { name: "自定义名", style: "自定义字" } }, B: { name: "手填名" } };
+  const ctx3b = vm.createContext({ Spirits: { load: () => store3b } });
+  vm.runInContext(SRC_IDENT + "\n" + SRC_USED + "\n;__U = namingUsedNow(); __I = SPIRIT_IDENTITIES;", ctx3b);
+  const U = ctx3b.__U, I = ctx3b.__I;
+  ok(Array.isArray(I) && I.length >= 16, "身份表 ≥16 条（实测 " + (I && I.length) + "）");
+  ok(U && Array.isArray(U.names) && Array.isArray(U.styles) && Array.isArray(U.surnames), "namingUsedNow 返回 {names,styles,surnames}");
+
+  const missN = (I || []).filter((r) => U.names.indexOf(r.name) < 0).map((r) => r.name);
+  ok(missN.length === 0, "names 覆盖身份表全部姓名（缺：" + missN.join(",") + "）");
+  const missS = (I || []).filter((r) => U.styles.indexOf(r.style) < 0).map((r) => r.style);
+  ok(missS.length === 0, "styles 覆盖身份表全部表字（缺：" + missS.join(",") + "）");
+  const missSur = (I || []).filter((r) => U.surnames.indexOf(String(r.name).charAt(0)) < 0).map((r) => r.name.charAt(0));
+  ok(missSur.length === 0, "surnames 覆盖身份表姓名首字（缺：" + missSur.join(",") + "）");
+  // v180-E 新增 6 条的表字 / 4 个新姓，逐一钉死
+  ["敦之", "逢春", "怀糯", "卧花", "掠云", "守灯"].forEach((st) => ok(U.styles.indexOf(st) >= 0, "覆盖新增表字 " + st));
+  ["俞", "戚", "乔", "闵"].forEach((s) => ok(U.surnames.indexOf(s) >= 0, "覆盖新增姓 " + s));
+  // 存档内自定义名/字仍并入（并集不丢档内项）
+  ok(U.names.indexOf("自定义名") >= 0 && U.names.indexOf("手填名") >= 0 && U.styles.indexOf("自定义字") >= 0,
+    "存档内的自定义名/字仍并入（并集不丢档内项）");
+  // 去重
+  ok(new Set(U.names).size === U.names.length && new Set(U.styles).size === U.styles.length && new Set(U.surnames).size === U.surnames.length,
+    "names/styles/surnames 均已去重");
+}
+
 /* ---------- (4) openNamingSpecModal 端到端（轻量 DOM 桩） ---------- */
 section("4 · openNamingSpecModal 端到端（加载 → 候选 → 选 → 落库 → 关窗）");
 ok(SRC_OPEN.length > 0 && /openShell\(\);\s*startGen\(\);/.test(SRC_OPEN), "能抽出 openNamingSpecModal 全函数（含 openShell/startGen）");
