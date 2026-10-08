@@ -4474,7 +4474,10 @@
     { name: "楚柿遥", style: "秋晏", bead: "柿柿如意", poem: "剑过秋林，丹柿落肩，一笑便扫尽风尘。",       eight: "丹柿随身，笑赴山河", alias: ["柿宝"] },
     { name: "萧景筹", style: "秉衡", bead: "黄金算盘", poem: "案上算珠轻响，谋定世间得失。",               eight: "筹量万象，掌定盈亏", alias: ["金算盘"] },
     { name: "姜饴酌", style: "淳时", bead: "咸法酪",   poem: "盏中咸酪甘醇，嘴硬不肯道半句喜欢。",         eight: "咸甘一盏，口硬心柔", alias: [] },
-    { name: "顾时笙", style: "书砚", bead: "绿叶",     poem: "窗畔新叶初生，执砚翻书，待人皆是一片赤诚。", eight: "新叶伴砚，秉心温良", alias: [] }
+    { name: "顾时笙", style: "书砚", bead: "绿叶",     poem: "窗畔新叶初生，执砚翻书，待人皆是一片赤诚。", eight: "新叶伴砚，秉心温良", alias: [] },
+    // v180：核心团扩员 —— 10 位到齐（⛔ 追加在表末，前 8 条索引不变，护 _test_v175_identity.js 的按索引断言）
+    { name: "江冽茗", style: "澄观", bead: "冰红茶",   poem: "冰瓯浮丹，微甘入喉，懒问人间谁负谁。",       eight: "冰瓯澄观，懒看浮生", alias: [] },
+    { name: "温茸之", style: "朴安", bead: "粉黛熊",   poem: "一团茸软，憨坐檐前，谁唤他一声便笑；谁的好，他记半生。", eight: "茸憨抱朴，安之若素", alias: [] }
   ];
   function identityKeysOf(idn) {
     var out = [];
@@ -7827,8 +7830,14 @@
   var MAINCHAR_ART_ALIAS = {
     "楚柿遥": "柿宝",
     "萧景筹": "金算盘",
-    "姜饴酌": "咸法酪"
+    "姜饴酌": "咸法酪",
+    // v180：温茸之 =「粉黛熊」改名后的正式姓名 → 反查旧手抠键「粉黛熊」，⛔ 别让立绘掉图
+    "温茸之": "粉黛熊"
   };
+  // v180 · C6 江冽茗（冰红茶）暂无手抠立绘键：maincharArtOf 返 null ⇒ 走 portrait 回落
+  //   `rec.imgCut || rec.imgUrl`（该沁灵自身的生成立绘），⛔ 非白板；仅当该串从未出图才是空
+  //   （见主线 portrait 解析，app.js 内 typeof maincharArtOf 守卫处）。
+  //   故本轮**不新增 MAINCHAR_ART 键**（保住 _test_v174_mainchar 的「恰 9 键」契约）。待美术补 mc 图再加键。
   function maincharArtOf(rec) {
     var nm = String((rec && rec.name) || "").trim();
     if (!nm) return null;
