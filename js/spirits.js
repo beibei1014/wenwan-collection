@@ -4570,6 +4570,13 @@
     rec.imgStage = Math.min(4, Math.max(1, Math.floor(Number(rec.imgStage) || 1)));
     // v170：透明底抠图 URL（原图 imgUrl 仍是回填/恢复的唯一来源；空 = 未抠 / 抠图失败）
     if (rec.imgCut == null) rec.imgCut = "";
+    // v180-D8：开沁命名规格字段（⛔ **只补字段，绝不触发生成/出图** —— 遵 V179 惯例，与 imgStage 同口径）
+    //   ⛔ 不复用 nameEdited（那是「用户手动改名」语义，命名规格另立开关）。
+    if (rec.naming === undefined) rec.naming = null;          // 四件套 {name,style,poem,eight,src,at} 或 null
+    if (rec.namedBySpec == null) rec.namedBySpec = false;      // 命名来源标记（按规格命名过 ⇒ true）
+    rec.namedBySpec = !!rec.namedBySpec;
+    if (rec.namingPending == null) rec.namingPending = false;  // 「待命名」（补档批量开沁置 true，由详情页入口消解）
+    rec.namingPending = !!rec.namingPending;
     return rec;
   }
 

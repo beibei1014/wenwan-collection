@@ -1309,6 +1309,14 @@
             const b = Spirits.born(item);
             if (b.isNew) {
               toast("🎉 开沁了！是只" + (b.gender === "boy" ? "👦 男孩子" : "👧 女孩子") + "沁灵（性别出生即定，不能改哦）");
+              // v180-D10：开沁即按命名规格取名（无 key/失败 ⇒ 本地兜底；用户也可稍后在详情页命名）
+              //   置 namingPending ⇒ 若这次「稍后再说」没定名，详情页仍留「按命名规格取个名」入口（与补档路径同口径）
+              try {
+                const _ns = Spirits.load();
+                const _nr = Spirits.ensureIn(_ns, item.id);
+                if (!(_nr.naming && _nr.naming.name)) { _nr.namingPending = true; Spirits.save(_ns); }
+                openNamingSpecModal(item);
+              } catch (e) { /* 命名失败不影响开沁 */ }
             } else {
               toast("已切换为「" + beadStatusLabel(st) + "」");
             }
@@ -4502,6 +4510,16 @@
     }
     return null;
   }
+  /* ---------- v180-D12：统一显示解析（详情页取卡的唯一入口） ----------
+     ① 身份表优先（已定核心团）；② 逐串 rec.naming（新开沁的规格命名）；③ 回落 null（不显示字/诗/八字）。
+     ⛔ 只换取值处，下游渲染行（nameShown / idCard.style/poem/eight）一个字不动 ⇒ _test_v175_identity 不回归。 */
+  function spiritCardOf(dispName, rec) {
+    var idc = spiritIdentityOf(dispName);
+    if (idc) return idc;
+    var nm = rec && rec.naming;
+    if (nm && nm.name) return { name: nm.name, style: nm.style, poem: nm.poem, eight: nm.eight, bead: "" };
+    return null;
+  }
 
   /* ---------- v177c：给 game.js 注入「沁灵显示名」解析器 ----------
      今日任务页要叫沁灵的**身份名**（楚柿遥），不能叫手串名（柿宝）。
@@ -6029,7 +6047,7 @@
     // v175：身份卡 —— 未改名 ⇒ 姓名位显示身份表的「姓名」（⛔ 不再显示手串名）；
     //        用户已改名 ⇒ 尊重用户改的名字；命中不到 ⇒ 完全回落当前显示名（不留空白）
     const _disp = spiritName(it, store);
-    const idCard = spiritIdentityOf(_disp);
+    const idCard = spiritCardOf(_disp, rec);
     const nameShown = (idCard && !rec.nameEdited) ? idCard.name : _disp;
     let h = spiritNavHtml(_curIdx, _prevIt, _nextIt, _allItems.length, store) + '<div class="sd-top"><div class="sd-art" id="sdArt">' + artInner + "</div>" +
       (_hasImg ? '<button type="button" class="link-btn" id="sdManageImg" style="margin-top:6px">🗑 管理立绘</button>' : "") +
@@ -6046,7 +6064,9 @@
         ? '<span style="color:var(--text-2)">✏️ 名字改过了</span>'
         : (NAMING_SPEC.renameEnabled
             ? '<button type="button" class="link-btn" id="sdRename">✏️ 给{ta}改个名字（只能改一次）</button>'
-            : "")) +
+            : ((rec.namingPending && !(rec.naming && rec.naming.name))
+                ? '<button type="button" class="link-btn" id="sdNameSpec">✏️ 按命名规格取个名</button>'
+                : ""))) +
       "</div>" +
       '<div class="spirit-tags" style="justify-content:center">' + ((p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
       '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div></div>";
@@ -6510,9 +6530,12 @@
     const rg = $("#sdRoomGo"); if (rg) rg.onclick = (e) => { e.stopPropagation(); _roomFrom = "#/spirit/" + encodeURIComponent(id); location.hash = "#/room/" + encodeURIComponent(room.id); };
     const rp = $("#sdRoomPick"); if (rp) rp.onclick = () => showSpiritRoomPicker(it);
     view.querySelectorAll("[data-mate]").forEach((el) => el.onclick = () => { location.hash = "#/spirit/" + encodeURIComponent(el.dataset.mate); });
-    // ✏️ 改名（只能改一次）
+    // ✏️ 改名（只能改一次）—— v180-C 起默认关闭，按钮不存在 ⇒ rn=null 自动 no-op
     const rn = $("#sdRename");
     if (rn) rn.onclick = () => showRenameModal(it);
+    // v180-D11：补档开沁留下的「待命名」入口 —— 点开按命名规格取名
+    const nsp = $("#sdNameSpec");
+    if (nsp) nsp.onclick = () => openNamingSpecModal(it);
     // 进详情页 = 这只看过了 → 清掉它的日记"未读"
     if ((rec.diary || []).length) {
       const lastAt = (rec.diary.slice(-1)[0] || {}).at || 0;
@@ -6633,6 +6656,162 @@
       if (h.indexOf("#/spirit/") === 0) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));
       else renderAllSpiritsPage();
     };
+  }
+
+  /* ============================================================
+   * v180-D9/D10/D13：开沁命名规格弹窗
+   *   触发：主路径 Spirits.born() isNew 之后（app.js:1313）/ 详情页「按命名规格取个名」入口。
+   *   内容：2–3 张候选卡（姓名·字·人物诗·八字 + 一句理由，单选）+「🔄 换一批」「就用这个 →」+「✏️ 自己填」。
+   *   取值：Spirits.nameSpecCandidates()（LLM 优先 / 本地兜底，见 spirits.js v180-D8）——⛔ 无 key/失败不阻塞。
+   *   落库：applyNamingChoice() 写 rec.naming 四件套 + rec.name + rec.namedBySpec（⛔ 不复用 nameEdited）。
+   *   兜底：生成空 ⇒ 仅给「自己填 / 稍后再说」，⛔ 绝不白屏/抛错。
+   * ============================================================ */
+
+  // 汇总「已用」名与字：引擎内置基线由 spirits.js 侧 union（nsUsed），此处补 app 侧存档里的名/字（并集更保守 ⇒ 绝不撞名）
+  function namingUsedNow() {
+    const out = { names: [], styles: [], surnames: [] };
+    try {
+      const s = Spirits.load() || {};
+      Object.keys(s).forEach((id) => {
+        const r = s[id] || {};
+        const nm = (r.naming && r.naming.name) || r.name || (r.persona && r.persona.name) || "";
+        if (nm) out.names.push(String(nm));
+        const st = (r.naming && r.naming.style) || "";
+        if (st) out.styles.push(String(st));
+      });
+    } catch (e) { /* 读档异常不阻塞命名 */ }
+    return out;
+  }
+
+  // 选择落地（架构方案 §2.3）：四件套入 rec.naming，同时写 rec.name 让所有既有命名消费者零改动生效
+  function applyNamingChoice(item, rec, cand) {
+    const s = Spirits.load();
+    const r = Spirits.ensureIn(s, item.id);
+    r.naming = { name: cand.name, style: cand.style, poem: cand.poem, eight: cand.eight, src: cand.src || "manual", at: Date.now() };
+    r.name = cand.name;          // ★ 复用现有显示链（nameOf / 心迹 / 送礼 / 主线 / 导出自动生效）
+    r.namedBySpec = true;        // ★ 新开关（⛔ 不复用 nameEdited，避免污染旧改名逻辑）
+    r.namingPending = false;
+    Spirits.save(s);
+  }
+
+  function openNamingSpecModal(item, rec) {
+    if (!item) return;
+    const mask = $("#modalMask"), modal = $("#modal");
+    if (!mask || !modal) return;
+    const beadName = String(item.name || "这只沁灵");
+    let gone = false;    // 弹窗已关 ⇒ 生成回调不再渲染（防异步回来打脸）
+    let genTok = 0;      // 换批令牌：旧的一批结果作废
+    let lastCands = [];
+
+    const openShell = () => { mask.hidden = false; modal.hidden = false; modal.style.display = ""; };
+    const close = () => { gone = true; genTok++; mask.hidden = true; modal.hidden = true; modal.style.display = ""; };
+
+    const refreshAfterNaming = () => {
+      const h = location.hash;
+      if (h.indexOf("#/spirit/") === 0) renderSpiritDetailPage(decodeURIComponent(h.slice(9)));
+      else renderAllSpiritsPage();
+    };
+
+    // 生成期间：加载态 + 「稍后再说」出口（⛔ 不阻塞）
+    const renderLoading = () => {
+      modal.innerHTML = fillTa('<h3 style="text-align:center">给「' + esc(beadName) + '」起个名 · 按命名规格</h3>' +
+        '<p style="font-size:13px;color:var(--text-2);text-align:center;line-height:2.2">正在按命名规格取名…（几秒）</p>' +
+        '<div style="text-align:center;margin-top:8px"><button type="button" class="link-btn" id="nsLater">稍后再说</button></div>', beadName);
+      const later = $("#nsLater"); if (later) later.onclick = close;
+      mask.onclick = close;
+    };
+
+    const nsCardHtml = (c, i) =>
+      '<label data-i="' + i + '" style="display:block;border:1px solid var(--line,#e6e1d8);border-radius:12px;padding:10px 12px;margin:8px 0;cursor:pointer">' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+      '<input type="radio" name="nsPick" value="' + i + '"' + (i === 0 ? " checked" : "") + '>' +
+      '<b style="font-size:16px;letter-spacing:1px">' + esc(c.name) + '</b>' +
+      '<span style="color:var(--text-2);font-size:12px">字 · ' + esc(c.style) + '</span></div>' +
+      '<div style="font-size:13px;color:var(--text-2);margin:6px 0 2px;line-height:1.7">' + esc(c.poem) + '</div>' +
+      '<div style="font-size:12px;color:var(--text-2);letter-spacing:2px">' + esc(c.eight) + '</div>' +
+      (c.why ? '<div style="font-size:11px;color:var(--text-2);margin-top:6px;opacity:.8">' + esc(c.why) + '</div>' : "") +
+      '</label>';
+
+    const renderCands = (cands) => {
+      if (gone) return;
+      const list = (cands || []).slice(0, 3);
+      lastCands = list;
+      const cards = list.map(nsCardHtml).join("");
+      modal.innerHTML = fillTa('<h3 style="text-align:center">给「' + esc(beadName) + '」起个名 · 按命名规格</h3>' +
+        '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:6px;text-align:center">姓名＋字＋人物诗＋八字，四件套一起定。<br>选一组就好，之后随时能在详情页看到。</p>' +
+        (cards || '<p style="font-size:13px;color:var(--text-2);text-align:center;padding:12px 0">一时没取出名字，可以「自己填」，或稍后再命名。</p>') +
+        '<div style="display:flex;gap:8px;margin-top:10px">' +
+        '<button class="btn ghost" id="nsRefresh" style="flex:1">🔄 换一批</button>' +
+        '<button class="btn primary" id="nsConfirm" style="flex:2"' + (cards ? "" : " disabled") + '>就用这个 →</button></div>' +
+        '<div style="text-align:center;margin-top:10px"><button type="button" class="link-btn" id="nsManual">✏️ 自己填</button> ' +
+        '<button type="button" class="link-btn" id="nsLater">稍后再说</button></div>', beadName);
+      mask.onclick = close;
+      const later = $("#nsLater"); if (later) later.onclick = close;
+      const manual = $("#nsManual"); if (manual) manual.onclick = renderManual;
+      const refresh = $("#nsRefresh"); if (refresh) refresh.onclick = () => { startGen(); };
+      const confirm = $("#nsConfirm");
+      if (confirm) confirm.onclick = () => {
+        const sel = modal.querySelector('input[name="nsPick"]:checked');
+        const idx = sel ? parseInt(sel.value, 10) : -1;
+        const cand = (idx >= 0 && list[idx]) ? list[idx] : null;
+        if (!cand) { toast("先选一组名字吧"); return; }
+        applyNamingChoice(item, rec, cand);
+        close();
+        toast("「" + cand.name + "」这个名字定下了 ✨");
+        refreshAfterNaming();
+      };
+    };
+
+    // 「自己填」：转手写表单（src:"manual"）——按 §六 轻校验，⛔ 不合规只提示不抛错
+    const renderManual = () => {
+      if (gone) return;
+      modal.innerHTML = fillTa('<h3 style="text-align:center">✏️ 自己填 · 四件套</h3>' +
+        '<p style="font-size:12px;color:var(--text-2);line-height:1.7;margin-bottom:8px;text-align:center">姓名 3 字 · 字 2 字 · 人物诗含逗号 · 八字「四字，四字」</p>' +
+        '<div class="form-group"><div class="form-label">姓名（3 字）</div><input class="form-input" id="nsN" maxlength="3" placeholder="例如 江冽茗"></div>' +
+        '<div class="form-group"><div class="form-label">字（2 字）</div><input class="form-input" id="nsS" maxlength="2" placeholder="例如 澄观"></div>' +
+        '<div class="form-group"><div class="form-label">人物诗（一句，含逗号）</div><input class="form-input" id="nsP" maxlength="40" placeholder="冰瓯浮丹，微甘入喉。"></div>' +
+        '<div class="form-group"><div class="form-label">八字（四字，四字）</div><input class="form-input" id="nsE" maxlength="9" placeholder="冰瓯澄观，懒看浮生"></div>' +
+        '<div style="display:flex;gap:8px;margin-top:12px">' +
+        '<button class="btn ghost" id="nsMB" style="flex:1">返回候选</button>' +
+        '<button class="btn primary" id="nsMS" style="flex:2">保存并命名</button></div>', beadName);
+      mask.onclick = close;
+      const back = $("#nsMB"); if (back) back.onclick = () => renderCands(lastCands);
+      const save = $("#nsMS");
+      if (save) save.onclick = () => {
+        const nm = (($("#nsN") || {}).value || "").trim();
+        const st = (($("#nsS") || {}).value || "").trim();
+        const pm = (($("#nsP") || {}).value || "").trim();
+        const eg = (($("#nsE") || {}).value || "").trim();
+        if (nm.length !== 3) { toast("姓名请填 3 个字"); return; }
+        if (st.length !== 2) { toast("「字」请填 2 个字"); return; }
+        if (pm.indexOf("，") < 0) { toast("人物诗要有逗号分句"); return; }
+        const ep = eg.split("，");
+        if (ep.length !== 2 || ep[0].length !== 4 || ep[1].length !== 4) { toast("八字请按「四字，四字」写"); return; }
+        applyNamingChoice(item, rec, { name: nm, style: st, poem: pm, eight: eg, src: "manual" });
+        close();
+        toast("「" + nm + "」这个名字定下了 ✨");
+        refreshAfterNaming();
+      };
+    };
+
+    // 生成候选：Spirits.nameSpecCandidates 内部已做「无 key/异常 ⇒ 本地兜底」，此处再包一层 try 兜底
+    const startGen = async () => {
+      genTok++;
+      const tok = genTok;
+      gone = false;
+      renderLoading();
+      let cands = [];
+      try {
+        if (typeof Spirits !== "undefined" && Spirits && typeof Spirits.nameSpecCandidates === "function") {
+          cands = await Spirits.nameSpecCandidates(item, namingUsedNow());
+        }
+      } catch (e) { cands = []; }
+      if (gone || tok !== genTok) return;
+      renderCands(cands);
+    };
+
+    openShell();
+    startGen();
   }
 
   /* ============================================================
@@ -8711,7 +8890,12 @@
       for (const it of list) {
         const s = Spirits.load();
         // 老沁灵补记「出生」（性别由 born/ensureIn 定档，不会在这里被改）
-        if (!s[it.id] || !s[it.id].bornAt) Spirits.born(it);
+        if (!s[it.id] || !s[it.id].bornAt) {
+          Spirits.born(it);
+          // v180-D11：补档批量开沁 —— ⛔ 不弹窗（可能一次几十只），只置「待命名」，由详情页入口逐个命名
+          const rr = Spirits.ensureIn(s, it.id, it);
+          if (!(rr.naming && rr.naming.name)) { rr.namingPending = true; Spirits.save(s); }
+        }
         if (!s[it.id] || !s[it.id].persona) {
           await Spirits.persona(it);
           changed = true;
