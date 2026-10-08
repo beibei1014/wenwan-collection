@@ -3715,7 +3715,15 @@
   // 玩家级礼物库存（localStorage，离线优先）；形态 {giftKey: count}
   const GIFTS_KEY = "ww_gifts";
   function loadGifts() { try { const raw = localStorage.getItem(GIFTS_KEY); const o = raw ? JSON.parse(raw) : {}; return (o && typeof o === "object") ? o : {}; } catch (e) { return {}; } }
-  function saveGifts(o) { try { localStorage.setItem(GIFTS_KEY, JSON.stringify(o || {})); return true; } catch (e) { return false; } }
+  function saveGifts(o) {
+    try {
+      localStorage.setItem(GIFTS_KEY, JSON.stringify(o || {}));
+      // v179：通知同步层 —— 礼物库存（ww_gifts）变了，稍后推到云端 gift_store（跨设备不丢）。
+      //   与 ww:spirits-changed 同模式；app.js 收到后置脏 + 防抖推送。
+      try { window.__giftsDirty = true; window.dispatchEvent(new CustomEvent("ww:gifts-changed")); } catch (e2) { /* 忽略 */ }
+      return true;
+    } catch (e) { return false; }
+  }
   function addGift(gifts, key, n) {
     const g = (gifts && typeof gifts === "object") ? gifts : {};
     const k = String(key || ""); if (!k) return g;
@@ -3852,11 +3860,69 @@
     catch (e) { return { ymd: "", keys: {} }; }
   }
   function giftGivenToday(dayKey) { const d = String(dayKey || todayKey()); const o = loadGiftDay(); return (o.ymd === d) ? Object.keys(o.keys || {}).length : 0; }
+  function saveGiftDay(o) {
+    try { localStorage.setItem(GIFT_LOG_KEY, JSON.stringify((o && typeof o === "object") ? o : { ymd: "", keys: {} })); return true; }
+    catch (e) { return false; }
+  }
   function noteGiftGiven(spiritId, giftKey, dayKey) {
     const d = String(dayKey || todayKey()); let o = loadGiftDay();
     if (o.ymd !== d) o = { ymd: d, keys: {} };
     o.keys[String(spiritId) + "|" + String(giftKey)] = 1;
-    try { localStorage.setItem(GIFT_LOG_KEY, JSON.stringify(o)); return true; } catch (e) { return false; }
+    saveGiftDay(o);
+    // v179：发放账本（ww_gift_log）亦随 gift_store 同步 —— 一并通知同步层
+    try { window.__giftsDirty = true; window.dispatchEvent(new CustomEvent("ww:gifts-changed")); } catch (e2) { /* 忽略 */ }
+    return true;
+  }
+
+  /* ---------- v179 · 礼物来源发放（8 来源中「客户端可确定性判定」的 4 条） ----------
+     设计 §3.1「礼物从哪来」列了 8 条来源。本批只接能从**既有本地状态确定性判定**的 4 条：
+       ①节令  ②修行破阶  ③主线章末  ④每日一签「今日宜赠」
+     其余 4 条（沁灵巷小事 / 同屋契合 / 夜话事件 / 成就）代码里没有可幂等挂钩的「已消费」信号，
+     见 v179 报告「不该由客户端凭启发式接」一节，⛔ 未接。
+     幂等：每条来源一个 sourceKey，落 ww_story.giftSeeded[sourceKey] = dayKey（设计 §5.2 / §七-16），
+          已存在即跳过 ⇒ 重复调用不重复发。⛔ 只动 ww_gifts 库存；⛔ 绝不调 addBond / giveGift
+          （亲密度唯一入口是玩家「递一件」）。 */
+  const GIFT_SRC = {
+    FEST_GIFT: "human_tea",                                         // ①节令：应节的一件应酬小物
+    STAGE_GIFT: { 2: "cloth_stone", 3: "ware_ink", 4: "odd_glass" },// ②破阶：开光物（终身 3 件）
+    CHAPTER_GIFTS: ["cloth_pa", "sound_bell", "ware_cup", "odd_shell", "tough_rope", "human_snack", "cloth_stone", "odd_glass"], // ③章末：每读完一章 1 件
+    SIGN_GIFT: "human_snack",                                       // ④签：今日宜赠
+    SIGN_PERIOD: 7,                                                 // ④「宜赠」约 1 件/周（当天固定、跨设备一致）
+  };
+  // 对账「本应发放」的来源 → 幂等落 ww_gifts + ww_story.giftSeeded。
+  //   返回本次**新发**的 [giftKey, sourceKey][]（空 = 无新发）。只读入参，只写 store 键。
+  function reconcileGiftSources(item, rec, ctx) {
+    const R = (rec && typeof rec === "object") ? rec : {};
+    const sid = String((item && item.id) || (ctx && ctx.id) || "");
+    if (!sid) return [];
+    const day = todayKey();
+    const story = readStory();
+    const seeded = (story.giftSeeded && typeof story.giftSeeded === "object") ? Object.assign({}, story.giftSeeded) : {};
+    const grants = [];   // [giftKey, sourceKey]
+    const mark = (k, gk) => { if (gk && !seeded[k]) { seeded[k] = day; grants.push([gk, k]); } };
+    // ① 节令（玩家级：当天有节令 → 1 件）
+    if (festOf(day)) mark("fest:" + day, GIFT_SRC.FEST_GIFT);
+    // ② 修行破阶（逐串：每确认一阶 ≥2 → 1 件）
+    const st = Math.max(1, Number(R.stage) || 1);
+    if (st >= 2) mark("stage:" + sid + ":" + st, GIFT_SRC.STAGE_GIFT[st]);
+    // ③ 主线章末（逐串：每读完一章 → 1 件）
+    const chs = (R.chapters && typeof R.chapters === "object") ? R.chapters : {};
+    Object.keys(chs).forEach((i) => {
+      const idx = Math.floor(Number(i));
+      const c = chs[i];
+      if (!(idx >= 0) || !c || !c.at) return;
+      mark("chapter:" + sid + ":" + idx, GIFT_SRC.CHAPTER_GIFTS[idx % GIFT_SRC.CHAPTER_GIFTS.length]);
+    });
+    // ④ 每日一签「今日宜赠」（玩家级：当天固定，约 1 件/周）
+    if ((hashStr("#giftday#" + day) % GIFT_SRC.SIGN_PERIOD) === 0) mark("sign:" + day, GIFT_SRC.SIGN_GIFT);
+    if (!grants.length) return [];
+    const gifts = loadGifts();
+    grants.forEach((g) => addGift(gifts, g[0], 1));
+    saveGifts(gifts);
+    story.giftSeeded = seeded;
+    story.at = day;
+    writeStory(story);
+    return grants;
   }
 
   /* ---------- v165 心迹轨（恋爱向，逐串；本批只做数据与纯函数，⛔ 不接 UI/结局） ---------- */
@@ -4213,6 +4279,10 @@
     if (rec.loveAt == null) rec.loveAt = "";
     if (rec.nickCall == null) rec.nickCall = "";
     if (rec.trinket == null) rec.trinket = "";
+    // v179：善意钩子落点字段（送礼/照料成功后由 app.js 置 true；Love.canReConfess 条件③-b 读它）。
+    //   ⛔ 顶层字段；不进 marks / 不进 flags；未写过的老档一律 false。
+    if (rec.loveKindled == null) rec.loveKindled = false;
+    rec.loveKindled = !!rec.loveKindled;
     if (rec.bondLvSeen == null) rec.bondLvSeen = 1;
     rec.bondLvSeen = Math.max(1, Math.min(8, Math.floor(Number(rec.bondLvSeen) || 1)));
     if (rec.harmed == null) rec.harmed = false;
@@ -8889,7 +8959,8 @@ const CH09 = {
     IMAGERY_OUTFITS, imageryOutfitOf,   // v165 修正：导出以便单测（此前未导出）
     CARE_ACTS, careAct, careDoneOf, careActOf,
     GIFT_REACTIONS, GIFT_REACTION_FALLBACK, giftReactionOf, GIFT_COPY,
-    GIFT_LOG_KEY, loadGiftDay, giftGivenToday, noteGiftGiven,
+    GIFT_LOG_KEY, loadGiftDay, saveGiftDay, giftGivenToday, noteGiftGiven,
+    GIFT_SRC, reconcileGiftSources,   // v179：礼物来源发放（节令/破阶/章末/签）+ 幂等对账
     // v165：BG 场景背景系统（全局 21 张；ww_bg 永久 URL；ensureBg 并发去重）
     BG_KEY, BG_CATALOG, BG_CHAPTER_MAP, BG_STYLE, BG_NEG, BG_STATIC_DIR, BG_SIZE, BG_SIZE_LADDER, NEG_STYLE, bgByKey, bgSeedKey, bgForChapter, bgLoadAll, bgGet, bgPut, ensureBg,
     HEART_MARKS, HEART_LV_NAMES, heartLevel, addHeart,
