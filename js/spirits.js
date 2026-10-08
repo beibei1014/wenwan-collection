@@ -2713,6 +2713,189 @@
     return p;
   }
 
+  /* ============================================================
+   * v180-D8：开沁命名规格 ——「姓名/字/人物诗/八字」四件套候选生成
+   *   nameSpecLocal(item, used)      ：本地字库兜底（读 window.NAMESPEC_WORDBANK）
+   *   nameSpecCandidates(item, used) ：LLM 优先 + 本地兜底（对齐 persona() 同构）
+   *   ⛔ 无 key / 调用失败 / 解析失败 / 字库缺失 ⇒ 一律回落本地；⛔ 绝不抛错/白屏
+   * ============================================================ */
+  // AI prompt（单一可替换数据源；⛔ 占位：文成章定稿 prompt 到位后直接替换此常量，勿散落别处）
+  var NAMESPEC_PROMPT = "你在为一个文玩收藏 App 写「沁灵」的正式名字。按「取字四步」：拆手串名意象 → 选古雅名用字 → 定「姓＋两字名」→ 配「两字表字」；再拟一句人物诗（逗号分句）与「四字＋四字」的八字。只输出 JSON 数组，不要解释。";
+
+  // 极小内置兜底池：字库缺失（未挂 namespec-data.js）时也能产出合法候选 —— ⛔ 绝不放任白屏
+  var NAMESPEC_TINY = {
+    imagery: { "珠": ["瑜", "瑾", "瑶", "珩"], "玉": ["瑜", "瑾", "瑶"], "花": ["华", "芳", "蕊"], "叶": ["叶", "筠", "荫"], "雨": ["烟", "弥", "霖"], "冰": ["冽", "澄", "清"], "茶": ["茗", "瓯", "盏"], "金": ["金", "瑜", "瑾"] },
+    generic: { "心绪": ["闲", "逸", "清", "和", "静", "宁"] },
+    surnames: ["白", "云", "闵", "冉", "殷", "卫", "韩", "杨", "林", "钟", "徐", "骆"],
+    stylePools: {
+      "路A_单字+之": { "首字池": ["敦", "坦", "守", "静", "怀", "靖", "慎"] },
+      "路C_双雅字并置": { "首字池": ["清", "疏", "望", "拾", "映"], "尾字池": ["影", "舒", "光", "雪", "泉"] }
+    },
+    poemTemplates: [{ "slot": "{处}，{象}，{心志}。" }],
+    poemFillers: { "处": ["檐下", "窗畔", "庭前"], "象": ["花影", "月色", "青叶"], "心志": ["一片赤诚", "静守闲庭", "笑赴山河"] },
+    baziTemplates: [{ "槽": "{象}{性}，{心}{志}" }],
+    baziFillers: { "象": ["茸憨", "酥栗", "杏润"], "性": ["抱朴", "守真", "含香"], "心": ["静守", "长随", "认人"], "志": ["浮生", "清欢", "山河"] },
+    usedBaseline: { used_surnames: [], used_names: [], used_styles: [] },
+  };
+
+  function nameSpecWordbank() {
+    try { return (typeof window !== "undefined" && window.NAMESPEC_WORDBANK && typeof window.NAMESPEC_WORDBANK === "object") ? window.NAMESPEC_WORDBANK : null; } catch (e) { return null; }
+  }
+  function nsPick(a) { return (a && a.length) ? a[Math.floor(Math.random() * a.length)] : ""; }
+  function nsUniq(a) { const o = []; (a || []).forEach((x) => { const s = String(x == null ? "" : x).trim(); if (s && o.indexOf(s) < 0) o.push(s); }); return o; }
+  function nsShuffle(a) { const x = (a || []).slice(); for (let i = x.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = x[i]; x[i] = x[j]; x[j] = t; } return x; }
+  // used 归一：基线 ∪ app 传入（并集更保守，⛔ 绝不产出撞已用的名/字）
+  function nsUsed(used) {
+    const W = nameSpecWordbank() || NAMESPEC_TINY;
+    const base = (W && W.usedBaseline) || NAMESPEC_TINY.usedBaseline;
+    const u = used || {};
+    const j = (a, b) => nsUniq((Array.isArray(a) ? a : []).concat(Array.isArray(b) ? b : []));
+    return { surnames: j(base.used_surnames, u.surnames), names: j(base.used_names, u.names), styles: j(base.used_styles, u.styles) };
+  }
+  // ① 取意象字：手串名命中意象键（含多字键如「粉黛」）→ 其名用字；全未命中 ⇒ 通用池
+  function nsImageryChars(W, item) {
+    const nm = String((item && item.name) || "");
+    const out = [];
+    const im = W.imagery || {};
+    Object.keys(im).forEach((k) => { if (nm && nm.indexOf(k) >= 0) (im[k] || []).forEach((c) => out.push(c)); });
+    if (!out.length) { const G = W.generic || {}; Object.keys(G).forEach((k) => (G[k] || []).forEach((c) => out.push(c))); }
+    return nsUniq(out);
+  }
+  // ②③ 取姓 + 取名（2 字）：整名 3 字，⛔ ∉ used.names
+  function nsMakeName(W, chars, U) {
+    const pool = (W.surnames && W.surnames.length) ? W.surnames : NAMESPEC_TINY.surnames;
+    const cs = chars.slice();
+    if (cs.length < 2) return null;
+    for (let t = 0; t < 60; t++) {
+      const s = nsPick(pool);
+      if (!s || U.surnames.indexOf(s) >= 0) continue;
+      const two = nsShuffle(cs).slice(0, 2);
+      const full = s + two[0] + two[1];
+      if (full.length === 3 && U.names.indexOf(full) < 0) return { surname: s, name: full };
+    }
+    return null;
+  }
+  // ④ 取字（2 字）：只从首字池/尾字池（路B 动字池+名物池）现场拼，⛔ 不取「示例」，⛔ ∉ used.styles
+  function nsMakeStyle(W, U) {
+    const SP = W.stylePools || {};
+    const routes = Object.keys(SP);
+    for (let t = 0; t < 80; t++) {
+      const rk = nsPick(routes);
+      const r = SP[rk] || {};
+      let st = "";
+      if (rk.indexOf("路A") >= 0) st = nsPick(r["首字池"] || []) + "之";
+      else if (rk.indexOf("路B") >= 0) st = nsPick(r["动字池"] || []) + nsPick(r["名物池"] || []);
+      else st = nsPick(r["首字池"] || []) + nsPick(r["尾字池"] || []);
+      if (st.length === 2 && U.styles.indexOf(st) < 0) return st;
+    }
+    return null;
+  }
+  // ⑤ 拟诗：取一模板填槽；{a/b} 取一、{k} 取填充词、未知槽用意象字/删；tidy 后须含逗号
+  function nsTidy(s) {
+    return String(s || "").replace(/[，、]{2,}/g, "，").replace(/，。/g, "。").replace(/^[，、。]+/, "").replace(/[，、]+$/, "。").trim();
+  }
+  function nsPoem(W, chars) {
+    const T = W.poemTemplates || [];
+    const F = W.poemFillers || {};
+    if (!T.length) return null;
+    const tpl = nsPick(T);
+    let s = String(tpl && (tpl.slot || tpl["槽"]) || "");
+    s = s.replace(/\{([^{}]+)\}/g, (mm, inner) => {
+      let k = inner;
+      if (k.indexOf("：") >= 0) k = k.split("：").slice(1).join("：");   // 「收句：其志/其守」
+      if (k.indexOf("/") >= 0) return nsPick(k.split("/"));
+      if (F[k]) return nsPick(F[k]);
+      if (k === "象" && chars.length) return nsPick(chars);
+      return "";
+    });
+    return nsTidy(s);
+  }
+  // ⑥ 拟八字：4 字 ＋ 4 字（第 5 位为逗号）；填不满则 null
+  function nsEight(W) {
+    const T = W.baziTemplates || [];
+    const F = W.baziFillers || {};
+    for (let t = 0; t < 60; t++) {
+      const tpl = nsPick(T);
+      if (!tpl) break;
+      const s = String(tpl["槽"] || tpl.slot || "").replace(/\{([^{}]+)\}/g, (mm, k) => (F[k] ? nsPick(F[k]) : ""));
+      const parts = s.split("，");
+      if (parts.length === 2 && parts[0].length === 4 && parts[1].length === 4) return s;
+    }
+    return null;
+  }
+  // §六 校验：姓名 3、字 2、诗含逗号、八字 4+4
+  function nsValidCandidate(c) {
+    if (!c || typeof c !== "object") return false;
+    if (String(c.name || "").length !== 3) return false;
+    if (String(c.style || "").length !== 2) return false;
+    if (String(c.poem || "").indexOf("，") < 0) return false;
+    const e = String(c.eight || "").split("，");
+    if (e.length !== 2 || e[0].length !== 4 || e[1].length !== 4) return false;
+    return true;
+  }
+  function nsCandidateFrom(o, U, src) {
+    if (!nsValidCandidate(o)) return null;
+    const name = String(o.name), style = String(o.style);
+    if (U && (U.names.indexOf(name) >= 0 || U.styles.indexOf(style) >= 0)) return null;
+    return { name: name, style: style, poem: String(o.poem), eight: String(o.eight), why: String(o.reason || o.why || ""), src: src || "local" };
+  }
+  // 本地兜底：抽满仍不足 ⇒ 放宽容貌（只保证 §六 前 4 条格式），⛔ 绝不抛错
+  function nameSpecLocal(item, used) {
+    const U = nsUsed(used);
+    const W = nameSpecWordbank() || NAMESPEC_TINY;
+    let chars = nsImageryChars(W, item);
+    if (chars.length < 2) chars = nsUniq(chars.concat(nsImageryChars(NAMESPEC_TINY, item)));
+    const out = [];
+    const takenSurname = U.surnames.slice();
+    for (let t = 0; t < 300 && out.length < 3; t++) {
+      const N = nsMakeName(W, chars, { surnames: takenSurname, names: U.names });
+      if (!N) break;
+      const style = nsMakeStyle(W, U);
+      if (!style) continue;
+      let poem = nsPoem(W, chars);
+      if (!poem || poem.indexOf("，") < 0) poem = "一瓣心香，随君朝夕。";
+      const eight = nsEight(W) || "抱朴守真，静守闲庭";
+      const cand = { name: N.name, style: style, poem: poem, eight: eight, why: "取「" + ((item && item.name) || "此串") + "」之意象，名与字对映", src: "local" };
+      if (!nsValidCandidate(cand)) continue;
+      if (out.some((c) => c.name === cand.name)) continue;
+      takenSurname.push(N.surname);
+      out.push(cand);
+    }
+    // 放宽容貌兜底：仍 <2 条 ⇒ 用固定合法样本强产（⛔ 只保证格式；名称仍避已用）
+    const FALL = [{ name: "白知安", style: "慎之" }, { name: "云疏涧", style: "望舒" }, { name: "林靖和", style: "映泉" }];
+    for (let i = 0; i < FALL.length && out.length < 2; i++) {
+      const c = { name: FALL[i].name, style: FALL[i].style, poem: "一瓣心香，随君朝夕。", eight: "抱朴守真，静守闲庭", why: "兜底", src: "local" };
+      if (!nsValidCandidate(c)) continue;
+      if (out.some((x) => x.name === c.name)) continue;
+      if (U.names.indexOf(c.name) >= 0 || U.styles.indexOf(c.style) >= 0) continue;
+      out.push(c);
+    }
+    return out.slice(0, 3);
+  }
+  // LLM 优先 + 本地兜底（对齐 persona() 同构：无 key/失败/解析失败 ⇒ 本地）
+  async function nameSpecCandidates(item, used) {
+    const U = nsUsed(used);
+    if (getAiKey()) {
+      try {
+        const sys = NAMESPEC_PROMPT || "为一只文玩手串化生的沁灵取名。";
+        const user = "手串名：" + ((item && item.name) || "") +
+          "；已用姓名（⛔ 禁重复）：" + U.names.join("、") +
+          "；已用表字（⛔ 禁重复）：" + U.styles.join("、") +
+          "。请给 2-3 组候选，只输出 JSON 数组：" +
+          '[{"name":"3字姓名","style":"2字表字","poem":"一句含逗号","eight":"四字，四字","why":"一句话理由"}]';
+        const txt = await aiChat([{ role: "system", content: sys }, { role: "user", content: user }], 800);
+        const m = txt.match(/\[[\s\S]*\]/);
+        if (m) {
+          const arr = JSON.parse(m[0]);
+          const valid = (Array.isArray(arr) ? arr : []).map((o) => nsCandidateFrom(o, U, "llm")).filter(Boolean);
+          if (valid.length >= 2) return valid.slice(0, 3);
+          if (valid.length === 1) return valid.concat(nameSpecLocal(item, used)).slice(0, 3);
+        }
+      } catch (e) { /* 用本地字库兜底 */ }
+    }
+    return nameSpecLocal(item, used);
+  }
+
   /* ---------- 小剧场：几个沁灵互相聊 ---------- */
   function localChat(spirits) {
     const lines = [];
@@ -8928,6 +9111,8 @@ const CH09 = {
     // v166：立绘表情变体（base + 6 表情；详情页切换 / 对话按情绪自动选已缓存表情）
     EXPR_LIST, EXPR_BY_KEY, EXPR_SALT_BASE, exprForText,
     localPersona, persona, chat, letter, localChat, localLetter,
+    // v180-D8：开沁命名规格（本地兜底生成器 nameSpecLocal + LLM 优先候选 nameSpecCandidates；单一 prompt 常量可替换）
+    nameSpecLocal, nameSpecCandidates, NAMESPEC_PROMPT,
     todayKey, load, save, ensureIn, recordEvent, allEvents, drainEventPops, extractLookBrief, validateAnatomy, renderConfirmCard,
     // v174-C1：事件分级 / chip 分组 / 分页未读（数据层单一真源，UI 只读）
     EVENT_LEVEL, EVENT_LEVEL_FALLBACK, EVENT_CHIP, EVENT_CHIP_ORDER, eventLevelOf, eventChipOf,
