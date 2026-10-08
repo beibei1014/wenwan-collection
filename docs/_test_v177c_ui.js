@@ -172,7 +172,11 @@ ok(/function setNameResolver\(fn\)/.test(GAME) && /var nm = nameResolver\(it, re
   const idc = sb.spiritIdentityOf && sb.spiritIdentityOf("柿宝");
   ok(idc && idc.name === "楚柿遥",
     "A7 SPIRIT_IDENTITIES 反查：柿宝 ⇒ 楚柿遥（实得：" + (idc ? idc.name : "null") + "）");
-  ok(sb.spiritIdentityOf("多多牛") === null, "A7 无身份资料手串（多多牛）反查为 null ⇒ 任务页继续显示手串名（预期行为）");
+  // v180-E：多多牛 已入身份表（⇒ 邵盈牧）⇒ 原「无身份资料」样本改用真·未登记名「紫砂壶」
+  //        （⛔ 非删断言、是换样本 + 追加正向断言，强度只增不减）
+  ok(sb.spiritIdentityOf("多多牛") && sb.spiritIdentityOf("多多牛").name === "邵盈牧",
+    "A7 v180-E：多多牛 现已入表 ⇒ 邵盈牧（实得：" + (sb.spiritIdentityOf("多多牛") ? sb.spiritIdentityOf("多多牛").name : "null") + "）");
+  ok(sb.spiritIdentityOf("紫砂壶") === null, "A7 无身份资料手串（紫砂壶）反查为 null ⇒ 任务页继续显示手串名（预期行为）");
 }
 
 /* ================= B · isPersonaLineBad 正反例 ================= */
