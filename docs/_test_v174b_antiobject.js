@@ -120,12 +120,12 @@ const CASES = [
   ["app.js", "心迹区名字解析（对齐详情页身份名）", `function heartCardHtml(it, rec, store) {\n    const name = spiritName(it, store);`, `const _idc = spiritIdentityOf(_disp);\n    const name = (_idc && !rec.nameEdited) ? _idc.name : _disp;`],
   ["app.js", "心迹提示去「它对你」", `看的是它对你那点另外的意思`, `看的是{ta}对你那点另外的意思`],
   ["app.js", "物化口头禅过滤函数（新增）", `__NONEXIST_V175_HELPER__`, `function isObjectifyingLine(line) {`],
-  ["app.js", "详情页口头禅行加过滤", `'<div class="sd-line">“' + esc(p.line || "") + '”</div>'`, `(p.line && !isObjectifyingLine(p.line) ? '<div class="sd-line">“' + esc(p.line) + '”</div>'`],
+  // v178：口头禅功能整体移除 —— 详情页 sd-line 渲染行已删除，原「详情页口头禅行加过滤」断言失效，移除
   ["app.js", "今日盘过按钮去物化", `记录今天盘了它）`, `记录今天盘了这串）`],
   ["app.js", "首次盘玩时间去物化", `开始盘它的时间`, `开始盘这串的时间`],
   ["app.js", "计划打卡按钮去物化", `今天盘过它了？点一下打卡`, `今天盘过这串了？点一下打卡`],
   ["app.js", "佩戴状态说明去物化", `一直在盘它）`, `一直戴着，不占盘玩计划）`],
-  ["spirits.js", "人设口头禅禁物化指令（新增）", `__NONEXIST_V175_SPG__`, `口头禅（line）严禁把玩视角`],
+  // v178：口头禅功能整体移除（生成端 prompt + 列表/图鉴/详情渲染端）—— 原「人设口头禅禁物化指令」断言已失效，移除
   ["spirits.js", "签文去物化", `把手洗干净盘它`, `把手洗干净，慢慢盘这串`],
 
   // ---------- V176a：房间双人剧情 + 夜话 + 沁灵栏目 · 物化文案再清一轮 ----------
@@ -172,10 +172,10 @@ for (const c of CASES) {
 
 /* ---- V176a 负向扫描：禁用词全库必须为 0（不依赖具体行文案，防「等宽回滚」绕过） ----
    ① 必须排除护栏行：AI prompt 里「⛔ 不准写盘我/摸我/捏我」这类禁止条款会自引禁用词，
-      不排除就常红失效。② 第 4 参 allow = 已裁定豁免的行内片段（旧 8 章 CHAP_SCRIPTS 死代码，
-      无调用点且被 _test_v165n2_script 锁成逐字节相同），只免这一条，别处再出现照样红。 */
+      不排除就常红失效。② 第 4 参 allow = 已裁定豁免的行内片段（v178：旧 8 章 CHAP_SCRIPTS 已整体删除，
+      原豁免项已无实际命中），别处再出现照样红。 */
 const NEG = [
-  ["spirits.js", "盘我",   "红线③ 沁灵自称被盘",   ["那时候虽然没人盘我"]],
+  ["spirits.js", "盘我",   "红线③ 沁灵自称被盘",   []],
   ["spirits.js", "被盘",   "红线② 物件视角",       []],
   ["spirits.js", "装睡",   "红线② 物件视角",       []],
   ["spirits.js", "会走路", "红线④ 会走路的一串",   []],

@@ -15,6 +15,13 @@ const fs = require("fs");
 const path = require("path");
 const { RAW, FILES, nl, ROOT } = require("./_v168_apply.js");
 
+// v178：口头禅功能整体移除 —— LINE_BY_SOFT 本地模板池已删，其 5 条去物化「改后串」不再存在于源码。
+//   这两行（d1-113..117）的「旧串已消失」仍由 A 段照常校验；B 段的「新串到位」对它们不再适用，跳过。
+const V178_GONE_LINES = new Set([
+  "你一对我好，我就想腻着你。", "我不用你天天惦记，也会一直在。", "你忙你的，我在这儿等你。",
+  "真心经得起等。", "不吵不闹，日子久了就熟了。",
+]);
+
 const SRC = {
   O: path.join(ROOT, process.env.SPIRITS_SRC_FILE || FILES.O),
   A: path.join(ROOT, process.env.APP_SRC_FILE || FILES.A),
@@ -41,6 +48,7 @@ section("B. 新串到位：改后串出现次数 >= expect（含被更长新串�
 const bBad = [], bInfo = [];
 RAW.forEach((r) => {
   if (r[2] === 0) return;
+  if (V178_GONE_LINES.has(nl(r[4]))) return;   // v178：池已删，改后串随功能一并移除，B 段不再适用
   const c = CUR[r[1]].split(nl(r[4])).length - 1;
   if (c < r[2]) bBad.push(r[0] + " 期望>=" + r[2] + " 实得" + c);
   else if (c > r[2]) bInfo.push(r[0] + " x" + c);
@@ -110,8 +118,8 @@ if (!neg && fs.existsSync(PRE)) {
     ok(p === q && p >= 0, name + " 元素数 " + p + "→" + q + "（应相等）");
     console.log("   " + name + ": " + p + " → " + q);
   });
-  // 本地模板池（TITLE/TRAITS/LINE_BY_SOFT 各 3 组）
-  ["TITLE_BY_SOFT", "TRAITS_BY_SOFT", "LINE_BY_SOFT"].forEach((name) => {
+  // 本地模板池（TITLE/TRAITS 各 3 组；v178：LINE_BY_SOFT 随口头禅功能一并删除）
+  ["TITLE_BY_SOFT", "TRAITS_BY_SOFT"].forEach((name) => {
     const re = new RegExp("^\\s*const " + name + " = \\{", "m");
     ok(re.test(preSrc) && re.test(CUR.O), name + " 声明存在");
   });

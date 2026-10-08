@@ -72,15 +72,26 @@ function resetAll() {
 /* ---------- P0-1 行级 who 的真实覆盖在下方 ch3 剧本路径 ---------- */
 section("P0-1 前置：章节入口齐备");
 {
-  ok(typeof S.chapTalkEnter === "function", "chapTalkEnter 导出");
+  ok(typeof S.chapWalk === "function", "chapWalk 导出（共享剧本推进引擎）");
   ok(typeof S.chapTalkChoose === "function", "chapTalkChoose 导出");
-  ok(Array.isArray(S.CHAP_ACTS) && S.CHAP_ACTS.length >= 3, "CHAP_ACTS 可注入（实得 " + (S.CHAP_ACTS || []).length + " 章）");
+  ok(Array.isArray(S.MAIN_ACTS) && S.MAIN_ACTS.length >= 3, "MAIN_ACTS 可注入（实得 " + (S.MAIN_ACTS || []).length + " 章）");
 }
 
-/* ---------- 真实剧本注入：把 CH03 塞进 CHAP_SCRIPTS[2]（ch3） ---------- */
-// CHAP_ACTS 由 CHAPTERS×CHAP_SCRIPTS 派生；chs 节点对象可整体替换（测试专用）
+/* ---------- 真实剧本注入：把 CH03 塞进 MAIN_ACTS[2]（v178：旧 8 章 CHAP_ACTS 已删，改用新 9 章剧本表） ---------- */
+// MAIN_ACTS 由 MAIN_CHAPTERS×MAIN_SCRIPTS 派生；节点对象可整体替换（测试专用）
 function injectChapter(idx, nodes) {
-  S.CHAP_ACTS[idx].nodes = nodes;
+  S.MAIN_ACTS[idx].nodes = nodes;
+}
+// v178：旧 chapTalkEnter 走的是已删除的 CHAP_ACTS；这里改为直接驱动共享引擎 chapWalk + mainActOf
+function enterMain(rec, i) {
+  if (typeof S.chapWalk !== "function" || typeof S.mainActOf !== "function") return { added: [], choices: [], ending: null, ended: true };
+  rec.talk = { chapId: "m" + (i + 1), node: "start", log: [], msgs: 0, ended: false, ending: null, tone: "", at: Date.now() };
+  try { if (typeof S.castOf === "function") S.castOf(); } catch (e) {}
+  return S.chapWalk(ITEM, rec, CTX, S.mainActOf) || {};
+}
+function chooseMain(rec, k) {
+  if (typeof S.chapTalkChoose !== "function" || typeof S.mainActOf !== "function") return { fb: "" };
+  return S.chapTalkChoose(ITEM, rec, CTX, k, S.mainActOf) || { fb: "" };
 }
 
 const CH03 = {
@@ -114,7 +125,7 @@ let rD1 = null;
   const rec = seed("s1", "sweet");
   injectChapter(2, JSON.parse(JSON.stringify(CH03)));
   // 负向对照（基线无 end:true / rset）下会返回退化对象，这里补齐形状让断言继续跑完
-  let r0 = S.chapTalkEnter(ITEM, rec, CTX, 2) || {};
+  let r0 = enterMain(rec, 2) || {};
   if (!Array.isArray(r0.added)) r0.added = [];
   if (!Array.isArray(r0.choices)) r0.choices = [];
   const C0 = r0.choices[0] || {};
@@ -134,7 +145,7 @@ let rD1 = null;
   ok(!!C0.rset && !!C0.gset && C0.fb,
      "chapChoicesOf 透传 rset/gset/fb");
 
-  rD1 = S.chapTalkChoose(ITEM, rec, CTX, 0) || { fb: "" };
+  rD1 = chooseMain(rec, 0);
   // 验收：选 D1 后 rec.flags.stance === "DECIDE"、ww_story.FORK_STANCE === "DECIDE"
   const recAfter = recOf("s1");
   ok(recAfter.flags && recAfter.flags.stance === "DECIDE",
@@ -157,8 +168,8 @@ section("P0-2 选 D2（让它自己选）⇒ stance/FORK_STANCE 均为 LET");
   resetAll();
   const rec = seed("s1", "sweet");
   injectChapter(2, JSON.parse(JSON.stringify(CH03)));
-  S.chapTalkEnter(ITEM, rec, CTX, 2);
-  S.chapTalkChoose(ITEM, rec, CTX, 1);
+  enterMain(rec, 2);
+  chooseMain(rec, 1);
   ok((recOf("s1").flags||{}).stance === "LET", "ch3 D2 ⇒ rec.flags.stance === 'LET'");
   ok((storyOf().FORK_STANCE) === "LET", "ch3 D2 ⇒ ww_stork.FORK_STANCE === 'LET'（实得 " + (storyOf().FORK_STANCE) + "）");
 }
@@ -221,7 +232,7 @@ section("P0-2 节点级 rset/gset：进节点即写（ch4 n2 无条件 harmed）
       gset: { CH4_LOOKED: "lively" }, next: "n3" },
     n3: { lines: [{ w: "sys", t: "末" }], end: true },
   });
-  S.chapTalkEnter(ITEM, rec, CTX, 3);
+  enterMain(rec, 3);
   const r = recOf("s1"); const RF = r.flags || {};
   ok((r.harmed) === true && (r.harmCause) === "掠客", "节点级 rset ⇒ rec.harmed/harmCause（走 setHarmed）");
   ok(r.flags && RF.harmed === true && RF.harmCause === "掠客", "节点级 rset 同时镜像进 rec.flags");
@@ -247,7 +258,7 @@ section("P0-3 end:true：判 ended + 补 readChapter（长连载章末无 ending
   injectChapter(4, {
     start: { lines: [{ w: "sys", t: "ch5" }, { w: "sp", who: "最小的", t: "x" }], end: true },
   });
-  const r = S.chapTalkEnter(ITEM, rec, CTX, 4);
+  const r = enterMain(rec, 4);
   ok(r.ended === true, "end:true ⇒ ended");
   ok(r.ending === null, "end:true 不产生 ending（长连载口径）");
   ok(r.choices.length === 0, "end:true 后无选项");
@@ -262,7 +273,7 @@ section("P0-3 保险：end 与 choices 同在 ⇒ 以 choices 优先（不提前
     start: { lines: [{ w: "sys", t: "n" }], choices: [{ t: "选我", go: "z" }], end: true },
     z: { lines: [{ w: "sys", t: "末" }], end: true },
   });
-  const r = S.chapTalkEnter(ITEM, rec, CTX, 5);
+  const r = enterMain(rec, 5);
   ok(r.ended === false && r.choices.length === 1, "有 choices 时不判 ended（实得 ended=" + r.ended + "）");
 }
 
@@ -376,7 +387,7 @@ section("P1-5 casting 静默降级：空库存 / 垃圾输入零抛错");
   const rec = seed("s1", "sweet");
   injectChapter(2, JSON.parse(JSON.stringify(CH03)));
   let entered = null, e2 = false;
-  try { entered = S.chapTalkEnter(ITEM, rec, CTX, 2); } catch (e) { e2 = true; }
+  try { entered = enterMain(rec, 2); } catch (e) { e2 = true; }
   ok(!e2 && entered && Array.isArray(entered.added), "casting 接入后进章照常（⛔ 绝不阻断）");
 }
 
@@ -393,7 +404,7 @@ section("P1-6 演出层：行级 bg/at/fx/sfx/bgm/cg/ps 透传 + 缺失静默降
     ], next: "n1" },
     n1: { lines: [{ w: "sys", t: "末" }], end: true },
   });
-  const r = S.chapTalkEnter(ITEM, rec, CTX, 2);
+  const r = enterMain(rec, 2);
   const m = r.added;
   ok(m[0].bg === undefined && m[0].slot === undefined, "无演出字段 ⇒ 不塞空键（静默降级）");
   ok(m[1].bg === "BG-04" && m[1].slot === "L" && m[1].fx === "fade_in" &&

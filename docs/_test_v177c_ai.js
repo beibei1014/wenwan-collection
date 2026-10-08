@@ -123,12 +123,11 @@ function ho(S, s) {
   ].forEach(([label, s]) => ok(F1(s) === false, "不命中 ⇒ " + label));
 
   /* ================= §2 prompt 补强 ================= */
-  section("§2 五处 AI 生成 prompt 含新禁令句（源码扫描）");
+  section("§2 四处 AI 生成 prompt 含新禁令句（源码扫描；v178：persona 已不再产口头禅，移出该表）");
   const SITES = [
     ["diaryWrite（日记）", "async function diaryWrite(item, rec, ap, ctx)"],
     ["chat（夜话群戏）", "async function chat(spirits)"],
     ["letter（来信）", "async function letter(spirit, userName)"],
-    ["persona（设定/口头禅）", "async function persona(item, force)"],
     ["personaZh（人物设定卡）", "async function personaZh(item, ap, persona, stage, days, plays, force)"],
   ];
   SITES.forEach(([label, sig]) => {
@@ -147,7 +146,7 @@ function ho(S, s) {
 
   section("§2c 既有去物化约束未被替换（不许改坏）");
   ok(region("async function diaryWrite(item, rec, ap, ctx)").indexOf("严禁物件视角") >= 0, "diaryWrite 保留「⛔ 严禁物件视角」");
-  ok(region("async function persona(item, force)").indexOf("口头禅（line）严禁把玩视角") >= 0, "persona 保留「⛔ 口头禅（line）严禁把玩视角」");
+  ok(region("async function persona(item, force)").indexOf("严禁物件视角") >= 0, "persona 保留「⛔ 严禁物件视角」（v178：口头禅已移除，世界观禁令仍保留）");
 
   /* ================= §3 diaryWrite 拦截链 ================= */
   section("§3 diaryWrite 拦截链（ower lines mock AI）");

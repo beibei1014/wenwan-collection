@@ -4,7 +4,7 @@
  *
  * 本测试钉住三件事：
  *   ① 旧 8 章的**入口**已取消（沁灵详情页里那条「📖 主线 · 串与我」+ #/talk 跳转）
- *   ② 旧 8 章的**数据**原样保留（CHAP_SCRIPTS / CHAPTERS / chapterState / chapTalk* 一个没删）
+ *   ② v178：旧 8 章**正文/剧本表**已删（CHAP_SCRIPTS / CHAP_ACTS / chapActOf）；CHAPTERS 元数据与共享引擎按判定保留
  *   ③ 新 9 章走**独立入口**（首页 #mainEntry → #/main → #/maintalk/<i>），
  *      元数据 MAIN_CHAPTERS 9 条、天数锚点取自剧本 §4、状态全在 ww_story（⛔ 不进 rec）
  *
@@ -35,25 +35,19 @@ const spSrc = fs.readFileSync(path.join(ROOT, "js/spirits.js"), "utf8");
   ok(/h\.indexOf\("#\/talk\/"\) === 0\)[\s\S]{0,200}location\.hash = "#\/spirit\//.test(appSrc),
     "#/talk/ 路由已改为直接回沁灵页");
 
-  /* ============ ② 旧数据原样保留 ============ */
-  section("② 旧 8 章数据与引擎 —— 一个没删");
-  ok(spSrc.indexOf("const CHAP_SCRIPTS = [") >= 0, "CHAP_SCRIPTS 仍在（旧 8 章正文）");
-  ok(spSrc.indexOf("const CHAPTERS = [") >= 0, "CHAPTERS 仍在（旧 8 章元数据）");
-  ["chapterState", "readChapter", "unreadChapterCount", "chapActOf",
+  /* ============ ② 旧 8 章正文已删（v178） ============ */
+  section("② 旧 8 章正文/剧本表已删，共享引擎与元数据按判定保留");
+  ok(spSrc.indexOf("const CHAP_SCRIPTS = [") < 0, "v178：CHAP_SCRIPTS 已删除（旧 8 章正文）");
+  ok(spSrc.indexOf("const CHAP_ACTS =") < 0, "v178：CHAP_ACTS 已删除（派生表）");
+  ok(typeof S.CHAP_ACTS === "undefined" && typeof S.chapActOf === "undefined", "CHAP_ACTS / chapActOf 不再导出");
+  ok(spSrc.indexOf("const CHAPTERS = [") >= 0 && S.CHAPTERS.length === 8,
+    "CHAPTERS 元数据保留（readChapter 仍复用取事件标题，v178 判定：仍被活代码引用）");
+  // 共享引擎与旧章方法仍在导出（新 9 章复用 chapWalk / chapTalkChoose）
+  ["readChapter", "chapterState", "unreadChapterCount",
     "chapTalkEnter", "chapTalkChoose", "chapTalkReplay", "chapTalkBrief", "chapTalkDone"]
-    .forEach((f) => ok(typeof S[f] === "function", "旧方法仍导出：" + f));
-  ok(Array.isArray(S.CHAP_ACTS) && S.CHAP_ACTS.length === 8, "CHAP_ACTS 仍是 8 条（实测 " + (S.CHAP_ACTS || []).length + "）");
-  ok(S.CHAPTERS.length === 8, "CHAPTERS 仍是 8 条（⛔ 没被 8→9 加长）");
+    .forEach((f) => ok(typeof S[f] === "function", "方法仍导出：" + f));
+  ok(spSrc.indexOf("chapActOf") < 0, "v178：源码无 chapActOf 悬空引用");
   ok(appSrc.indexOf("function renderChapTalkPage") < 0, "v178：renderChapTalkPage 已删除（旧 8 章整体移除）");
-  // 旧 8 章行为零变化：chapWalk 仍走 chapActOf（新增的 actOf 是可选第 4 参）
-  ok(spSrc.indexOf("const act = (actOf || chapActOf)(t.chapId)") >= 0, "chapWalk 不传 actOf 时仍走 chapActOf");
-  ok(spSrc.indexOf("const act = (actOf || chapActOf)(t && t.chapId)") >= 0, "chapTalkChoose 同上");
-  {
-    const item = { id: "it_x", name: "旧章串", category: "菩提", species: "星月", color: "浅花", playCount: 9, softness: "slight" };
-    const rec = {};
-    const r = S.chapTalkEnter(item, rec, { dayNo: 30 }, 0);
-    ok(r && Array.isArray(r.added) && r.added.length > 0, "旧 8 章仍能正常进章（run 一遍证明没被改坏）");
-  }
 
   /* ============ ③ 新 9 章独立入口 ============ */
   section("③ 新 9 章独立入口（首页 → #/main → #/maintalk/<i>）");
