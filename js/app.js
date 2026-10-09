@@ -6115,7 +6115,11 @@
                 ? '<button type="button" class="link-btn" id="sdNameSpec">✏️ 按命名规格取个名</button>'
                 : ""))) +
       "</div>" +
-      '<div class="spirit-tags" style="justify-content:center">' + ((p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
+      // v180-K4：性格标签（persona.traits）是**只读的、点了没反应** —— 用户令「改不了就删」，
+      //   详情页这一行只留信息标签（颜色 / 糯度 / 闲置天数）；性格标签不再渲染。
+      //   ⛔ 卡片页（沁灵页 / 全部沁灵页）的 .spirit-tags 性格标签**保留**（列表仍要看），
+      //      故 .spirit-tags / .spirit-trait 样式不是死代码，一并保留。
+      '<div class="spirit-tags" style="justify-content:center">' +
       '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div></div>";
 
     // v155：今天 · 陪伴卡（今日问候 + 羁绊 + 今日一签 + 下一封回响倒计时）
