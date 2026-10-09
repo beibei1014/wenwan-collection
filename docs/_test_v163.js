@@ -36,20 +36,24 @@ function mkItems(n) {
 }
 
 const h = makeContext();
+// v180-K2：现役夜话剧本只来自 js/night-v180.js（经 nightPoolSync() 并入池）
+// ⇒ 必须先挂数据再挂引擎，否则池里一条都没有（NIGHT_EVENTS 已清空为内部事件槽位）
+loadFile(h.ctx, "js/night-v180.js");
 loadFile(h.ctx, "js/spirits.js");
 const S = h.sandbox.Spirits;
 const ctx = { dayNo: 400, idleDays: 12, plays: 30 };
 
 /* ---------------- 1. 夜话事件：穷举分支 ---------------- */
-section("1. 夜话事件（NIGHT_EVENTS）穷举分支路径");
+section("1. 夜话事件（现役池 NIGHT_EVENT_POOL）穷举分支路径");
 {
   const { items, store } = mkItems(12);
   const groups = [{ id: "roomA", name: "小屋 A", items: items.slice(0, 6) }, { id: "roomB", name: "小屋 B", items: items.slice(6, 9) }];
   const threads = S.nightThreads(items, store, ctx, groups);
   ok(threads.length > 0, "nightThreads 生成了 " + threads.length + " 个会话");
 
-  const evIds = S.NIGHT_EVENTS.map((e) => e.id);
+  const evIds = S.nightPoolSync().map((e) => e.id);
   let totalPaths = 0, totalRuns = 0;
+  ok(evIds.length >= 9, "现役夜话事件池 ≥ 9 条（实得 " + evIds.length + "：" + evIds.join(",") + "）");
   evIds.forEach((evId) => {
     const ev = S.eventOf(evId);
     const scope = ev.scope || "family";

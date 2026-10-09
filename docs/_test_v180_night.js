@@ -132,16 +132,28 @@ section("3 · 引擎骨架（池 / 槽 / 三处读点 / 导出 / ⛔ 不碰 hash
   const rsSpan = fnSpan(SP, "roomSlotOf");
   ok(rsSpan.length > 0 && !/hashStr/.test(rsSpan), "⛔ roomSlotOf() 内不引用 hashStr（外观/性别圣域不受影响）");
   ok(/>>> 0/.test(rsSpan) && /% 4/.test(rsSpan), "roomSlotOf 用无符号散列 >>> 0 且取模 4（[0,3] 确定性）");
-  ok(/const NIGHT_EVENTS = \[/.test(SP), "⛔ NIGHT_EVENTS 本体定义仍在");
+  ok(/const NIGHT_EVENTS = \[/.test(SP), "⛔ NIGHT_EVENTS 本体定义仍在（v180-K2 后为空数组 = 内部事件槽位）");
   ok(!/for \(let i = 0; i < NIGHT_EVENTS\.length; i\+\+\)/.test(SP), "池化后源码里已无「直读 NIGHT_EVENTS.length 的循环」");
-  /* v180-I2：after 来源注释（team-lead ② 要求写进代码） */
-  ok(/a1–a4 本身就是 NIGHT_EVENTS 的条目/.test(SP) && /⛔ 不是跨池/.test(SP), "代码注释写明了 a1–a4 属同池、after 非跨池（team-lead ② ）");
+  /* ---- v180-K2：老夜话已下线（用户令「以前物化的、每个群都一样的都删掉」） ---- */
+  ok(!/const NIGHT_ACTS = \[/.test(SP), "⛔ v180-K2：NIGHT_ACTS（v160 老 4 幕 a1–a4）已整块删除");
+  ok(!/\bfunction nightEnter\(/.test(SP) && !/\bfunction nightActs\(/.test(SP) && !/\bfunction nightChoose\(/.test(SP) && !/\bfunction nightReplay\(/.test(SP) && !/\bfunction nightBrief\(/.test(SP) && !/\bfunction nightCast\(/.test(SP),
+    "⛔ v160 act 运行时（nightCast/nightActs/nightEnter/nightReplay/nightChoose/nightBrief）已随老剧本删除（全库零调用）");
+  ok(!/const NIGHT_CAP\s*=/.test(SP), "⛔ NIGHT_CAP（只服务于 v160 nightWalk 的保险阀）已一并删除");
+  ok(/const NIGHT_GROUP = "三更灯火"/.test(SP), "NIGHT_GROUP 保留（v162 thVars 的 v.grp 仍在用）");
+  ok(/const NIGHT_OLD_IDS = \[/.test(SP), "定义 NIGHT_OLD_IDS（13 个已下线老夜话 id 清单）");
+  ok(/\bfunction nightPurgeOld\(/.test(SP), "定义 nightPurgeOld()（玩家侧老进度一次性幂等清除）");
+  ok(/nightPurgeOld\(rec\);\s*\/\/ v180-K2/.test(SP), "threadMigrate() 末尾调用 nightPurgeOld（⛔ 老 rec 已 __v162 也要清）");
+  /* v180-K2：after 锚点重挂（替代 v180-I2 的「a1–a4 属同池」注释） */
+  ok(/const NIGHT_AFTER_REMAP = \{/.test(SP), "定义 NIGHT_AFTER_REMAP（老锚点 a1–a4 重挂表）");
+  ok(/a4:\s*"f_oldwall"/.test(SP) && /a3:\s*""/.test(SP), "重挂规则：a3 → 无前置、a4 → f_oldwall（保住「先讲那道垣、再讲醒之前」）");
+  ok(/重挂后锚点仍不在现役池里/.test(SP), "⛔ 代码写明：重挂后锚点不在现役池 ⇒ 视为已满足（绝不让事件永久锁死）");
+  ok(!/a1–a4 本身就是 NIGHT_EVENTS 的条目/.test(SP), "⛔ 已删除「a1–a4 属同池」的旧注释（v180-K2 后不再成立）");
 }
 
 /* ============================================================
  * (4) 运行时池 = NIGHT_EVENTS + 外部；push/pop 活数组
  * ============================================================ */
-section("4 · 运行时池（13 + 9）· 前段同引用 · 🔴 push/pop 活数组");
+section("4 · 运行时池（老 0 + 外部 9）· 外部全引用 · 🔴 push/pop 活数组");
 let S = null, hc = null, ths = null, fam = null, roomThs = [], ctx = null, items = [], store = {};
 {
   const H = require("./_harness.js");
@@ -153,16 +165,14 @@ let S = null, hc = null, ths = null, fam = null, roomThs = [], ctx = null, items
   } catch (e) { ok(false, "沙箱加载 night-v180.js + spirits.js（" + e.message + "）"); }
   ok(!!S, "沙箱里拿到 Spirits");
   if (S) {
-    ok(S.NIGHT_EVENTS.length === 13, "NIGHT_EVENTS 本体仍是 13 条（实得 " + S.NIGHT_EVENTS.length + "）");
+    ok(S.NIGHT_EVENTS.length === 0, "⛔ v180-K2：NIGHT_EVENTS 本体已清空（实得 " + S.NIGHT_EVENTS.length + "）");
     const pool = S.nightPoolSync();
-    ok(pool.length === 22, "池 = 13 + 9 = 22（实得 " + pool.length + "）");
-    let headSame = true;
-    for (let i = 0; i < S.NIGHT_EVENTS.length; i++) if (pool[i] !== S.NIGHT_EVENTS[i]) { headSame = false; break; }
-    ok(headSame, "⛔ 池前 13 个与 NIGHT_EVENTS **同引用**（老行为逐字不变）");
+    ok(pool.length === 9, "池 = 0 + 9 = 9（实得 " + pool.length + "）");
     const ext = hc.sandbox.NIGHT_V180.events;
     let tailSame = true;
     for (let i = 0; i < ext.length; i++) if (pool[S.NIGHT_EVENTS.length + i] !== ext[i]) { tailSame = false; break; }
-    ok(tailSame, "池后 9 个 === window.NIGHT_V180.events 元素（外部剧本原样并入）");
+    ok(tailSame, "⛔ 池 9 个 === window.NIGHT_V180.events 元素（现役剧本**只**来自外部池，原样并入）");
+    ok(pool.map((e) => e.id).join(",") === NEW_IDS.join(","), "现役池 id 序列 = 9 条新剧本（实得 " + pool.map((e) => e.id).join(",") + "）");
     ok(pool.length === S.NIGHT_EVENT_POOL.length, "载入即预热（nightPoolSync 与 NIGHT_EVENT_POOL 同步）");
 
     /* 造世界：24 只，性格覆盖 3 条 duo 所需 6 种 */
@@ -189,7 +199,7 @@ let S = null, hc = null, ths = null, fam = null, roomThs = [], ctx = null, items
     const tmp = { id: "x_fam_tmp", icon: "🌙", title: "临时", scope: "family", when: {}, nodes: { start: { lines: [{ w: "A", t: "hi" }] }, e: { ending: { key: "k", name: "n", text: "t" } } } };
     S.NIGHT_EVENTS.push(tmp);
     ok(S.threadEvents(fam, ctx, store["it0"]).events.some((e) => e.id === "x_fam_tmp"), "🔴 push 进 NIGHT_EVENTS 的临时事件被池**实时**看见（活数组）");
-    ok(S.nightPoolSync().length === 23, "push 后池长度跟随（13+1+9=23，实得 " + S.nightPoolSync().length + "）");
+    ok(S.nightPoolSync().length === 10, "push 后池长度跟随（0+1+9=10，实得 " + S.nightPoolSync().length + "）");
     S.NIGHT_EVENTS.pop();
     ok(!S.threadEvents(fam, ctx, store["it0"]).events.some((e) => e.id === "x_fam_tmp"), "pop 后池同步回退（不残留）");
     ok(S.threadEvents(fam, ctx, store["it0"]).events.map((e) => e.id).join(",") === before, "push/pop 一轮后事件列表逐字回到原样");
@@ -207,7 +217,7 @@ section("5 · 「房间专属」真跑：每屋恰好 1 条同槽事件 · 无�
     const SLOTEV = ext.filter((e) => e.scope === "room" && e.roomSlot != null);
     const SHAREDEV = ext.filter((e) => e.scope === "room" && e.roomSlot == null);
     ok(SLOTEV.length === 4, "外部 room 专属事件 = 4 条（实得 " + SLOTEV.length + "）");
-    ok(SHAREDEV.length === 0, "外部 room 共享事件 = 0 条（本批 4 条全部带槽；老 3 条在 NIGHT_EVENTS 里）");
+    ok(SHAREDEV.length === 0, "外部 room 共享事件 = 0 条（本批 4 条全部带槽）");
     const slotOf = {};
     SLOTEV.forEach((e) => { slotOf[e.id] = e.roomSlot; });
     const bySlot = {};
@@ -225,12 +235,12 @@ section("5 · 「房间专属」真跑：每屋恰好 1 条同槽事件 · 无�
     });
     ok(hit1 === 8 && bad === 0, "⛔ 8 间屋每间恰好 1 条同槽专属事件（实得 " + hit1 + "/8）");
 
-    /* 无 roomSlot 的房事件（老 r_thunder/r_joy/r_sad）⇒ 全屋一致（要么全看得到、要么全看不到） */
+    /* v180-K2：老的 3 条无槽房事件（r_thunder / r_joy / r_sad）已随老夜话下线 ⇒ 8 间屋全看不到 */
     const sharedIds = S.NIGHT_EVENTS.filter((e) => e.scope === "room" && e.roomSlot == null).map((e) => e.id);
-    ok(sharedIds.length === 3, "老库 3 条 room 事件无 roomSlot（实得 " + sharedIds.length + "）");
-    sharedIds.forEach((sid) => {
+    ok(sharedIds.length === 0, "⛔ 老库 3 条无槽 room 事件已删除（实得 " + sharedIds.length + "）");
+    ["r_thunder", "r_joy", "r_sad"].forEach((sid) => {
       const arr = roomThs.map((t) => S.threadEvents(t, ctx, store["it0"]).events.some((e) => e.id === sid));
-      ok(arr.every((x) => x === arr[0]), "⛔ 无槽房事件「" + sid + "」8 间屋一致（" + (arr[0] ? "都看得到" : "都看不到") + "）");
+      ok(arr.every((x) => x === false), "⛔ 老房事件「" + sid + "」8 间屋全不可见（v180-K2 已删）");
     });
 
     /* 家族群落不含任何 room 事件 */
@@ -249,10 +259,11 @@ section("6 · 9 条剧本内容核验（id / scope / cast / roomSlot / duo pers 
     const evs = V.events;
     ok(evs.map((e) => e.id).join(",") === NEW_IDS.join(","), "9 条 id 与预期一致且有序（实得 " + evs.map((e) => e.id).join(",") + "）");
 
-    /* id 与老库全体无碰撞 */
-    const oldIds = (S ? S.NIGHT_EVENTS.map((e) => e.id) : []).concat(S ? S.NIGHT_ACTS.map((a) => a.id) : []);
+    /* id 与老库全体无碰撞（v180-K2：老库 = NIGHT_OLD_IDS 的 13 个已下线 id） */
+    const oldIds = (S && S.NIGHT_OLD_IDS) ? S.NIGHT_OLD_IDS : [];
+    ok(oldIds.length === 13, "NIGHT_OLD_IDS 恰好 13 个老夜话 id（实得 " + oldIds.length + "）");
     const collide = NEW_IDS.filter((x) => oldIds.indexOf(x) >= 0);
-    ok(collide.length === 0, "⛔ 9 个新 id 与老库全体（13 事件 + 4 幕）零碰撞（碰撞 " + JSON.stringify(collide) + "）");
+    ok(collide.length === 0, "⛔ 9 个新 id 与老库 13 个零碰撞（碰撞 " + JSON.stringify(collide) + "）");
 
     const byScope = { family: [], room: [], duo: [] };
     evs.forEach((e) => { (byScope[e.scope] = byScope[e.scope] || []).push(e.id); });
@@ -280,13 +291,17 @@ section("6 · 9 条剧本内容核验（id / scope / cast / roomSlot / duo pers 
       }
     });
 
-    /* after：两条讲古承接序章 a3/a4（同池） */
+    /* after：两条讲古原挂序章 a3/a4；v180-K2 老序章 a1–a4 下线 ⇒ 由引擎 NIGHT_AFTER_REMAP 重挂 */
     const fOld = evs.filter((e) => e.id === "f_oldwall")[0];
     const fWake = evs.filter((e) => e.id === "f_wake")[0];
-    ok(fOld && fOld.after === "a3", "f_oldwall.after = \"a3\"（实得 " + (fOld && fOld.after) + "）");
-    ok(fWake && fWake.after === "a4", "f_wake.after = \"a4\"（实得 " + (fWake && fWake.after) + "）");
+    ok(fOld && fOld.after === "a3", "f_oldwall.after 仍写 \"a3\"（机械生成物未手改；实得 " + (fOld && fOld.after) + "）");
+    ok(fWake && fWake.after === "a4", "f_wake.after 仍写 \"a4\"（机械生成物未手改；实得 " + (fWake && fWake.after) + "）");
     const poolIds = S ? S.nightPoolSync().map((e) => e.id) : [];
-    ok(poolIds.indexOf("a3") >= 0 && poolIds.indexOf("a4") >= 0, "⛔ after 目标 a3/a4 在**同一个池**里（a1–a4 即 NIGHT_EVENTS 的 legacy 条目）");
+    ok(poolIds.indexOf("a3") < 0 && poolIds.indexOf("a4") < 0,
+      "⛔ v180-K2：老锚点 a3/a4 已不在现役池（含 a3=" + (poolIds.indexOf("a3") >= 0) + " a4=" + (poolIds.indexOf("a4") >= 0) + "）⇒ 靠重挂表兜底");
+    ok(poolIds.length === 9, "⛔ 现役池恰好 9 条（实得 " + poolIds.length + "）");
+    ok(S && S.NIGHT_AFTER_REMAP && S.NIGHT_AFTER_REMAP.a3 === "" && S.NIGHT_AFTER_REMAP.a4 === "f_oldwall",
+      "重挂表：a3 → 无前置、a4 → f_oldwall（实得 " + JSON.stringify(S && S.NIGHT_AFTER_REMAP) + "）");
 
     /* 禁词 / 真名 / 主人 / 变量白名单 —— 扫全部文案（t / ending / title / sub / choices） */
     let bannedHit = [];
@@ -357,69 +372,79 @@ section("7 · 真跑 BFS（9 条全分支）");
 /* ============================================================
  * (8) after 冒烟：a3 ⇒ f_oldwall / a4 ⇒ f_wake（team-lead ② 选 A）
  * ============================================================ */
-section("8 · after 冒烟：线程页打 a3/a4 ⇒ 两条讲古解锁（同池同 done 表）");
+section("8 · v180-K2 after 重挂冒烟：f_oldwall 打完 ⇒ f_wake 解锁（老锚点 a3/a4 已下线）");
 {
   if (!S || !fam) { ok(false, "沙箱未就绪，跳过（前置失败）"); }
   else {
     const rec = JSON.parse(JSON.stringify(store["it0"]));
     const myItems = items;
-    let te = S.threadEvents(fam, ctx, rec);
-    ok(!!te.done["a3"] === false, "初始 family.done.a3 未完成");
-    ok(te.events.filter((e) => e.id === "f_oldwall")[0].unlocked === "" || !te.events.filter((e) => e.id === "f_oldwall")[0].unlocked, "f_oldwall 初始锁（after 未满足）");
     function playToEnd(evId) {
       let res = S.threadEnter(myItems[0], rec, ctx, fam, evId);
       let g = 0;
       while (!res.ended && res.choices && res.choices.length && g++ < 120) res = S.threadChoose(myItems[0], rec, ctx, fam, 0);
       return res;
     }
-    const r3 = playToEnd("a3");
-    ok(r3.ended, "线程页把 a3 打到结局");
+    /* ⛔ 老 id 已彻底下线：一个都不该被 eventOf 找到 */
+    const oldSeen = (S.NIGHT_OLD_IDS || []).filter((oid) => !!S.eventOf(oid));
+    ok(oldSeen.length === 0, "⛔ 13 个老夜话 id 一个都不在现役池（实得 " + JSON.stringify(oldSeen) + "）");
+
+    let te = S.threadEvents(fam, ctx, rec);
+    const eOld = te.events.filter((e) => e.id === "f_oldwall")[0] || {};
+    const eWake0 = te.events.filter((e) => e.id === "f_wake")[0] || {};
+    ok(!!eOld.unlocked, "✅ f_oldwall 开局即解锁（老锚点 a3 已下线 ⇒ 视为已满足，不永久锁死）");
+    ok(!eWake0.unlocked, "f_wake 初始锁（a4 已重挂到 f_oldwall 之后）");
+    const r1 = playToEnd("f_oldwall");
+    ok(r1.ended, "线程页把 f_oldwall 打到结局");
     te = S.threadEvents(fam, ctx, rec);
-    ok(!!te.done["a3"], "✅ family.done.a3 = true（写进会话级 done 表）");
-    ok(!!te.events.filter((e) => e.id === "f_oldwall")[0].unlocked, "✅ 挂 after:\"a3\" 的 f_oldwall 解锁（同池同表，无需引擎兜底）");
-    const r4 = playToEnd("a4");
-    ok(r4.ended, "线程页把 a4 打到结局");
-    te = S.threadEvents(fam, ctx, rec);
-    ok(!!te.events.filter((e) => e.id === "f_wake")[0].unlocked, "✅ 挂 after:\"a4\" 的 f_wake 解锁");
+    ok(!!te.done["f_oldwall"], "✅ family.done.f_oldwall = true（写进会话级 done 表）");
+    ok(!!te.events.filter((e) => e.id === "f_wake")[0].unlocked, "✅ after:\"a4\" 重挂到 f_oldwall 之后 ⇒ f_wake 解锁");
+    const r2 = playToEnd("f_wake");
+    ok(r2.ended, "线程页把 f_wake 打到结局");
+    ok(!!S.threadEvents(fam, ctx, rec).done["f_wake"], "✅ family.done.f_wake = true");
   }
 }
 
 /* ============================================================
  * (9) ⛔ 老资产未动（vs f9cd5e5）＋ 5116 已改
  * ============================================================ */
-section("9 · ⛔ 老资产未动 ＋ 5116 物化句已改");
+section("9 · v180-K2 老夜话已下线 ＋ ⛔ 圣域未动（vs f9cd5e5）");
 let BASE_SP = "";
 {
   const cp = require("child_process");
   try { BASE_SP = cp.execSync("git show f9cd5e5:js/spirits.js", { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 28 }).replace(/\r/g, ""); }
   catch (e) { try { BASE_SP = fs.readFileSync(path.join(__dirname, "_tmp", "_pre_v180i_baseline_spirits.js"), "utf8").replace(/\r/g, ""); } catch (e2) { BASE_SP = ""; } }
 
-  /* 5116：定稿必须在新代码里，旧句必须 0 残留（引擎 + 数据） */
-  ok(SP.indexOf("这世上，还有多少同我们一样的人，还没醒，是不是也在等一个人。") >= 0, "✅ 5116 定稿句已在 js/spirits.js");
+  /* 5116：老夜话整块下线 ⇒ 旧句与定稿句在引擎里都应 0 残留（数据文件里也不该有） */
   ok(SP.indexOf("你柜子里那些还没开沁的珠子，是不是也在等") < 0, "⛔ 5116 旧句（柜子里…珠子）0 残留");
+  ok(SP.indexOf("这世上，还有多少同我们一样的人，还没醒") < 0, "⛔ 5116 定稿句随老剧本 a1 一并下线（引擎 0 残留）");
   ok(DATA.indexOf("你柜子里那些还没开沁的珠子，是不是也在等") < 0, "⛔ 数据文件中旧句 0 残留");
+
+  /* 老夜话数据与运行时：删干净、不留残桩 */
+  const curNE = span(SP, "const NIGHT_EVENTS = [", "\n  ];");
+  ok(curNE.length > 0, "NIGHT_EVENTS 外壳仍在（空数组 = 内部事件槽位）");
+  ok((curNE.match(/\bid:\s*"/g) || []).length === 0, "⛔ NIGHT_EVENTS 内事件条目 = 0（实得 " + ((curNE.match(/\bid:\s*"/g) || []).length) + "）");
+  ok(span(SP, "const NIGHT_ACTS = [", "\n  ];") === "", "⛔ NIGHT_ACTS 段已整块消失");
+  ["三更灯火", "谁更亮"].forEach((w) => { /* 群名常量保留，老幕标题应无残留 */ });
+  ok(SP.indexOf("深夜 23:47 —— 你的手机亮了一下。") < 0, "⛔ 老第一幕开场文案 0 残留");
+  ok(SP.indexOf("「{grp}」：{LIST} 把你拉进了群聊。") < 0, "⛔ 老第一幕「拉进群聊」文案 0 残留");
+  ["f_new", "f_spring", "f_trip", "f_lost", "d_birth", "d_clash", "r_thunder", "r_joy", "r_sad"].forEach((oid) => {
+    ok(!new RegExp("id:\\s*\"" + oid + "\"").test(SP), "⛔ 老事件 " + oid + " 在引擎里 0 残留");
+  });
+  ok(!/id:\s*"a[1-4]"/.test(SP), "⛔ 老四幕 id a1–a4 在引擎里 0 残留");
 
   if (!BASE_SP) ok(true, "9 · (取不到 f9cd5e5 基线 → 老资产比对优雅跳过)");
   else {
-    const curNE = span(SP, "const NIGHT_EVENTS = [", "\n  ];");
-    const baseNE = span(BASE_SP, "const NIGHT_EVENTS = [", "\n  ];");
-    ok(curNE.length > 0 && curNE === baseNE, "⛔ NIGHT_EVENTS **本体段**与 f9cd5e5 逐字一致（5116 在 NIGHT_ACTS 区，未动 NIGHT_EVENTS 字面）");
     ok(fnSpan(SP, "hashStr").length > 0 && fnSpan(SP, "hashStr") === fnSpan(BASE_SP, "hashStr"), "⛔ hashStr 逐字一致");
     ["\"ww_spirits\"", "\"spirit_store\""].forEach((lit) => {
       ok((SP.split(lit).length - 1) === (BASE_SP.split(lit).length - 1), "⛔ 键名 " + lit + " 出现次数不变");
     });
-    /* NIGHT_ACTS 结构未动：仅 5116 那一行文案变（旧→新），其余逐字一致 */
-    const ca = span(SP, "const NIGHT_ACTS = [", "\n  ];").split("\n");
-    const ba = span(BASE_SP, "const NIGHT_ACTS = [", "\n  ];").split("\n");
-    ok(ca.length > 0 && ca.length === ba.length, "NIGHT_ACTS 段行数与基线一致（只改文案，未增删行；实得 " + ca.length + "/" + ba.length + "）");
-    const diffIdx = [];
-    for (let i = 0; i < ba.length; i++) if (ca[i] !== ba[i]) diffIdx.push(i);
-    ok(diffIdx.length === 1, "NIGHT_ACTS 与 f9cd5e5 **仅 1 行**不同（实得 " + diffIdx.length + "）");
-    if (diffIdx.length === 1) {
-      const ii = diffIdx[0];
-      ok(/你柜子里那些还没开沁的珠子/.test(ba[ii]) && /这世上，还有多少同我们一样的人/.test(ca[ii]),
-        "该差异行正是 5116 物化句（旧「珠子…柜子里」→ 新「同我们一样的人」，其余 NIGHT_ACTS 逐字未动）");
-    }
+    /* 反向前提：基线里老夜话确实存在 ⇒ 证明本次是「删」而不是本来就没有 */
+    ok(/const NIGHT_ACTS = \[/.test(BASE_SP) && span(BASE_SP, "const NIGHT_ACTS = [", "\n  ];").length > 1000,
+      "负向前提：f9cd5e5 基线里 NIGHT_ACTS 确实存在且成段（本次确为删除）");
+    /* 基线里 NIGHT_EVENTS = 9 条字面条目 + 4 条 NIGHT_ACTS 包装的 legacy（id 由 a.id 给出，非字面） = 13 */
+    const baseNE = span(BASE_SP, "const NIGHT_EVENTS = [", "\n  ];");
+    ok((baseNE.match(/\bid:\s*"/g) || []).length === 9 && baseNE.split("NIGHT_ACTS").length - 1 === 8,
+      "负向前提：f9cd5e5 基线 NIGHT_EVENTS = 9 字面 + 4 条 NIGHT_ACTS legacy = 13（本次清空 13 → 0）");
   }
 }
 
@@ -442,8 +467,12 @@ section("10 · 负向对照（铆定 f9cd5e5 · ⛔ 不用 HEAD）");
     add("房间槽闸门", /thread\.kind === "room" && ev\.roomSlot != null && ev\.roomSlot !== roomSlotOf\(thread\.id\)/.test(thS));
     add("roomSlotOf 不碰 hashStr", />>> 0/.test(rsS) && !/hashStr/.test(rsS));
     add("导出池/槽", /NIGHT_EVENT_POOL,\s*nightPoolSync,\s*roomSlotOf,/.test(sp));
-    add("after 来源注释", /a1–a4 本身就是 NIGHT_EVENTS 的条目/.test(sp));
-    add("5116 定稿句", sp.indexOf("这世上，还有多少同我们一样的人，还没醒") >= 0);
+    /* v180-K2 标记（铆定版 f9cd5e5 必须全不成立） */
+    add("NIGHT_OLD_IDS", /const NIGHT_OLD_IDS = \[/.test(sp));
+    add("NIGHT_AFTER_REMAP", /const NIGHT_AFTER_REMAP = \{/.test(sp));
+    add("nightPurgeOld", /\bfunction nightPurgeOld\(/.test(sp));
+    add("NIGHT_ACTS 已删", !/const NIGHT_ACTS = \[/.test(sp));
+    add("老夜话 0 残留", sp.indexOf("这世上，还有多少同我们一样的人，还没醒") < 0 && sp.indexOf("你柜子里那些还没开沁的珠子") < 0);
     add("index 挂数据文件", /js\/night-v180\.js\?v=\d+/.test(html) && html.indexOf("js/night-v180.js") < html.indexOf("js/spirits.js"));
     add("数据文件 9 条", /NIGHT_V180\s*=/.test(data) && (data.match(/id:\s*"n?_?[a-z0-9_]+"/g) || []).length >= 9 && /nodes:\s*\{/.test(data));
     return m;

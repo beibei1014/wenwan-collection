@@ -7417,11 +7417,11 @@
     const list = spiritItems();
     const store = Spirits.load();
     if (!_nightMigrated) {                       // 一次性迁移：老用户的 rec.night 搬进 rec.threads.family
-      _nightMigrated = true;
+      _nightMigrated = true;                     // v180-K2：顺带把已下线的老夜话进度清一遍
       let dirty = false;
       Object.keys(store).forEach((k) => {
         const r = store[k];
-        if (!r || typeof r !== "object" || r.__v162) return;
+        if (!r || typeof r !== "object" || (r.__v162 && r.__v180k2)) return;
         Spirits.threadMigrate(r);
         dirty = true;
       });

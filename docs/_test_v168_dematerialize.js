@@ -29,6 +29,20 @@ const SRC = {
 const neg = !!(process.env.SPIRITS_SRC_FILE || process.env.APP_SRC_FILE);
 const CUR = { O: fs.readFileSync(SRC.O, "utf8"), A: fs.readFileSync(SRC.A, "utf8") };
 
+/* v180-K2：老夜话（NIGHT_ACTS 4 幕 + NIGHT_EVENTS 老 13 条）**整条下线**
+   ⇒ 曾经落在那里的「改后串」现在一并消失是**预期**，B 段（新串到位）对它们不再适用。
+   判定方式（⛔ 不写死清单）：改后串在**改前基线 b96fc50**里出现过、在当前源码里已消失。
+   基线取不到 ⇒ 不跳过（宁可红，也不放水）。负向对照（neg）下同样不跳过，以免削弱对照。 */
+const PRE_K2 = (function () {
+  if (neg) return { O: "", A: "" };
+  const cp = require("child_process");
+  const get = (rel, tmp) => {
+    try { return cp.execSync("git show b96fc50:" + rel, { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 28 }); }
+    catch (e) { try { return fs.readFileSync(path.join(__dirname, tmp), "utf8"); } catch (e2) { return ""; } }
+  };
+  return { O: get("js/spirits.js", "_tmp/_pre_v180k2_spirits.js"), A: get("js/app.js", "_tmp/_pre_v180k2_app.js") };
+})();
+
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass++; else { fail++; console.log("   FAIL: " + m); } };
 const section = (t) => console.log("\n# " + t);
@@ -45,16 +59,21 @@ console.log("   旧串残留数 = " + aBad.length + " / 188");
 
 // B. 新串到位
 section("B. 新串到位：改后串出现次数 >= expect（含被更长新串包含的情形）");
-const bBad = [], bInfo = [];
+const bBad = [], bInfo = [], bK2 = [];
 RAW.forEach((r) => {
   if (r[2] === 0) return;
   if (V178_GONE_LINES.has(nl(r[4]))) return;   // v178：池已删，改后串随功能一并移除，B 段不再适用
-  const c = CUR[r[1]].split(nl(r[4])).length - 1;
-  if (c < r[2]) bBad.push(r[0] + " 期望>=" + r[2] + " 实得" + c);
-  else if (c > r[2]) bInfo.push(r[0] + " x" + c);
+  const ns = nl(r[4]);
+  const c = CUR[r[1]].split(ns).length - 1;
+  if (c < r[2]) {
+    // v180-K2：改后串在改前基线里存在、现在没了 ⇒ 随老夜话一起下线，B 段不适用
+    if (c === 0 && PRE_K2[r[1]] && PRE_K2[r[1]].split(ns).length - 1 > 0) { bK2.push(r[0]); return; }
+    bBad.push(r[0] + " 期望>=" + r[2] + " 实得" + c);
+  } else if (c > r[2]) bInfo.push(r[0] + " x" + c);
 });
 ok(bBad.length === 0, "新串缺失：" + bBad.join(", "));
 console.log("   缺失数 = " + bBad.length + "；被更长新串包含而多计：" + (bInfo.join(", ") || "无"));
+console.log("   v180-K2 随老夜话下线而豁免 = " + bK2.length + " 条" + (bK2.length ? "（" + bK2.slice(0, 8).join(",") + (bK2.length > 8 ? " …" : "") + "）" : ""));
 
 // C. 占位符保留（old 的占位符必须全部出现在 new；new 可新增 {A}/{B}/{C}）
 section("C. 占位符保留：old 的 {占位符} ⊆ new 的 {占位符}");
@@ -112,10 +131,13 @@ const POOLS = [
 ];
 if (!neg && fs.existsSync(PRE)) {
   const preSrc = fs.readFileSync(PRE, "utf8");
+  // v180-K2：老夜话整条下线 ⇒ NIGHT_EVENTS 元素数 9 → 0 是**预期清零**，不是回归
+  const K2_EXPECT_ZERO = { NIGHT_EVENTS: 1 };
   POOLS.forEach(([name, a, b, c]) => {
     const p = countBetween(preSrc, a, b, c);
     const q = countBetween(CUR.O, a, b, c);
-    ok(p === q && p >= 0, name + " 元素数 " + p + "→" + q + "（应相等）");
+    if (K2_EXPECT_ZERO[name]) ok(p >= 0 && q === 0, name + " 元素数 " + p + "→" + q + "（v180-K2 预期清零）");
+    else ok(p === q && p >= 0, name + " 元素数 " + p + "→" + q + "（应相等）");
     console.log("   " + name + ": " + p + " → " + q);
   });
   // 本地模板池（TITLE/TRAITS 各 3 组；v178：LINE_BY_SOFT 随口头禅功能一并删除）
@@ -128,11 +150,13 @@ if (!neg && fs.existsSync(PRE)) {
 }
 
 // F. 日文残留行
-section("F. d_clash 日文残留行已删");
+section("F. d_clash 日文残留行已删（v180-K2：d_clash 整条下线 ⇒ 中日文行一并清零）");
 const jp = "(ないです。开玩笑的。)";
 ok(CUR.O.split(jp).length - 1 === 0, "仍残留日文行");
-ok(CUR.O.indexOf('{ w: "B", t: "（开玩笑的。）" }') >= 0, "中文那一行应保留");
-console.log("   日文残留 = " + (CUR.O.split(jp).length - 1) + "（应 0）；中文行保留 = " + (CUR.O.indexOf('（开玩笑的。）') >= 0));
+// v180-K2：老事件 d_clash 已随老夜话删除 ⇒ 那句中文（原文案保留位）同样 0 残留
+ok(CUR.O.indexOf("（开玩笑的。）") < 0, "v180-K2：d_clash 已下线 ⇒ 中文那一行也 0 残留");
+console.log("   日文残留 = " + (CUR.O.split(jp).length - 1) + "（应 0）；中文行残留 = " +
+  (CUR.O.indexOf("（开玩笑的。）") >= 0) + "（应 false）");
 
 console.log("\n===== V168 自测" + (neg ? "（负向对照）" : "") + " =====");
 console.log("PASS = " + pass + "   FAIL = " + fail);
