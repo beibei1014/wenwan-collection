@@ -4477,6 +4477,13 @@
     if (rec.nameEdited) return disp;                 // ① 玩家改过名 ⇒ 一口回到底，不覆盖
     const idc = spiritIdentityOf(disp);              // ② 身份表反查（手串名 / 旧名 / 别名）
     if (idc) return idc.name;
+    // v180-K1：② 补 —— 旧 AI 名（茶茶 / 阿深 / 小叶…）本身不在表里，但同一串的**手串名**（冰红茶）在
+    //   ⇒ 再拿 persona 名与手串名各试一次，旧名也能反查命中（_test_v180_d13_nameof A1 的 disp 分支保持不变）。
+    const extra = [(rec.persona && rec.persona.name), it.name];
+    for (let i = 0; i < extra.length; i++) {
+      const id2 = spiritIdentityOf(extra[i]);
+      if (id2) return id2.name;
+    }
     const nm = rec.naming;                           // ③ 逐串规格命名
     if (nm && nm.name) return nm.name;
     return disp;                                     // ④ 回落
@@ -4502,7 +4509,8 @@
     { name: "姜饴酌", style: "淳时", bead: "咸法酪",   poem: "盏中咸酪甘醇，嘴硬不肯道半句喜欢。",         eight: "咸甘一盏，口硬心柔", alias: [] },
     { name: "顾时笙", style: "书砚", bead: "绿叶",     poem: "窗畔新叶初生，执砚翻书，待人皆是一片赤诚。", eight: "新叶伴砚，秉心温良", alias: [] },
     // v180：核心团扩员 —— 10 位到齐（⛔ 追加在表末，前 8 条索引不变，护 _test_v175_identity.js 的按索引断言）
-    { name: "江冽茗", style: "澄观", bead: "冰红茶",   poem: "冰瓯浮丹，微甘入喉，懒问人间谁负谁。",       eight: "冰瓯澄观，懒看浮生", alias: [] },
+    // v180-K1：alias 补录旧 AI 名（用户实测这只显示成「茶茶」）
+    { name: "江冽茗", style: "澄观", bead: "冰红茶",   poem: "冰瓯浮丹，微甘入喉，懒问人间谁负谁。",       eight: "冰瓯澄观，懒看浮生", alias: ["茶茶", "红茶"] },
     { name: "温茸之", style: "朴安", bead: "粉黛熊",   poem: "一团茸软，憨坐檐前，谁唤他一声便笑；谁的好，他记半生。", eight: "茸憨抱朴，安之若素", alias: [] },
     // v180 · 批E：在册同伴第二批 6 只（用户 2026-10-08 23:12→23:14 全部确认；⛔ 追加表末，前 10 条索引不变）
     { name: "邵盈牧", style: "敦之", bead: "多多牛",   poem: "牧过一坡青草，牵回满车谷穗，问他累不累，只憨憨一笑。", eight: "盈牧敦行，力憨福满", alias: [] },
@@ -4579,6 +4587,24 @@
     } catch (e) { return false; }
   }
   installCastNameResolver();
+
+  /* ---------- v180-K1：给 spirits.js 注入「沁灵通用显示名」解析器 ----------
+     夜话群标题 / 成员名（thMember）与问候 / 日记 / 回响的 {name}（greetVars）要叫**正式姓名**，
+     不能叫手串名或旧 AI 名。引擎够不着身份表 ⇒ 由 app 注入，口径与 nameOf 完全一致
+     （⛔ 尊重玩家改名：rec.nameEdited 时不套身份名）。未挂上 ⇒ 回落串名（老行为），不白屏。 */
+  function installDisplayNameResolver() {
+    try {
+      if (typeof Spirits === "undefined" || !Spirits || typeof Spirits.setDisplayNameResolver !== "function") return false;
+      Spirits.setDisplayNameResolver(function (it, rec, fallback) {
+        try {
+          const st = {}; st[(it && it.id) || ""] = rec || {};
+          return nameOf(it || {}, st) || fallback || "";
+        } catch (e) { return fallback || ((it && it.name) || ""); }
+      });
+      return true;
+    } catch (e) { return false; }
+  }
+  installDisplayNameResolver();
 
   function spiritSp(it) {
     const rec = spiritRecOf(it.id);

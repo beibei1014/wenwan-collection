@@ -3628,7 +3628,8 @@
       stage: stageDef((rec && rec.stage) || 1).name,
       bead: (item && item.name) || "这串珠子",
       call: callOf(rec),
-      name: (rec && rec.persona && rec.persona.name) || (item && item.name) || "那只",
+      // v180-K1：同 thMember —— 问候 / 日记 / 回响的 {name}（含「—— 你的{name}」署名）也走身份表
+      name: dispNameOf(item, rec),
       year: 0,
       // v163 新增（全小写无分隔，不混驼峰；台词里 {tixing} 与 {胎性} 等价）
       bond: bond, bondlv: bl.name, bondname: bl.name,
@@ -6201,7 +6202,8 @@
     const idle = (lp == null) ? -1 : Math.max(0, Math.floor((Date.now() - lp) / 86400000));   // -1 = 从未盘过（聚合时跳过）
     const bond = Number(r.bond) || 0;
     return {
-      id: String(id), item: item, name: (r.persona && r.persona.name) || (item && item.name) || "那只",
+      // v180-K1：走**注入的显示名解析器**（app.js 的身份表），不再是裸 persona.name / 手串名
+      id: String(id), item: item, name: dispNameOf(item, r),
       title: (r.persona && r.persona.title) || "", line: (r.persona && r.persona.line) || "",
       trait: (r.persona && Array.isArray(r.persona.traits) && r.persona.traits[0]) || "",
       pers: ((r.look || {}).pers) || "", persZh: persZhOf(((r.look || {}).pers) || ""),
@@ -7541,6 +7543,22 @@
     let nm = String(r.name || (r.persona && r.persona.name) || "");
     if (_castNameResolver) {
       try { const x = _castNameResolver(id, r, nm); if (x) nm = String(x); } catch (e) { /* 忽略：任何异常都回落串名 */ }
+    }
+    return nm;
+  }
+  /* ---------- v180-K1：沁灵**通用显示名**解析器（由 app.js 反向注入） ----------
+     症状（用户截图）：夜话 duo 群标题显示旧名 / 手串名（「阿深 和 小叶」），冰红茶显示「茶茶」。
+     根因：引擎侧 thMember / greetVars 直取 `r.persona.name || item.name`，**够不着 app.js 的身份表**。
+     解法：沿用 setCastNameResolver 同一套模式 —— app 注入解析器，引擎侧统一走 dispNameOf()。
+     覆盖：夜话群标题与成员名（thMember）、问候 / 日记 / 回响的 {name}（greetVars，含「—— 你的{name}」署名）。
+     ⛔ 未注入 / 解析抛异常时一律回落既有串名 ⇒ 与改动前逐字一致（沙箱内不注入 → 老测试不回归）。 */
+  var _displayNameResolver = null;
+  function setDisplayNameResolver(fn) { _displayNameResolver = (typeof fn === "function") ? fn : null; }
+  function dispNameOf(item, rec) {
+    const r = rec || {};
+    let nm = String((r.persona && r.persona.name) || (item && item.name) || "那只");
+    if (_displayNameResolver) {
+      try { const x = _displayNameResolver(item || {}, r, nm); if (x) nm = String(x); } catch (e) { /* 忽略：回落串名 */ }
     }
     return nm;
   }
@@ -9517,6 +9535,7 @@ const CH09 = {
     CHAP_CAST_CFG, CHAP_CAST_NAME, CHAP_AT_ZH, castOf, castBuild, castPick, castNearest,
     // v180-B：主线显示名解析器（app.js 注入；⛔ 未注入时 castDispNameOf 行为与 v179 一致）
     castDispNameOf, setCastNameResolver,
+    dispNameOf, setDisplayNameResolver,
     // v172：选角文案（单一可替换数据源 + 两个导出别名）+ 无 persona 标记
     CHAP_CAST_COPY, CHAP_CAST_DESC, CHAP_CAST_ROW_COPY, CAST_NO_PERSONA_TAG,
     // v172：手动选角写入口（⛔ 只写 ww_story，绝不碰 ww_spirits 逐串 rec）
