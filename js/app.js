@@ -4464,9 +4464,22 @@
     if (!rid) return 1;
     return Math.max(1, Rooms.membersOf(rid, roomItems()).length);
   }
+  /* ---------- v180-D13：显示名统一收敛（列表 / 沁灵巷 / 夜话 / 选角 / 房间 / 日记 / toast） ----------
+     名字位「一处改、全站显正式姓名」（邵盈牧，而非手串名「多多牛」）。口径与详情页 V175 逐字一致：
+       ① 玩家改过名（rec.nameEdited）⇒ 尊重，不套身份名；
+       ② 身份表命中（按手串名 / 旧名 / 别名反查）⇒ 正式姓名；
+       ③ 逐串 rec.naming（新开沁的规格命名）⇒ 该命名；
+       ④ 都不中 ⇒ 回落当前显示名。
+     ⚠️ renderSpiritOffPage（「只当手串」安全页）原地直取串名，不走这里。 */
   function nameOf(it, store) {
     const rec = (store || Spirits.load())[it.id] || {};
-    return rec.name || (rec.persona && rec.persona.name) || it.name || "沁灵";   // v113：用户改过的名字优先
+    const disp = rec.name || (rec.persona && rec.persona.name) || it.name || "沁灵";   // v113：用户改过的名字优先
+    if (rec.nameEdited) return disp;                 // ① 玩家改过名 ⇒ 一口回到底，不覆盖
+    const idc = spiritIdentityOf(disp);              // ② 身份表反查（手串名 / 旧名 / 别名）
+    if (idc) return idc.name;
+    const nm = rec.naming;                           // ③ 逐串规格命名
+    if (nm && nm.name) return nm.name;
+    return disp;                                     // ④ 回落
   }
   function spiritName(it, store) { return nameOf(it, store); }
 
@@ -5981,7 +5994,8 @@
     const store = Spirits.load();
     const rec = Spirits.ensureIn(store, id);
     let h = '<div class="sd-top" style="text-align:center;padding:24px">' +
-      '<div class="sd-name">' + esc(spiritName(it, store)) + '<span class="spirit-stage big">📿 手串</span></div>' +
+      // v180-D13：「只当手串」安全页原地直取串名（⛔ 不套身份名 —— 这页本就是串、未开沁）
+      '<div class="sd-name">' + esc(rec.name || (rec.persona && rec.persona.name) || it.name || "沁灵") + '<span class="spirit-stage big">📿 手串</span></div>' +
       '<div class="sd-card" style="margin-top:16px;text-align:left"><div class="sd-line">这只串已设为「只当手串」——不会生成立绘和 CG，也不进沁灵巷 / 沁灵列表。</div>' +
       '<button class="btn primary" id="sdEnableSpirit" style="width:100%;margin-top:10px">✨ 让这串开沁成灵</button></div></div>';
     view.innerHTML = h;
