@@ -34,41 +34,49 @@ function section(t) { console.log("\n=== " + t + " ==="); }
 function info(s) { console.log("  · " + s); }
 
 /* ---------- 1. 抽函数 / 常量 ---------- */
-function extractFn(name) {
+function extractFn(name, S) {
+  const src0 = S || src;
   const re = new RegExp("(async\\s+)?function\\s+" + name + "\\s*\\(");
-  const m = re.exec(src);
+  const m = re.exec(src0);
   if (!m) return null;
-  let i = src.indexOf("(", m.index), pd = 0;
-  for (; i < src.length; i++) {
-    if (src[i] === "(") pd++;
-    else if (src[i] === ")") { pd--; if (pd === 0) { i++; break; } }
+  let i = src0.indexOf("(", m.index), pd = 0;
+  for (; i < src0.length; i++) {
+    if (src0[i] === "(") pd++;
+    else if (src0[i] === ")") { pd--; if (pd === 0) { i++; break; } }
   }
-  while (i < src.length && src[i] !== "{") i++;
+  while (i < src0.length && src0[i] !== "{") i++;
   let depth = 0;
-  for (; i < src.length; i++) {
-    const ch = src[i];
+  for (; i < src0.length; i++) {
+    const ch = src0[i];
     if (ch === "'" || ch === '"' || ch === "`") {
       const q = ch; i++;
-      while (i < src.length) { if (src[i] === "\\") { i += 2; continue; } if (src[i] === q) break; i++; }
+      while (i < src0.length) { if (src0[i] === "\\") { i += 2; continue; } if (src0[i] === q) break; i++; }
       continue;
     }
-    if (ch === "/" && src[i + 1] === "/") { while (i < src.length && src[i] !== "\n") i++; continue; }
-    if (ch === "/" && src[i + 1] === "*") { const e = src.indexOf("*/", i); i = e < 0 ? src.length : e + 1; continue; }
+    if (ch === "/" && src0[i + 1] === "/") { while (i < src0.length && src0[i] !== "\n") i++; continue; }
+    if (ch === "/" && src0[i + 1] === "*") { const e = src0.indexOf("*/", i); i = e < 0 ? src0.length : e + 1; continue; }
     if (ch === "{") depth++;
     else if (ch === "}") { depth--; if (depth === 0) { i++; break; } }
   }
-  return src.slice(m.index, i);
+  return src0.slice(m.index, i);
 }
-function extractConst(name) {
+function extractConst(name, S) {
+  const src0 = S || src;
   const re = new RegExp("const\\s+" + name + "\\s*=\\s*\\[");
-  const m = re.exec(src);
+  const m = re.exec(src0);
   if (!m) return null;
-  let i = src.indexOf("[", m.index), d = 0;
-  for (; i < src.length; i++) {
-    if (src[i] === "[") d++;
-    else if (src[i] === "]") { d--; if (d === 0) { i++; break; } }
+  let i = src0.indexOf("[", m.index), d = 0;
+  for (; i < src0.length; i++) {
+    if (src0[i] === "[") d++;
+    else if (src0[i] === "]") { d--; if (d === 0) { i++; break; } }
   }
-  return src.slice(m.index, i) + ";";
+  return src0.slice(m.index, i) + ";";
+}
+// v180-CG：抽「正则常量」（const X = /.../i;）—— CG 三修复的探测正则。
+function extractRe(name, S) {
+  const src0 = S || src;
+  const m = new RegExp("const\\s+" + name + "\\s*=\\s*(\\/[^\\n]*\\/[a-z]*);").exec(src0);
+  return m ? ("const " + name + " = " + m[1] + ";") : null;
 }
 
 const GENERIC_FILLER = "beautiful scene that matches its personality, dramatic pose and camera angle";
@@ -86,6 +94,13 @@ const FN = {
   cgSceneClause: extractFn("cgSceneClause"),
   promptForCg: extractFn("promptForCg"),
   cgPromptFromBrief: extractFn("cgPromptFromBrief"),
+  // v180-CG 三修复（姿态-解剖中和 / 配饰中和 / 服装守卫·异域支线）
+  CG_ARMS_FRONT_RE: extractRe("CG_ARMS_FRONT_RE"),
+  CG_EXOTIC_RE: extractRe("CG_EXOTIC_RE"),
+  CG_ACC_RE: extractRe("CG_ACC_RE"),
+  cgAnatomyFor: extractFn("cgAnatomyFor"),
+  cgExoticize: extractFn("cgExoticize"),
+  appearancePromptForCg: extractFn("appearancePromptForCg"),
 };
 info("抽到：" + Object.keys(FN).map((k) => k + (FN[k] ? "(" + FN[k].length + "B)" : "=无")).join(" "));
 
@@ -93,9 +108,18 @@ info("抽到：" + Object.keys(FN).map((k) => k + (FN[k] ? "(" + FN[k].length + 
 function makeSandbox() {
   const sandbox = {
     console, Math, JSON, String, Number, Boolean, Array, Object, Error, RegExp, Promise, Date,
-    CG_STYLE: "CG_STYLE", CONSISTENCY: "CONSISTENCY", BG_NEG: "BG_NEG", DEFAULT_STYLE: "x",
+    // v180-CG：CG_STYLE stub 里带上真实头句 + 三条 anatomy 子句 + 「no modern or Western clothing」整段，
+    //   好验证「抱胸中和 / 异域支线」确实删对了（真实 CG_STYLE 见 spirits.js:8686）。
+    CG_STYLE: "CG_STYLE_HEAD ancient Chinese scene and classical Chinese-inspired costume, single continuous scene, " +
+      "both hands resting naturally and unobstructed, no hidden overlapping arms, " +
+      "the other hand is empty, relaxed, unobstructed and fully visible, exactly two arms and two hands, five fingers per hand, " +
+      "strictly no modern or Western clothing (no jacket, no hoodie, no zipper coat)",
+    CONSISTENCY: "CONSISTENCY", BG_NEG: "BG_NEG", DEFAULT_STYLE: "x",
     // v167-B：promptForCg 末尾追加的服装守卫（抽取沙箱需提供同名 stub，否则 ReferenceError）
     CG_COSTUME_GUARD: "XIANXIA_STUB, NO_QING_STUB",
+    // v180-CG：异域支线替换目标（cgExoticize 把 CG_COSTUME_GUARD 换成它）
+    NO_QING: "NO_QING_STUB",
+    CG_GUARD_EXOTIC: "EXOTIC_GUARD_STUB",
     styleOf: () => ({ text: "ST" }),
     getImageCfg: () => ({ style: "x" }),
     appearanceOf: () => ({}),
@@ -117,12 +141,17 @@ function load(sandbox, names) {
     "\n;__api = { cgPromptFromBrief: (typeof cgPromptFromBrief === 'function' ? cgPromptFromBrief : null)," +
     " promptForCg: (typeof promptForCg === 'function' ? promptForCg : null)," +
     " cgSceneClause: (typeof cgSceneClause === 'function' ? cgSceneClause : null)," +
-    " shotClause: (typeof shotClause === 'function' ? shotClause : null) };";
+    " shotClause: (typeof shotClause === 'function' ? shotClause : null)," +
+    " cgAnatomyFor: (typeof cgAnatomyFor === 'function' ? cgAnatomyFor : null)," +
+    " cgExoticize: (typeof cgExoticize === 'function' ? cgExoticize : null)," +
+    " appearancePromptForCg: (typeof appearancePromptForCg === 'function' ? appearancePromptForCg : null) };";
   vm.runInContext(code, vm.createContext(sandbox), { filename: "spirits.js#extracted" });
   return sandbox.__api;
 }
 const FULL_SET = ["CG_POSE_RE", "CG_WIDE_ONLY_RE", "cgTidy", "stripPose", "cgPropFor",
-  "SHOT_MAP", "shotClause", "cgSceneClause", "promptForCg", "cgPromptFromBrief"];
+  "SHOT_MAP", "shotClause", "cgSceneClause", "promptForCg", "cgPromptFromBrief",
+  // v180-CG：三修复（抱胸中和 / 配饰中和 / 异域支线）
+  "CG_ARMS_FRONT_RE", "CG_EXOTIC_RE", "CG_ACC_RE", "cgAnatomyFor", "cgExoticize", "appearancePromptForCg"];
 
 /* 修复前（buggy）旧实现，内嵌做负向对照 */
 const OLD_SRC = `
@@ -266,6 +295,78 @@ function main() {
     const p6 = mk("它半身入画，近景，眉头微蹙，似有话说。", "ancient Chinese veranda, warm afternoon light, soft mood");
     ok(/medium close-up/.test(p6) && p6.indexOf(FULLBODY) < 0,
       "F6 · 英文关键词不含景别时，「半身/近景」仍从中文原文生效（不被关键词吞掉）");
+  }
+
+  /* ---- 断言 G：v180-CG 三修复（抱胸中和 / 配饰中和 / 异域支线） ---- */
+  section("断言G：v180-CG 三修复 —— 抱胸不被 anatomy 反杀 / 默认不带随机配饰 / 西域不被汉服锁盖掉");
+  {
+    const sb = makeSandbox();
+    const api = load(sb, FULL_SET);
+    info("抽到：" + ["cgAnatomyFor", "cgExoticize", "appearancePromptForCg"]
+      .map((k) => k + (api[k] ? "✓" : "✗")).join("  "));
+
+    // G1 抱胸：三条打架的子句必须消失，而 "exactly two arms and two hands" 必须保留
+    const pArm = api.cgPromptFromBrief("它双手怀抱在胸前，半身入画，近景，暖光。", { kind: "stage", item: { id: "x" }, stage: 3 });
+    ok(pArm.indexOf("both hands resting naturally and unobstructed") < 0, "G1a · 抱胸时删掉 'both hands resting naturally and unobstructed'");
+    ok(pArm.indexOf("no hidden overlapping arms") < 0, "G1b · 抱胸时删掉 'no hidden overlapping arms'");
+    ok(pArm.indexOf("the other hand is empty, relaxed, unobstructed and fully visible") < 0, "G1c · 抱胸时删掉 'the other hand is empty … fully visible'");
+    ok(pArm.indexOf("exactly two arms and two hands") >= 0, "G1d · 仍保留 'exactly two arms and two hands'（_test_v165r2 依赖）");
+
+    // G2 非抱胸：三条子句原样保留（不误伤）
+    const pCalm = api.cgPromptFromBrief("它安静地站在院子里，微微侧身。", { kind: "stage", item: { id: "x" }, stage: 3 });
+    ok(pCalm.indexOf("both hands resting naturally and unobstructed") >= 0, "G2 · 非抱胸姿势时 anatomy 子句原样保留（不误删）");
+
+    // G3 西域：守卫换成异域支线，头句改写，「no modern or Western clothing」整段去掉
+    const pExo = api.cgPromptFromBrief("一位从西域来的少年，身着西域古风常服，抱臂而立。", { kind: "stage", item: { id: "x" }, stage: 3 });
+    ok(pExo.indexOf("EXOTIC_GUARD_STUB") >= 0, "G3a · 西域 → 尾部守卫换成异域支线（CG_GUARD_EXOTIC）");
+    ok(pExo.indexOf("XIANXIA_STUB") < 0, "G3b · 西域 → 默认汉服守卫（XIANXIA_STUB）已移除");
+    ok(pExo.indexOf("an ancient foreign-region scene and a frontier/exotic costume") >= 0, "G3c · 西域 → CG_STYLE 头句改写为异域场景 / 服饰");
+    ok(pExo.indexOf("no modern or Western clothing") < 0, "G3d · 西域 → 去掉 'strictly no modern or Western clothing' 整段（免得把西域读成 Western）");
+
+    // G4 非西域：守卫不换
+    const pHan = api.cgPromptFromBrief("它站在中式庭院里，暖光。", { kind: "stage", item: { id: "x" }, stage: 3 });
+    ok(pHan.indexOf("XIANXIA_STUB") >= 0 && pHan.indexOf("EXOTIC_GUARD_STUB") < 0, "G4 · 非西域 → 保持默认汉服守卫（不误触发异域支线）");
+
+    // G5 配饰：默认不带（keepAcc=false）/ 点名才带（keepAcc=true）；装配路径同时验证
+    const apT = { gender: "boy", eyes: "golden", acc: "a wooden pendant", acc2: "a short beaded necklace", outfit: "robe", pattern: "x", material: "silk", prop: "", vibe: "calm" };
+    if (typeof api.appearancePromptForCg === "function") {
+      ok(api.appearancePromptForCg(apT, false).indexOf("beaded necklace") < 0, "G5a · CG 默认不带随机配饰（数珠消失）");
+      ok(api.appearancePromptForCg(apT, true).indexOf("beaded necklace") >= 0, "G5b · 出图单点名配饰时才带（keepAcc=true）");
+    } else {
+      ok(false, "G5a/b · 抽不到 appearancePromptForCg（改动前基线应缺此函数）");
+    }
+    const oAcc = { kind: "stage", item: { id: "x" }, stage: 3, appearance: apT };
+    ok(api.cgPromptFromBrief("它安静地站在院子里。", oAcc).indexOf("beaded necklace") < 0, "G5c · 装配路径：默认 prompt 不含随机配饰句（数珠不入）");
+    ok(api.cgPromptFromBrief("它脖子上挂着一条项链，站在院子里。", oAcc).indexOf("beaded necklace") >= 0, "G5d · 装配路径：出图单点名「项链」时才带配饰");
+  }
+
+  /* ---- 断言 H：v180-CG 负向对照（改动前的旧 spirits.js 必须三病俱在） ---- */
+  section("断言H：负向对照 —— 改动前旧实现（docs/_tmp/_pre_v18x_spirits.js）三病俱在 → 证明 G 能真红");
+  {
+    const PRE_FILE = process.env.CG_PRE_FILE ? path.resolve(process.env.CG_PRE_FILE) : path.join(ROOT, "docs/_tmp/_pre_v18x_spirits.js");
+    let preSrc = "";
+    try { preSrc = fs.readFileSync(PRE_FILE, "utf8"); } catch (e) { preSrc = ""; }
+    if (!preSrc) { info("取不到改动前基线（" + PRE_FILE + "）→ 负向对照优雅跳过"); ok(true, "H · (无基线 → 跳过)"); }
+    else {
+      info("基线：" + PRE_FILE + "  （" + preSrc.length + " 字节）");
+      const preCode = FULL_SET.map((n) => {
+        if (n === "CG_POSE_RE" || n === "CG_WIDE_ONLY_RE" || n === "SHOT_MAP") return extractConst(n, preSrc);
+        if (n === "CG_ARMS_FRONT_RE" || n === "CG_EXOTIC_RE" || n === "CG_ACC_RE") return extractRe(n, preSrc);
+        return extractFn(n, preSrc);
+      }).filter(Boolean).join("\n");
+      const sb2 = makeSandbox();
+      vm.runInContext(preCode + "\n;__api = { cgPromptFromBrief: (typeof cgPromptFromBrief === 'function' ? cgPromptFromBrief : null) };",
+        vm.createContext(sb2), { filename: "spirits.js#pre-v18x" });
+      const api2 = sb2.__api;
+      const q = (brief) => api2.cgPromptFromBrief(brief, { kind: "stage", item: { id: "x" }, stage: 3 });
+      const oldArm = q("它双手怀抱在胸前，半身入画，近景。");
+      ok(oldArm.indexOf("both hands resting naturally and unobstructed") >= 0, "H1 · 旧实现抱胸时**仍**留 'both hands resting naturally and unobstructed' → G1a 能真红");
+      ok(oldArm.indexOf("no hidden overlapping arms") >= 0, "H2 · 旧实现抱胸时**仍**留 'no hidden overlapping arms' → G1b 能真红");
+      const oldExo = q("一位从西域来的少年，身着西域古风常服。");
+      ok(oldExo.indexOf("XIANXIA_STUB") >= 0 && oldExo.indexOf("EXOTIC_GUARD_STUB") < 0, "H3 · 旧实现西域时**仍**是汉服守卫 → G3a/G3b 能真红");
+      ok(oldExo.indexOf("an ancient foreign-region scene and a frontier/exotic costume") < 0, "H4 · 旧实现西域时头句**未**改写 → G3c 能真红");
+      ok(oldExo.indexOf("no modern or Western clothing") >= 0, "H5 · 旧实现西域时**仍**带 'no modern or Western clothing' → G3d 能真红");
+    }
   }
 
   console.log("\n----------------------------------------");

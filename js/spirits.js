@@ -4932,7 +4932,10 @@
     const st = styleOf(item, key).text;
     const scene = FEST_SCENE[(fest && fest.key) || ""] || "a traditional Chinese festive scene";
     const stageObj = stageDef(stage);
-    const head = CG_STYLE + ", " + appearancePrompt(ap) + ", with " + lk.hairEn + " hair and " + lk.outfitEn + " themed outfit"
+    // v180-CG：配饰中和（同 promptForCg）。⛔ typeof 守卫，防抽函数单测取符号炸。
+    const _keepAcc = (typeof CG_ACC_RE !== "undefined") && CG_ACC_RE.test(String(sceneText || ""));
+    const _apTxt = (typeof appearancePromptForCg === "function") ? appearancePromptForCg(ap, _keepAcc) : appearancePrompt(ap);
+    const head = CG_STYLE + ", " + _apTxt + ", with " + lk.hairEn + " hair and " + lk.outfitEn + " themed outfit"
       + (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") + lookExtra(lk) + ", " +
       stripPose(stageObj.look)
       + (lookHard(lk) ? (", " + lookHard(lk)) : "")
@@ -8771,6 +8774,56 @@ const CH09 = {
       .replace("detailed painted background with gentle bokeh", "plain soft bokeh background, no detailed scenery");
   }
 
+  /* ============================================================
+   * v180-CG · CG 三症状修复（⛔ 只作用于 CG 装配的副本 / 新增 CG 专用分支）
+   *   症状（用户实测）：①「双手怀抱在胸前」被画出第三只手；②没点配饰却出现数珠；③「西域风情」被画回中原汉服。
+   *   根因：CG_STYLE 内嵌 ANATOMY（unobstructed / no hidden overlapping arms）与抱胸对撞；
+   *         appearancePrompt 无脑拼随机配饰（含 bead 系列）；CG_COSTUME_GUARD(=XIANXIA_LOOK+NO_QING) 压在最末位
+   *         强制交领右衽汉服，且 CG_STYLE 内嵌 NEG_STYLE「no modern or Western clothing」把「西域」判成 Western。
+   *   ⛔ 立绘零改动：ANATOMY / CG_STYLE / NEG_STYLE / appearancePrompt 常量本体一律不动。
+   * ============================================================ */
+  // (1) 姿态-解剖中和：用户描述里出现「抱胸 / 交叠 / 环抱 / 拢袖 / 叉手」这类手臂在身前、必然重叠的姿势时，
+  //     把 CG_STYLE 里与之打架的三条 anatomy 子句删掉（否则模型为满足「那只手必须可见」而多画一只手）。
+  //     ⛔ 保留 "exactly two arms and two hands" / "five fingers per hand"（_test_v165r2_cgbrief.js 靠它）。
+  const CG_ARMS_FRONT_RE = /(双手怀抱|怀抱在胸前|怀抱胸前|抱臂|抱胸|两手交叠|交叠在身前|交叠在胸前|双手交握|环抱|拢袖|揣手|叉手|folded (?:his |her )?arms|arms (?:folded|crossed)|hands clasped|hands folded)/i;
+  function cgAnatomyFor(styleText) {
+    return String(styleText || "")
+      .replace(/,\s*both hands resting naturally and unobstructed/i, "")
+      .replace(/,\s*no hidden overlapping arms/i, "")
+      .replace(/,\s*the other hand is empty, relaxed, unobstructed and fully visible/i, "");
+  }
+  // (2) 配饰中和：CG 默认**不带**随机外观池的配饰，仅当 brief 点名配饰时才带（池里的 bead 系列会跟手串 / 数珠撞车）。
+  const CG_ACC_RE = /(配饰|发夹|发饰|耳环|耳饰|项链|手链|腰囊|腰挂|香囊|玉扣|护腕|腕饰|吊坠|珠穗|丝巾|发带|铃铛|珠链)/;
+  function appearancePromptForCg(ap, keepAcc) {
+    const a = ap || {};
+    const isBoy = a.gender === "boy";
+    const accBit = keepAcc ? ("wearing " + a.acc + " and " + a.acc2 + ", ") : "";
+    return (isBoy
+      ? "a young boy character, clearly male, boyish face: "
+      : "a young girl character, clearly female, girlish face: ") +
+      a.eyes + " eyes, " + accBit +
+      "outfit: " + a.outfit + ", trimmed with " + a.pattern + ", " + a.material + " fabric texture" +
+      (a.prop ? ", " + a.prop : "") + ", " + a.vibe + " personality";
+  }
+  // (3) 服装守卫·异域支线：服饰意象为「西域 / 异邦 / 塞外」等非中原风格时，换掉汉服锁（保留去清代强禁）。
+  //     ⚠️ 本常量只**拼接引用** NO_QING 常量，⛔ 不内联任何清代诱导词（_test_v167_costume.js E 段全库扫描）。
+  const CG_EXOTIC_RE = /(西域|异邦|外邦|番邦|胡服|胡地|色目|回鹘|吐蕃|大食|波斯|塞外|游牧|域外|foreign|exotic|western[- ]region|nomad|central asian|persian|turkic|silk road)/i;
+  const CG_GUARD_EXOTIC = "an ancient foreign-region (western-region / nomadic frontier) inspired costume that follows this character's own imagery, " +
+    "distinct from central-plain hanfu, clearly a historical pre-Qing foreign style, elegant and refined; " +
+    "no modern clothing, no zipper, no suit, " + NO_QING;
+  function cgExoticize(baseText) {
+    let s = String(baseText || "");
+    // (a) 头段：把「中原场景 + 汉服」改写成「异域场景 + 跟随本角色意象的异域服饰」
+    s = s.replace("ancient Chinese scene and classical Chinese-inspired costume",
+      "an ancient foreign-region scene and a frontier/exotic costume that follows this character's own imagery");
+    // (b) 去掉「绝不现代 / 西式」那整段括号（西域 / 异邦常被模型读成 Western → 撞此负向）。
+    //     ⚠️ 这句在 CG_STYLE(=NEG_STYLE) 与 BG_NEG 里各出现一次 → 必须 **全局** 清，否则漏掉 BG_NEG 那份。
+    s = s.replace(/, strictly no modern or Western clothing \(no jacket[^)]*\)/gi, "");
+    // (c) 尾段守卫：CG_COSTUME_GUARD → 异域支线（去清代强禁仍在）
+    if (s.indexOf(CG_COSTUME_GUARD) >= 0) s = s.replace(CG_COSTUME_GUARD, CG_GUARD_EXOTIC);
+    return s;
+  }
+
   // 单只沁灵的 CG（蜕形 / 化形用）
   function promptForCg(item, styleKey, stage, appearance, look, sceneText, shot) {
     const key = styleKey || getImageCfg().style || DEFAULT_STYLE;
@@ -8785,7 +8838,10 @@ const CH09 = {
     //   ⚠️ typeof 守卫：抽函数单测（_test_v166_cg_brief）不加载 cgStyleForShot → 静默回退 CG_STYLE。
     const styleText = (typeof cgStyleForShot === "function") ? cgStyleForShot(CG_STYLE, shot) : CG_STYLE;
     const stageLook = stripPose(stageObj.look);   // v165-A：剥姿势词（姿势归画面描述）
-    const head = styleText + ", " + appearancePrompt(ap) + ", with " + color + " hair and " + lk.outfitEn + " themed outfit"
+    // v180-CG：配饰中和 —— 默认不带随机配饰，仅当 brief 点名配饰时才带。⛔ typeof 守卫，防抽函数单测取符号炸。
+    const _keepAcc = (typeof CG_ACC_RE !== "undefined") && CG_ACC_RE.test(String(sceneText || ""));
+    const _apTxt = (typeof appearancePromptForCg === "function") ? appearancePromptForCg(ap, _keepAcc) : appearancePrompt(ap);
+    const head = styleText + ", " + _apTxt + ", with " + color + " hair and " + lk.outfitEn + " themed outfit"
       + (lk.hairHex ? (", the exact hair color is " + lk.hairHex) : "") + lookExtra(lk) + ", " +
       stageLook
       + (lookHard(lk) ? (", " + lookHard(lk)) : "")
@@ -8901,12 +8957,15 @@ const CH09 = {
     const poseBit = sc
       ? "the two of them together in the same scene, their poses and gestures exactly as the scene describes, "
       : "the two of them together in the room, side by side, ";
+    // v180-CG：配饰中和（同 promptForCg）。⛔ typeof 守卫，防抽函数单测取符号炸。
+    const _keepAcc = (typeof CG_ACC_RE !== "undefined") && CG_ACC_RE.test(String(sceneText || ""));
+    const _apP = (typeof appearancePromptForCg === "function") ? appearancePromptForCg : appearancePrompt;
     return styleText + ", " + mood + ", " +
       "scene: a cozy ancient Chinese room called \"" + (roomName || "little room") + "\", " +
       // v165：traditional hanfu costume -> classical Chinese-inspired costume（各自随自己意象，⛔ 不锁汉服）
       "two ancient Chinese characters in classical Chinese-inspired costume together in the same scene: " +
-      "① " + appearancePrompt(apA) + ", with " + lkA.hairEn + " hair and " + lkA.outfitEn + " outfit" + lookExtra(lkA) + " (name: " + nmA + "), " +
-      "② " + appearancePrompt(apB) + ", with " + lkB.hairEn + " hair and " + lkB.outfitEn + " outfit" + lookExtra(lkB) + " (name: " + nmB + "), " +
+      "① " + _apP(apA, _keepAcc) + ", with " + lkA.hairEn + " hair and " + lkA.outfitEn + " outfit" + lookExtra(lkA) + " (name: " + nmA + "), " +
+      "② " + _apP(apB, _keepAcc) + ", with " + lkB.hairEn + " hair and " + lkB.outfitEn + " outfit" + lookExtra(lkB) + " (name: " + nmB + "), " +
       "they are the same two characters as before, keep their hair color, eye color, outfits and accessories consistent, " +
       shotEn + poseBit +
       "keep exactly two characters in the image, no extra people, no duplicates" +
@@ -9067,6 +9126,21 @@ const CH09 = {
     if (x.kind === "pair") base = storyCgPrompt(x.a, x.b, x.level, x.roomName, scene, shot);
     else if (x.kind === "fest") base = festCgPrompt(x.item, null, stage, x.appearance, x.look, x.fest, scene, shot);
     else base = promptForCg(x.item, null, stage, x.appearance, x.look, scene, shot);
+    // v180-CG：姿态-解剖中和（抱胸类）＋ 服装守卫·异域支线 —— 均在 **base 副本** 上改，⛔ 不动常量本体。
+    //   ⚠️ typeof 守卫：cgPromptFromBrief 会被单测以「抽函数 + 沙箱」方式隔离运行（_test_v166_cg_brief / _test_v173_shotlock），
+    //      届时这些符号不在作用域 → 静默跳过，⛔ 别让旧套件因取符号炸掉。
+    if (typeof cgAnatomyFor === "function" && typeof CG_ARMS_FRONT_RE !== "undefined" && CG_ARMS_FRONT_RE.test(scene)) {
+      base = cgAnatomyFor(base);
+    }
+    {
+      const _lk0 = x.look || {};
+      const _ap0 = x.appearance || _lk0.ap || {};
+      const _exoText = String(scene || "") + " " + String(_lk0.outfitZh || "") + " " +
+        String(_ap0.outfitZh || "") + " " + String(_ap0.outfit || "");
+      if (typeof cgExoticize === "function" && typeof CG_EXOTIC_RE !== "undefined" && CG_EXOTIC_RE.test(_exoText)) {
+        base = cgExoticize(base);
+      }
+    }
     // base 已以「brief/关键词」为主场景 + 外观 + 阶段 + CONSISTENCY + BG_NEG；末尾只补比例锁定块（PROPORTION LOCK 永远压最后）。
     // ⛔ v166-CG 修复：不再把 brief 当低权重尾巴追加 —— 它现在是主场景描述。
     const prop = cgPropFor(stage, shot);

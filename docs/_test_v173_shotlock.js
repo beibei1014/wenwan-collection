@@ -96,6 +96,9 @@ function makeSandbox() {
     ANATOMY: "ANATOMY", NEG_STYLE: "NEG_STYLE",
     CONSISTENCY: "CONSISTENCY", BG_NEG: "BG_NEG", CG_COSTUME_GUARD: "CG_COSTUME_GUARD", DEFAULT_STYLE: "x",
     CG_COMPOSE_ZH: "CG_COMPOSE_ZH",
+    // v180-CG：CG 三修复的符号桩 —— 本题只验证景别锁，给「从不匹配 / 透传」的桩，保持断言不变。
+    CG_ARMS_FRONT_RE: /(?!)/, CG_EXOTIC_RE: /(?!)/, CG_ACC_RE: /(?!)/,
+    cgAnatomyFor: (s) => s, cgExoticize: (s) => s, appearancePromptForCg: () => "AP",
     // 窄景别中文景别锁走 ark 才追加 → 这里直接给 true，专门验证 zh 锁确实落进 prompt
     zhAnchorEnabled: () => true,
     styleOf: () => ({ text: "ST" }),

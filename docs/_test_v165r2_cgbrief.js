@@ -85,6 +85,21 @@ const TECH = /模型|API|额度|出图|#|hex|按钮|v1\d|prompt/i;
   ok(p1.split("PROPORTION LOCK").length - 1 === 1, "比例块只出现一次（不重复拼装）");
   ok(!/standing pose|confident pose/i.test(p1), "v165-A：装配出的 prompt 不含竞争姿势短语");
 
+  // v180-CG：抱胸姿势 → 三条打架的 anatomy 子句应被删，且 "exactly two arms and two hands" 必须保留（真模块端到端）
+  const pArm = S.cgPromptFromBrief("它双手怀抱在胸前，半身入画，近景，暖光融融。", { kind: "stage", item: item, stage: 3, look: look });
+  ok(pArm.indexOf("both hands resting naturally and unobstructed") < 0, "v180 · 抱胸时删掉 'both hands resting naturally and unobstructed'");
+  ok(pArm.indexOf("no hidden overlapping arms") < 0, "v180 · 抱胸时删掉 'no hidden overlapping arms'");
+  ok(pArm.indexOf("the other hand is empty, relaxed, unobstructed and fully visible") < 0, "v180 · 抱胸时删掉 'the other hand is empty … fully visible'");
+  ok(pArm.indexOf("exactly two arms and two hands") >= 0, "v180 · 仍保留 'exactly two arms and two hands'（不可删）");
+  const pCalm = S.cgPromptFromBrief("它安静地站在院子里，微微侧身。", { kind: "stage", item: item, stage: 3, look: look });
+  ok(pCalm.indexOf("both hands resting naturally and unobstructed") >= 0, "v180 · 非抱胸姿势时 anatomy 子句原样保留（不误删）");
+  // v180-CG：西域 → 异域支线（默认汉服守卫被换掉，去清代强禁仍在）
+  const pExo = S.cgPromptFromBrief("一位从西域来的少年，身着西域古风常服，抱臂而立。", { kind: "stage", item: item, stage: 3, look: look });
+  ok(pExo.indexOf("jiaoling youren") < 0, "v180 · 西域 → 不再强制「交领右衽(jiaoling youren)」");
+  ok(pExo.indexOf("an ancient foreign-region (western-region / nomadic frontier) inspired costume") >= 0, "v180 · 西域 → 换上异域守卫");
+  ok(pExo.indexOf(S.NO_QING) >= 0, "v180 · 西域 → 去清代强禁（NO_QING）仍在");
+  ok(pExo.indexOf("strictly no modern or Western clothing") < 0, "v180 · 西域 → 去掉 'no modern or Western clothing'（免得西域被读成 Western）");
+
   const KW1 = "a red-robed boy, standing by the well, warm dusk light";
   const p1k = S.cgPromptFromBrief(b1, { kind: "stage", item: item, stage: 3, look: look, keywords: KW1 });
   ok(p1k.indexOf(KW1) >= 0, "有英文关键词时优先用关键词");
