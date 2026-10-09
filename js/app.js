@@ -11699,6 +11699,9 @@
       _navList = currentNavIds();
     }
 
+    // v180-L2：只有**真正渲染首页**的路由才挂 route-home（AI 喵助手的开关）
+    let _homeRoute = false;
+
     if (h === "#/profile") renderProfile();
     else if (h === "#/cat") {
       // 文玩专注模式：分类页暂时隐藏 —— 地址也归位到首页（避免停在 #/cat 显示首页内容）
@@ -11734,20 +11737,23 @@ else if (h.indexOf("#/night/") === 0) {                                         
     }
     else if (h === "#/fav") renderFavPage();
     else if (h.startsWith("#/box/")) renderBoxPage(decodeURIComponent(h.slice(6)));
-    else if (h === "#/" || h === "#") renderHome();
+    else if (h === "#/" || h === "#") { renderHome(); _homeRoute = true; }
     else if (h.startsWith("#/item/")) renderDetail(h.slice(7));
     else if (h.startsWith("#/edit/")) renderForm(h.slice(7));
     else if (h === "#/new") renderForm(null);
     else if (h === "#/settings") renderSettings();
-    else renderHome();
+    else { renderHome(); _homeRoute = true; }   // v180-L2：兜底也是首页 ⇒ 同样算首页
 
     updateTabbar();
 
-    // v163b：按路由给 body 加类，用于隐藏 AI 助手浮窗（沁灵 / 夜话沉浸区）
+    // v180-L2：AI 喵助手**只在首页**出现（旧规则是「沁灵/夜话隐藏」，等于其余页面都挂着浮窗）
+    //   ⇒ 只给真正渲染了首页的路由挂 route-home；离开首页时顺手把已打开的面板收起来（⛔ 不留隐藏占位）
     {
-      const _bh = location.hash;
-      document.body.classList.toggle("route-spirit", _bh === "#/spirit" || _bh.indexOf("#/spirit/") === 0);
-      document.body.classList.toggle("route-night", _bh === "#/night" || _bh.indexOf("#/night/") === 0);
+      document.body.classList.toggle("route-home", !!_homeRoute);
+      if (!_homeRoute) {
+        const _ap = document.getElementById("aiPanel");
+        if (_ap && !_ap.hidden) _ap.hidden = true;
+      }
     }
 
     // v113：每次切页给 #view 加一个入场转场（重排一次动画，避免只播第一次）

@@ -1385,9 +1385,14 @@ body.talk-open .topbar .icon-btn { color: #fdf6ea; background: rgba(0,0,0,.25); 
 .setup-ta { width: 100%; box-sizing: border-box; resize: vertical; min-height: 96px; line-height: 1.65; font-family: inherit; }
 #lkPersona.setup-ta { margin-top: 4px; min-height: 150px; }
 
-/* —— 隐藏 AI 助手浮窗（沁灵 / 夜话沉浸区，§D6） —— */
-body.route-spirit #aiFab,
-body.route-night #aiFab { display: none !important; }
+/* —— v180-L2：AI 喵助手**只出现在首页** ——
+   旧规则是「沁灵 / 夜话沉浸区隐藏」，等于其余页面都挂着浮窗；
+   现改为**默认整条隐藏**（浮窗 + 面板），只有 body.route-home 才放出来。
+   ⛔ 面板用 :not([hidden]) 与既有的 .ai-panel[hidden]{display:none} 对齐，避免 !important 压掉隐藏态。 */
+#aiFab,
+#aiPanel { display: none !important; }
+body.route-home #aiFab { display: flex !important; }
+body.route-home #aiPanel:not([hidden]) { display: flex !important; }
 
 /* ============================================================
    v165 · 心迹区（详情页：心迹条 / 羁绊条 / 照料三式 / 递一件给它）
