@@ -56,7 +56,7 @@ function span(src, a, b) {
 /* 期望的 9 条（顺序与 md 一致） */
 const NEW_IDS = ["f_oldwall", "f_wake", "d_nightout", "d_oldcloth", "d_roadside", "r_lost", "r_noreturn", "r_lastbite", "r_spot"];
 const CORE10 = ["顾时笙", "苏栖盏", "萧景筹", "陆临崖", "楚柿遥", "江冽茗", "温茸之", "沈青舒", "姜饴酌", "谢凝渲"];
-const OBJ_WORDS = ["珠子", "柜子", "把玩", "盘玩", "包浆", "越盘越值钱", "摆件", "物件", "收纳", "搁在一边", "主人", "您", "它"];
+const OBJ_WORDS = ["珠子", "柜子", "把玩", "盘玩", "包浆", "越盘越值钱", "摆件", "物件", "收纳", "搁在一边", "装睡", "主人", "您", "它"];
 const PH = /\{[^{}]+\}/g;
 const ALLOWED_PH = new Set(["A", "B", "C", "A_pers", "B_pers", "C_pers", "A_title", "B_title", "C_title",
   "A_line", "B_line", "C_line", "A_trait", "B_trait", "C_trait", "A_bead", "B_bead", "C_bead",
@@ -78,6 +78,10 @@ let V = null;
   ok(lf - crlf === 0, "⛔ 无裸 LF（实得 " + (lf - crlf) + "）");
   ok(/机械生成物/.test(DATA) && /_extract_night_v180\.js/.test(DATA), "声明为机械生成物（注明抽取器，⛔ 不许手改）");
   ok(/围栏规则/.test(DATA), "注释写明了抽取规则（围栏规则）");
+  /* 抽取器自身：围栏成对断言（防编剧说明文里的字面三反引号造出「孤儿围栏」吞掉后文） */
+  const EXTRACT = read(path.join(ROOT, "docs", "_extract_night_v180.js"));
+  ok(/fenceLines\.length % 2 !== 0/.test(EXTRACT), "抽取器有「围栏必须成对」断言（奇数即报错退出）");
+  ok(/命中数 .* ≠ .* 抽取规则失配|命中数 \" \+ evBlocks\.length/.test(EXTRACT) || /evBlocks\.length !== WANT/.test(EXTRACT), "抽取器命中数 ≠ 9 即报错退出");
 
   const H = require("./_harness.js");
   const hc = H.makeContext();
@@ -288,7 +292,6 @@ section("6 · 9 条剧本内容核验（id / scope / cast / roomSlot / duo pers 
     let bannedHit = [];
     let phSet = new Set();
     let realNameHit = [];
-    let zhuangshui = 0;
     evs.forEach((e) => {
       const texts = [];
       const push = (s) => { if (s != null) texts.push(String(s)); };
@@ -303,11 +306,9 @@ section("6 · 9 条剧本内容核验（id / scope / cast / roomSlot / duo pers 
       (all.match(PH) || []).forEach((p) => phSet.add(p.slice(1, -1)));
       OBJ_WORDS.forEach((w) => { if (all.indexOf(w) >= 0) bannedHit.push(e.id + ":" + w); });
       CORE10.forEach((n) => { if (all.indexOf(n) >= 0) realNameHit.push(e.id + ":" + n); });
-      if (all.indexOf("装睡") >= 0) zhuangshui += (all.split("装睡").length - 1);
     });
-    ok(bannedHit.length === 0, "⛔ 9 条内物化词/「主人」/「您」/「它」= 0（实得 " + JSON.stringify(bannedHit) + "）");
+    ok(bannedHit.length === 0, "⛔ 9 条内物化词/「装睡」/「主人」/「您」/「它」= 0（实得 " + JSON.stringify(bannedHit) + "）");
     ok(realNameHit.length === 0, "⛔ 9 条内核心十位真名 = 0（实得 " + JSON.stringify(realNameHit) + "）");
-    ok(zhuangshui <= 1, "「装睡」≤1 且仅 r_noreturn 人对人语境（实得 " + zhuangshui + "；已在报告中标记）");
     const badPh = Array.from(phSet).filter((p) => !ALLOWED_PH.has(p));
     ok(badPh.length === 0, "⛔ 占位符全在白名单内（越界 " + JSON.stringify(badPh) + "；实得 " + JSON.stringify(Array.from(phSet).sort()) + "）");
   }

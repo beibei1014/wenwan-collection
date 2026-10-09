@@ -20,7 +20,7 @@ const path = require("path");
 const vm = require("vm");
 
 const ROOT = path.join(__dirname, "..");
-const MD = path.join(ROOT, "docs", "v180-夜话试点-剧本.md");
+const MD = process.env.NIGHT_V180_MD || path.join(ROOT, "docs", "v180-夜话试点-剧本.md");
 const OUT = path.join(ROOT, "js", "night-v180.js");
 const VER = process.env.NIGHT_V180_VER || "v180-i2";
 const UPD = process.env.NIGHT_V180_UPD || "2026-10-09";
@@ -45,6 +45,18 @@ lines.forEach((L, i) => {
   if (cur && /^```$/.test(t)) { blocks.push(cur); cur = null; return; }
   if (cur) cur.body.push(L);
 });
+
+/* ---------- 围栏必须成对（编剧手误在说明文里写字面三反引号 ⇒ 孤儿围栏 ⇒ 宁可在此炸掉，
+   否则 naive 扫描器可能配错对、把后文吞进某个块里 —— 见编剧 2026-10-09 的自查）---------- */
+const fenceLines = lines.filter((L) => /^```/.test(L.trim()));
+if (fenceLines.length % 2 !== 0) {
+  console.error("⛔ 围栏不成对：全文 ``` 行数 " + fenceLines.length + "（奇数）—— 疑似说明文混入字面三反引号。已中止，未写出文件。");
+  process.exit(2);
+}
+if (cur) {
+  console.error("⛔ 有 ```js 开栏未闭合（读到文件末尾仍在块内）—— 已中止，未写出文件。");
+  process.exit(2);
+}
 
 const evBlocks = blocks
   .map((b) => ({ ln: b.ln, body: b.body }))
