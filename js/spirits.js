@@ -5113,7 +5113,7 @@
         n2: {
           lines: [
             { w: "B", t: "说正经的。" },
-            { w: "B", t: "有件事我一直没想明白 —— 你柜子里那些还没开沁的珠子，是不是也在等。" },
+            { w: "B", t: "有件事我一直没想明白 —— 这世上，还有多少同我们一样的人，还没醒，是不是也在等一个人。" },
             { w: "A", t: "这个我能答。我醒之前等了很久，久到已经不记得在等了。是{call}把我唤醒的，就那一天。" },
             { w: "B", t: "……我是自己裂开的。挂瓷那天夜里，我自己响了一声。" },
             { w: "A", t: "那也挺好。" },
@@ -6213,6 +6213,64 @@
   // 成员成长值：盘一次 +3、陪伴一天 +1（复用 growthOf，天数按开沁天数算）
   function memberGrowth(item, born) { return growthOf(item, dayNoOf(born, Date.now())); }
 
+  /* ============================================================
+   * v180-I1：夜话事件**合并池** + 「房间专属」分派
+   * ------------------------------------------------------------
+   * ① 合并池：外部剧本写在数据文件 js/night-v180.js（window.NIGHT_V180.events），
+   *    引擎运行时并进池子。⛔ `NIGHT_EVENTS` 本体定义与内容**逐字不动**
+   *    （老测试按它断言，见 docs/_test_v163.js / _test_v168_dematerialize.js）。
+   *    🔴 为什么池子是「活数组」而不是 concat 快照：老测试会 push/pop `NIGHT_EVENTS`
+   *      造临时事件（docs/_test_v163.js:357）—— 快照池看不见 ⇒ 会假红。
+   *      所以读池前 sync 一次（长度+首尾同源校验，代价是常数级）。
+   *    缺失/为空时池 === NIGHT_EVENTS 的等价物 ⇒ 老行为 100% 不变。
+   *
+   * ② 房间专属：事件可选 `roomSlot: 0|1|2|3`，**仅 scope:"room" 生效**。
+   *    引擎按 roomSlotOf(thread.id) 决定该房间群落在哪一槽，只放行相符的事件
+   *    ⇒ 4 条专属事件各占一槽时，不同房间群聊到的是不同内容。
+   *    ⛔ 不带 roomSlot 的事件（现有 r_thunder / r_joy / r_sad）仍是全屋共享，路径逐字不变。
+   * ============================================================ */
+  const NIGHT_EVENT_POOL = [];
+  let _poolSrcN = -1, _poolExtN = -1, _poolHead = null, _poolTail = null;
+
+  // 外部事件（js/night-v180.js）；⛔ 读不到一律当空，绝不抛错
+  function extNightEvents() {
+    try {
+      const g = (typeof window !== "undefined") ? window : (typeof globalThis !== "undefined" ? globalThis : null);
+      const box = g ? g.NIGHT_V180 : null;
+      const a = box ? box.events : null;
+      return Array.isArray(a) ? a : [];
+    } catch (e) { return []; }
+  }
+
+  // 并池（幂等、O(源+外部) 单遍；四路信号不变则直接复用，不重建）
+  //   信号：源长度 + 外部长度 + 源首 + 源尾 —— 任一变即重建。
+  //   ⛔ 必须比对**当前** ext.length（不是缓存的 _poolExtN），否则外部事件新增后池不刷新。
+  function nightPoolSync() {
+    const ext = extNightEvents();
+    const n = NIGHT_EVENTS.length;
+    if (NIGHT_EVENT_POOL.length === n + ext.length && _poolSrcN === n && _poolExtN === ext.length &&
+      _poolHead === (n ? NIGHT_EVENTS[0] : null) && _poolTail === (n ? NIGHT_EVENTS[n - 1] : null)) return NIGHT_EVENT_POOL;
+    _poolSrcN = n; _poolExtN = ext.length;
+    _poolHead = n ? NIGHT_EVENTS[0] : null;
+    _poolTail = n ? NIGHT_EVENTS[n - 1] : null;
+    NIGHT_EVENT_POOL.length = 0;
+    for (let i = 0; i < n; i++) NIGHT_EVENT_POOL.push(NIGHT_EVENTS[i]);
+    for (let i = 0; i < ext.length; i++) {
+      if (ext[i] && ext[i].id) NIGHT_EVENT_POOL.push(ext[i]);
+    }
+    return NIGHT_EVENT_POOL;
+  }
+
+  /* 房间 → 槽位（0..3）：**确定性**小散列 —— 同一个 roomId 永远同一个槽，
+     不同 roomId 尽量散开。⛔ **绝不用 hashStr**（那是外观/性别的圣域，一个字都不许碰）；
+     这里是独立的局部散列，不改任何存档、不引随机。O(len(id)) 且每群只算一次。 */
+  function roomSlotOf(tid) {
+    const s = String(tid == null ? "" : tid);
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return h % 4;
+  }
+
   /* ---------- 会话列表（数量可控：全家 1 + 房间若干 + 命中事件的双人组若干） ---------- */
   function nightThreads(all, store, ctx, groups) {
     store = store || {};
@@ -6228,7 +6286,7 @@
     });
     // 双人组：只由「事件命中」产生，不枚举组合 —— 100 只也不会炸
     const seen = {};
-    NIGHT_EVENTS.forEach((ev) => {
+    nightPoolSync().forEach((ev) => {
       if (ev.scope !== "duo") return;
       const pair = duoPick(ev, ranked);
       if (!pair) return;
@@ -6397,14 +6455,22 @@
     const done = (th.done && typeof th.done === "object") ? th.done : {};
     const e = thEnv(thread, ctx, Date.now());
     const out = [];
-    for (let i = 0; i < NIGHT_EVENTS.length; i++) {
-      const ev = NIGHT_EVENTS[i];
+    const pool = nightPoolSync();   // v180-I1：读合并池（含 js/night-v180.js 外部事件）；老行为等价
+    for (let i = 0; i < pool.length; i++) {
+      const ev = pool[i];
       if (ev.scope === "duo" && thread.kind !== "duo") continue;
       if (ev.scope === "room" && thread.kind !== "room") continue;
       if (ev.scope === "family" && thread.kind !== "family") continue;
+      // v180-I1「房间专属」分派：仅房间群落内的 roomSlot 事件按槽放行；roomSlot == null 视为通用（老事件逐字不变）
+      if (thread.kind === "room" && ev.roomSlot != null && ev.roomSlot !== roomSlotOf(thread.id)) continue;
       const ok = whenOK(ev.when, e);
       const d = done[ev.id];
       // 「线性的」事件要按序 unlocking（上一件聊完才给下一件）
+      // v180-I2：`after` 解析的是**本会话的 done 表**（不校验 id 来自哪个池）⇒ 外部池事件的
+      //   `after:"a3"/"a4"` 是**同池同表**依赖：a1–a4 本身就是 NIGHT_EVENTS 的条目（本文件里把
+      //   v160 NIGHT_ACTS 包成 family 事件的那 4 条 legacy；NIGHT_ACTS 只是 v160 的孪生体），
+      //   ⛔ 不是跨池。（另：v160 act 页已是死代码 —— app.js/全库零调用 nightEnter/nightActs
+      //   ⇒ 那条「先迁移再用老页打 act」导致 done 分裂的路径不可达。）
       let gated = true;
       if (ev.after) gated = !!done[ev.after];
       const stamp = d && d.at ? String(d.at) : "";
@@ -7264,9 +7330,13 @@
   ];
 
   function eventOf(id) {
-    for (let i = 0; i < NIGHT_EVENTS.length; i++) if (NIGHT_EVENTS[i].id === id) return NIGHT_EVENTS[i];
+    const pool = nightPoolSync();   // v180-I1：含外部事件；⛔ NIGHT_EVENTS 本体不动
+    for (let i = 0; i < pool.length; i++) if (pool[i].id === id) return pool[i];
     return null;
   }
+  /* v180-I1：NIGHT_EVENTS 定义完成后预热合并池 —— 载入即可直接读 NIGHT_EVENT_POOL。
+     （池块定义在 NIGHT_EVENTS 之前，故不能在池块处预热；这句之后的各读点仍按需幂等重同步。） */
+  nightPoolSync();
 
   const CHAP_TALK_CAP = 48;   // 一章最多播多少条消息 —— 纯保险阀（实测最长分支路径 39 条，余量留到 48）
 
@@ -9391,6 +9461,8 @@ const CH09 = {
     NIGHT_ACTS, NIGHT_GROUP, NIGHT_CAP, nightCast, nightActs, nightEnter, nightReplay, nightChoose, nightBrief,
     // v162：夜话 2.0 —— 多会话（全家群 / 房间群 / 双人组）+ 按条件触发的事件
     NIGHT_EVENTS, THREAD_FAMILY, THREAD_CAP, OCC_BANDS, eventOf, occasionOf,
+    // v180-I1：夜话外部事件合并池 + 房间专属槽位（只读；⛔ NIGHT_EVENTS 本体不动）
+    NIGHT_EVENT_POOL, nightPoolSync, roomSlotOf,
     nightThreads, threadEvents, threadEnter, threadChoose, threadReplay, threadBrief, threadTalkBrief, threadMigrate,
     // v163：条件系统（env 契约 / 胎性 / 亲密度兜底 / 主串）
     soloEnv, tiXingOf, 胎性Of: tiXingOf, tiXingLabel, TIXING_ZH, normTiXing, bondOf,
