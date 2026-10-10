@@ -118,14 +118,17 @@ if (typeof bookFn === "function") {
 /* ============================================================
  * C · 全库扫：〈结契篇〉全篇对白名牌一律真名
  * ============================================================ */
-section("C · 全库扫：〈结契篇〉对白名牌 0 描述词残留（唯一豁免「有人」）");
+section("C · 全库扫：〈结契篇〉对白名牌 0 描述词残留（豁免：「有人」压名 / 「岑照野」域外非沁灵）");
 let BOOK = null;
 try { BOOK = require(path.join(ROOT, "js", "book-jieqi.js")); } catch (e) { BOOK = null; }
 ok(!!BOOK && Array.isArray(BOOK.chapters) && BOOK.chapters.length > 0, "读到 js/book-jieqi.js 数据（章数 " + (BOOK && BOOK.chapters ? BOOK.chapters.length : 0) + "）");
 if (BOOK && typeof bookFn === "function") {
-  const ALLOW = ["有人"];                       // ⛔ 正文刻意压名，非真名但不冒名
+  /* ⛔ 豁免两类（都不是「描述词残留」，也都不冒名）：
+     ① 「有人」＝正文刻意压名（第 1 章背后那一句）；
+     ② 「岑照野」＝岷阳域记数人（域外凡人，**非沁灵**，不进身份表 ⇒ 立绘回落为无）。 */
+  const ALLOW = ["有人", "岑照野"];
   const bad = []; const seen = {};
-  let dCount = 0, formalCount = 0, allowCount = 0;
+  let dCount = 0, formalCount = 0, allowCount = 0, anonN = 0, outerN = 0;
   BOOK.chapters.forEach((c, i) => (c.lines || []).forEach((l) => {
     if (l.k !== "d") return;
     dCount++;
@@ -133,12 +136,14 @@ if (BOOK && typeof bookFn === "function") {
     if (!nm) { bad.push("章" + (i + 1) + " 空说话人"); return; }
     seen[nm] = (seen[nm] || 0) + 1;
     if (FORMAL.indexOf(nm) >= 0) { formalCount++; return; }
-    if (ALLOW.indexOf(nm) >= 0) { allowCount++; return; }
+    if (ALLOW.indexOf(nm) >= 0) { allowCount++; if (nm === "有人") anonN++; else outerN++; return; }
     bad.push("章" + (i + 1) + " 残留描述词「" + nm + "」");
   }));
   ok(dCount > 0, "全篇统计到对白 " + dCount + " 条");
-  ok(bad.length === 0, "★ 全篇名牌 0 描述词残留（真名 " + formalCount + " 条 / 豁免「有人」" + allowCount + " 条；残留：" + (bad.join("；") || "无") + "）");
-  ok(allowCount === 5, "唯一豁免「有人」恰 5 条（正文压名，实得 " + allowCount + "）");
+  ok(bad.length === 0, "★ 全篇名牌 0 描述词残留（真名 " + formalCount + " 条 / 豁免 " + allowCount + " 条；残留：" + (bad.join("；") || "无") + "）");
+  ok(anonN === 1, "豁免「有人」恰 1 条（第 1 章正文压名，实得 " + anonN + "）");
+  ok(outerN === 24, "豁免「岑照野」24 条（第 9/12 章域外记数人，⛔ 非沁灵，实得 " + outerN + "）");
+  ok(formalCount + allowCount === dCount, "全部对白名牌 = 真名 + 两类豁免（" + (formalCount + allowCount) + "/" + dCount + "）");
   // 描述词词表负向：任何落地的 who 若带「的那位/的那只/的那一个」且无 role，必须已被拦（上面 bad 已覆盖）
   const dirty = Object.keys(seen).filter((k) => /的(那位|那只|这位|这只|那一个|这一个|一位|一个)$/.test(k));
   ok(dirty.length === 0, "解析后名牌 0 条以「的XX」结尾（残留：" + (dirty.join("、") || "无") + "）");
