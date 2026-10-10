@@ -59,7 +59,7 @@
   /* ---------- 状态定义 ---------- */
   // 珠子类 5 态：未盘玩(unplayed) / 待盘玩(ready) / 盘玩中(playing) / 已挂瓷(done) / 佩戴中(wearing)
   // 放置时长（盘玩→现在）由 lastPlayedAt 推算，不再单独占用"放置中"状态
-  // 「佩戴中」= 天天戴着的串：只管戴不用盘 → 不参与盘玩计划、今日心选、盘玩状态筛选与盘玩统计
+  // 「佩戴中」= 天天戴着的串：只管戴不用盘 → 不参与盘玩计划、盘玩状态筛选与盘玩统计（v180-NO-DRAW：抽卡栏目已下线）
   const BEAD_STATUS = [
     { v: "unplayed", label: "未盘玩" },
     { v: "ready", label: "待盘玩" },
@@ -1562,46 +1562,10 @@
     };
   }
 
-  /* ---------- 今日心选抽卡 ---------- */
-  function drawStorageKey() {
-    const d = new Date();
-    return "ww_draw_" + d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
-  }
-  function getDrawResult() {
-    try { return JSON.parse(localStorage.getItem(drawStorageKey())) || null; } catch (e) { return null; }
-  }
-  function setDrawResult(result) {
-    try { localStorage.setItem(drawStorageKey(), JSON.stringify(result)); } catch (e) {}
-  }
-
-  // 渲染抽卡栏目 HTML（未抽：显示抽取按钮；已抽：显示 3 串）
-  function renderDrawSection() {
-    const res = getDrawResult();
-    if (!res) {
-      return '<div class="draw-card">' +
-        '<div class="draw-head"><span class="draw-title">🎴 今日心选</span><span class="draw-sub">从待盘玩/盘玩中/已挂瓷里抽 3 串</span></div>' +
-        '<button type="button" class="btn primary" id="btnDraw" style="width:100%">✨ 抽取今日心选串串</button>' +
-        '<div class="draw-empty">点一下，今天盘这三串</div>' +
-        "</div>";
-    }
-    const items = (res.items || []);
-    const cards = items.map((it) => {
-      const p = it.photos && it.photos[0];
-      const img = p ? '<img src="' + photoUrl(p) + '" alt="">' : '<div class="placeholder" style="font-size:26px">📿</div>';
-      const st = it.playStatus || "unplayed";
-      const stTxt = it.category && isPuzzleCat(it.category) ? (it.playStatus === "puzzle_done" ? "已拼" : "待拼") : beadStatusText(it);
-      return '<div class="draw-item" data-id="' + it.id + '">' +
-        '<div class="draw-thumb">' + img + '<span class="draw-status">' + esc(stTxt) + "</span></div>" +
-        '<div class="draw-name">' + esc(it.name || "未命名") + "</div>" +
-        '<div class="draw-sub">' + esc(cardSubText(it)) + "</div>" +
-        "</div>";
-    }).join("");
-    return '<div class="draw-card">' +
-      '<div class="draw-head"><span class="draw-title">🎴 今日心选</span><span class="draw-sub">' + res.date + ' · 点击可重新抽</span>' +
-      '<button type="button" class="draw-redraw" id="btnRedraw">🔄 重抽</button></div>' +
-      '<div class="draw-grid">' + cards + "</div>" +
-      "</div>";
-  }
+  /* v180-NO-DRAW：首页抽卡面板整条下线（用户要求）。
+     已拆除：面板渲染函数与它那一组 localStorage 读写 helper、renderHome 里的挂载点、抽取/重抽两个按钮绑定。
+     ⛔ js/game.js 里的同名推荐算法**未删** —— 它是纯函数，别处可复用，删了会误伤；只是首页不再调用。
+     ⛔ 老档里已存在的那批按日存档键不做清理（用户数据，留着无害；面板关闭后永不再读）。 */
 
   /* 标记「今日已盘」：记录今天盘过（lastPlayedAt=现在、状态=盘玩中、盘玩次数+1）
      同时把今天加入打卡日期（连续打卡）；与详情页「✅ 今日盘过」同一套逻辑 */
@@ -4549,6 +4513,54 @@
     }
     return null;
   }
+
+  /* ---------- v180-ECHO-NM：存量信里的旧名，显示期跟着身份表走（⛔ 不做数据迁移 / 不改存档） ----------
+     现象（用户截图）：详情页「✦ 回响」里 2026-10-08 那封落款「—— 你的茶茶」，而这尊正式名是「江冽茗」。
+     根因：回响信是**生成那一刻定稿的死文本**（spirits.js ensureEcho 把 fmt(模板) 直接写进 rec.echoes）。
+       那批信生成于 v180-K 回响改写 / v180-K1 名字修复之前，存的是旧模板 + 旧 AI 名。
+     处理：存量数据是用户资产，⛔ 不迁移不改档；只在**渲染那一刻**把「本尊自己的旧名/别名」
+       替换成当前显示名 —— 「你的茶茶」⇒「你的江冽茗」。
+     ⛔ 只取本尊自己的 key ⇒ 别的沁灵信里出现同形字不会被误伤（替换表按串单独算）。
+     ⛔ 替换表 = 身份表的 name+bead+alias 去掉「当前显示名」本身，且**长键优先**：
+       「冰红茶」必须整体让位给「江冽茗」，否则短别名「红茶」先把三个字咬掉一半，留下「冰江冽茗」这种残字。
+     ⛔ 只作用于显示位 e.text / e.from；at / mailSeenAt / echoSent 等数值一律不动。 */
+  function legacyNameMapOf(it, rec) {
+    const store = Spirits.load();
+    // 与 Spirits.dispNameOf 同源（app 注入的那个解析器内部调的就是 nameOf），尊重玩家改名的全部分支都在里面
+    const cur = nameOf(it || {}, store);
+    const idc = spiritIdentityOf(cur);
+    if (!idc) return { cur: cur, keys: [] };
+    const keys = [];
+    const push = (s) => {
+      s = String(s || "").trim();
+      if (s && s !== cur && keys.indexOf(s) < 0) keys.push(s);
+    };
+    identityKeysOf(idc).forEach(push);          // name（=cur，会被跳过）/ bead（手串原名）/ alias（旧 AI 名）
+    keys.sort((a, b) => b.length - a.length);   // 长键先替：短键先动手会把长键截成残字
+    return { cur: cur, keys: keys };
+  }
+  // 单遍：每个键 split/join 一次，命中才动；无键 / 无当前名 ⇒ 原串返回（与改动前逐字一致）
+  function fixLegacyNames(text, map) {
+    let out = String(text == null ? "" : text);
+    const m = map || { cur: "", keys: [] };
+    if (!out || !m.cur || !m.keys.length) return out;
+    for (let i = 0; i < m.keys.length; i++) {
+      const k = m.keys[i];
+      if (out.indexOf(k) < 0) continue;
+      out = out.split(k).join(m.cur);
+    }
+    return out;
+  }
+  // 回响信显示视图：标题/时间原样，正文与落款走旧名替换（⛔ 不改动 rec 里的原始对象）
+  function echoLetterView(e, map) {
+    const x = e || {};
+    return {
+      title: x.title,
+      at: x.at,
+      text: fixLegacyNames(x.text, map),
+      from: fixLegacyNames(x.from, map),
+    };
+  }
   /* ---------- v180-D12：统一显示解析（详情页取卡的唯一入口） ----------
      ① 身份表优先（已定核心团）；② 逐串 rec.naming（新开沁的规格命名）；③ 回落 null（不显示字/诗/八字）。
      ⛔ 只换取值处，下游渲染行（nameShown / idCard.style/poem/eight）一个字不动 ⇒ _test_v175_identity 不回归。 */
@@ -6218,7 +6230,8 @@
     if (rec.spirit === false) { renderSpiritOffPage(id); return; }   // v166：只当手串 → 安全页
     _brokenSrcs = new Set();   // v164f：每次进详情页重置「失效图」收集（供🧹清理）
     // v165-M：⛔ 进详情页也不再自动抬 rec.stage（可进阶只展示按钮，等用户点）
-    // v155：进详情页先本地结算陪伴数据（今日问候 / 亲密度 / 今日一签 / 回响信），一次 save
+    // v155：进详情页先本地结算陪伴数据（今日问候 / 亲密度 / 回响信），一次 save
+    //   （v180-NO-SIGN：签仍照旧结算存 rec.sign，只是详情页不再渲染那一块 —— 存量数据不迁移）
     //   —— 全本地，0 出图、0 模型调用
     const cpCtx = diaryCtx(it, rec);
     let cpDirty = false;
@@ -6300,7 +6313,7 @@
       '<div class="spirit-tags" style="justify-content:center">' +
       '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div></div>";
 
-    // v155：今天 · 陪伴卡（今日问候 + 羁绊 + 今日一签 + 下一封回响倒计时）
+    // v155：今天 · 陪伴卡（今日问候 + 羁绊 + 下一封回响倒计时）　※ v180-NO-SIGN：「今日一签」已从本卡下线
     const bond = Spirits.bondLevel(rec.bond);
     const nxEcho = Spirits.nextEcho(it, rec, Math.max(1, DB.daysWith(it)));
     h += '<div class="sd-card cp-card">' +
@@ -6322,11 +6335,9 @@
               '<button type="button" class="btn ghost cp-call-btn" id="sdCallNo">还是叫主人</button></div>'
             : "")) +
       "</div>" +
-      (rec.sign
-        ? '<div class="cp-sign"><div class="cp-sign-head"><span class="cp-sign-lv">' + esc(rec.sign.lv) + "</span><span>" + esc(rec.sign.date) + " · 今日一签</span></div>" +
-          '<div class="cp-sign-line"><b class="yi">宜</b>' + esc(rec.sign.yi) + '<b class="ji">忌</b>' + esc(rec.sign.ji) + "</div>" +
-          '<div class="cp-sign-s">' + esc(rec.sign.text) + "</div></div>"
-        : "") +
+      // v180-NO-SIGN：详情页的签文卡已下线（用户要求）。
+      //   ⛔ spirits.js 的取签 / 结算函数与签库**保留未删** ——「今日宜赠」那条线仍在同一套上跑。
+      //   ⛔ 该数据照旧每日结算并存档，只是详情页不再显示（存量数据不迁移）。
       (nxEcho
         ? '<div class="cp-echo">✦ 下一封回响：' + esc(nxEcho.label) + "（还有 " + nxEcho.days + " 天）</div>"
         : '<div class="cp-echo">✦ 回响都写完了 —— 每一枚纪念日{ta}都留了信给你</div>') +
@@ -6467,15 +6478,19 @@
 
     // v155：✦ 回响 —— 纪念日信件（本地生成，只在这一天出现）
     const echoes = (Array.isArray(rec.echoes) ? rec.echoes : []).slice().reverse();
+    // v180-ECHO-NM：旧名替换表按「本尊」单独算一次（O(alias数)），再逐封信套用
+    const echoNm = legacyNameMapOf(it, rec);
     h += '<div class="sd-card"><div class="sd-card-title">✦ 回响（' + echoes.length + "）" +
       '<small style="font-weight:400;color:var(--text-2);font-size:11px"> {ta}替你记着的日子</small></div>';
     if (!echoes.length) {
       h += '<div class="room-none">还没有回响。{ta}会在陪你的第 7 / 30 / 100 天，还有每年挂瓷那天，主动写一封信给你 —— 那些日子不用你记，{ta}记着。</div>';
     } else {
-      h += '<div class="sd-echo">' + echoes.map((e) =>
-        '<div class="sd-echo-item' + (Number(rec.mailSeenAt) < (e.at || 0) ? " new" : "") + '">' +
-        '<div class="sd-echo-head"><span>' + esc(e.title || "✦ 回响") + "</span><span>" + esc(fmtDay(e.at)) + "</span></div>" +
-        '<div class="sd-echo-text">' + esc(e.text || "").replace(/\n/g, "<br>") + "</div></div>").join("") + "</div>";
+      h += '<div class="sd-echo">' + echoes.map((e) => {
+        const v = echoLetterView(e, echoNm);
+        return '<div class="sd-echo-item' + (Number(rec.mailSeenAt) < (v.at || 0) ? " new" : "") + '">' +
+          '<div class="sd-echo-head"><span>' + esc(v.title || "✦ 回响") + "</span><span>" + esc(fmtDay(v.at)) + "</span></div>" +
+          '<div class="sd-echo-text">' + esc(v.text || "").replace(/\n/g, "<br>") + "</div></div>";
+      }).join("") + "</div>";
     }
     h += "</div>";
 
@@ -8969,8 +8984,8 @@
       if (changed && location.hash === "#/spirit") renderSpiritPage();
 
       // 2) v155：**取消"每天自动来信"**（用户要求：日记已经取代了每日来信）
-      //    每天要有的内容是：沁灵详情页的「今日问候 + 今日一签」，以及纪念日才发的「回响」信。
-      //    回响在 ensureSpiritExtras 里本地结算，不花任何额度。
+      //    每天要有的内容是：沁灵详情页的「今日问候」，以及纪念日才发的「回响」信。
+      //    （v180-NO-SIGN：「今日一签」已下线；「回响」仍在 ensureSpiritExtras 里本地结算，不花任何额度。）
     } catch (e) { /* 静默：本地模板兜底已在 Spirits 内部处理 */ }
     _spiritBusy = false;
   }
@@ -9641,7 +9656,6 @@
     const base = hideGifted ? allItems.filter((i) => !i.gifted) : allItems;
 
     let html = "";
-    let drawHtml = "";
     html += '<div class="level-row">' +
       '<button class="level-bar" id="levelBar" style="flex:1;margin-bottom:0">' +
       '<span class="level-icon">' + lvInfo.icon + "</span>" +
@@ -9761,9 +9775,8 @@
 
     filterHtml += '<div class="search-box"><input id="searchInput" placeholder="搜索名字/品种/工艺/状态/颜色，或输入价格范围如 100-300、>500…" value="' + esc(search) + '"></div>';
 
-    // ===== 今日心选抽卡栏目（主动点击抽取，当天固定） =====
-    drawHtml = renderDrawSection();
-    if (drawHtml) html += drawHtml;
+    // v180-NO-DRAW：首页抽卡面板原先挂在这一段（渲染函数 / 存储读写 / 按钮绑定已一并删净，见 v180-NO-DRAW 批注）
+    //   ⛔ 紧邻的「盘玩计划」栏目保留不受影响。
 
     // ===== 盘玩计划栏目（轻量提醒，非打卡） =====
     const planHtml = renderPlayPlanSection();
@@ -10110,25 +10123,7 @@
       sortItems();
       renderHome(); // 重新渲染整个首页，让排序按钮箭头更新
     });
-    // 今日心选抽卡
-    const bd = $("#btnDraw");
-    if (bd) bd.onclick = () => {
-      const res = Game.drawRecommendation(allItems, 3);
-      if (!res.items.length) { toast("暂无可抽的串：先把珠子设为待盘玩/盘玩中吧"); return; }
-      setDrawResult(res);
-      renderHome();
-      toast("已抽取今日心选 " + res.items.length + " 串");
-    };
-    const br = $("#btnRedraw");
-    if (br) br.onclick = () => {
-      const salt = Math.floor(Math.random() * 1000000); // 每次重抽不同盐
-      const res = Game.drawRecommendation(allItems, 3, salt);
-      res.salt = salt;
-      if (!res.items.length) { toast("暂无可抽的串"); return; }
-      setDrawResult(res);
-      renderHome();
-      toast("已重新抽取");
-    };
+    // v180-NO-DRAW：抽卡面板的两个按钮（抽取 / 重抽）已随首页面板一并下线，绑定同步拆除。
     // 抽卡结果点击卡片 → 详情（无 data-id 的"更多待盘"卡片跳过，避免跳到 undefined）
     view.querySelectorAll(".draw-item").forEach((d) => d.addEventListener("click", (e) => {
       if (d.dataset.more) return; // 交给下面的"更多"专门处理
@@ -10351,7 +10346,7 @@
       const id = el.dataset.id;
       if (id && ids.indexOf(id) < 0) ids.push(id);
     };
-    // 优先取收藏列表主体（卡片/列表视图），跳过今日心选与盘玩计划
+    // 优先取收藏列表主体（卡片/列表视图），跳过排序条 / 盘玩计划等前置栏目（v180-NO-DRAW：抽卡栏目已下线）
     view.querySelectorAll(".grid [data-id], .list-view [data-id], .list-item[data-id]").forEach(push);
     if (ids.length) return ids;
     view.querySelectorAll("[data-id]").forEach(push);
@@ -10450,7 +10445,7 @@
     if (isBeadCat(it.category || "")) {
       if (it.playStatus === "wearing") {
         // 佩戴中：天天戴着的串只管戴不用盘 → 不显示盘玩时长/盘玩周期，只显示佩戴说明 + 历史盘玩次数
-        html += infoItem("佩戴状态", "🖐 正在佩戴 · 不参与盘玩计划与今日心选（挂着戴就是一直戴着，不占盘玩计划）", true);
+        html += infoItem("佩戴状态", "🖐 正在佩戴 · 不参与盘玩计划（挂着戴就是一直戴着，不占盘玩计划）", true);
         html += infoItem("累计盘玩次数", (Number(it.playCount) || 0) + " 次", true);
       } else {
       if (it.lastPlayedAt) {
