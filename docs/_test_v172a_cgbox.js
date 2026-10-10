@@ -62,6 +62,9 @@ const analyzeSrc = extractFn("analyzeCgFaceBox");
 const cgThumbSrc = extractFn("spiritThumbCgHtml");
 const thumbSrc = extractFn("spiritThumbHtml");
 const imgSrc = extractFn("spiritImgHtml");
+// v180-NAME-OUTLET：spiritImgHtml 的 alt 改走 spiritDisplayName ⇒ 沙箱必须把它一并放进去，
+//   否则运行期 ReferenceError（真实页面里两者同一 IIFE 作用域，本来就在）。
+const dispSrc = extractFn("spiritDisplayName");
 const ensSrc = extractFn("ensureSpiritCgFaces");
 
 const num = (re) => { const m = re.exec(appSrc); return m ? Number(m[1]) : NaN; };
@@ -142,14 +145,14 @@ ok(!!analyzeSrc && /resolve\(null\)/.test(analyzeSrc), "C 加载失败 → null�
 
 /* ================= D. spiritThumbCgHtml / 字段隔离（⛔ 别碰的部分必须原样） ================= */
 section("D. 缩略图取源与字段隔离（V171 已验证的行为不得回退）");
-ok(!!cgThumbSrc && /!rec \|\| !rec\.cgUrl/.test(cgThumbSrc) && /return spiritThumbHtml\(item, rec, size\)/.test(cgThumbSrc),
+ok(!!cgThumbSrc && /!rec \|\| !rec\.cgUrl/.test(cgThumbSrc) && /return spiritThumbHtml\(item, rec, size, store\)/.test(cgThumbSrc),
   "D rec.cgUrl 触发条件不变：无 cgUrl → 完全回落 spiritThumbHtml（立绘）");
 ok(!!cgThumbSrc && /cg18/.test(cgThumbSrc), "D .cg18 兜底仍在");
 ok(!!ensSrc && /rec\.faceCg/.test(ensSrc) && /CG_FACE_VER/.test(ensSrc), "D ensureSpiritCgFaces 读写 rec.faceCg");
 ok(!!ensSrc && !/\.face\s*=/.test(ensSrc), "D ⛔ ensureSpiritCgFaces 不写 rec.face（不污染立绘头像框）");
 ok(/\bFACE_VER\b/.test(appSrc) && /const\s+FACE_VER\s*=\s*3/.test(appSrc), "D ⛔ FACE_VER（立绘）未被改动（仍 3）");
 function runThumb(rec) {
-  const src = [thumbSrc, imgSrc, cgThumbSrc].join("\n") + "\n;__fn = spiritThumbCgHtml;";
+  const src = [thumbSrc, imgSrc, dispSrc, cgThumbSrc].join("\n") + "\n;__fn = spiritThumbCgHtml;";
   const sb = {
     esc: (s) => (s == null ? "" : String(s)), Math, Object, Array, Number, String,
     CG_FACE_VER: CGV, FACE_VER: 3,
@@ -169,7 +172,7 @@ if (cgThumbSrc && thumbSrc && imgSrc) {
   h = runThumb({ cgUrl: "CG_03.jpg", faceCg: { l: 0.32, t: 0.02, w: 0.36, ar: 4 / 3, v: 1 }, persona: {} });
   ok(/cg18/.test(h), "D faceCg 版本旧（v=1，V171 写进去的错框）→ .cg18 兜底 + 触发重算");
 }
-const nCgThumb = (appSrc.match(/spiritThumbCgHtml\(it, rec, 96\)/g) || []).length;
+const nCgThumb = (appSrc.match(/spiritThumbCgHtml\(it, rec, 96, store\)/g) || []).length;
 ok(nCgThumb === 2, "D 两个沁灵列表调用点仍用 spiritThumbCgHtml（实际 " + nCgThumb + " 处）");
 
 /* ================= E. CSS 兜底 ================= */

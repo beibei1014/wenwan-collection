@@ -1562,6 +1562,24 @@
     };
   }
 
+  /* ---------- v180-NO-CP：「改口」交互行（从「🎐 今天」卡挪出来的紧凑一行） ----------
+     「熟到一定程度它会想改口，不再喊『主人』」—— 这是羁绊线的收口交互，用户要删的是「今天」那张卡，
+     ⛔ 不是这个交互，所以整卡删掉时必须把它挪到仍在的位置（详情页名字 / 阶段徽章下方）。
+     三态与按钮 id 逐字未改（#sdCallYes / #sdCallNo / #sdCallReset），事件绑定原样保住。 */
+  function callRowHtml(rec, bond) {
+    const r = rec || {};
+    if (r.nickCall) {
+      return '<div class="sd-title" style="margin-top:6px">💛 {ta}现在叫你「' + esc(r.nickCall) + '」' +
+        '<button type="button" class="link-btn" id="sdCallReset" style="font-size:11px">改回叫「主人」</button></div>';
+    }
+    if (bond && bond.canCall && !r.nickCallAsked) {
+      return '<div class="sd-title" style="margin-top:6px">💛 你们已经熟了 —— {ta}想改口，不再喊「主人」了' +
+        '<button type="button" class="btn primary cp-call-btn" id="sdCallYes">好，叫我名字</button>' +
+        '<button type="button" class="btn ghost cp-call-btn" id="sdCallNo">还是叫主人</button></div>';
+    }
+    return "";
+  }
+
   /* v180-NO-DRAW：首页抽卡面板整条下线（用户要求）。
      已拆除：面板渲染函数与它那一组 localStorage 读写 helper、renderHome 里的挂载点、抽取/重抽两个按钮绑定。
      ⛔ js/game.js 里的同名推荐算法**未删** —— 它是纯函数，别处可复用，删了会误伤；只是首页不再调用。
@@ -2548,7 +2566,7 @@
   // 沁灵形象：优先 AI 绘图（带缓存），失败/断网自动换成本地程序化小沁灵
   // extraStyle：缩略图的取景参数（见 analyzeFaceBox / spiritThumbHtml）
   // face：还没算出取景时用 CSS 固定比例先顶着（本地兜底脸贴图本身是方形，不能裁，所以只在有 AI 图时才加）
-  function spiritImgHtml(item, rec, size, cls, extraStyle, face) {
+  function spiritImgHtml(item, rec, size, cls, extraStyle, face, store) {
     const cfg = Spirits.getImageCfg();
     let url = rec && rec.imgUrl;
     if (!url) {
@@ -2558,7 +2576,8 @@
     const src = url || fallback;
     const klass = (cls || "spirit-img") + (face && url ? " face" : "");
     return '<img class="' + klass + '" src="' + esc(src) + '" data-fallback="' + esc(fallback) + '"' +
-      ' data-item="' + esc(item.id) + '" data-size="' + size + '" alt="' + esc((rec && rec.persona && rec.persona.name) || item.name || "沁灵") + '"' +
+      // v180-NAME-OUTLET：alt 也走身份表（旧写法会吐旧 AI 名）
+      ' data-item="' + esc(item.id) + '" data-size="' + size + '" alt="' + esc(spiritDisplayName(item, rec, store)) + '"' +
       ' loading="lazy" style="width:' + size + "px;height:" + size + 'px' + (extraStyle ? ";" + extraStyle : "") + '">';
   }
 
@@ -2798,7 +2817,7 @@
   // 卡片缩略图：正方形小框，里面按取景参数放大 + 偏移，正好框住脑袋
   // v164i：放大倍数**钳制**。取景框算偏（或图本身就小）时 size/f.w 会飙到很大 → 头被放得只剩局部。
   //   倍数 ≥3× 直接判定取景失败，走 CSS .face 的 scale(2) 顶对齐兜底；1.2×~3× 之间才允许精确裁切。
-  function spiritThumbHtml(item, rec, size) {
+  function spiritThumbHtml(item, rec, size, store) {
     const f = rec && rec.face;
     let ok = !!(f && f.w > 0 && f.ar > 0);
     let wr = 0;
@@ -2813,13 +2832,13 @@
         "px;width:" + wr + "px;height:auto";
     }
     return '<span class="spirit-thumb" style="width:' + size + "px;height:" + size + 'px">' +
-      spiritImgHtml(item, rec, size, "spirit-img", extra, !ok) + "</span>";
+      spiritImgHtml(item, rec, size, "spirit-img", extra, !ok, store) + "</span>";
   }
   // v171：沁灵列表缩略图优先用「进阶 CG」（rec.cgUrl）；没有 CG 就完全沿用原立绘缩略图（行为零变化）。
   //   取景用 CG 专用头部框 rec.faceCg（另存字段，⛔ 不碰 rec.face / FACE_VER）。
   //   取景失败（无 faceCg / 版本旧 / 倍数离谱）→ 兜底 .cg18 = cover + center 18%（硬保证不切头）。
-  function spiritThumbCgHtml(item, rec, size) {
-    if (!rec || !rec.cgUrl) return spiritThumbHtml(item, rec, size);
+  function spiritThumbCgHtml(item, rec, size, store) {
+    if (!rec || !rec.cgUrl) return spiritThumbHtml(item, rec, size, store);
     const f = rec.faceCg;
     let ok = !!(f && f.w > 0 && f.ar > 0 && f.v === CG_FACE_VER);
     let wr = 0;
@@ -2833,7 +2852,7 @@
       : "";
     const klass = "spirit-img spirit-img-cg" + (ok ? "" : " cg18");
     const fallback = Spirits.localAvatarSvg(item);
-    const alt = (rec.persona && rec.persona.name) || item.name || "沁灵";
+    const alt = spiritDisplayName(item, rec, store);   // v180-NAME-OUTLET：同上，走身份表
     return '<span class="spirit-thumb" style="width:' + size + "px;height:" + size + 'px">' +
       '<img class="' + klass + '" src="' + esc(rec.cgUrl) + '" data-fallback="' + esc(fallback) +
       '" data-item="' + esc(item.id) + '" data-size="' + size + '" alt="' + esc(alt) + '" loading="lazy" style="width:' +
@@ -3510,7 +3529,7 @@
       const needSetup = spiritNeedsSetup(rec);
       const stars = "★".repeat(si.stage) + "☆".repeat(4 - si.stage);
       html += '<div class="spirit-card" data-spirit="' + esc(it.id) + '">' +
-        spiritThumbCgHtml(it, rec, 96) +
+        spiritThumbCgHtml(it, rec, 96, store) +
         '<div class="spirit-meta">' +
         '<div class="spirit-name">' + esc(spiritName(it, store)) +
         '<span class="sp-stars">' + stars + "</span></div>" +
@@ -4313,7 +4332,7 @@
       const wroteToday = (rec.diary || []).some((e) => e && e.date === tk) && (rec.diarySeenAt || 0) < ((rec.diary || []).slice(-1)[0] || {}).at;
       const needSetup = spiritNeedsSetup(rec);
       html += '<div class="spirit-card' + (si.canBreak ? " can-break" : "") + '" data-spirit="' + esc(it.id) + '">' +
-        spiritThumbCgHtml(it, rec, 96) +
+        spiritThumbCgHtml(it, rec, 96, store) +
         '<div class="spirit-meta">' +
         '<div class="spirit-name">' + esc(spiritName(it, store)) +
         '<span class="spirit-stage">' + si.icon + " " + esc(si.name) + "</span>" +
@@ -4464,6 +4483,25 @@
     return disp;                                     // ④ 回落
   }
   function spiritName(it, store) { return nameOf(it, store); }
+
+  /* ---------- v180-NAME-OUTLET：所有「名字出口」统一收敛到 nameOf ----------
+     此前各出口各写一遍回落链（rec.name → persona.name → item.name），绕过了身份表 ⇒
+     身份表给的正式姓名（江冽茗）在文件名 / img alt / 取名去重里仍是旧 AI 名（茶茶）。
+     ⚠️ 性能：Spirits.load() 是**无缓存**的全量 JSON.parse。缩略图调用点动辄几十上百个，
+        所以优先用调用方**手里已经有的那条 rec** 组一个只含本串的单条 store 交给 nameOf
+        （名字只取决于本串自己的 rec，不看别串 ⇒ 单条视图与全量视图结果恒等）；
+        拿不到 rec 才退用传入的 store；两者都没有才 load 一次。
+     ⛔ 取不到 ⇒ 回落原链路，绝不返回空串（不留空白 alt）。 */
+  function spiritDisplayName(item, rec, store) {
+    try {
+      if (item && typeof nameOf === "function") {
+        const scoped = rec ? { [item.id]: rec } : (store || Spirits.load());
+        const nm = nameOf(item, scoped);
+        if (nm) return nm;
+      }
+    } catch (e) { /* 抽函数单测里 nameOf 可能不在作用域 ⇒ 静默回落 */ }
+    return (rec && rec.persona && rec.persona.name) || (item && item.name) || "沁灵";
+  }
 
   /* ---------- v180-C：命名入口总开关（集中配置；⛔ 不散落） ----------
      renameEnabled=false ⇒ 详情页运行期**不再渲染**「改名」按钮；老档（已改名）显示完全不变。
@@ -6078,7 +6116,12 @@
       for (const id of ids) {
         const r = store[id];
         if (!r || r.spirit === false) continue;
-        const nm = exportSafeName(r.name || (r.persona && r.persona.name) || r.id || "沁灵", "沁灵");
+        // v180-NAME-OUTLET：文件名走 nameOf 四级口径（①尊重用户改名 → ②身份表反查 → ③rec.naming → ④回落）
+        //   ⇒ 身份表给的正式姓名（冰红茶 / 茶茶 → 江冽茗）也能进文件名，与详情页、列表显示逐字一致。
+        //   ⛔ 取不到 item（这串已不在本地收藏里）才回落老链路；⛔ exportSafeName / base2 / EXPORT_STAGE_ZH 行为不变。
+        const itm = (typeof spiritItemById === "function") ? spiritItemById(id) : null;
+        const nm = exportSafeName(itm ? nameOf(itm, store)
+          : (r.name || (r.persona && r.persona.name) || r.id || "沁灵"), "沁灵");
         const stg = EXPORT_STAGE_ZH[Math.min(4, Math.max(1, Number(r.stage) || 1)) - 1] || "";
         const tag = (s) => (stg ? nm + "·" + stg + "_" + s : nm + "_" + s);
         push(r.imgUrl, tag("立绘"));
@@ -6265,7 +6308,7 @@
     const artInner = _cgShown
       ? '<img class="spirit-img big cg-as-art" id="sdArtCg" src="' + esc(_cgShown) + '" alt="CG">'
       : (rec.imgUrl
-        ? spiritImgHtml(it, rec, 240, "spirit-img big")
+        ? spiritImgHtml(it, rec, 240, "spirit-img big", null, false, store)
         : '<div class="sk sk-art"></div><div class="sd-gen-hint" style="margin-top:8px">正在画{ta}的立绘…（约 15-20 秒）</div>');
     // v164g：详情页上下切换（不用返回列表就能挨着看沁灵）
     const _allItems = spiritItems();
@@ -6287,6 +6330,8 @@
     const _disp = spiritName(it, store);
     const idCard = spiritCardOf(_disp, rec);
     const nameShown = (idCard && !rec.nameEdited) ? idCard.name : _disp;
+    // v180-NO-CP：「🎐 今天」整卡下线后，羁绊档位只剩「改口门槛」（bond.canCall）这一处还在用
+    const bond = Spirits.bondLevel(rec.bond);
     let h = spiritNavHtml(_curIdx, _prevIt, _nextIt, _allItems.length, store) + '<div class="sd-top"><div class="sd-art" id="sdArt">' + artInner + "</div>" +
       (_hasImg ? '<button type="button" class="link-btn" id="sdManageImg" style="margin-top:6px">🗑 管理立绘</button>' : "") +
       '<div class="sd-name">' + esc(nameShown) + '<span class="spirit-stage big">' + si.icon + " " + esc(si.name) + "</span></div>" +
@@ -6311,37 +6356,16 @@
       //   ⛔ 卡片页（沁灵页 / 全部沁灵页）的 .spirit-tags 性格标签**保留**（列表仍要看），
       //      故 .spirit-tags / .spirit-trait 样式不是死代码，一并保留。
       '<div class="spirit-tags" style="justify-content:center">' +
-      '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div></div>";
-
-    // v155：今天 · 陪伴卡（今日问候 + 羁绊 + 下一封回响倒计时）　※ v180-NO-SIGN：「今日一签」已从本卡下线
-    const bond = Spirits.bondLevel(rec.bond);
-    const nxEcho = Spirits.nextEcho(it, rec, Math.max(1, DB.daysWith(it)));
-    h += '<div class="sd-card cp-card">' +
-      '<div class="sd-card-title">🎐 今天<span class="cp-date">' + esc((rec.greet && rec.greet.date) || Spirits.todayKey()) + "</span></div>" +
-      (rec.greet
-        ? '<div class="cp-greet"><span class="cp-mood">' + esc(rec.greet.mood) + "</span>" +
-          '<div class="cp-bubble">' + esc(rec.greet.text) + "</div></div>"
-        : "") +
-      '<div class="cp-bond">' +
-        '<div class="cp-bond-head"><span>羁绊</span><b>' + bond.value + "</b><i>" + bond.icon + " " + esc(bond.name) + "</i></div>" +
-        '<div class="cp-track"><i style="width:' + bond.pct + '%"></i></div>' +
-        '<div class="cp-sub">' + (bond.isMax ? "已经是最熟的那一档了" : "再攒 " + bond.toNext + " 点到「" + esc(bond.next) + "」") +
-          " · {ta}陪了你 " + DB.daysWith(it) + " 天</div>" +
-        (rec.nickCall
-          ? '<div class="cp-sub">💛 {ta}现在叫你「' + esc(rec.nickCall) + '」<button type="button" class="link-btn" id="sdCallReset" style="font-size:11px">改回叫「主人」</button></div>'
-          : (bond.canCall && !rec.nickCallAsked
-            ? '<div class="cp-call">💛 你们已经熟了 —— {ta}想改口，不再喊「主人」了' +
-              '<button type="button" class="btn primary cp-call-btn" id="sdCallYes">好，叫我名字</button>' +
-              '<button type="button" class="btn ghost cp-call-btn" id="sdCallNo">还是叫主人</button></div>'
-            : "")) +
-      "</div>" +
-      // v180-NO-SIGN：详情页的签文卡已下线（用户要求）。
-      //   ⛔ spirits.js 的取签 / 结算函数与签库**保留未删** ——「今日宜赠」那条线仍在同一套上跑。
-      //   ⛔ 该数据照旧每日结算并存档，只是详情页不再显示（存量数据不迁移）。
-      (nxEcho
-        ? '<div class="cp-echo">✦ 下一封回响：' + esc(nxEcho.label) + "（还有 " + nxEcho.days + " 天）</div>"
-        : '<div class="cp-echo">✦ 回响都写完了 —— 每一枚纪念日{ta}都留了信给你</div>') +
+      '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div>" +
+      // v180-NO-CP：「改口」交互原挂在「🎐 今天」卡里，整卡删掉会连带没了 ⇒ 挪到名字/阶段徽章下方，
+      //   压成紧凑一行（三态与按钮 id 一字未改，绑定原样保住）。
+      callRowHtml(rec, bond) +
       "</div>";
+
+    // v180-NO-CP：「🎐 今天」陪伴卡整张下线（用户拍板）。
+    //   原卡四块（今日问候 cp-greet / 羁绊条 cp-bond / 回响倒计时 cp-echo / 签文 cp-sign）全部不再渲染。
+    //   ⛔ 数据照旧每日结算存档（rec.greet / rec.bond / rec.sign / echoSent），只是详情页不看它们 ⇒ 不迁移。
+    //   ⛔ Spirits.bondLevel / nextEcho / ensureSign 等引擎函数一个没删，别处仍在用。
 
     // v165：🌸 心迹区（心迹条 + 羁绊条 + 照料三式 + 「递一件给它」）
     h += heartCardHtml(it, rec, store);
@@ -6602,7 +6626,9 @@
       let di = 0;
       // 单篇的 HTML（isNew = 是不是最新那篇：只有它能回信 + 打字机亮相）
       const diaryPageHtml = (d, isNew) => {
-        const raw = String(d.text || "").replace(/^第[^\n]*\n/, "");
+        // v180-NAME-OUTLET：日记正文也是生成时定稿的死文本 ⇒ 与回响信同一套显示期旧名替换
+        //   （⛔ 只换显示，d.text 原值一字不动；替换表 echoNm 是本尊的，不误伤别尊）
+        const raw = fixLegacyNames(String(d.text || "").replace(/^第[^\n]*\n/, ""), echoNm);
         // v155：这篇有没有被回过（回了它就等下一篇日记里回应）
         const rep = (d.date && rec.replies && rec.replies[d.date]) ? rec.replies[d.date] : null;
         return '<div class="sd-page-item">' +
@@ -6920,6 +6946,12 @@
         const r = s[id] || {};
         const nm = (r.naming && r.naming.name) || r.name || (r.persona && r.persona.name) || "";
         if (nm) out.names.push(String(nm));
+        // v180-NAME-OUTLET：再把身份表解析后的**正式姓名**并进来（冰红茶 / 茶茶 ⇒ 江冽茗 也算「已用」），
+        //   否则新取名可能撞上某位同伴的正式姓名。⛔ 只做并集（越保守越不撞名），不删任何既有项。
+        const itm = (typeof spiritItemById === "function") ? spiritItemById(id) : null;
+        if (itm) {
+          try { const nm2 = nameOf(itm, s); if (nm2) out.names.push(String(nm2)); } catch (e) { /* 忽略 */ }
+        }
         const st = (r.naming && r.naming.style) || "";
         if (st) out.styles.push(String(st));
       });
@@ -8362,6 +8394,8 @@
         }
         if (hit && hit === nm) return { src: r.imgCut || r.imgUrl || "", cut: !!r.imgCut, knee: null };
         if (cur && cur === nm) return { src: r.imgCut || r.imgUrl || "", cut: !!r.imgCut, knee: null };
+        // v180-NAME-OUTLET：身份表命中不到（例如按命名规格取的名）时再走一次四级口径，别把人漏成无立绘
+        try { if (typeof nameOf === "function" && nameOf(it, store) === nm) return { src: r.imgCut || r.imgUrl || "", cut: !!r.imgCut, knee: null }; } catch (e) { /* 忽略 */ }
       }
     } catch (e) { /* 读档异常 ⇒ 无立绘，⛔ 不报错 */ }
     return { src: "", cut: false, knee: null };

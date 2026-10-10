@@ -241,23 +241,48 @@ ok(gameSrc.indexOf("function drawRecommendation") >= 0, "js/game.js 的 drawReco
 ok(appSrc.indexOf("renderPlayPlanSection") >= 0, "⛔ 盘玩计划栏目保留（别误删相邻栏目）");
 
 /* ============================================================
- * F · 静态：详情页无今日一签，陪伴卡其余块仍在
+ * F · 静态：详情页「🎐 今天」整卡下线 + 改口交互挪位保住
+ *   ※ v180-NO-CP：用户拍板整张删（不再只摘签文块），故上一版「陪伴卡其余块保留」四条断言
+ *     已按新规格反向改写为「全部消失」；改口交互从卡里挪出，改为断言它仍活着。
  * ============================================================ */
-section("F · 详情页「今日一签」下线，陪伴卡其余块保留");
-ok(detailFnC.indexOf("cp-sign") < 0, "⛔ 详情页不再有签文卡那个 class 块");
-ok(detailFnC.indexOf("rec.sign") < 0, "⛔ 详情页不再读当日签的数据字段");
+section("F · 详情页「🎐 今天」整卡下线，改口交互挪位保住");
+["cp-card", "cp-greet", "cp-mood", "cp-bubble", "cp-bond", "cp-track", "cp-sub", "cp-echo", "cp-sign"]
+  .forEach((cls) => ok(detailFnC.indexOf(cls) < 0, "⛔ 详情页不再有 ." + cls + "（整卡已删）"));
+ok(detailFnC.indexOf("rec.greet") < 0 && detailFnC.indexOf("rec.sign") < 0 && detailFnC.indexOf("bond.pct") < 0,
+  "⛔ 详情页不再读 rec.greet / rec.sign / bond 进度（数据照旧结算，只是不看）");
+ok(detailFnC.indexOf("🎐") < 0, "⛔ 「🎐 今天」标题不再出现");
+// 🔴 改口交互必须活下来：渲染挪位 + 三个 id + 三个绑定，一个都不能少
+ok(/callRowHtml\(rec,\s*bond\)/.test(detailFnC), "改口行挂在详情页（名字 / 阶段徽章下方，紧凑一行）");
+const callFn = extractFn("callRowHtml") || "";
+ok(callFn.length > 100, "新增 callRowHtml 承载三态");
+ok(callFn.indexOf('id="sdCallYes"') >= 0, "三态①「好，叫我名字」#sdCallYes 在");
+ok(callFn.indexOf('id="sdCallNo"') >= 0, "三态②「还是叫主人」#sdCallNo 在");
+ok(callFn.indexOf('id="sdCallReset"') >= 0, "三态③「改回叫『主人』」#sdCallReset 在");
+ok(appSrc.indexOf('const callYes = $("#sdCallYes")') >= 0, "事件绑定 #sdCallYes 保住");
+ok(appSrc.indexOf('const callNo = $("#sdCallNo")') >= 0, "事件绑定 #sdCallNo 保住");
+ok(appSrc.indexOf('const callReset = $("#sdCallReset")') >= 0, "事件绑定 #sdCallReset 保住");
+ok(appSrc.indexOf("nickCallAsked") >= 0, "改口门槛字段 nickCallAsked 仍在用");
+// ⛔ 别动的都得还在
+ok(detailFnC.indexOf("sd-name") >= 0 && detailFnC.indexOf("spirit-stage big") >= 0, "⛔ sd-name + 阶段徽章未动");
+ok(detailFnC.indexOf("heartCardHtml") >= 0, "⛔ 💛 心迹卡（heartCardHtml）未动");
+ok(detailFnC.indexOf("sd-echo") >= 0, "✦ 回响信件列表保留");
 ok(detailFn.indexOf("🌱") >= 0 || detailFn.indexOf("成长") >= 0, "⛔ 「🌱 成长卡」保留未动");
-// 陪伴卡（🎐 今天）三块必须还在
-ok(detailFn.indexOf("cp-card") >= 0, "陪伴卡 cp-card 本体保留");
-ok(detailFn.indexOf("cp-greet") >= 0 && detailFn.indexOf("rec.greet.text") >= 0, "今日问候（cp-greet + greet.text）保留");
-ok(detailFn.indexOf("cp-bond") >= 0 && detailFn.indexOf("bond.pct") >= 0, "羁绊条（cp-bond + 进度）保留");
-ok(detailFn.indexOf("cp-echo") >= 0 && detailFn.indexOf("nxEcho.label") >= 0, "回响倒计时（cp-echo）保留");
-ok(detailFn.indexOf("sdCallYes") >= 0, "「改口叫名字」交互（sdCallYes/No）保留");
-ok(detailFn.indexOf("sd-echo") >= 0, "✦ 回响信件列表保留");
-// ⛔ 签库本体必须还在（「今日宜赠」那条线还要用）
+// ⛔ 引擎侧一个都不能删（签库还有「今日宜赠」，bondLevel 还要供改口门槛）
 ok(spiritsSrc.indexOf("function ensureSign") >= 0, "⛔ spirits.js ensureSign 保留未删");
 ok(spiritsSrc.indexOf("function signOf") >= 0, "⛔ spirits.js signOf 保留未删");
 ok(spiritsSrc.indexOf("SIGN_GIFT") >= 0, "⛔ 今日宜赠 SIGN_GIFT 保留未删");
+ok(spiritsSrc.indexOf("function bondLevel") >= 0, "⛔ spirits.js bondLevel 保留（改口门槛 bond.canCall 还要用）");
+ok(spiritsSrc.indexOf("function nextEcho") >= 0, "⛔ spirits.js nextEcho 保留未删");
+
+section("F2 · 孤儿 CSS 已清，仍在用的留着");
+const styleCss = fs.readFileSync(path.join(ROOT, "css/style.css"), "utf8");
+const skinCss = fs.readFileSync(path.join(ROOT, "css/skin.css"), "utf8");
+ok(styleCss.indexOf(".draw-card") < 0 && styleCss.indexOf(".draw-title") < 0 && styleCss.indexOf(".draw-grid") < 0,
+  "⛔ 首页抽卡面板样式 .draw-* 已清");
+ok(skinCss.indexOf(".cp-sign") < 0 && skinCss.indexOf(".cp-greet") < 0 &&
+   skinCss.indexOf(".cp-bond") < 0 && skinCss.indexOf(".cp-echo") < 0 && skinCss.indexOf(".cp-call {") < 0,
+  "⛔ 陪伴卡样式 .cp-sign / .cp-greet / .cp-bond / .cp-echo / .cp-call 已清");
+ok(skinCss.indexOf(".cp-call-btn") >= 0, "⛔ .cp-call-btn 保留 —— 改口按钮挪位后仍在用");
 
 /* ============================================================
  * G · 缓存戳
