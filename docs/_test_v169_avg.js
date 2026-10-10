@@ -51,7 +51,7 @@ function extractFn(name) {
 }
 
 const talkSrc = extractFn("renderTalkPage");
-const mainSrc = extractFn("renderMainTalkPage");
+const bookReadSrc = extractFn("renderBookReadPage");
 const chapSrc = extractFn("renderChapTalkPage");
 const nightSrc = extractFn("renderNightTalkPage");
 const routerSrc = extractFn("router");
@@ -84,8 +84,8 @@ if (talkSrc) {
 
 /* ================= B. 挂点：两个调用点补 portrait ================= */
 section("B. 调用点 portrait 数据（§8.4）");
-ok(!!mainSrc && /portrait:/.test(mainSrc) && /Spirits\.castOf\(\)/.test(mainSrc) && /\.imgUrl/.test(mainSrc),
-  "renderMainTalkPage 传 portrait（castOf()[pid] → load()[id].imgUrl）");
+ok(!!bookReadSrc && /portrait:/.test(bookReadSrc) && /portraitCut:/.test(bookReadSrc) && /bookArtOf/.test(bookReadSrc),
+  "v180-L1：现役主线〈结契篇〉renderBookReadPage 传 portrait / portraitCut（走 bookArtOf）");
 ok(chapSrc === null, "v178：renderChapTalkPage 已删除（旧 8 章对话页整体移除，无 portrait 消费方）");
 ok(!!nightSrc && !/portrait:/.test(nightSrc), "夜话页（renderNightTalkPage）不传 portrait → 回落 \"\"（只 BG + 对话框）");
 
@@ -93,7 +93,7 @@ ok(!!nightSrc && !/portrait:/.test(nightSrc), "夜话页（renderNightTalkPage�
 section("B2. v176 immersive 开关：夜话 false / 主线 true");
 ok(!!nightSrc && /immersive:\s*false/.test(nightSrc),
   "夜话页 renderNightTalkPage 传 immersive: false（⛔ 不进沉浸 = 微信式群聊气泡）");
-ok(!!mainSrc && /immersive:\s*true/.test(mainSrc), "主线 renderMainTalkPage 显式传 immersive: true（行为不变）");
+ok(!!bookReadSrc && /immersive:\s*true/.test(bookReadSrc), "v180-L1：现役主线阅读页 renderBookReadPage 显式传 immersive: true");
 // v178：旧单串 renderChapTalkPage 已删除 ⇒ 原「immersive: true」断言随之移除
 ok(!!talkSrc && /const IMM = \(o\.immersive !== false\)/.test(talkSrc), "renderTalkPage 用 o.immersive !== false 作开关（默认沉浸）");
 

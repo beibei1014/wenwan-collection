@@ -3582,8 +3582,8 @@
       };
     });
     const ae = $("#albumEntry"); if (ae) ae.onclick = () => { _albumFrom = "#/spirit"; location.hash = "#/album"; };
-    const msBtn = $("#spMainEntry");      // v174-C2B：沁灵纪卡 → #/main（⛔ 原指陈旧的 #/mainstory）
-    if (msBtn) msBtn.onclick = () => { location.hash = "#/main"; };
+    const msBtn = $("#spMainEntry");      // v180-L1：沁灵页主线卡 → #/book（旧 9 章 #/main 已下线）
+    if (msBtn) msBtn.onclick = () => { location.hash = "#/book"; };
     const dh = $("#diaryHint");
     if (dh) dh.onclick = () => location.hash = "#/spirits";
     const eh = $("#echoHint");
@@ -3895,14 +3895,20 @@
       '</div>' +
     '</div>';
   }
-  /* v174-C2B：沁灵纪卡（复用 css/style.css 的 .main-entry*；图标内联 SVG，⛔ 不用 emoji）
-     🔴 入口指 #/main（原位 #spMainBtn 指陈旧的 #/mainstory，已撤入口） */
+  /* v174-C2B / v180-L1：主线入口卡（沁灵页）。
+     现役主线 = 《结契篇》→ #/book（旧 9 章《沁灵纪》已整条下线：原位 #/main ⇒ 今改 #/book）。
+     复用 css/style.css 的 .main-entry*；图标内联 SVG，⛔ 不用 emoji */
   function mainStoryEntryHtml() {
-    return '<button class="main-entry" id="spMainEntry">' +
+    let sub = "八章 · 走到哪儿算哪儿";
+    try {
+      const b = (typeof Spirits !== "undefined" && Spirits.booksAll) ? (Spirits.booksAll() || [])[0] : null;
+      if (b && b.sub) sub = b.sub;
+    } catch (e) { /* 静默 */ }
+    return '<button class="main-entry" id="spMainEntry" data-goto="#/book">' +
       '<span class="main-entry-ico">' + HUB_BOOK_SVG + '</span>' +
       '<span class="main-entry-body">' +
-        '<span class="main-entry-title">沁灵纪 · 主线</span>' +
-        '<span class="main-entry-sub">九章 · 走到哪儿算哪儿</span>' +
+        '<span class="main-entry-title">结契篇 · 主线</span>' +
+        '<span class="main-entry-sub">' + esc(sub) + '</span>' +
       '</span>' +
       '<span class="main-entry-arrow">›</span></button>';
   }
@@ -6301,9 +6307,9 @@
     }
     h += "</div>";
 
-    /* v178：旧 8 章（串与我）已整体删除 —— app.js 侧消费方（renderChapTalkPage 等）一并移除。
-       #/talk 旧深层链接仅保留 → 回沁灵页的兜底。
-       新 9 章《沁灵纪》走**独立入口**：首页「📖 沁灵纪 · 主线」→ #/main。 */
+    /* v180-L1：老主线（旧 8 章 + 旧 9 章）已整条下线 —— app.js 侧消费方（renderChapTalkPage /
+       renderMainPage / renderMainTalkPage 等）一并移除。#/talk 旧深层链接仅保留 → 回沁灵页的兜底。
+       现役主线 = 《结契篇》：《沁灵巷》卡片与首页入口 → #/book（篇目）→ #/bookread/<章>。 */
 
     // v157：🎞 回忆册 —— 它陪你的时间线（本地推导，0 出图；可一键合成竖版长图）
     const memos = Spirits.memoirOf(it, rec);
@@ -6541,8 +6547,8 @@
       if (fx0.cgUrl) { openSpiritViewer(fx0.cgUrl); return; }
       openFestCgBriefModal(it, dk, fx0);
     };
-    // v178：旧 8 章已整体删除（原章节列表点击跳转早已取消）。
-    //   新 9 章用 data-main 承载章号，见 renderMainPage。
+    // v180-L1：老主线相关的章节列表/对话页已整条下线（renderMainPage / renderMainTalkPage 等）。
+    //   本页不再挂任何主线入口；现役主线 = 《结契篇》（#/book、#/bookread/<章>）。
     // v158：节令插画点开看大图
     view.querySelectorAll(".ft-cgimg").forEach((el) => {
       el.onclick = () => openSpiritViewer(el.dataset.cg || el.src || "");
@@ -8051,442 +8057,23 @@
     step();
   }
 
-  /* ---------- v165-N3：《沁灵纪》第 1–9 章 · **独立入口**（⛔ 不挂在某一只的详情页） ----------
-     用户裁定：「以前的主线剧情，就是从每个沁灵的详情页进入那个，取消。全面用新的剧情来取代，走独立的入口。」
-     · 入口放在**首页**（宝贝列表上方的大卡片，一眼能找到），路由 #/main
-     · 章节对话页 #/maintalk/<i>；状态全在 ww_story（全局一条），⛔ 不进任何一只的 rec
-     · v178：旧 8 章（串与我）已整体删除 —— 数据与 app.js 侧消费方一并移除。 */
-  function mainStoryCtx() {
-    // 全局天数：新主线是「一门人的故事」，不是某一只的 —— 取你陪得最久那只的天数
-    let maxDay = 1;
-    try {
-      (allItems || []).forEach(function (x) {
-        const d = Math.max(1, DB.daysWith(x) || 1);
-        if (d > maxDay) maxDay = d;
-      });
-    } catch (e) { /* 静默 */ }
-    return { dayNo: maxDay };
-  }
-  function mainCastThumb(m) {
-    try {
-      const pid = (m && m.ps && m.ps[0]) ? String(m.ps[0]) : "";
-      if (!pid) return "";
-      const cast = Spirits.castOf() || {};
-      const c = cast[pid];
-      if (!c || !c.id) return "";
-      const it = spiritItemById(c.id);
-      if (!it) return "";
-      return spiritThumbHtml(it, Spirits.load()[c.id] || {}, 30);
-    } catch (e) { return ""; }
-  }
-
-  /* v174：主线手抠立绘（主理人自己抠的 9 张，按沁灵本名自动挂）
-     · f=文件；h=渲染高度(占立绘层高%)；t=图片顶边距(占层高%，负=向上出画)
-     · 公式：h = 0.88*1024/(0.71*本体高)；t = 0.12 − 本体头顶y*h/1024
-       0.88 = 头顶留 12% 呼吸位；0.71 = 人体「头顶→膝盖」占身高比
-     · ⚠️ 谢凝渲撑伞 —— 本体头顶 y=226（伞顶 y≈48 不是头），故 h/t 显著异于其余 8 位
-     · ⛔ 换图必须重算 h/t（尤其带手持道具的） */
-  var MAINCHAR_ART = {
-    "咸法酪": { f: "assets/mainchars/mc-xianfalao.png",   h: 132.8, t:   6.4 },
-    "柿宝":   { f: "assets/mainchars/mc-shibao.png",      h: 132.6, t:   6.8 },
-    "沈青舒": { f: "assets/mainchars/mc-shenqingshu.png", h: 130.6, t:   8.4 },
-    "粉黛熊": { f: "assets/mainchars/mc-fendaixiong.png", h: 131.1, t:   7.9 },
-    "苏栖盏": { f: "assets/mainchars/mc-suqizhan.png",    h: 131.9, t:   7.1 },
-    "谢凝渲": { f: "assets/mainchars/mc-xieningxuan.png", h: 164.2, t: -24.2 },
-    "金算盘": { f: "assets/mainchars/mc-jinsuanpan.png",  h: 133.6, t:   5.7 },
-    "陆临崖": { f: "assets/mainchars/mc-lulinyai.png",    h: 131.4, t:   7.5 },
-    "顾时笙": { f: "assets/mainchars/mc-gushisheng.png",  h: 129.8, t:   9.0 }
-  };
-  // v175：用户把三只改成了新姓名 —— 别名反查到旧键，⛔ 别让手抠立绘掉图
-  var MAINCHAR_ART_ALIAS = {
-    "楚柿遥": "柿宝",
-    "萧景筹": "金算盘",
-    "姜饴酌": "咸法酪",
-    // v180：温茸之 =「粉黛熊」改名后的正式姓名 → 反查旧手抠键「粉黛熊」，⛔ 别让立绘掉图
-    "温茸之": "粉黛熊"
-  };
-  // v180 · C6 江冽茗（冰红茶）暂无手抠立绘键：maincharArtOf 返 null ⇒ 走 portrait 回落
-  //   `rec.imgCut || rec.imgUrl`（该沁灵自身的生成立绘），⛔ 非白板；仅当该串从未出图才是空
-  //   （见主线 portrait 解析，app.js 内 typeof maincharArtOf 守卫处）。
-  //   故本轮**不新增 MAINCHAR_ART 键**（保住 _test_v174_mainchar 的「恰 9 键」契约）。待美术补 mc 图再加键。
-  function maincharArtOf(rec) {
-    var nm = String((rec && rec.name) || "").trim();
-    if (!nm) return null;
-    if (MAINCHAR_ART[nm]) return MAINCHAR_ART[nm];          // 本名直接命中（旧数据 / 未改名）
-    var al = MAINCHAR_ART_ALIAS[nm];                        // 新名 → 旧键
-    return al ? (MAINCHAR_ART[al] || null) : null;
-  }
   /* ============================================================
-   * v172：主线选角（点戏 · 谁扮谁）
-   *   - 独立页 #/maincast（数据层 castManual 在 spirits.js；UI 只消费）
-   *   - 每行当三种身份：手动 .is-picked / 自动 .is-auto / 顶着 .is-fill（+ 兜底 .is-empty）
-   *   - ⛔ 文案全部取 Spirits.CHAP_CAST_COPY / CHAP_CAST_DESC（单一真源，UI 不硬编码）
+   * v180-L1 · 老主线《沁灵纪》1–9 章 UI 已整条下线
+   *   用户裁定：「我要你删的是以前老版本的主线」。
+   *   ⇒ 本段原本装着：#/main 章节列表页（renderMainPage）、#/maintalk/<i> 章节对话页
+   *     （renderMainTalkPage）、#/maincast 选角页（renderMainCastPage + 整套 cast* 辅助）
+   *     与 mainStoryCtx / mainCastThumb —— 全部删除（maincharArtOf / MAINCHAR_ART 保留：〈结契篇〉仍在用）。
+   *   ⇒ 现役主线 = 《结契篇》：入口在**首页**（#/book）与沁灵页，阅读页 = #/bookread/<章>（见下）。
+   *   ⇒ 引擎侧 MAIN_* / main* 已同批删除（js/spirits.js v180-L1 段）。
    * ============================================================ */
-  function renderMainCastPage() {
-    topbarTitle.textContent = "点戏 · 谁扮谁";
-    btnBack.style.visibility = "visible";
-    btnSettings.style.visibility = "hidden";
-    const COPY = castCopy();
-    const MAIN = castMain();
-    const items = spiritItems();               // 候选取在册沁灵（⛔ 不用 stage 判定）
-    const store = Spirits.load();
-    const cast = Spirits.castOf() || {};
-    const picked = castManualCount(cast);
-    let h = '<div class="cast-head">' + esc(COPY.HEAD || "") + "</div>";
-    if (items.length < 7) {                    // 不足 7 只：整体空态（⛔ 不像报错）+ 中性数据行
-      h += '<div class="cast-all-note">' + esc(COPY.FEW_NOTE || "") + "</div>" +
-        '<div class="cast-count-line">' + esc(String(COPY.COUNT_LINE || "").replace("{N}", String(items.length))) + "</div>";
-    }
-    h += '<div class="cast-card">';
-    MAIN.forEach((pid) => { h += castRowHtml(pid, cast, store); });
-    h += "</div>";
-    h += '<div class="cast-actions">' +
-      '<button class="cast-auto' + (MAIN.length && picked >= MAIN.length ? " is-disabled" : "") + '" id="castAuto" type="button">按在册顺序 · 把没点的都点上</button>' +
-      '<button class="cast-revert' + (picked === 0 ? " is-disabled" : "") + '" id="castRevert" type="button">按交情重新点一遍</button>' +
-      "</div>";
-    h += '<div class="cast-confirm" id="castConfirm" hidden>' +
-      '<span class="cast-confirm-text">都撤了？撤了之后，七位都回到按交情抽。</span>' +
-      '<button class="cast-confirm-ok" type="button" id="castConfirmOk">撤</button>' +
-      '<button class="cast-confirm-no" type="button" id="castConfirmNo">再想想</button></div>';
-    view.innerHTML = h;
-    window.scrollTo(0, 0);
-    view.querySelectorAll(".cast-pick").forEach((el) => { el.onclick = () => openCastSheet(el.dataset.pick); });
-    view.querySelectorAll(".cast-unset").forEach((el) => { el.onclick = () => castRevertSlot(el.dataset.unset); });
-    const ba = $("#castAuto");
-    if (ba) ba.onclick = () => { if (ba.classList.contains("is-disabled")) return; castAutoAssignAll(); };
-    const br = $("#castRevert");
-    if (br) br.onclick = () => {
-      if (br.classList.contains("is-disabled")) return;
-      const bar = $("#castConfirm"); if (bar) bar.hidden = false;
-    };
-    const okc = $("#castConfirmOk");
-    if (okc) okc.onclick = () => castRevertAll();
-    const noc = $("#castConfirmNo");
-    if (noc) noc.onclick = () => { const bar = $("#castConfirm"); if (bar) bar.hidden = true; };
-  }
-  // 行身份 → （带点的 CSS 钩子类即真源名 + 无障碍 aria-label）。⛔ 只读屏可见，界面不显示
-  const CAST_ROW_STATE = {
-    ".is-picked": "这一位是你点的",
-    ".is-auto": "这一位是按交情配的",
-    ".is-fill": "这一位暂时由家里的顶着",
-    ".is-empty": "这一位还没点",
-  };
-  function castCopy() { return Spirits.CHAP_CAST_COPY || {}; }
-  function castDescOf(pid) { const d = Spirits.CHAP_CAST_DESC || {}; return d[pid]; }   // ⛔ 无默认值兜底
-  function castMain() { return (Spirits.CHAP_CAST_CFG && Spirits.CHAP_CAST_CFG.MAIN) || []; }
-  function castNames() { return Spirits.CHAP_CAST_NAME || {}; }
-  // 手动点了几位（入口卡 / 按钮态判据：按「手动指定了几位」，⛔ 不按有没有人演）
-  function castManualCount(cast) {
-    const c = cast || Spirits.castOf() || {};
-    return castMain().filter((p) => c[p] && c[p].manual === true).length;
-  }
-  // 每个 id 被哪些行当占用（冲突提示 + 面板「扮了几处」数字标）
-  function castOwners(cast) {
-    const c = cast || Spirits.castOf() || {};
-    const m = {};
-    castMain().forEach((p) => {
-      if (c[p] && c[p].id) { const k = String(c[p].id); (m[k] = m[k] || []).push(p); }
-    });
-    return m;
-  }
-  // #/main 顶部入口卡（.chap-prog 后、.chap-list 前）；三态按「手动点了几位」
-  function castEntryHtml() {
-    const COPY = castCopy();
-    const picked = castManualCount();
-    const total = castMain().length;
-    let badge = "", cls = "cast-entry", sub = "";
-    if (picked <= 0) {
-      cls += " is-empty"; sub = "七位都还按交情抽";
-      badge = '<span class="cast-entry-badge">' + esc(COPY.ENTRY_BADGE || "") + "</span>";
-    } else if (picked >= total) { sub = "七位都是你点的"; }
-    else { sub = "已点 " + picked + " 位 · 其余按交情"; }
-    return '<div class="' + cls + '" data-goto="#/maincast">' +
-      '<span class="cast-entry-ico">🎭</span>' +
-      '<div class="cast-entry-meta"><div class="cast-entry-title">点戏 · 谁扮谁</div>' +
-      '<div class="cast-entry-sub">' + esc(sub) + "</div></div>" +
-      badge + '<span class="chap-arrow">›</span></div>';
-  }
-  // 下拉触发器（一行一个）：缩略图 + 名 + ›
-  function castPickHtml(pid, c, store) {
-    let av, nm;
-    if (c && c.id) {
-      const it = spiritItemById(c.id);
-      const rec = store[c.id] || {};
-      av = it ? spiritThumbCgHtml(it, rec, 36) : "";
-      nm = it ? nameOf(it, store) : String(c.castName || "");
-    } else {
-      av = '<span class="cast-pick-empty">＋</span>';
-      nm = "还没点 · 点一只";
-    }
-    return '<button class="cast-pick" type="button" data-pick="' + esc(pid) +
-      '" aria-haspopup="listbox" aria-expanded="false">' +
-      '<span class="cast-pick-av">' + av + "</span>" +
-      '<span class="cast-pick-name">' + esc(nm) + "</span>" +
-      '<span class="cast-pick-arrow">›</span></button>';
-  }
-  // 单行当行（手动 / 自动 / 顶着 / 真空 四态）
-  function castRowHtml(pid, cast, store) {
-    const c = cast[pid];
-    const COPY = castCopy();
-    const names = castNames();
-    const isManual = !!(c && c.manual === true);
-    const isFill = !!(c && c.fill === true);
-    const hasC = !!(c && c.id);
-    const owners = castOwners(cast);
-    const others = hasC ? (owners[String(c.id)] || []).filter((p) => p !== pid) : [];
-    const stateKey = isManual ? ".is-picked" : (!hasC ? ".is-empty" : (isFill ? ".is-fill" : ".is-auto"));
-    let cls = "cast-row " + stateKey.slice(1);
-    if (others.length) cls += " is-conflict";
-    let nameInner = isManual ? '<i class="cast-seal" aria-hidden="true"></i>' : "";
-    nameInner += esc(names[pid] || pid);
-    if (!isManual && hasC) nameInner += '<i class="cast-auto-tag" aria-hidden="true">' + esc(COPY.AUTO_TAG || "") + "</i>";
-    const desc = castDescOf(pid);      // ⛔ 缺 key 就不渲染那句说明（绝不填占位假文案）
-    let h = '<div class="' + cls + '" data-slot="' + esc(pid) + '" aria-label="' +
-      esc(CAST_ROW_STATE[stateKey] || "") + '">' +
-      '<div class="cast-slot-info"><div class="cast-slot-name">' + nameInner + "</div>" +
-      (desc != null ? '<div class="cast-slot-desc">' + esc(desc) + "</div>" : "") + "</div>" +
-      castPickHtml(pid, c, store);
-    if (isManual) h += '<button class="cast-unset" type="button" aria-label="回到按交情" data-unset="' + esc(pid) + '">✕</button>';
-    if (others.length) {
-      const oName = names[others[0]] || others[0];
-      h += '<div class="cast-note">这一位还扮着「' + esc(oName) + '」—— 一个人扮两个，也不是不行。</div>';
-    } else if (isFill) {
-      h += '<div class="cast-note">' + esc(COPY.NOT_PICKED || "") + "</div>";
-    }
-    return h + "</div>";
-  }
-  // 保存后统一：重算出场表（全局立刻生效）+ 置脏同步云端 + 重绘
-  function castPersist() {
-    Spirits.castOf({ force: true });
-    try { _spiritsDirty = true; pushSpirits(); } catch (e) { /* 静默 */ }
-  }
-  function castRevertSlot(pid) {
-    Spirits.castClearManual(pid);
-    castPersist();
-    toast("「" + (castNames()[pid] || pid) + "」回到按交情了。");
-    renderMainCastPage();
-  }
-  function castRevertAll() {
-    Spirits.castClearAllManual();
-    castPersist();
-    toast("都回到按交情了 · 七位重新抽过。");
-    renderMainCastPage();
-  }
-  function castAssignSlot(pid, id) {
-    if (!Spirits.castSetManual(pid, id)) return;
-    castPersist();
-    renderMainCastPage();
-  }
-  // 一键分派：未手动指定的行当按在册顺序依次点上（一轮不够 ⇒ 循环复用）；⛔ 不覆盖手动
-  function castAutoAssignAll() {
-    const MAIN = castMain();
-    const items = spiritItems();
-    if (!items.length) return;
-    const cast = Spirits.castOf() || {};
-    const used = {};
-    MAIN.forEach((p) => { if (cast[p] && cast[p].manual === true) used[String(cast[p].id)] = true; });
-    let k = 0;
-    MAIN.forEach((pid) => {
-      if (cast[pid] && cast[pid].manual === true) return;    // 手动优先，⛔ 不覆盖
-      let pick = null;
-      for (let n = 0; n < items.length; n++) {
-        const cand = items[(k + n) % items.length];
-        if (!used[String(cand.id)]) { pick = cand; k = (k + n + 1) % items.length; break; }
-      }
-      if (!pick) { pick = items[k % items.length]; k = (k + 1) % items.length; }   // 循环复用
-      used[String(pick.id)] = true;
-      Spirits.castSetManual(pid, pick.id);
-    });
-    castPersist();
-    toast(castCopy().TOAST_ALL || "");
-    renderMainCastPage();
-  }
-  // 自绘下拉面板（挂 body，⛔ 不放进 .view 免得被裁剪 / 层级错乱）
-  let _castMask = null, _castSheet = null;
-  function ensureCastSheet() {
-    if (_castMask && _castSheet && document.body.contains(_castMask)) return;
-    _castMask = document.createElement("div");
-    _castMask.className = "cast-sheet-mask";
-    _castMask.hidden = true;
-    _castSheet = document.createElement("div");
-    _castSheet.className = "cast-sheet";
-    _castSheet.setAttribute("role", "dialog");
-    _castSheet.setAttribute("aria-modal", "true");
-    _castSheet.hidden = true;
-    document.body.appendChild(_castMask);
-    document.body.appendChild(_castSheet);
-    _castMask.onclick = closeCastSheet;
-  }
-  function closeCastSheet() {
-    if (_castSheet) _castSheet.hidden = true;
-    if (_castMask) _castMask.hidden = true;
-  }
-  function openCastSheet(pid) {
-    ensureCastSheet();
-    const store = Spirits.load();
-    const cast = Spirits.castOf() || {};
-    const names = castNames();
-    const items = spiritItems();
-    const owners = castOwners(cast);
-    const curId = (cast[pid] && cast[pid].id) ? String(cast[pid].id) : "";
-    const NO_P = (typeof Spirits.CAST_NO_PERSONA_TAG === "string") ? Spirits.CAST_NO_PERSONA_TAG : "";
-    let opts = "";
-    if (!items.length) {
-      opts = '<div class="cast-opt is-empty" role="option">还没点 · 点一只</div>';
-    } else {
-      items.forEach((it) => {
-        const rec = store[it.id] || {};
-        const id = String(it.id);
-        const mine = (id === curId);
-        const own = owners[id] || [];
-        const elsewhere = own.filter((p) => p !== pid);
-        const hasPersona = !!(rec.persona && (rec.persona.id || rec.persona.name));
-        const cls = "cast-opt" + (mine ? " is-current" : "") + (elsewhere.length ? " is-taken" : "");
-        const st = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
-        let tag = "";
-        if (mine && elsewhere.length) tag = "正在扮这位 · 还扮着「" + esc(names[elsewhere[0]] || elsewhere[0]) + "」";
-        else if (mine) tag = "正在扮这位";
-        else if (elsewhere.length) tag = "还扮着「" + esc(names[elsewhere[0]] || elsewhere[0]) + "」";
-        else if (!hasPersona) tag = esc(NO_P);
-        opts += '<div class="' + cls + '" role="option" aria-selected="' + (mine ? "true" : "false") +
-          '" data-id="' + esc(id) + '">' +
-          '<span class="cast-opt-av">' + spiritThumbCgHtml(it, rec, 28) +
-          (own.length > 1 ? '<i class="cast-opt-count">' + own.length + "</i>" : "") + "</span>" +
-          '<span class="cast-opt-meta"><span class="cast-opt-name">' + esc(nameOf(it, store)) + "</span>" +
-          '<span class="cast-opt-stage">' + esc(st.icon + " " + st.name) + "</span></span>" +
-          (tag ? '<span class="cast-opt-tag">' + tag + "</span>" : "") + "</div>";
-      });
-    }
-    _castSheet.innerHTML = '<div class="cast-sheet-grip"></div>' +
-      '<div class="cast-sheet-title">点谁扮「' + esc(names[pid] || pid) + "」</div>" +
-      '<div class="cast-opt-list" role="listbox">' + opts + "</div>";
-    _castSheet.querySelectorAll(".cast-opt[data-id]").forEach((el) => {
-      el.onclick = () => { const id = el.dataset.id; closeCastSheet(); castAssignSlot(pid, id); };
-    });
-    _castMask.hidden = false;
-    _castSheet.hidden = false;
-  }
 
-  function renderMainPage() {
-    topbarTitle.textContent = "沁灵纪 · 主线";
-    btnBack.style.visibility = "visible";
-    btnSettings.style.visibility = "hidden";
-    const ctx = mainStoryCtx();
-    const list = Spirits.mainChapterState(ctx);
-    const read = list.filter((c) => c.read).length;
-    const unread = Spirits.mainUnreadCount(ctx);
-    const brief = Spirits.mainTalkBrief();
-    let h = '<div class="main-head">' +
-      '<div class="main-head-icon">📖</div>' +
-      '<div class="main-head-meta"><div class="main-head-title">沁灵纪 · 主线</div>' +
-      '<div class="main-head-sub">九章 · 已看 ' + read + "/" + list.length +
-      (Spirits.MAIN_STORY_OPEN ? "" : " · 正文装帧中") + "</div></div></div>" +
-      '<div class="chap-prog"><i style="width:' + Math.round((read / Math.max(1, list.length)) * 100) + '%"></i></div>';
-    h += castEntryHtml();                          // v172：点戏入口卡（.chap-prog 后、.chap-list 前）
-    h += bookEntryHtml();                          // v180-G：〈结契篇〉入口卡（篇层；⛔ 与老 9 章并存、不取代）
-    h += '<div class="chap-list">';
-    list.forEach((ch) => {
-      if (!ch.unlocked) {
-        h += '<div class="chap-item locked"><span class="chap-ico">🔒</span>' +
-          '<div class="chap-body"><div class="chap-title">' + esc(ch.title) + "</div>" +
-          '<div class="chap-need">' + esc(ch.need || "还没到时候") + "</div></div></div>";
-        return;
-      }
-      const cur = !!(brief && !brief.ended && brief.chapId === ("m" + (ch.i + 1)));
-      const lastLine = cur && brief.last ? brief.last : null;
-      const sub = lastLine
-        ? ((lastLine.w === "me" ? "我：" : "") + String(lastLine.text || ""))
-        : (ch.read ? "点开可以再看一遍" : (ch.sub || ("第 " + ch.day + " 天 · 该发生了")));
-      const badge = cur ? '<span class="nt-badge on">看到一半</span>'
-        : (ch.read ? '<span class="chap-done">已看完</span>' : '<span class="chap-new">新</span>');
-      h += '<div class="chap-item talk' + (ch.read ? "" : " unread") + '" data-main="' + ch.i + '">' +
-        '<span class="chap-ico">' + esc(ch.icon) + "</span>" +
-        '<div class="chap-body"><div class="chap-title">' + esc(ch.title) + badge + "</div>" +
-        '<div class="chap-sub">' + esc(sub) + "</div></div>" +
-        '<span class="chap-arrow">›</span></div>';
-    });
-    h += "</div>";
-    if (unread) h += '<div class="chap-hint">📖 有 ' + unread + " 章新的 —— 你说的每一句都会记下来，影响后面的结局</div>";
-    else if (!Spirits.MAIN_STORY_OPEN) h += '<div class="chap-hint">九章正文正在装帧 —— 入口先放在这儿，装好就能从第一章读起。</div>';
-    view.innerHTML = h;
-    view.querySelectorAll(".chap-item[data-main]").forEach((el) => {
-      el.onclick = () => { location.hash = "#/maintalk/" + Number(el.dataset.main); };
-    });
-    view.querySelectorAll(".cast-entry").forEach((el) => {          // v172：点戏入口卡
-      el.onclick = () => { location.hash = el.dataset.goto || "#/maincast"; };
-    });
-    window.scrollTo(0, 0);
-  }
-  function renderMainTalkPage(chIdx) {
-    const i = Math.max(0, Number(chIdx) || 0);
-    const ctx = mainStoryCtx();
-    const list = Spirits.mainChapterState(ctx);
-    const ch = list[i];
-    if (!ch || !ch.unlocked) { location.hash = "#/main"; return; }
-    const back = "#/main";
-    return renderTalkPage({
-      immersive: true,         // v176：主线 = 沉浸 AVG（默认就是 true，显式写出 ⛔ 免得以后被默认值坑）
-      title: ch.title,
-      manual: true,
-      headAv: '<span class="main-av">📖</span>',
-      headName: "沁灵纪 · 第 " + (i + 1) + " 章",
-      headSub: ch.icon + " 第 " + ch.day + " 天 · " + (ch.sub || ""),
-      listLabel: "回到主线", listHash: back,
-      bg: Spirits.bgForChapter("ch" + (i + 1)),   // 章节 → BG key（⛔ 未出图 = 渐变兜底，不出图）
-      av: (w, m) => mainCastThumb(m) || '<span class="main-av">📿</span>',
-      // v169：当前说话人的整张立绘（行 → castOf[pid] → load()[id].imgUrl）；拿不到 = "" → 只显示 BG + 对话框，⛔ 不报错
-      // v170：优先透明抠图 rec.imgCut，无则回落原图 rec.imgUrl；⛔ 绝不返回进阶单张 CG（用户：用最新立绘，不用 CG）
-      portrait: (m) => {
-        try {
-          const pid = (m && m.ps && m.ps[0]) ? String(m.ps[0]) : "";   // sys/me → 无 ps → ""
-          if (!pid) return "";
-          const c = (Spirits.castOf() || {})[pid];
-          if (!c || !c.id) return "";
-          const rec = Spirits.load()[c.id] || {};
-          // v174：手抠立绘优先。⚠️ typeof 守卫：单测会「抽函数 + 沙箱」隔离运行本箭头，此时 maincharArtOf 不在作用域
-          const art = (typeof maincharArtOf === "function") ? maincharArtOf(rec) : null;
-          if (art) return art.f;
-          return rec.imgCut || rec.imgUrl || "";
-        } catch (e) { return ""; }
-      },
-      // v170：告诉 present「这张是不是透明抠图」→ 切 contain/站底（见 CSS [data-cut="1"]）。⛔ 不改 o.portrait 的字符串契约
-      portraitCut: (m) => {
-        try {
-          const pid = (m && m.ps && m.ps[0]) ? String(m.ps[0]) : "";
-          if (!pid) return false;
-          const c = (Spirits.castOf() || {})[pid];
-          if (!c || !c.id) return false;
-          return !!(Spirits.load()[c.id] || {}).imgCut;
-        } catch (e) { return false; }
-      },
-      // v174：手抠立绘 → 膝上取景；其余照旧（透明抠图 contain 站底）
-      frame: (m) => {
-        try {
-          const pid = (m && m.ps && m.ps[0]) ? String(m.ps[0]) : "";
-          if (!pid) return null;
-          const c = (Spirits.castOf() || {})[pid];
-          if (!c || !c.id) return null;
-          const art = (typeof maincharArtOf === "function") ? maincharArtOf(Spirits.load()[c.id] || {}) : null;
-          return art ? { mode: "knee", h: art.h, t: art.t } : null;
-        } catch (e) { return null; }
-      },
-      nameOf: () => "",                            // 群像剧本：说话人名字由行级 who 给（chapLine 已写进 m.name）
-      endTag: "第 " + (i + 1) + " 章 · 完",
-      endingExtra: () => (i === list.length - 1)
-        ? '<div class="nt-end-final">🪢 九章走完了一遍。剩下的日子，就是每天在，每天亮一点。</div>' : "",
-      backLabel: "回到主线", backHash: back,
-      enter: () => Spirits.mainTalkEnter(ctx, i),
-      choose: (k) => Spirits.mainTalkChoose(ctx, k),
-      replay: () => Spirits.mainTalkReplay(ctx, i),
-    });
-  }
 
   /* ============================================================
    * v180-G：《沁灵纪》「篇」层 —— **篇 ＞ 章 ＞ 段**
-   *   入口：#/main（沁灵纪 · 主线）页加一张〈结契篇〉入口卡 → #/book（篇目）→ #/bookread/<章>（阅读）
+   *   入口：首页与沁灵页的〈结契篇〉入口卡 → #/book（篇目）→ #/bookread/<章>（阅读）
    *   数据：Spirits.book*（读 window.BOOK_JIEQI，由 md 机械抽取）；进度落 ww_story.book（⛔ 不进逐串 rec）
    *   演出：复用 renderTalkPage —— 沉浸 AVG（BG + 立绘 + 对话框 + 手动点一下推进一段）
-   *   ⛔ 与老 9 章**并存**（老数据 / 老消费方 / 老入口一个字不动）
+   *   ⛔ 老 9 章已随 v180-L1 整体下线；本篇层（〈结契篇〉）是**唯一现役主线**
    *   ⛔ BG 只走 Spirits.bgGet（已出好的静态图），**绝不 ensureBg**
    *   ⛔ CG 只登记清单，**本批不出图**
    * ============================================================ */
@@ -8501,6 +8088,41 @@
       return { w: "sp", name: who, castName: who, speaker: String(L.role || who), text: t, slot: "C", seg: seg };
     }
     return { w: "sys", text: t, seg: seg };
+  }
+  /* v174 / v180-L1：主线手抠立绘（主理人自己抠的 9 张，按沁灵本名自动挂）
+     · f=文件；h=渲染高度(占立绘层高%)；t=图片顶边距(占层高%，负=向上出画)
+     · 公式：h = 0.88*1024/(0.71*本体高)；t = 0.12 − 本体头顶y*h/1024
+       0.88 = 头顶留 12% 呼吸位；0.71 = 人体「头顶→膝盖」占身高比
+     · ⚠️ 谢凝渲撑伞 —— 本体头顶 y=226（伞顶 y≈48 不是头），故 h/t 显著异于其余 8 位
+     · ⛔ 换图必须重算 h/t（尤其带手持道具的）
+     · v180-L1：本块**不随老主线删除** —— 〈结契篇〉阅读页（bookArtOf）仍旧消费它 */
+  var MAINCHAR_ART = {
+    "咸法酪": { f: "assets/mainchars/mc-xianfalao.png",   h: 132.8, t:   6.4 },
+    "柿宝":   { f: "assets/mainchars/mc-shibao.png",      h: 132.6, t:   6.8 },
+    "沈青舒": { f: "assets/mainchars/mc-shenqingshu.png", h: 130.6, t:   8.4 },
+    "粉黛熊": { f: "assets/mainchars/mc-fendaixiong.png", h: 131.1, t:   7.9 },
+    "苏栖盏": { f: "assets/mainchars/mc-suqizhan.png",    h: 131.9, t:   7.1 },
+    "谢凝渲": { f: "assets/mainchars/mc-xieningxuan.png", h: 164.2, t: -24.2 },
+    "金算盘": { f: "assets/mainchars/mc-jinsuanpan.png",  h: 133.6, t:   5.7 },
+    "陆临崖": { f: "assets/mainchars/mc-lulinyai.png",    h: 131.4, t:   7.5 },
+    "顾时笙": { f: "assets/mainchars/mc-gushisheng.png",  h: 129.8, t:   9.0 }
+  };
+  // v175 / v180：用户把几只改成了新姓名 —— 别名反查到旧键，⛔ 别让手抠立绘掉图
+  var MAINCHAR_ART_ALIAS = {
+    "楚柿遥": "柿宝",
+    "萧景筹": "金算盘",
+    "姜饴酌": "咸法酪",
+    "温茸之": "粉黛熊"
+  };
+  // v180 · C6 江冽茗（冰红茶）暂无手抠立绘键：maincharArtOf 返 null ⇒ 走 portrait 回落
+  //   `rec.imgCut || rec.imgUrl`（该沁灵自身的生成立绘），⛔ 非白板；仅当该串从未出图才是空。
+  //   故本轮**不新增 MAINCHAR_ART 键**（保住 _test_v174_mainchar 的「恰 9 键」契约）。待美术补 mc 图再加键。
+  function maincharArtOf(rec) {
+    var nm = String((rec && rec.name) || "").trim();
+    if (!nm) return null;
+    if (MAINCHAR_ART[nm]) return MAINCHAR_ART[nm];
+    var al = MAINCHAR_ART_ALIAS[nm];
+    return al ? (MAINCHAR_ART[al] || null) : null;
   }
   // 立绘解析：① 核心 10 位走 MAINCHAR_ART（手抠）；② 其余按显示名找那一串 ⇒ rec.imgCut || rec.imgUrl
   //   ⛔ 无专属立绘键者（在册同伴 6 只）一律走 ②；⛔ 不新增 MAINCHAR_ART 键、不加错别名
@@ -8530,7 +8152,7 @@
     return { src: "", cut: false, knee: null };
   }
 
-  // #/main 页的〈结契篇〉入口卡
+  // 〈结契篇〉入口卡（现役主线；首页与沁灵页共用）
   function bookEntryHtml() {
     let bks = [];
     try { if (Spirits && typeof Spirits.booksAll === "function") bks = Spirits.booksAll() || []; } catch (e) { bks = []; }
@@ -8549,7 +8171,7 @@
 
   function renderBookPage() {
     const bk = Spirits.bookOf(BOOK_ID);
-    if (!bk) { location.hash = "#/main"; return; }          // 数据缺失 ⇒ 退回主线，⛔ 不白屏
+    if (!bk) { location.hash = "#/"; return; }              // v180-L1：数据缺失 ⇒ 退回首页，⛔ 不白屏
     topbarTitle.textContent = "📖 " + bk.name;
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
@@ -8595,7 +8217,7 @@
   function renderBookReadPage(chIdx) {
     const i = Math.max(0, Number(chIdx) || 0);
     const bk = Spirits.bookOf(BOOK_ID);
-    if (!bk) { location.hash = "#/main"; return; }
+    if (!bk) { location.hash = "#/"; return; }
     const list = Spirits.bookChapterState(BOOK_ID);
     const ch = list[i];
     if (!ch || !ch.unlocked) { location.hash = "#/book"; return; }
@@ -9947,28 +9569,8 @@
     const planHtml = renderPlayPlanSection();
     if (planHtml) html += planHtml;
 
-    // ===== v165-N3：《沁灵纪 · 主线》独立入口（用户裁定：取消详情页里的旧 8 章入口，改用这个） =====
-    // ⚠️ 受 MAIN_STORY_OPEN 控制：正文没装帧时**整块不渲染** ——
-    //    绝不让用户撞见「一个大卡片，点进去九章全写『正文还没装帧』」的半成品状态。
-    if (Spirits.MAIN_STORY_OPEN) {
-      const _mCtx = mainStoryCtx();
-      const _mList = Spirits.mainChapterState(_mCtx);
-      const _mRead = _mList.filter((c) => c.read).length;
-      const _mUnread = Spirits.mainUnreadCount(_mCtx);
-      const _mNext = _mList.filter((c) => !c.read)[0] || null;
-      html += '<button class="main-entry" id="mainEntry">' +
-        '<span class="main-entry-ico">📖</span>' +
-        '<span class="main-entry-body">' +
-        '<span class="main-entry-title">沁灵纪 · 主线' +
-        (_mUnread ? '<span class="main-entry-dot">' + _mUnread + "</span>" : "") + "</span>" +
-        '<span class="main-entry-sub">' +
-        (Spirits.MAIN_STORY_OPEN
-          ? (_mNext ? ("下一章 · " + esc(_mNext.title) + "（第 " + _mNext.day + " 天）") : "九章都看完了")
-          : "九章正文装帧中 · 入口先放这儿") +
-        " · 已看 " + _mRead + "/" + _mList.length +
-        "</span></span>" +
-        '<span class="main-entry-arrow">›</span></button>';
-    }
+    // ===== v180-L1：现役主线 = 《结契篇》入口卡（旧 9 章《沁灵纪》入口已整条下线） =====
+    try { if (typeof bookEntryHtml === "function") html += bookEntryHtml(); } catch (e) { /* 静默 */ }
 
     html += '<div style="display:flex;gap:8px;margin-bottom:12px">' +
       '<button class="batch-entry" id="btnBatch" style="flex:1">🗂 批量录入</button>' +
@@ -10219,9 +9821,10 @@
       const plan = document.querySelector(".plan-card");
       if (plan) plan.scrollIntoView({ behavior: "smooth", block: "center" });
     };
-    // v165-N3：《沁灵纪 · 主线》独立入口 → #/main
-    const me = $("#mainEntry");
-    if (me) me.onclick = () => { location.hash = "#/main"; };
+    // v180-L1：〈结契篇〉入口卡（首页）→ #/book
+    view.querySelectorAll(".cast-entry[data-goto]").forEach((el) => {
+      el.onclick = () => { location.hash = el.dataset.goto || "#/book"; };
+    });
     // 折叠筛选面板（展开态持久化，点击筛选 chip 不收起）
     const ft = $("#filterToggle");
     if (ft) ft.onclick = () => {
@@ -11727,9 +11330,6 @@ else if (h.indexOf("#/night/") === 0) {                                         
       else renderThreadPage(seg[0]);
     }
     
-    else if (h === "#/main") renderMainPage();                                                   // v165-N3：沁灵纪 · 主线（独立入口 · 9 章）
-    else if (h === "#/maincast") renderMainCastPage();                                            // v172：主线选角（点戏 · 谁扮谁）
-    else if (h.indexOf("#/maintalk/") === 0) renderMainTalkPage(Number(h.slice(11)) || 0);        // v165-N3：新 9 章对话页
     else if (h === "#/book") renderBookPage();                                                   // v180-G：篇目页（篇 ＞ 章 ＞ 段）
     else if (h.indexOf("#/bookread/") === 0) renderBookReadPage(Number(h.slice(11)) || 0);        // v180-G：章内阅读页
     else if (h.indexOf("#/talk/") === 0) {                                                        // v161：旧 8 章（⛔ 入口已取消，直接回沁灵页）
@@ -11852,11 +11452,9 @@ else if (h.indexOf("#/night/") === 0) {                                         
       location.hash = "#/spirit/" + h.slice(7).split("/")[0];
       return;
     }
-    if (h.indexOf("#/maintalk/") === 0) { location.hash = "#/main"; return; }   // v165-N3：章节对话 → 主线列表
     if (h.indexOf("#/bookread/") === 0) { location.hash = "#/book"; return; }   // v180-G：章内阅读 → 篇目
-    if (h === "#/book") { location.hash = "#/main"; return; }                   // v180-G：篇目 → 主线列表
+    if (h === "#/book") { location.hash = "#/"; return; }                       // v180-L1：篇目 → 首页
     if (h === "#/main") { location.hash = "#/"; return; }                       // v165-N3：主线列表 → 首页
-    if (h === "#/maincast") { location.hash = "#/main"; return; }                // v172：选角页 → 主线列表
     if (h === "#/spirits") { location.hash = "#/spirit"; return; }        // 全部沁灵 → 回到小房间
     if (h === "#/settings" || h === "#/profile" || h === "#/new" || h === "#/cat" || h === "#/stats" || h === "#/quest" || h === "#/spirit") { location.hash = "#/"; return; }
     if (h.startsWith("#/box/")) { location.hash = "#/cat"; return; }
@@ -12088,6 +11686,10 @@ else if (h.indexOf("#/night/") === 0) {                                         
       applyFocusChrome();   // 文玩专注模式：隐藏「分类」tab
       initToTop();        // 回到顶部按钮（滚动后出现）
       bindSoftToggles();  // 卡片/列表里直接改软糯程度
+      // v180-L1：老主线《沁灵纪》1–9 章已整条下线 —— 一次性幂等清掉只被老主线读写的 flag
+      //   （STANCE_CH1/CH2_FAVOR/CH4_LOOKED/STANCE_CH5/STANCE_CH6/STANCE_CH9 + rec.starMark）
+      //   ⛔ 不碰 ww_story.book、FORK_STANCE/KEY_CHOICES、rec.flags.stance、三禁（marks/cgs/mainIds）
+      try { if (typeof Spirits.mainPurgeOld === "function") Spirits.mainPurgeOld(); } catch (e) { /* 静默 */ }
       // 网络状态监听：不稳/断开时顶部显示提示条，恢复后自动重新同步
       if (DB.onNetChange) { try { DB.onNetChange(onNetRecovered); } catch (e) { /* 忽略 */ } }
       bindOnlineRecovery();

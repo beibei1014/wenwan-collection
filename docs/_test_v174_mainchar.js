@@ -40,9 +40,9 @@ function extractArt(src) {
 /* 同套标记断言（当前区 / 铆定基线 共用） */
 function markers(appSrc, cssSrc) {
   return [
-    /* v180-G：〈结契篇〉阅读页也走「点一下推一段」⇒ 手动档位从 1 处变 2 处。
+    /* v180-L1：老主线《沁灵纪》9 章整条下线 ⇒ 现役主线只剩〈结契篇〉阅读页一处手动推进。
        ⛔ 仍是**精确计数**（不是 ≥1）：新增/丢失一个手动阅读器都会红，比原来更严。 */
-    { n: "manual: true 恰 2 次（主线 + 结契篇阅读页）", p: (appSrc.match(/manual:\s*true/g) || []).length === 2 },
+    { n: "manual: true 恰 1 次（现役主线〈结契篇〉阅读页）", p: (appSrc.match(/manual:\s*true/g) || []).length === 1 },
     { n: "含 const MANUAL", p: appSrc.indexOf("const MANUAL") >= 0 },
     { n: "含 awaiting", p: appSrc.indexOf("awaiting") >= 0 },
     { n: "含 dataset.frame（→ DOM data-frame 属性）", p: appSrc.indexOf("dataset.frame") >= 0 },

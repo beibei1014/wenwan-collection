@@ -8,8 +8,8 @@
  *      (3) 第 3–4 章出现「主人」（称呼已烤死在正文，⛔ 不做运行时替换）
  *      (4) BG 只用已有 key（⛔ 绝不 ensureBg / 不出图）；CG 候选只登记
  *      (5) 立绘口径：核心 10 位走 MAINCHAR_ART；⛔ 未新增立绘键、未加错别名
- *      (6) 引擎与界面接线：book* 已导出、路由 / 返回 / #/main 入口卡到位
- *      (7) 进度落 ww_story.book（⛔ 不进逐串 rec）；老 9 章数据未动
+ *      (6) 引擎与界面接线：book* 已导出、路由 / 返回 / 首页〈结契篇〉入口卡到位
+ *      (7) 进度落 ww_story.book（⛔ 不进逐串 rec）；v180-L1：老 9 章已整体下线
  *
  * 只按源码字符串 + 数据文件跑判定：不 require/运行整个 app.js、不依赖 DOM。
  * 用法： node docs/_test_v180_book.js
@@ -274,28 +274,30 @@ ok(!!mExp, "spirits.js 已导出 book* 一组");
 ["renderBookPage", "renderBookReadPage", "bookEntryHtml", "bookMsgOf", "bookArtOf"].forEach((fn) => {
   ok(new RegExp("function " + fn + "\\(").test(APP), "app.js 定义 " + fn + "()");
 });
-ok(/h \+= bookEntryHtml\(\);/.test(APP), "#/main 页（renderMainPage）挂了〈结契篇〉入口卡");
+ok(/if \(typeof bookEntryHtml === "function"\) html \+= bookEntryHtml\(\);/.test(APP), "v180-L1：〈结契篇〉入口卡改挂**首页**（旧 #/main 页已下线）");
 ok(/else if \(h === "#\/book"\) renderBookPage\(\);/.test(APP), "路由 #/book → renderBookPage");
 ok(/#\/bookread\//.test(APP) && /renderBookReadPage\(Number\(h\.slice\(11\)\)/.test(APP), "路由 #/bookread/<章> → renderBookReadPage");
 ok(/if \(h\.indexOf\("#\/bookread\/"\) === 0\) \{ location\.hash = "#\/book"; return; \}/.test(APP), "返回：章内阅读 → 篇目");
-ok(/if \(h === "#\/book"\) \{ location\.hash = "#\/main"; return; \}/.test(APP), "返回：篇目 → 主线列表");
+ok(/if \(h === "#\/book"\) \{ location\.hash = "#\/"; return; \}/.test(APP), "v180-L1：返回：篇目 → 首页（旧 #/main 已下线）");
 ok(/js\/book-jieqi\.js\?v=/.test(HTML), "index.html 挂了 js/book-jieqi.js");
 ok(HTML.indexOf("js/book-jieqi.js") < HTML.indexOf("js/spirits.js"), "book-jieqi.js 排在 spirits.js 之前（先挂数据再挂引擎）");
 ok(/manual: true/.test(bookSrc) && /immersive: true/.test(bookSrc), "阅读页 = 沉浸 AVG + 手动推进（点一下下一段）");
 ok(/onLine: \(m\) => \{[\s\S]{0,160}bookMark\(BOOK_ID, i/.test(bookSrc), "逐段进度回写（onLine → bookMark）");
 
 /* ---------- (7) 进度落 ww_story · 不进 rec · 老 9 章未动 ---------- */
-section("7 · 进度落 ww_story.book（⛔ 不进逐串 rec）· 老 9 章并存未动");
+section("7 · 进度落 ww_story.book（⛔ 不进逐串 rec）· v180-L1：老 9 章已下线");
 ok(/w\.book\[bookId\] = p;/.test(SP) && /writeStory\(w\);/.test(SP), "bookMark 只写 ww_story.book（readStory/writeStory）");
 const mMark = /function bookMark\(bookId, chIdx, seg\) \{[\s\S]*?\n  \}/.exec(SP);
 const markSrc = mMark ? mMark[0] : "";
 ok(markSrc.length > 0, "能抽出 bookMark 全函数");
 ok(!/ensureIn|rec\.|load\(\)/.test(markSrc), "⛔ bookMark 不碰逐串 rec（无 ensureIn / rec. / load()）");
-ok(/const MAIN_CHAPTERS = \[/.test(SP), "⛔ 老 9 章 MAIN_CHAPTERS 仍在（并存，未删）");
-ok(/const MAIN_SCRIPTS = \[CH01/.test(SP), "⛔ 老 9 章 MAIN_SCRIPTS 仍在");
-ok(/const MAIN_ACTS = MAIN_CHAPTERS\.map/.test(SP), "⛔ 老 9 章 MAIN_ACTS 仍在");
-ok(!/#\/maintalk\/"\)\s*=== 0\) renderMainTalkPage/.test(APP) === false || /#\/maintalk\//.test(APP), "⛔ 老 9 章 #/maintalk 路由仍在");
-ok(/h \+= castEntryHtml\(\);/.test(APP), "⛔ 老点戏入口仍在（未被篇入口取代）");
+ok(!/const MAIN_CHAPTERS = \[/.test(SP), "v180-L1：老 9 章 MAIN_CHAPTERS 已删除");
+ok(!/const MAIN_SCRIPTS = \[CH01/.test(SP), "v180-L1：老 9 章 MAIN_SCRIPTS 已删除");
+ok(!/const MAIN_ACTS = MAIN_CHAPTERS\.map/.test(SP), "v180-L1：老 9 章 MAIN_ACTS 已删除");
+ok(!/h === "#\/maincast"/.test(APP) && !/h\.indexOf\("#\/maintalk\/"\)/.test(APP), "v180-L1：老 9 章 #/maintalk / #/maincast 路由已删除");
+ok(!/h \+= castEntryHtml\(\);/.test(APP), "v180-L1：老点戏入口已随选角页下线");
+ok(/const MAIN_OLD_STORY_KEYS/.test(SP) && /mainPurgeOld/.test(SP),
+  "v180-L1：新增 mainPurgeOld（老主线专属 flag 一次性幂等清理）");
 
 /* ---------- (8) 引擎真跑：vm 沙箱里加载 js/book-jieqi.js + js/spirits.js 实调 book* ---------- */
 section("8 · 引擎真跑（vm 沙箱实调 Spirits.book*）");
@@ -444,7 +446,7 @@ section("9 · 界面真跑（入口卡 / 篇目页 真出 HTML）");
       vm2.runInContext(extractFn("bookEntryHtml") + "\n" + extractFn("renderBookPage") + "\n", ctx2, { filename: "v180g-ui" });
     } catch (e) { ok(false, "界面真跑：抽函数脚本执行失败（" + e.message + "）"); boot = false; }
     if (boot) {
-      /* ① #/main 入口卡 */
+      /* ① 〈结契篇〉入口卡（v180-L1 起挂首页；函数本身仍在 app.js） */
       const h1 = String(ctx2.bookEntryHtml() || "");
       ok(h1.indexOf('data-goto="#/book"') >= 0, "入口卡 data-goto=#/book（玩家点它进篇）");
       ok(h1.indexOf("结契") >= 0, "入口卡显示篇名（含「结契」）");

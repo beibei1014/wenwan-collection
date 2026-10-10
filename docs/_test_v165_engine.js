@@ -70,28 +70,30 @@ function resetAll() {
 }
 
 /* ---------- P0-1 行级 who 的真实覆盖在下方 ch3 剧本路径 ---------- */
-section("P0-1 前置：章节入口齐备");
+section("P0-1 前置：共享剧本引擎齐备（v180-L1：老主线幕表已删 ⇒ 本测试自带幕表）");
 {
   ok(typeof S.chapWalk === "function", "chapWalk 导出（共享剧本推进引擎）");
   ok(typeof S.chapTalkChoose === "function", "chapTalkChoose 导出");
-  ok(Array.isArray(S.MAIN_ACTS) && S.MAIN_ACTS.length >= 3, "MAIN_ACTS 可注入（实得 " + (S.MAIN_ACTS || []).length + " 章）");
+  ok(typeof S.mainActOf === "undefined" && typeof S.MAIN_ACTS === "undefined",
+    "v180-L1：老主线 MAIN_ACTS / mainActOf 已删除（改由本测试自带幕表 ACTS 驱动）");
 }
 
-/* ---------- 真实剧本注入：把 CH03 塞进 MAIN_ACTS[2]（v178：旧 8 章 CHAP_ACTS 已删，改用新 9 章剧本表） ---------- */
-// MAIN_ACTS 由 MAIN_CHAPTERS×MAIN_SCRIPTS 派生；节点对象可整体替换（测试专用）
+/* ---------- v180-L1：老主线幕表（MAIN_ACTS / mainActOf）已删 ⇒ 本测试自带一本幕表 ---------- */
+// chapWalk(item, rec, ctx, actOf)：actOf(chapId) 返回 { id, i, nodes }；节点对象可整体替换（测试专用）
+const ACTS = {};
 function injectChapter(idx, nodes) {
-  S.MAIN_ACTS[idx].nodes = nodes;
+  ACTS["m" + (idx + 1)] = { id: "m" + (idx + 1), i: idx, nodes: nodes };
 }
-// v178：旧 chapTalkEnter 走的是已删除的 CHAP_ACTS；这里改为直接驱动共享引擎 chapWalk + mainActOf
+function actOf(id) { return ACTS[id] || null; }
 function enterMain(rec, i) {
-  if (typeof S.chapWalk !== "function" || typeof S.mainActOf !== "function") return { added: [], choices: [], ending: null, ended: true };
+  if (typeof S.chapWalk !== "function") return { added: [], choices: [], ending: null, ended: true };
   rec.talk = { chapId: "m" + (i + 1), node: "start", log: [], msgs: 0, ended: false, ending: null, tone: "", at: Date.now() };
   try { if (typeof S.castOf === "function") S.castOf(); } catch (e) {}
-  return S.chapWalk(ITEM, rec, CTX, S.mainActOf) || {};
+  return S.chapWalk(ITEM, rec, CTX, actOf) || {};
 }
 function chooseMain(rec, k) {
-  if (typeof S.chapTalkChoose !== "function" || typeof S.mainActOf !== "function") return { fb: "" };
-  return S.chapTalkChoose(ITEM, rec, CTX, k, S.mainActOf) || { fb: "" };
+  if (typeof S.chapTalkChoose !== "function") return { fb: "" };
+  return S.chapTalkChoose(ITEM, rec, CTX, k, actOf) || { fb: "" };
 }
 
 const CH03 = {
@@ -437,16 +439,15 @@ section("P1-6 背景⛔ 只读 bgGet：绝不调 ensureBg（不触发出图 API 
 }
 
 /* ================= P1 · CHAPTERS 8→9 天数锚点（施工项 8） ================= */
-section("P1-8 主线 1–9 章天数锚点（⛔ 硬编码，岁除按日历事件）");
+section("P1-8 v180-L1：老主线天数锚点 / 章节表已删除（⛔ 硬编码不复活）");
 {
-  ok(Array.isArray(S.MAIN_DAY_ANCHOR), "MAIN_DAY_ANCHOR 导出");
-  const a = S.MAIN_DAY_ANCHOR || [];
-  ok(a.length === 7, "ch3..ch9 共 7 个锚点（实得 " + a.length + "）");
-  ok(JSON.stringify(a) === JSON.stringify([20, 45, 62, 78, 95, 108, 120]),
-     "锚点 = 20/45/62/78/95/108/120（实得 " + JSON.stringify(a) + "）");
-  ok(a.every((n, i) => i === 0 || n > a[i - 1]), "锚点单调递增（倒计时可算）");
-  // CHAPTERS 仍是 8 章（正文挂载待 A/B 裁决，⛔ 不先塞空章）
-  ok(Array.isArray(S.CHAPTERS) && S.CHAPTERS.length === 8, "CHAPTERS 仍 8 章（实得 " + (S.CHAPTERS || []).length + "）");
+  ok(typeof S.MAIN_DAY_ANCHOR === "undefined", "MAIN_DAY_ANCHOR 不再导出（老主线 1–9 章锚点已删）");
+  ok(typeof S.MAIN_CHAPTERS === "undefined", "MAIN_CHAPTERS 不再导出");
+  ok(typeof S.MAIN_SCRIPTS === "undefined", "MAIN_SCRIPTS 不再导出");
+  ok(typeof S.mainChapterState === "undefined" && typeof S.mainUnreadCount === "undefined",
+    "mainChapterState / mainUnreadCount 不再导出");
+  // CHAPTERS 元数据仍 8 章（readChapter 复用取章末事件标题）
+  ok(Array.isArray(S.CHAPTERS) && S.CHAPTERS.length === 8, "CHAPTERS 元数据仍 8 章（readChapter 复用，实得 " + (S.CHAPTERS || []).length + "）");
 }
 
 process.exitCode = summary() ? 0 : 1;

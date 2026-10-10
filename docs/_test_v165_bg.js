@@ -214,7 +214,7 @@ function newS() { const c = H.makeContext(); H.loadFile(c.ctx, SPIRITS_SRC); ret
     const cssSrc = fs.readFileSync(path2.join(__dirname, "..", "css", "skin.css"), "utf8");
     ok(/class="scenebg/.test(appSrc) && /id="sceneBgLayer"/.test(appSrc), "renderTalkPage 内插入 .scenebg 背景层（id=sceneBgLayer）");
     ok(/sceneBgUrl\(o\.bg\)/.test(appSrc), "renderTalkPage 按 o.bg 选图（未出图 → noimg 兜底）");
-    ok(/bg:\s*Spirits\.bgForChapter\("ch"\s*\+\s*\(i\s*\+\s*1\)\)/.test(appSrc), "renderChapTalkPage 传入章节 → BG 映射");
+    ok(/bg:\s*Spirits\.bookBgKeys\(BOOK_ID,\s*i\)/.test(appSrc), "renderBookReadPage 传入章节 → BG 映射（bg: Spirits.bookBgKeys）");
     ok(/id="btnBgAll"/.test(appSrc) && /一键出全套 BG/.test(appSrc), "设置页有「一键出全套 BG」入口");
     ok(/function\s+generateAllBg/.test(appSrc) && /function\s+ensureBg/.test(appSrc), "app.js 定义 ensureBg / generateAllBg（批量 + 失败可续）");
     ok(/toStore:/.test(appSrc) && /imageToStoreUrl/.test(appSrc), "ensureBg 复用 imageToStoreUrl（上云 → 永久 URL / data URI 兜底）");

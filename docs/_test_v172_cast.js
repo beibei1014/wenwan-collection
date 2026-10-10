@@ -255,18 +255,16 @@ section("E · 🔴 {ta} 跟随 cast（同名 persona 多只 + 手动指定非入
     c1: { choices: [{ t: "这一步，我替{ta}定。", go: "D1", rset: { sweet: { stance: "DECIDE" } } }] },
     D1: { lines: [{ w: "sp", at: "L", who: "最小的", ps: ["sweet"], t: "……好。" }], end: true },
   };
-  // 负向对照兜底：很老的基线没有 MAIN_ACTS / mainTalkEnter ⇒ 不崩，让断言如实 FAIL
-  const injected = (function () {
-    const a = S.MAIN_ACTS;
-    if (!a || !a[0]) return false;
-    a[0].nodes = JSON.parse(JSON.stringify(NODES));
-    return true;
-  })();
+  // v180-L1：老主线 mainTalkEnter / MAIN_ACTS 已删 ⇒ 直接驱动共享引擎 chapWalk（自带一幕表）
+  const ACT = { id: "m1", i: 0, nodes: JSON.parse(JSON.stringify(NODES)) };
+  const actOf = (id) => (id === "m1" ? ACT : null);
   let r = null, e2 = null;
-  if (injected && typeof S.mainTalkEnter === "function") {
-    try { r = S.mainTalkEnter({ dayNo: 20 }, 0); } catch (e) { e2 = e; }
-  } else { e2 = new Error("基线缺少 MAIN_ACTS / mainTalkEnter（负向对照）"); }
-  ok(!e2, "mainTalkEnter 不抛错" + (e2 ? " —— " + e2.message : ""));
+  const rec = { look: { pers: "sweet" }, persona: { id: "sweet", name: "大姑娘" }, bond: 99, stage: 2,
+    talk: { chapId: "m1", node: "start", log: [], msgs: 0, ended: false, ending: null, tone: "", at: Date.now() } };
+  if (typeof S.chapWalk === "function") {
+    try { r = S.chapWalk({ name: "小叶紫檀" }, rec, { dayNo: 20 }, actOf); } catch (e) { e2 = e; }
+  } else { e2 = new Error("chapWalk 缺失（负向对照）"); }
+  ok(!e2, "chapWalk 驱动一幕不抛错" + (e2 ? " —— " + e2.message : ""));
   const txt = ((r && r.added) || []).map((m) => m.text).join("|");
   ok(txt.indexOf("路是 二姑娘 自己的。") >= 0,
     "★ 剧本 {ta} 展开 = 手动那只「二姑娘」（实得：" + txt + "）");
@@ -284,11 +282,9 @@ section("E · 🔴 {ta} 跟随 cast（同名 persona 多只 + 手动指定非入
  * ====================================================================== */
 section("F · m.castName：who 计数不变 + castName 取自 cast 里那只");
 {
-  // 静态：CH0N 块内 who: 仍恰好 170 处（_test_v165n2_script.js:102 同口径）
+  // v180-L1：老主线 CH0N 剧本块已整体删除 ⇒ 原「who 计数 170」静态契约随之退役
   const blocks = spSrc.match(/^const CH0[1-9] = \{[\s\S]*?^\};/gm) || [];
-  const whoN = (blocks.join("\n").match(/who:/g) || []).length;
-  ok(blocks.length === 9, "源码切出 9 个 CH0N 块（实测 " + blocks.length + "）");
-  ok(whoN === 170, "★ CH0N 块内 who: 仍恰好 170 处（⛔ 改名方案不得动剧本，实测 " + whoN + "）");
+  ok(blocks.length === 0, "老主线 CH0N 剧本块已删除（实测 " + blocks.length + "）");
 
   const { S, c } = newS();
   resetAll(c);
@@ -303,17 +299,16 @@ section("F · m.castName：who 计数不变 + castName 取自 cast 里那只");
     c1: { choices: [{ t: "好。", go: "D1" }] },
     D1: { lines: [{ w: "sys", t: "这一夜过完。" }], end: true },
   };
-  const injected = (function () {
-    const a = S.MAIN_ACTS;
-    if (!a || !a[0]) return false;
-    a[0].nodes = JSON.parse(JSON.stringify(NODES));
-    return true;
-  })();
+  // v180-L1：改用共享引擎 chapWalk（自带一幕表）
+  const ACT = { id: "m1", i: 0, nodes: JSON.parse(JSON.stringify(NODES)) };
+  const actOf = (id) => (id === "m1" ? ACT : null);
   let r = null, e = null;
-  if (injected && typeof S.mainTalkEnter === "function") {
-    try { r = S.mainTalkEnter({ dayNo: 20 }, 0); } catch (x) { e = x; }
-  } else { e = new Error("基线缺少 MAIN_ACTS / mainTalkEnter（负向对照）"); }
-  ok(!e, "mainTalkEnter 不抛错" + (e ? " —— " + e.message : ""));
+  const rec = { look: { pers: "sweet" }, persona: { id: "sweet", name: "大姑娘" }, bond: 99, stage: 2,
+    talk: { chapId: "m1", node: "start", log: [], msgs: 0, ended: false, ending: null, tone: "", at: Date.now() } };
+  if (typeof S.chapWalk === "function") {
+    try { r = S.chapWalk({ name: "小叶紫檀" }, rec, { dayNo: 20 }, actOf); } catch (x) { e = x; }
+  } else { e = new Error("chapWalk 缺失（负向对照）"); }
+  ok(!e, "chapWalk 驱动一幕不抛错" + (e ? " —— " + e.message : ""));
   const m0 = ((r && r.added) || [])[0] || {};
   ok(m0.name === "最小的",
     "⛔ m.name 仍是行级 who「最小的」（实得 " + JSON.stringify(m0.name) + "）");
@@ -460,9 +455,9 @@ section("I1 · CHAP_CAST_DESC（编剧定稿 · ⛔ 一字不改 · 键 = MAIN �
   ok(MAIN7.every((p) => !String(d[p] || "").startsWith("这位在戏里")),
     "⛔ 删掉了「这位在戏里 —— 」前缀（美术裁定：后台味引导词）");
   ok(!spSrc.includes("这位在戏里"), "⛔ 源码里没有「这位在戏里」字样");
-  // ⛔ UI 侧不许硬编码、不许默认值兜底
-  ok(appSrc.indexOf("CHAP_CAST_DESC") >= 0, "UI 引用 CHAP_CAST_DESC（而非硬编码）", "B");
-  ok(MAIN7.every((p) => appSrc.indexOf(CAST_DESC[p]) < 0),
+  // v180-L1：老主线选角页已下线 ⇒ app.js 不再引用选角常量（引擎常量仍在 spirits.js）
+  ok(appSrc.indexOf("CHAP_CAST_DESC") < 0, "app.js 不再引用 CHAP_CAST_DESC（选角界面已随 L1 下线）", "B");
+    ok(MAIN7.every((p) => appSrc.indexOf(CAST_DESC[p]) < 0),
     "⛔ app.js 未硬编码这 7 句原文（UI 只消费常量）", "B");
   ok(!/CHAP_CAST_DESC\s*\[[^\]]+\]\s*\|\|/.test(appSrc),
     "⛔ 取值无 `|| 默认值` 兜底（缺 key 就不渲染那句说明，绝不填占位假文案）", "B");
@@ -496,9 +491,9 @@ section("I2 · 界面文案常量 CHAP_CAST_COPY（⛔ 同样不许硬编码进 
   Object.keys(CAST_COPY).forEach(function (k) {
     ok(appSrc.indexOf(CAST_COPY[k]) < 0, "⛔ app.js 未硬编码文案 " + k + "（应取 CHAP_CAST_COPY）", "B");
   });
-  ok(appSrc.indexOf("CHAP_CAST_COPY") >= 0, "UI 引用 CHAP_CAST_COPY", "B");
-  ok(appSrc.indexOf("CAST_NO_PERSONA_TAG") >= 0, "UI 引用 CAST_NO_PERSONA_TAG（不硬编码「性子还藏着」）", "B");
-  ok(appSrc.indexOf("性子还藏着") < 0, "⛔ app.js 未硬编码「性子还藏着」", "B");
+  ok(appSrc.indexOf("CHAP_CAST_COPY") < 0, "app.js 不再引用 CHAP_CAST_COPY（选角界面已随 L1 下线）", "B");
+  ok(appSrc.indexOf("CAST_NO_PERSONA_TAG") < 0, "app.js 不再引用 CAST_NO_PERSONA_TAG", "B");
+    ok(appSrc.indexOf("性子还藏着") < 0, "⛔ app.js 未硬编码「性子还藏着」", "B");
 }
 
 section("I3 · 状态钩子语义（⛔ 别让朱印和徽标同框）");
@@ -523,40 +518,25 @@ section("I3 · 状态钩子语义（⛔ 别让朱印和徽标同框）");
 }
 
 /* ========================================================================
- * 阶段二 · app.js 界面层静态挂点（现在应该红，等【阶段二】实现后转绿）
+ * 阶段二 · v180-L1：老主线选角界面（#/maincast）整条下线
  * ====================================================================== */
-section("阶段二 · app.js 界面层挂点（静态）");
+section("阶段二 · v180-L1：app.js 里选角界面已删干净（引擎侧 castOf 保留）");
 {
-  ok(appSrc.indexOf("#/maincast") >= 0, "B1 路由 #/maincast 已挂（插在 #/main 旁）", "B");
-  ok(/function renderMainCastPage/.test(appSrc), "B2 renderMainCastPage 存在", "B");
-  ok(/#\/maincast[\s\S]{0,200}?location\.hash\s*=\s*"#\/main"/.test(appSrc) ||
-     /location\.hash === "#\/maincast"[\s\S]{0,120}?#\/main/.test(appSrc),
-    "B3 返回栈补了 #/maincast → #/main", "B");
-  ok(/castName/.test(appSrc), "B4 名牌层渲染 m.castName（小字补本名）", "B");
-  ok(/spiritThumbCgHtml/.test(appSrc) && /cast-opt|cast-pick|cast-sheet/.test(appSrc),
-    "B5 选角页用 spiritThumbCgHtml 缩略图 + cast-* 类名", "B");
-  ok(/spiritItems\(\)/.test(appSrc) && !/stage\s*>=\s*1/.test(appSrc.split("function renderMainCastPage")[1] || ""),
-    "B6 候选取 spiritItems()（⛔ 不用 stage >= 1 判定）", "B");
+  ok(appSrc.indexOf('h === "#/maincast"') < 0, "B1 路由 #/maincast 已删除", "B");
+  ok(!/function renderMainCastPage/.test(appSrc), "B2 renderMainCastPage 已删除", "B");
+  ok(!/function castEntryHtml/.test(appSrc) && !/function openCastSheet/.test(appSrc),
+    "B3 选角入口卡 / 自绘面板函数已删除", "B");
+  ok(appSrc.indexOf("cast-sheet") < 0 && appSrc.indexOf("cast-opt") < 0 && appSrc.indexOf("cast-pick") < 0,
+    "B4 选角 DOM 类名已无残留", "B");
+  ok(/castName/.test(appSrc), "B5 名牌层仍渲染 m.castName（共享 renderTalkPage 保留）", "B");
+  ok(/spiritThumbCgHtml/.test(appSrc), "B6 spiritThumbCgHtml 仍在（沁灵卡片在用）", "B");
   ok(/setMainStory/.test(appSrc), "B7 ⛔ #/mainstory 的 setMainStory 未被动过（mainIds 归它管）", "B");
-  ok(/_spiritsDirty = true/.test(appSrc), "B8 保存后置脏（照抄 app.js:4357 先例）", "B");
-
-  // v172 定稿：新增类名 + 状态钩子（美术定的，实现要同步）
-  // ⚠️ 收紧到「cast 上下文」内匹配：项目里本来就有别的 .is-* 类，整文件 indexOf 会误绿
+  // CSS 类名保留（无害历史样式），只锁「app.js 不再挂这些钩子」
   const castCss = (cssAll.match(/[^\n}]*cast[^\n]*/g) || []).join("\n");
-  const castBody = appSrc.split("function renderMainCastPage")[1] || "";
-  [".cast-head", ".cast-auto-tag", ".cast-count-line"].forEach((cls) => {
-    ok(castCss.indexOf(cls) >= 0, "B9 CSS 含 " + cls, "B");
-  });
-  [".is-picked", ".is-auto", ".is-fill", ".is-empty"].forEach((cls) => {
-    ok(castCss.indexOf(cls) >= 0, "B10 CSS 状态钩子含 " + cls, "B");
-    ok(castBody.indexOf(cls) >= 0, "B11 renderMainCastPage 挂了 " + cls, "B");
-  });
   ok(/cast-auto-tag[\s\S]{0,240}?display:\s*none/.test(cssAll) ||
      /display:\s*none[\s\S]{0,160}?cast-auto-tag/.test(cssAll),
-    "B12 ⛔ 互斥保险：.cast-auto-tag 有 display:none 兜底（朱印与徽标不得同框）", "B");
-  // ⛔ UI 不许自己猜状态：直接取 castOf() 条目的 fill / near / manual
-  ok(/[\.\[]"?fill"?\b/.test(castBody) && /[\.\[]"?manual"?\b/.test(castBody),
-    "B13 状态取自条目的 fill / manual（⛔ 不自己猜）", "B");
+    "B8 ⛔ 互斥保险：.cast-auto-tag 有 display:none 兜底（CSS 仍留）", "B");
+  ok(castCss.indexOf(".cast-head") >= 0, "B9 CSS 仍含 .cast-head（历史样式保留，⛔ 不动 CSS）", "B");
 }
 
 /* ---------- 汇总 ---------- */

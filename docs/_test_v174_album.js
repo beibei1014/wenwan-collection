@@ -287,7 +287,7 @@ function statics(src) {
   out.push(["J · 页头标题「画册」", at('<div class="album-head-title">画册</div>')]);
   out.push(["J · ⛔ 旧 #spMainBtn 已消失", !at('id="spMainBtn"')]);
   out.push(["J · 沁灵纪卡 id=spMainEntry", at('id="spMainEntry"')]);
-  out.push(["J · 沁灵纪入口 → #/main（陈旧路由 #/mainstory 撤出）", at('msBtn.onclick = () => { location.hash = "#/main"; }') && !at('location.hash = "#/mainstory"; };')]);
+  out.push(["J · 沁灵页主线卡 → #/book（现役主线《结契篇》；旧 #/main 已下线）", at('msBtn.onclick = () => { location.hash = "#/book"; }') && !at('location.hash = "#/mainstory"; };')]);
   out.push(["J · 来源记忆三件已声明", at("let _albumFrom") && at("let _eventsFrom") && at("let _roomFrom")]);
   out.push(["J · renderSpiritPage 调 hubCardHtml", at("html += hubCardHtml(list, store);")]);
   out.push(["J · [data-goto] 显式绑定存在", at('view.querySelectorAll("[data-goto]")')]);

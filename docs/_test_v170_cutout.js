@@ -57,7 +57,8 @@ const pngUploadSrc = extractFn("spiritUploadPng");
 const makeCutSrc = extractFn("makeSpiritCut");
 const backfillSrc = extractFn("backfillSpiritCut");
 const talkSrc = extractFn("renderTalkPage");
-const mainSrc = extractFn("renderMainTalkPage");
+const bookReadSrc = extractFn("renderBookReadPage");
+const bookArtSrc = extractFn("bookArtOf");
 const chapSrc = extractFn("renderChapTalkPage");
 
 /* ================= A. 纯算法：连通域 vs 全局色键（核心） ================= */
@@ -128,40 +129,42 @@ ok(!!backfillSrc && !/generate|\bcgUrl\b|createSpiritImage/.test(backfillSrc), "
 
 /* ================= C. 剧情页接线：仅最新立绘、不混 CG、透明切换 ================= */
 section("C. 剧情页 o.portrait（imgCut 优先 / 不混 CG）");
-ok(!!mainSrc && /portrait:/.test(mainSrc) && /rec\.imgCut \|\| rec\.imgUrl/.test(mainSrc),
-  "renderMainTalkPage.portrait：优先 imgCut，回落 imgUrl");
-ok(!!mainSrc && /portraitCut:/.test(mainSrc), "renderMainTalkPage 传 portraitCut（透明切换信号）");
+ok(!!bookReadSrc && /portrait:/.test(bookReadSrc) && /portraitCut:/.test(bookReadSrc),
+  "v180-L1：renderBookReadPage 传 portrait / portraitCut（透明切换信号）");
+ok(!!bookArtSrc && /r\.imgCut \|\| r\.imgUrl/.test(bookArtSrc),
+  "bookArtOf：优先 imgCut，回落 imgUrl（现役主线的立绘取数器）");
 ok(chapSrc === null,
   "v178：renderChapTalkPage 已删除（旧 8 章对话页整体移除，无 imgCut 消费方）");
 ok(!!talkSrc && /o\.portraitCut/.test(talkSrc) && /pEl\.dataset\.cut = cut \? "1" : "0"/.test(talkSrc),
   "present：读 o.portraitCut → pEl.dataset.cut = \"1\"/\"0\"（⛔ 不靠猜）");
-// 行为断言：真跑 renderMainTalkPage 里的 portrait 取数器 —— 断言 imgCut 优先、且**永不返回 cgUrl**
-function extractArrow(src, key) {
-  const m = new RegExp(key + ":\\s*(\\(m\\)\\s*=>\\s*\\{[\\s\\S]*?\\n      \\}),").exec(src);
-  return m ? m[1] : null;
-}
-function runPortrait(arrow, cast, store) {
-  const sb = { String, Spirits: { castOf: () => cast, load: () => store } };
-  vm.runInNewContext("__fn = (" + arrow + ");", sb, { filename: "portrait" });
+// v180-L1：行为断言改跑现役主线的立绘取数器 bookArtOf —— 断言 imgCut 优先、且**永不返回 cgUrl**
+function runBookArt(store, items) {
+  const sb = {
+    String, Object, Array, Number, Boolean,
+    Spirits: { load: () => store },
+    allItems: items || [],
+    maincharArtOf: () => null,
+    spiritIdentityOf: (s) => (s === "甲" ? { name: "甲" } : null),
+  };
+  vm.runInNewContext(bookArtSrc + "\n;__fn = bookArtOf;", sb, { filename: "app.js#bookArtOf" });
   return sb.__fn;
 }
-if (mainSrc) {
-  const arrow = extractArrow(mainSrc, "portrait");
-  ok(!!arrow, "抽到 renderMainTalkPage.portrait 箭头函数");
-  if (arrow) {
-    const store = { c1: { imgUrl: "IMG.jpg", imgCut: "", cgUrl: "ADV_CG.png" } };
-    const cast = { x: { id: "c1" } };
-    const get = runPortrait(arrow, cast, store);
-    const m = { w: "sp", ps: ["x"] };
-    ok(get(m) === "IMG.jpg", "portrait：无 imgCut → 回落 imgUrl");
-    ok(get(m) !== "ADV_CG.png", "portrait：★ !== rec.cgUrl（⛔ 绝不混入进阶 CG）");
+if (bookArtSrc) {
+  const store = { c1: { imgUrl: "IMG.jpg", imgCut: "", cgUrl: "ADV_CG.png" } };
+  const items = [{ id: "c1", name: "甲" }];
+  const get = runBookArt(store, items);
+  ok(typeof get === "function", "抽到 bookArtOf 并装配成函数");
+  if (typeof get === "function") {
+    const a = get("甲");
+    ok(a && a.src === "IMG.jpg" && a.cut === false, "bookArtOf：无 imgCut → 回落 imgUrl（实得 " + JSON.stringify(a) + "）");
+    ok(a && a.src !== "ADV_CG.png", "bookArtOf：★ 永不返回 rec.cgUrl（⛔ 不混充进阶 CG）");
     store.c1.imgCut = "CUT.png";
-    ok(get(m) === "CUT.png", "portrait：有 imgCut → 优先透明抠图");
-    ok(get({ w: "sp" }) === "", "portrait：无说话人 ps → \"\"（不抛错）");
-    ok(get(null) === "", "portrait：m=null → \"\"（不抛错）");
+    const b = get("甲");
+    ok(b && b.src === "CUT.png" && b.cut === true, "bookArtOf：有 imgCut → 优先透明抠图（cut=true）");
+    ok(get("") && get("").src === "", "bookArtOf：空说话人 → src=\"\"（不抛错）");
+    ok(get(null) && get(null).src === "", "bookArtOf：speaker=null → src=\"\"（不抛错）");
   }
 }
-
 /* 静态：imgCut 进 normRecV165 默认值 */
 const spiritSrc = fs.readFileSync(path.join(ROOT, "js/spirits.js"), "utf8");
 ok(/if \(rec\.imgCut == null\) rec\.imgCut = ""/.test(spiritSrc), "normRecV165：老档默认 imgCut = \"\"（兼容）");
