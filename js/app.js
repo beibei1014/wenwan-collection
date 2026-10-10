@@ -8343,16 +8343,26 @@
      · ⚠️ 谢凝渲撑伞 —— 本体头顶 y=226（伞顶 y≈48 不是头），故 h/t 显著异于其余 8 位
      · ⛔ 换图必须重算 h/t（尤其带手持道具的）
      · v180-L1：本块**不随老主线删除** —— 〈结契篇〉阅读页（bookArtOf）仍旧消费它 */
+  // v180-PORTRAIT（2026-10-11）：〈结契篇〉16 位说话人立绘全量更新。源图统一 1536×2048 ⇒ h/t 统一 131/7。
+  //   ⚠️ 个别角色若落位偏了，只改该键的 h/t 即可（不影响他人）；别动 MAINCHAR_ART_ALIAS。
+  //   ⛔ 闵琥珀本次未提供新图 ⇒ 不在表内，走 rec.imgCut/imgUrl 回落（⛔ 绝不裂图）。燕逐沙为新增键（待正文改名后启用）。
   var MAINCHAR_ART = {
-    "咸法酪": { f: "assets/mainchars/mc-xianfalao.png",   h: 132.8, t:   6.4 },
-    "柿宝":   { f: "assets/mainchars/mc-shibao.png",      h: 132.6, t:   6.8 },
-    "沈青舒": { f: "assets/mainchars/mc-shenqingshu.png", h: 130.6, t:   8.4 },
-    "粉黛熊": { f: "assets/mainchars/mc-fendaixiong.png", h: 131.1, t:   7.9 },
-    "苏栖盏": { f: "assets/mainchars/mc-suqizhan.png",    h: 131.9, t:   7.1 },
-    "谢凝渲": { f: "assets/mainchars/mc-xieningxuan.png", h: 164.2, t: -24.2 },
-    "金算盘": { f: "assets/mainchars/mc-jinsuanpan.png",  h: 133.6, t:   5.7 },
-    "陆临崖": { f: "assets/mainchars/mc-lulinyai.png",    h: 131.4, t:   7.5 },
-    "顾时笙": { f: "assets/mainchars/mc-gushisheng.png",  h: 129.8, t:   9.0 }
+    "咸法酪": { f: "assets/mainchars/mc-xianfalao.png",    h: 131, t: 7 }, // 姜饴酌
+    "柿宝":   { f: "assets/mainchars/mc-shibao.png",       h: 131, t: 7 }, // 楚柿遥
+    "沈青舒": { f: "assets/mainchars/mc-shenqingshu.png",  h: 131, t: 7 },
+    "粉黛熊": { f: "assets/mainchars/mc-fendaixiong.png",  h: 131, t: 7 }, // 温茸之
+    "苏栖盏": { f: "assets/mainchars/mc-suqizhan.png",     h: 131, t: 7 },
+    "谢凝渲": { f: "assets/mainchars/mc-xieningxuan.png",  h: 131, t: 7 },
+    "金算盘": { f: "assets/mainchars/mc-jinsuanpan.png",   h: 131, t: 7 }, // 萧景筹
+    "陆临崖": { f: "assets/mainchars/mc-lulinyai.png",     h: 131, t: 7 },
+    "顾时笙": { f: "assets/mainchars/mc-gushisheng.png",   h: 131, t: 7 },
+    "江冽茗": { f: "assets/mainchars/mc-jianglieming.png", h: 131, t: 7 },
+    "乔纹栗": { f: "assets/mainchars/mc-qiaowenli.png",    h: 131, t: 7 },
+    "俞酥棠": { f: "assets/mainchars/mc-yusutang.png",     h: 131, t: 7 },
+    "季未晚": { f: "assets/mainchars/mc-jiweiwan.png",     h: 131, t: 7 },
+    "戚衔蝉": { f: "assets/mainchars/mc-qixianchan.png",   h: 131, t: 7 },
+    "邵盈牧": { f: "assets/mainchars/mc-shaoyingmu.png",   h: 131, t: 7 },
+    "燕逐沙": { f: "assets/mainchars/mc-yanzhusha.png",    h: 131, t: 7 }
   };
   // v175 / v180：用户把几只改成了新姓名 —— 别名反查到旧键，⛔ 别让手抠立绘掉图
   var MAINCHAR_ART_ALIAS = {
