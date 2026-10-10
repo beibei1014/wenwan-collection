@@ -104,8 +104,8 @@ section("2 · index.html 接线（顺序 + 版本号）");
   ok(/js\/night-v180\.js\?v=\d+/.test(HTML), "index.html 挂了 js/night-v180.js（带 ?v=）");
   const iData = HTML.indexOf("js/night-v180.js"), iSp = HTML.indexOf("js/spirits.js");
   ok(iData >= 0 && iSp >= 0 && iData < iSp, "⛔ night-v180.js 排在 spirits.js **之前**（先挂数据，引擎加载时并池）");
-  // v180 夜话背景批次：spirits.js 又改过（BG-22 常量）⇒ 缓存戳随之 bump 到 20270202
-  ok(/js\/spirits\.js\?v=20270202/.test(HTML), "spirits.js 版本号 20270202（实得 " + (HTML.match(/js\/spirits\.js\?v=\d+/) || [""])[0] + "）");
+  // v180 夜话背景批次：spirits.js / app.js 又改过（BG-22 图源改外链托管）⇒ 缓存戳随之 bump 到 20270204
+  ok(/js\/spirits\.js\?v=20270204/.test(HTML), "spirits.js 版本号 20270204（实得 " + (HTML.match(/js\/spirits\.js\?v=\d+/) || [""])[0] + "）");
   ok(HTML.indexOf("js/book-jieqi.js") < iSp, "⛔ 批G 的 book-jieqi.js 顺序未破坏（仍在 spirits.js 前）");
 }
 

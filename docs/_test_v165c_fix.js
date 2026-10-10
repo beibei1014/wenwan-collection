@@ -302,11 +302,13 @@ const readApp = () => fs.readFileSync(path.join(ROOT, APP_SRC), "utf8");
   {
     const { S } = newS();
     const keys = Object.keys(S.BG_CATALOG || {});
-    // v180：BG-22 夜话不随包（src:"" ⇒ 走 BG 管线出图+永久缓存）—— 「静态内置」口径一律用 dayK。
+    // v180：BG-22 夜话不随包（src = Supabase 公开 bucket 的永久公网 URL）—— 「静态内置」口径一律用 dayK。
     const dayK = keys.filter((k) => k !== "BG-22");
     ok(S.BG_STATIC_DIR === "assets/bg/", "BG_STATIC_DIR === \"assets/bg/\"（实际 " + JSON.stringify(S.BG_STATIC_DIR) + "）");
     ok(keys.length === 22 && dayK.length === 21 && dayK.every((k) => S.BG_CATALOG[k].src === S.BG_STATIC_DIR + k + ".jpg"),
       "21 张白天系都有 src = assets/bg/<key>.jpg（BG-22 夜话例外）");
+    ok(/^https:\/\//.test(String(S.BG_CATALOG["BG-22"].src || "")) && String(S.BG_CATALOG["BG-22"].src).indexOf("assets/") < 0,
+      "BG-22 图源走外链托管（Supabase 公开 bucket 永久 URL），⛔ 不落 assets/bg/");
     ok(dayK.every((k) => S.bgGet(k) === "assets/bg/" + k + ".jpg"), "bgGet 21/21 白天系回落到静态 src（视为已出好）");
     // ensureBg 命中静态 ⇒ 绝不调 deps.generate（⛔ 必须 await，否则断言会晚于汇总输出）
     let gen = 0, wrote = 0;
@@ -331,17 +333,17 @@ const readApp = () => fs.readFileSync(path.join(ROOT, APP_SRC), "utf8");
     ok(/Spirits\.bgByKey\(k\) \|\| \{\}\)\.src/.test(app8), "C2：设置页按「有 src」统计已内置张数");
     ok(/已随版本内置，无需出图/.test(app8), "C2：全都有静态图时提示「已随版本内置，无需出图」");
     ok(/还差 ' \+ bgTodo \+ ' 张/.test(app8), "C2：待出张数与金额按实际待出数动态算");
-    // v180：设置页统计必须把 BG-22 算进「待出 1 张」（否则一键出全套永远出不了照夜鉴）
+    // v180：BG-22 图源就位后，22 张全部算「已出好」⇒ 设置页不再显示「还差 N 张」
     const stStatic = keys.filter((k) => !!(S.bgByKey(k) || {}).src).length;
     const stDone = keys.filter((k) => !!S.bgGet(k)).length;
-    ok(keys.length === 22 && stStatic === 21 && stDone === 21 && keys.length - stDone === 1,
-      "设置页统计：22 张 / 21 已内置 / 待出 1（BG-22；还差 1 张 · 约 ¥0.03）");
-    // 静态图文件确实在仓库里（v180：BG-22 夜话是唯一例外 —— src:"" 走 BG 管线，⛔ 不随包）
+    ok(keys.length === 22 && stStatic === 22 && stDone === 22 && keys.length - stDone === 0,
+      "设置页统计：22 张 / 22 就位 / 待出 0（一键出全套显示「已随版本内置」）");
+    // 静态图文件确实在仓库里（v180：BG-22 夜话是唯一例外 —— 图源外链托管，⛔ 不随包）
     const fsx = require("fs");
     const missing = dayK.filter((k) => !fsx.existsSync(path.join(ROOT, "assets", "bg", k + ".jpg")));
     ok(missing.length === 0, "assets/bg/ 下 21 张静态图全部存在（缺 " + missing.length + " 张）");
-    ok(!fsx.existsSync(path.join(ROOT, "assets", "bg", "BG-22.jpg")) && S.BG_CATALOG["BG-22"].src === "",
-      "BG-22 无静态图（src:'' ⇒ 计入「待出」1 张，设置页一键出全套可出）");
+    ok(!fsx.existsSync(path.join(ROOT, "assets", "bg", "BG-22.jpg")) && String(S.BG_CATALOG["BG-22"].src || "").indexOf("assets/") < 0,
+      "BG-22 无静态图（图源＝Supabase 公网 URL，⛔ 不随包）");
   }
 
   console.log("\n----------------------------------------");

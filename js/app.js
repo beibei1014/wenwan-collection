@@ -11034,7 +11034,7 @@
         '<div class="d">当前：' + esc(ow.name || "未填昵称") + " · " + (ow.gender === "boy" ? "男生（用「他」）" : "女生（用「她」）") +
         " · " + (ow.avatar ? "已设头像" : "未设头像（群里显示「我」）") +
         ' · 日记与剧情会照这个写</div></div><span style="color:var(--text-2)">›</span></button>';
-      // v165：一键出全套 BG（v180 起 22 张：21 张随包静态 + BG-22 夜话照夜鉴走管线出图；已出好的不出图，失败可续）
+      // v165：一键出全套 BG（v180 起 22 张：21 张随包静态 + BG-22 夜话照夜鉴外链托管 Supabase；已出好的不出图，失败可续）
       const bgAll = Object.keys(Spirits.BG_CATALOG || {});
       // v165：静态图（assets/bg/*.jpg）视为「已出好」⇒ 只有**无 src 且没出过**的才要画
       const bgStatic = bgAll.filter((k) => !!(Spirits.bgByKey(k) || {}).src).length;

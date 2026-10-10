@@ -3,7 +3,8 @@
    用户原话（本需求唯一验收口径）：夜里弹对话时背景**不能一行一行弹出来**。
 
    覆盖：
-     1. BG-22 数据面 —— 目录条目 / 夜话专用前缀与负向 / ⛔ 无静态图 / 未出图时 bgGet="" / 仍在「一键出全套」待出清单
+     1. BG-22 数据面 —— 目录条目 / 夜话专用前缀与负向 / 图源＝Supabase 公开 bucket 永久 URL（⛔ 不随包）
+        / 待出清单已空（22/22 就位）/ ensureBg 被图源短路（⛔ 不出图）
      2. skin.css 静态面 —— position:fixed 视口锚定（⛔ 绝不再是挂在 .nt-chat 上的 absolute inset:0）
         + .noimg 压制米色渐变 + L3 静态遮罩 + ⛔ 背景层零动画（无 transition/animation/@keyframes/will-change/filter）
         + 宽屏净图柱 + body.night-mode 顶/底栏变体 + ⛔ .view 入场动画（transform 包含块陷阱）已摘
@@ -54,7 +55,7 @@ function ruleBody(css, sel) {
 
 (async function main() {
   /* ============ 1. BG-22 数据面 ============ */
-  section("1. BG-22「照夜鉴 · 夜话」数据面（目录 / 夜话专用前缀与负向 / ⛔ 无静态图）");
+  section("1. BG-22「照夜鉴 · 夜话」数据面（目录 / 夜话专用前缀与负向 / 图源＝Supabase 永久 URL）");
   {
     const { S } = newS();
     const cat = S.BG_CATALOG || {};
@@ -90,19 +91,40 @@ function ruleBody(css, sel) {
       "NIGHT_NEG 反现代通讯：禁手机/屏幕/聊天界面/消息气泡");
     ok(/no Japanese mirror motifs/.test(S.NIGHT_NEG) && /no sakura mirror/.test(S.NIGHT_NEG) && /no torii/.test(S.NIGHT_NEG),
       "NIGHT_NEG 反日式镜纹（铜镜中日同形 ⇒ 双边锚定）");
-    ok(/a single warm lamp is the only strong light source/.test(S.NIGHT_NEG), "NIGHT_NEG 把「禁低照度」改口径为「一盏暖灯＝唯一强光」");
+    // v180-C2 改稿：光照口径必须放行「镜下自体柔光」，否则模型拒绝把琉璃画成发光体
+    ok(/the warm lamp and the softly self-glowing disc are the light sources/.test(S.NIGHT_NEG),
+      "NIGHT_NEG 光照口径＝暖灯 + 镜下自体柔光（v180-C2）");
+    ok(S.NIGHT_NEG.indexOf("no glowing glass") < 0, "NIGHT_NEG 已摘掉 no glowing glass（⛔ 否则画不出半透明琉璃）");
+    ok(/no cold blue-dominant palette/.test(S.NIGHT_NEG) && /warm color temperature throughout/.test(S.NIGHT_NEG),
+      "NIGHT_NEG 反冷调锚（旧稿 R−B=−19 偏蓝＝「诡异」根因）");
 
-    // ⛔ 无静态图 ⇒ 未出图不阻塞、且仍留在「一键出全套」的待出清单
-    ok(!!n22 && n22.src === "", "BG-22 src 留空（⛔ 不落 assets/bg/BG-22.jpg，主理人裁定走 BG 管线）");
+    // v180-C2 改稿：正文的三处实体变更（法器悬空 / 案几茶盏 / 窗外竹林无建筑）
+    ok(/floating and hovering weightless in mid-air/.test(S.BG_NIGHT_BODY) && /no cord, no chain, no hook, no stand/.test(S.BG_NIGHT_BODY),
+      "正文：法器**悬空**、⛔ 无绳无链无托");
+    ok(/a translucent coloured-glaze glass disc/.test(S.BG_NIGHT_BODY) && /clearly semi-transparent/.test(S.BG_NIGHT_BODY),
+      "正文：半透明琉璃材质（⛔ 不是实心铜鉴）");
+    ok(/a small clay teapot and two small tea bowls/.test(S.BG_NIGHT_BODY) && !/ledger book/.test(S.BG_NIGHT_BODY) && !/woven cloth/.test(S.BG_NIGHT_BODY),
+      "正文：案几＝一套茶盏（⛔ 无道册 / 无布巾）");
+    ok(/dense green bamboo grove/.test(S.BG_NIGHT_BODY) && /strictly no buildings/.test(S.BG_NIGHT_BODY) && /no rooftops/.test(S.BG_NIGHT_BODY),
+      "正文：窗外只有竹林、⛔ 禁建筑/屋脊/街市");
+    ok(/calm luminous field with very low contrast/.test(S.BG_NIGHT_BODY) && /no concentric circles/.test(S.BG_NIGHT_BODY),
+      "正文：镜心锁 low contrast + 禁同心环纹（聊天安全区，规范 §2.2）");
+
+    // v180：图的来源 = 自家 Supabase Storage 公开 bucket 的**永久公网 URL**
+    //   （主理人 2026-10-10 裁定「不随包」⇒ ⛔ 不落 assets/bg/BG-22.jpg）
+    const NIGHT_SRC = "https://qyrqaqayynjfovfuddec.supabase.co/storage/v1/object/public/bracelet-images/bg/BG-22-liuli-bamboo.jpg";
+    ok(!!n22 && n22.src === NIGHT_SRC, "BG-22 src = Supabase 公开 bucket 永久 URL（出图已就位）");
+    ok(!!n22 && /^https:\/\//.test(n22.src) && String(n22.src).indexOf("assets/") < 0,
+      "⛔ BG-22 src 不是 assets/bg 随包静态路径（守住主理人「不随包」裁定）");
     ok(!fs.existsSync(path.join(ROOT, "assets", "bg", "BG-22.jpg")), "assets/bg/ 下确实没有 BG-22.jpg（未随包）");
-    ok(S.bgGet("BG-22") === "", "未出图时 bgGet(BG-22) 返回空 ⇒ 渲染端走纯色兜底（⛔ 不出图、不阻塞）");
+    ok(S.bgGet("BG-22") === NIGHT_SRC, "bgGet(BG-22) 回落到公网 URL ⇒ 渲染端直接显示（⛔ 不阻塞）");
     ok(S.bgSeedKey("BG-22") === "bg:BG-22" && !!S.bgByKey("BG-22"), "seedKey / bgByKey 对 BG-22 可用");
-    // 一键出全套用 !bgUrlOf(k) 过滤待出清单 ⇒ src:"" 的 BG-22 必须留在清单里（否则永远出不了图）
+    // 一键出全套用 !bgUrlOf(k) 过滤待出清单 ⇒ 已有 src 的 BG-22 不该再进清单
     const todo = Object.keys(cat).filter((k) => !S.bgGet(k));
-    ok(todo.indexOf("BG-22") >= 0, "BG-22 在「一键出全套」待出清单里（src:'' 的关键作用）");
-    ok(todo.length === 1 && todo[0] === "BG-22", "待出清单只有 BG-22 这一张（21 张静态图视为已出好）");
+    ok(todo.indexOf("BG-22") < 0, "BG-22 已不在「一键出全套」待出清单里（图源已就位）");
+    ok(todo.length === 0, "22 张全部就位，待出清单为空（设置页显示「已随版本内置」）");
 
-    // 真出图路径：BG-22 必须真的走 generate（竖版 9:16 入参），而不是被静态图短路
+    // 命中图源 ⇒ ensureBg 直返：⛔ 绝不触发 deps.generate（离线 / 无 key / 无网都安全，与 21 张同口径）
     let genArgs = null;
     const deps = {
       get: (k) => S.bgGet(k), set: () => { },
@@ -110,10 +132,9 @@ function ruleBody(css, sel) {
       toStore: () => ({ url: "https://cdn/bg/BG-22.jpg", cloud: true }),
     };
     const u = await S.ensureBg("BG-22", deps);
-    ok(u === "https://cdn/bg/BG-22.jpg" && !!genArgs, "ensureBg(BG-22) 真走出图路径（⛔ 不被静态图短路）");
-    ok(genArgs && genArgs.p === ((n22 && n22.prompt) || "\u0000"), "generate 用的是 catalog 里的 BG-22 prompt");
-    ok(genArgs && genArgs.o && genArgs.o.landscape === false && genArgs.o.size === S.BG_SIZE && S.BG_SIZE === "1440x2560",
-      "出图入参 landscape:false + size:1440x2560（严格 9:16）");
+    ok(u === NIGHT_SRC && !genArgs, "ensureBg(BG-22) 命中图源直返（⛔ 不出图、不写库、不消耗额度）");
+    ok(S.BG_SIZE === "1440x2560" && Array.isArray(S.BG_SIZE_LADDER) && S.BG_SIZE_LADDER[0] === "1440x2560",
+      "出图档仍锁竖版 9:16 1440x2560（将来若重出照这个档）");
   }
 
   /* ============ 2. skin.css 静态面 ============ */

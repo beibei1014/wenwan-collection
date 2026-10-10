@@ -62,7 +62,7 @@ const J = JSON.parse(fs.readFileSync(path.join(ROOT, "docs", "_bg_prompts.json")
   {
     const { S } = newS();
     const keys = Object.keys(S.BG_CATALOG || {});
-    // v180：BG-22「照夜鉴 · 夜话」不属此契约 —— 它的图**不随包**（src:""，走 BG 管线出图+永久缓存），
+    // v180：BG-22「照夜鉴 · 夜话」不属此契约 —— 它的图**不随包**（src = Supabase 公开 bucket 永久 URL），
     //   且前缀/负向走夜话专用常量（BG_NIGHT_STYLE / NIGHT_NEG），故 21 张的「逐字一致」口径对它不适用。
     const dayKeys = keys.filter((k) => k !== "BG-22");
     ok(keys.length === 22, "BG_CATALOG 共 22 条 = 21 张白天系 + BG-22 夜话（实得 " + keys.length + "）");
@@ -81,7 +81,8 @@ const J = JSON.parse(fs.readFileSync(path.join(ROOT, "docs", "_bg_prompts.json")
     ok(keys.every((k) => !/[\u4e00-\u9fff]/.test(S.BG_CATALOG[k].prompt)), "prompt 正文无中文残留");
     ok(keys.every((k) => !/cinematic directional lighting|atmospheric depth and haze/.test(S.BG_CATALOG[k].prompt)), "⛔ 无旧版阴森向锚");
     ok(dayKeys.every((k) => S.BG_CATALOG[k].src === "assets/bg/" + k + ".jpg"), "src 指向 assets/bg/BG-XX.jpg（21 张竖版静态图）");
-    ok(S.BG_CATALOG["BG-22"].src === "", "BG-22 src 留空（⛔ 不落静态资源，主理人裁定走 BG 管线）");
+    ok(/^https:\/\//.test(String(S.BG_CATALOG["BG-22"].src || "")) && String(S.BG_CATALOG["BG-22"].src).indexOf("assets/") < 0,
+      "BG-22 图源＝Supabase 公网永久 URL（⛔ 不落静态资源，主理人裁定「不随包」）");
   }
 
   /* ============ 3. ensureBg 真跑：竖版出图入参 ============ */

@@ -1,7 +1,7 @@
 /* v165 · BG 场景背景系统自测（数据层 + ensureBg 运行时核心）
    覆盖：
      1. BG_CATALOG 恰好 22 条（21 张白天系 + BG-22 夜话）且 key 连续 BG-01..BG-22
-        （字段完整 / 名取自大纲 §八 / ⛔ 无密度类约束；BG-22 的前缀·负向·无静态图三处例外单独断言）
+        （字段完整 / 名取自大纲 §八 / ⛔ 无密度类约束；BG-22 的前缀·负向·图源三处例外单独断言）
      2. seedKey 稳定（bg:BG-01）
      3. ensureBg 三条路径：命中直返 / 未命中成功（出图→压→云→写库）/ 失败回退（落 data URI 仍写库）
         + 生成抛错（离线/无 key）→ 返回空、不写库 + 并发去重（同 key 只出一张）
@@ -25,7 +25,8 @@ function newS() { const c = H.makeContext(); H.loadFile(c.ctx, SPIRITS_SRC); ret
     const { S } = newS();
     const keys = Object.keys(S.BG_CATALOG || {});
     // v180：BG-22「照夜鉴 · 夜话」是本目录里唯一的例外 —— 前缀走 BG_NIGHT_STYLE、负向走 NIGHT_NEG、
-    //   且 **无静态图**（src:""，主理人裁定走 BG 管线）。凡「21 张白天系」的口径一律用 dayKeys。
+    //   且 **图源不随包**（src = Supabase 公开 bucket 永久 URL，主理人 2026-10-10 裁定）。
+    //   凡「21 张白天系」的口径一律用 dayKeys。
     const dayKeys = keys.filter((k) => k !== "BG-22");
     ok(keys.length === 22, "恰好 22 条（实得 " + keys.length + "）");
     ok(dayKeys.length === 21, "其中白天系 21 条（实得 " + dayKeys.length + "）");
@@ -62,7 +63,7 @@ function newS() { const c = H.makeContext(); H.loadFile(c.ctx, SPIRITS_SRC); ret
     ok(dayKeys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_NEG) > 0 && S.BG_CATALOG[k].prompt.indexOf(", " + S.BG_NEG + ", ") > 0), "21/21 白天系 prompt 含 BG_NEG（三段式拼装，v172-C 后由 NO_QING 收尾）");
     ok(typeof S.NO_QING === "string" && keys.every((k) => S.BG_CATALOG[k].prompt.slice(-(S.NO_QING || "").length) === S.NO_QING), "22/22 条 prompt 以 NO_QING 收尾（v172-C 去清代追加在末尾）");
     ok(dayKeys.every((k) => (S.BG_CATALOG[k].prompt.split(S.BG_NEG || "\u0000").length - 1) === 1), "BG_NEG 白天系每条恰好出现 1 次（不重复拼接）");
-    // ---- v180：BG-22「照夜鉴 · 夜话」夜话例外（前缀 / 负向 / 静态图三处都与 21 张不同） ----
+    // ---- v180：BG-22「照夜鉴 · 夜话」夜话例外（前缀 / 负向 / 图源三处都与 21 张不同） ----
     const n22 = S.BG_CATALOG["BG-22"] || {};
     ok(n22.key === "BG-22" && /照夜鉴/.test(n22.name || ""), "BG-22 存在且命名＝照夜鉴 · 夜话");
     ok(typeof S.BG_NIGHT_STYLE === "string" && /VERTICAL PORTRAIT COMPOSITION, 9:16/.test(S.BG_NIGHT_STYLE) && /empty scene, no people/.test(S.BG_NIGHT_STYLE),
@@ -71,8 +72,10 @@ function newS() { const c = H.makeContext(); H.loadFile(c.ctx, SPIRITS_SRC); ret
       "NIGHT_NEG 存在且含反日式镜纹 + 反物化（无手串）");
     ok((n22.prompt || "").indexOf(S.BG_NIGHT_STYLE) === 0, "BG-22 以 BG_NIGHT_STYLE 开头（⛔ 不是 BG_STYLE）");
     ok((n22.prompt || "").indexOf(S.NIGHT_NEG) > 0 && (n22.prompt || "").indexOf(S.BG_NEG) < 0, "BG-22 含 NIGHT_NEG 且**不含** BG_NEG（夜戏另开口径）");
-    ok(n22.src === "", "BG-22 src 留空（⛔ 不落 assets/bg/BG-22.jpg，走 BG 管线出图 + 永久缓存）");
-    ok(S.bgGet("BG-22") === "", "未出图时 bgGet(BG-22) 返回空 ⇒ 渲染端走 .noimg 纯色兜底（⛔ 不出图、不阻塞）");
+    // v180：BG-22 的图源 ＝ 自家 Supabase Storage 公开 bucket 的永久公网 URL（⛔ 不随包）
+    const NIGHT_SRC = "https://qyrqaqayynjfovfuddec.supabase.co/storage/v1/object/public/bracelet-images/bg/BG-22-liuli-bamboo.jpg";
+    ok(n22.src === NIGHT_SRC, "BG-22 src = Supabase 公开 bucket 永久 URL（⛔ 不落 assets/bg/BG-22.jpg）");
+    ok(S.bgGet("BG-22") === NIGHT_SRC, "bgGet(BG-22) 回落到公网 URL（图已就位，⛔ 不出图、不阻塞）");
     ok(!/[\u4e00-\u9fff]/.test(n22.prompt || ""), "BG-22 prompt 正文无中文残留");
     ok(keys.every((k) => !/hanfu/i.test(S.BG_CATALOG[k].prompt)), "21/21 条 BG prompt 无 hanfu 人物向污染");
     ok(keys.every((k) => !/cinematic directional lighting|atmospheric depth and haze/.test(S.BG_CATALOG[k].prompt)),
