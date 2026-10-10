@@ -7664,6 +7664,9 @@
     const cast = evObj ? castPreview(evObj, T.th) : T.th.members;
     return renderTalkPage({
       immersive: false,        // v176：夜话 = 微信式群聊气泡 —— ⛔ 不进沉浸（不加 talk-open、不出立绘 / AVG 对话框）
+      bg: ["BG-22"],           // v180：夜话背景「照夜鉴」—— 只传 key，由 sceneBgUrl → Spirits.bgGet 取「已出好」的那张；
+                               //   未出图时 bgGet 返回 "" ⇒ 走 .noimg 纯色兜底（⛔ 绝不出图、绝不阻塞）。
+                               //   ⛔ 整场夜话只在这一处读一次 key，之后不再写背景（红线：禁逐行 reveal / 禁打字机联动 / 禁中途换图）
       title: T.th.name,
       headAv: cast.map((c) => spiritThumbHtml(c.item, T.S.store[c.id] || {}, 30)).join(""),
       headName: T.th.name,
@@ -7761,6 +7764,7 @@
     };
     return renderTalkPage({
       immersive: false,          // v177d：私聊 = 微信式气泡（与夜话群聊同一套外壳）
+      bg: ["BG-22"],             // v180：私聊同属「夜话」⇒ 共用照夜鉴那一张（否则群聊→私聊背景会突然消失）
       title: who,
       headAv: spiritThumbHtml(it, Spirits.load()[sid] || {}, 30),
       headName: who,
@@ -7816,6 +7820,11 @@
     //      （body.talk-open 会 overflow:hidden 锁死滚动 + display:none 藏掉 tabbar，气泡流恰恰需要滚）
     const IMM = (o.immersive !== false);                 // 默认 true；夜话显式传 immersive:false
     try { if (IMM) document.body.classList.add("talk-open"); } catch (e) { /* v169：抽函数单测无 document.body → 忽略 */ }
+    // v180：夜话页（!IMM = 非沉浸）另挂 night-mode —— 只用来把顶栏 / 底栏转暗（css/skin.css 变体），
+    //   与 talk-open 同生同灭、在 router() 的同一处移除。
+    //   ⛔ 绝不与 talk-open 合并：talk-open 会 overflow:hidden + display:none 掉 tabbar，
+    //      而夜话恰恰要能滚动、且要保留底栏（只是转暗）。
+    try { document.body.classList.toggle("night-mode", !IMM); } catch (e) { /* 同上：单测无 document.body → 忽略 */ }
     topbarTitle.textContent = o.title;
     btnBack.style.visibility = "visible";
     btnSettings.style.visibility = "hidden";
@@ -7831,7 +7840,9 @@
         ? '<div class="scenebg blurpane' + (_bgUrl ? "" : " noimg") + '" id="sceneBgBlur"></div>' +
           '<div class="scenebg sharppane' + (_bgUrl ? "" : " noimg") + '" id="sceneBgLayer"></div>' +
           '<div class="talk-portrait" id="talkPortrait"></div>'
-        : '<div class="scenebg' + (_bgUrl ? "" : " noimg") + '" id="sceneBgLayer"></div>') +
+        // v180：非沉浸 = 夜话 —— 加变体类 scenebg--night（skin.css 里把它改成 position:fixed 视口锚定，
+        //   治「背景跟着对话一行行长出来」）；主线沉浸那两层 ⛔ 不加，走各自的 blurpane / sharppane。
+        : '<div class="scenebg scenebg--night' + (_bgUrl ? "" : " noimg") + '" id="sceneBgLayer"></div>') +
       '<div class="nt-chat-head">' +
       '<div class="nt-head-av">' + o.headAv + "</div>" +
       '<div class="nt-head-meta"><b>' + esc(o.headName) + "</b><span>" + esc(o.headSub) + "</span></div>" +
@@ -11023,7 +11034,7 @@
         '<div class="d">当前：' + esc(ow.name || "未填昵称") + " · " + (ow.gender === "boy" ? "男生（用「他」）" : "女生（用「她」）") +
         " · " + (ow.avatar ? "已设头像" : "未设头像（群里显示「我」）") +
         ' · 日记与剧情会照这个写</div></div><span style="color:var(--text-2)">›</span></button>';
-      // v165：一键出全套 BG（21 张场景背景；已出好的不复用不出图，失败可续）
+      // v165：一键出全套 BG（v180 起 22 张：21 张随包静态 + BG-22 夜话照夜鉴走管线出图；已出好的不出图，失败可续）
       const bgAll = Object.keys(Spirits.BG_CATALOG || {});
       // v165：静态图（assets/bg/*.jpg）视为「已出好」⇒ 只有**无 src 且没出过**的才要画
       const bgStatic = bgAll.filter((k) => !!(Spirits.bgByKey(k) || {}).src).length;
@@ -11306,6 +11317,7 @@
   /* ---------- 路由 ---------- */
   function router() {
     document.body.classList.remove("talk-open");   // v169：中央路由分发处统一退出沉浸态（⛔ 不逐页删，否则漏页会把全局 UI 拖进沉浸态）
+    document.body.classList.remove("night-mode");  // v180：夜话页的深色顶/底栏同处退出（⛔ 漏删 ⇒ 之后所有页面顶/底栏都变暗）
     const h = location.hash || "#/";
     if (h === "#/auth") {
       if (user) { location.hash = "#/"; return; }  // 已登录访问登录页 → 回首页

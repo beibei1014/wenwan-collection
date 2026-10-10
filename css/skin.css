@@ -1091,13 +1091,14 @@ details.ft-item > .ft-text { padding: 0 10px 10px; }
 .nt-av img, .nt-av svg { width: 100%; height: 100%; object-fit: cover; display: block; }
 .nt-av-me { font-size: 11px; color: #7a5518; background: #fdf3dd; }
 .nt-col { max-width: 74%; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
-.nt-name { font-size: 10.5px; color: var(--text-2); margin: 0 0 3px 3px; }
+.nt-name { font-size: 10.5px; color: #6b5537; margin: 0 0 3px 3px; }
 .nt-bub { display: inline-block; padding: 8px 11px; border-radius: 4px 14px 14px 14px;
   font-size: 13.5px; line-height: 1.7; color: var(--text); background: var(--card);
   border: 1px solid color-mix(in srgb, var(--line) 86%, var(--wood) 14%); box-shadow: var(--shadow-1);
   word-break: break-word; overflow-wrap: anywhere; }
+/* v180（规范 §2.3 对比度微调）：渐变加深到 #6B4A2C → #54381F ⇒ #FFF8EC 全跨度实测 ≥7.5:1 */
 .nt-bub.me { max-width: 74%; border-radius: 14px 4px 14px 14px; color: #fff8ec; border-color: #6b4a2c;
-  background: linear-gradient(180deg, #8a6136, #6b4a2c); box-shadow: 0 2px 8px rgba(61, 43, 31, .18); }
+  background: linear-gradient(180deg, #6b4a2c, #54381f); box-shadow: 0 2px 8px rgba(61, 43, 31, .18); }
 @keyframes ntIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .nt-typing { display: inline-flex; gap: 4px; align-items: center; padding: 11px 12px; }
 .nt-typing i { width: 5px; height: 5px; border-radius: 50%; background: var(--text-2); opacity: .35; animation: ntDot 1.05s infinite; }
@@ -1113,6 +1114,76 @@ details.ft-item > .ft-text { padding: 0 10px 10px; }
   animation: ntIn .26s var(--ease-out) both; }
 .nt-opt:active { background: color-mix(in srgb, var(--gold) 16%, var(--card));
   border-color: color-mix(in srgb, var(--gold) 55%, var(--line) 45%); }
+
+/* ============================================================
+   v180 · 夜话静态背景「照夜鉴」—— 复用非沉浸既有 #sceneBgLayer，只加一个变体类（**零 DOM 新增**）
+   规范源：docs/v180-夜话背景-UI设计.md §4.2 / §4.6 / §2.3 / §2.5
+   病因：.scenebg（skin.css:1067）用 inset:0 撑在**会随消息增长的 .nt-chat**（skin.css:1065）上
+        ⇒ 每追加一条气泡容器变高一点，背景块就"长"出来一点 = 用户看到的「背景慢慢弹出」。
+   修法：本变体把定位改成 position:fixed ⇒ 背景框＝视口，与 .nt-chat 内容高度**彻底解耦**；
+        一张图、一次赋值、整场夜话不再写第二次。
+   ⚠️ 本段作用于**非沉浸（＝夜话）**那一路的 .scenebg；主线沉浸的 .blurpane / .sharppane ⛔ 完全不受影响
+      （选择器一律带 .scenebg--night，而该变体类只在 app.js renderTalkPage 的 !IMM 分支输出）。
+   🔴 红线（规范 §4.3）：本层及 ::after 禁止 transition / animation / @keyframes / 淡入 / 视差 / 内容驱动高度
+   ============================================================ */
+.nt-chat > .scenebg.scenebg--night {
+  position: fixed; inset: 0; z-index: 0;   /* ← 病根就在这一行：absolute → fixed */
+  border-radius: 0; opacity: 1; pointer-events: none;
+  background-color: #141019;               /* 图未出时＝纯色兜底（⛔ 不是会随内容增长的米色渐变块） */
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+  /* ⛔ 此处禁止：transition / animation / will-change / filter / backdrop-filter */
+}
+/* 未出图时压制 .scenebg.noimg 的米色渐变（那条渐变正是"被拉出来"的观感来源） */
+.nt-chat > .scenebg.scenebg--night.noimg { background-image: none; }
+
+/* L3 静态遮罩（规范 §2.5，数值即规范）：一层，恒定，无动画、无 JS 参与 */
+.nt-chat > .scenebg.scenebg--night::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 78% 52% at 50% 38%, rgba(20,16,25,.30) 0%, rgba(20,16,25,.55) 62%, rgba(14,11,9,.80) 100%),
+    linear-gradient(180deg, rgba(14,11,9,.72) 0%, rgba(14,11,9,0) 14%),
+    linear-gradient(0deg,   rgba(14,11,9,.78) 0%, rgba(14,11,9,0) 12%);
+}
+/* 内容层抬到背景之上（skin.css:1071 已有同款，此处再补一层保险） */
+.nt-chat > .nt-body, .nt-chat > .nt-foot, .nt-chat > .nt-chat-head { position: relative; z-index: 1; }
+
+/* 系统条在暗背景上的可读性（规范 §2.3：补暗底 ⇒ #F0E6D4 实测 13.1:1） */
+.nt-chat > .scenebg--night ~ .nt-body .nt-sys { background: rgba(24,18,14,.55); color: #F0E6D4; }
+
+/* 桌面宽屏（≥700px）：PWA 以手机为主。宽屏下不把 9:16 拉满横向（cover 会纵向裁爆构图），
+   改为「居中 640px 净图柱 + 左右纯色压底」（#141019，同 §4.4 兜底口径）。
+   ⛔ 规范原文给的是「::before 模糊垫满 + 净图柱」，但 ::before 会画在**元素自身背景（＝净图柱）之上**
+      ⇒ 清晰柱反被糊掉；零 DOM 前提下做不出「模糊在后、清晰在前」两层，故宽屏只做净图柱。 */
+@media (min-width: 700px) {
+  .nt-chat > .scenebg.scenebg--night { background-size: 640px auto; background-position: center 38%; }
+}
+
+/* ---- 规范 §4.6：夜话页顶栏 / 底栏深色变体（⛔ 默认 .topbar / .tabbar 一个字符不改，全走变体选择器） ----
+   开关 = app.js renderTalkPage：与 talk-open 同处 toggle("night-mode", !IMM)；
+         router() 中央分发处 remove("night-mode")（⛔ 不与 talk-open 合并 —— 合并会 display:none 掉底栏） */
+body.night-mode .topbar {
+  background: linear-gradient(180deg, rgba(14,11,9,.86) 0%, rgba(14,11,9,.58) 100%);
+  border-bottom-color: rgba(242,179,94,.18);     /* 暖金细线，替 --line 的冷灰 */
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+body.night-mode .topbar-title { color: #F0E6D4; text-shadow: 0 1px 3px rgba(0,0,0,.55); }
+body.night-mode .topbar .icon-btn { color: #F0E6D4; background: rgba(0,0,0,.28); }
+body.night-mode .topbar .icon-btn:active { background: rgba(0,0,0,.48); }
+body.night-mode .tabbar {
+  background: rgba(16,12,10,.94);
+  border-top-color: rgba(242,179,94,.16);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+body.night-mode .tab-item { color: #C9B89C; }            /* 未选中 */
+body.night-mode .tab-item.active { color: #F2B35E; }     /* 选中＝灯焰色，与背景暖源同源 */
+
+/* 🔴 必需的一条（规范 §4.5「夜话页背景**首帧即满屏**」）：
+   #view 每切页都会被 app.js 打上 .page-in，而 pageIn 动画**带 transform** ⇒ 在动画期间 .view
+   会成为 position:fixed 的包含块，.scenebg--night 会被暂时困在 .view 的 padding 盒里
+   （首 300ms 背景内缩一圈、动画一结束瞬间跳到满屏 = 一次可见的"弹一下"）。
+   夜话页把入场动画摘掉 ⇒ 从第一帧起就视口锚定、零跳动。
+   （同款先例：skin.css:203 `.view.anim-settled { animation: none; }`；主线沉浸走 body.talk-open .view{animation:none}） */
+body.night-mode .view.page-in { animation: none; }
 
 /* ============================================================
    v169 · 剧情页 AVG 化（沉浸模式）—— 追加到「对话页」段之后

@@ -1,6 +1,7 @@
 /* v165 · BG 场景背景系统自测（数据层 + ensureBg 运行时核心）
    覆盖：
-     1. BG_CATALOG 恰好 21 条且 key 连续 BG-01..BG-21（字段完整 / 名取自大纲 §八 / ⛔ 无密度类约束）
+     1. BG_CATALOG 恰好 22 条（21 张白天系 + BG-22 夜话）且 key 连续 BG-01..BG-22
+        （字段完整 / 名取自大纲 §八 / ⛔ 无密度类约束；BG-22 的前缀·负向·无静态图三处例外单独断言）
      2. seedKey 稳定（bg:BG-01）
      3. ensureBg 三条路径：命中直返 / 未命中成功（出图→压→云→写库）/ 失败回退（落 data URI 仍写库）
         + 生成抛错（离线/无 key）→ 返回空、不写库 + 并发去重（同 key 只出一张）
@@ -19,14 +20,18 @@ function newS() { const c = H.makeContext(); H.loadFile(c.ctx, SPIRITS_SRC); ret
 
 (async function main() {
   /* ============ 1. BG_CATALOG ============ */
-  section("1. BG_CATALOG：21 条 + key 连续 BG-01..BG-21 + 字段完整");
+  section("1. BG_CATALOG：22 条 = 21 张白天系 + BG-22 夜话 + key 连续 BG-01..BG-22 + 字段完整");
   {
     const { S } = newS();
     const keys = Object.keys(S.BG_CATALOG || {});
-    ok(keys.length === 21, "恰好 21 条（实得 " + keys.length + "）");
+    // v180：BG-22「照夜鉴 · 夜话」是本目录里唯一的例外 —— 前缀走 BG_NIGHT_STYLE、负向走 NIGHT_NEG、
+    //   且 **无静态图**（src:""，主理人裁定走 BG 管线）。凡「21 张白天系」的口径一律用 dayKeys。
+    const dayKeys = keys.filter((k) => k !== "BG-22");
+    ok(keys.length === 22, "恰好 22 条（实得 " + keys.length + "）");
+    ok(dayKeys.length === 21, "其中白天系 21 条（实得 " + dayKeys.length + "）");
     let seq = true;
-    for (let i = 0; i < 21; i++) { const k = "BG-" + String(i + 1).padStart(2, "0"); if (keys[i] !== k) seq = false; }
-    ok(seq, "key 连续 BG-01..BG-21 且顺序正确");
+    for (let i = 0; i < 22; i++) { const k = "BG-" + String(i + 1).padStart(2, "0"); if (keys[i] !== k) seq = false; }
+    ok(seq, "key 连续 BG-01..BG-22 且顺序正确");
     ok(keys.every((k) => { const e = S.BG_CATALOG[k]; return e && e.key === k && e.name && e.prompt; }), "每条皆含 key/name/prompt 且 key 自洽");
     ok(S.BG_CATALOG["BG-01"].name.indexOf("巷口石阶") >= 0, "BG-01 名含「巷口石阶」（取自大纲 §八）");
     ok(S.BG_CATALOG["BG-09"].name.indexOf("挂榜") >= 0, "BG-09 名含「挂榜」");
@@ -41,8 +46,8 @@ function newS() { const c = H.makeContext(); H.loadFile(c.ctx, SPIRITS_SRC); ret
       "BG_STYLE 前缀含 empty scene, no people / 9:16 / 竖版声明（v172-C 竖版改写）");
     ok(!/16:9/.test(S.BG_STYLE) && !/WIDE LANDSCAPE HORIZONTAL COMPOSITION/.test(S.BG_STYLE),
       "⛔ BG_STYLE 已无横版残留（16:9 / WIDE LANDSCAPE HORIZONTAL COMPOSITION）");
-    ok(keys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_STYLE) === 0), "每条 prompt 均以 BG_STYLE 前缀开头");
-    ok(keys.every((k) => /no people, empty scene/.test(S.BG_CATALOG[k].prompt)), "21/21 条 prompt 含 no people, empty scene（空镜无人）");
+    ok(dayKeys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_STYLE) === 0), "21/21 白天系 prompt 均以 BG_STYLE 前缀开头");
+    ok(keys.every((k) => /no people, empty scene/.test(S.BG_CATALOG[k].prompt)), "22/22 条 prompt 含 no people, empty scene（空镜无人）");
     // v165 返工：三段式 —— 尾部再拼 **BG_NEG**（场景专用，⛔ 不含人物向词；立绘仍用 NEG_STYLE）
     ok(typeof S.NEG_STYLE === "string" && /strictly no Japanese elements/.test(S.NEG_STYLE) && /no modern or Western clothing/.test(S.NEG_STYLE),
       "NEG_STYLE 负面位仍在（立绘/CG 专用，本次未动）");
@@ -54,9 +59,21 @@ function newS() { const c = H.makeContext(); H.loadFile(c.ctx, SPIRITS_SRC); ret
       "BG_NEG 含 horror/eerie/creepy/ominous/haunted/gloomy/murky/desaturated/vignette 全集（用户实测「太诡异」返工）");
     ok(!/gentle neutral expressions/.test(S.BG_NEG) && !/hanfu/.test(S.BG_NEG),
       "⛔ BG_NEG 已剔除人物向词（gentle neutral expressions / hanfu-inspired costume）");
-    ok(keys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_NEG) > 0 && S.BG_CATALOG[k].prompt.indexOf(", " + S.BG_NEG + ", ") > 0), "21/21 条 prompt 含 BG_NEG（三段式拼装，v172-C 后由 NO_QING 收尾）");
-    ok(typeof S.NO_QING === "string" && keys.every((k) => S.BG_CATALOG[k].prompt.slice(-(S.NO_QING || "").length) === S.NO_QING), "21/21 条 prompt 以 NO_QING 收尾（v172-C 去清代追加在末尾）");
-    ok(keys.every((k) => (S.BG_CATALOG[k].prompt.split(S.BG_NEG || "\u0000").length - 1) === 1), "BG_NEG 每条恰好出现 1 次（不重复拼接）");
+    ok(dayKeys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_NEG) > 0 && S.BG_CATALOG[k].prompt.indexOf(", " + S.BG_NEG + ", ") > 0), "21/21 白天系 prompt 含 BG_NEG（三段式拼装，v172-C 后由 NO_QING 收尾）");
+    ok(typeof S.NO_QING === "string" && keys.every((k) => S.BG_CATALOG[k].prompt.slice(-(S.NO_QING || "").length) === S.NO_QING), "22/22 条 prompt 以 NO_QING 收尾（v172-C 去清代追加在末尾）");
+    ok(dayKeys.every((k) => (S.BG_CATALOG[k].prompt.split(S.BG_NEG || "\u0000").length - 1) === 1), "BG_NEG 白天系每条恰好出现 1 次（不重复拼接）");
+    // ---- v180：BG-22「照夜鉴 · 夜话」夜话例外（前缀 / 负向 / 静态图三处都与 21 张不同） ----
+    const n22 = S.BG_CATALOG["BG-22"] || {};
+    ok(n22.key === "BG-22" && /照夜鉴/.test(n22.name || ""), "BG-22 存在且命名＝照夜鉴 · 夜话");
+    ok(typeof S.BG_NIGHT_STYLE === "string" && /VERTICAL PORTRAIT COMPOSITION, 9:16/.test(S.BG_NIGHT_STYLE) && /empty scene, no people/.test(S.BG_NIGHT_STYLE),
+      "BG_NIGHT_STYLE 存在且含 9:16 竖版 + 空镜无人");
+    ok(typeof S.NIGHT_NEG === "string" && /no Japanese mirror motifs/.test(S.NIGHT_NEG) && /no beads, no bracelet/.test(S.NIGHT_NEG),
+      "NIGHT_NEG 存在且含反日式镜纹 + 反物化（无手串）");
+    ok((n22.prompt || "").indexOf(S.BG_NIGHT_STYLE) === 0, "BG-22 以 BG_NIGHT_STYLE 开头（⛔ 不是 BG_STYLE）");
+    ok((n22.prompt || "").indexOf(S.NIGHT_NEG) > 0 && (n22.prompt || "").indexOf(S.BG_NEG) < 0, "BG-22 含 NIGHT_NEG 且**不含** BG_NEG（夜戏另开口径）");
+    ok(n22.src === "", "BG-22 src 留空（⛔ 不落 assets/bg/BG-22.jpg，走 BG 管线出图 + 永久缓存）");
+    ok(S.bgGet("BG-22") === "", "未出图时 bgGet(BG-22) 返回空 ⇒ 渲染端走 .noimg 纯色兜底（⛔ 不出图、不阻塞）");
+    ok(!/[\u4e00-\u9fff]/.test(n22.prompt || ""), "BG-22 prompt 正文无中文残留");
     ok(keys.every((k) => !/hanfu/i.test(S.BG_CATALOG[k].prompt)), "21/21 条 BG prompt 无 hanfu 人物向污染");
     ok(keys.every((k) => !/cinematic directional lighting|atmospheric depth and haze/.test(S.BG_CATALOG[k].prompt)),
       "⛔ BG prompt 已删旧版阴森向锚（cinematic directional lighting / atmospheric depth and haze）");

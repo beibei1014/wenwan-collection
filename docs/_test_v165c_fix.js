@@ -236,18 +236,22 @@ const readApp = () => fs.readFileSync(path.join(ROOT, APP_SRC), "utf8");
   }
 
   /* ============ 6. C1 BG 文案 ============ */
-  section("6. C1 · BG：21 条仍以 BG_STYLE 开头 / 含 no people, empty scene / 无人物向词");
+  section("6. C1 · BG：22 条 = 21 张白天系（BG_STYLE 开头）+ BG-22 夜话 / 含 no people, empty scene / 无人物向词");
   {
     const { S } = newS();
     const keys = Object.keys(S.BG_CATALOG || {});
-    ok(keys.length === 21, "BG_CATALOG 21 条（实际 " + keys.length + "）");
+    // v180：BG-22 走夜话专用前缀/负向、且无静态图 —— 「21 张白天系」口径一律用 dayKeys。
+    const dayKeys = keys.filter((k) => k !== "BG-22");
+    ok(keys.length === 22 && dayKeys.length === 21, "BG_CATALOG 22 条（白天系 21 + BG-22 夜话；实际 " + keys.length + " / " + dayKeys.length + "）");
     ok(typeof S.BG_STYLE === "string" && S.BG_STYLE.length > 0, "BG_STYLE 存在");
-    ok(keys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_STYLE) === 0), "21/21 以 BG_STYLE 开头");
-    ok(keys.every((k) => /no people, empty scene/.test(S.BG_CATALOG[k].prompt)), "21/21 含 no people, empty scene");
+    ok(dayKeys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_STYLE) === 0), "21/21 白天系以 BG_STYLE 开头");
+    ok(keys.every((k) => /no people, empty scene/.test(S.BG_CATALOG[k].prompt)), "22/22 含 no people, empty scene");
     ok(typeof S.BG_NEG === "string" && S.BG_NEG.length > 0, "BG_NEG 存在（场景专用）");
-    ok(keys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_NEG) > 0), "21/21 仍含 BG_NEG（场景专用负向）");
-    ok(typeof S.NO_QING === "string" && keys.every((k) => S.BG_CATALOG[k].prompt.slice(-(S.NO_QING || "").length) === S.NO_QING), "21/21 以 NO_QING 收尾（v172-C：BG_NEG 之后追加去清代）");
-    ok(keys.every((k) => !/hanfu/i.test(S.BG_CATALOG[k].prompt)), "21/21 无 hanfu 人物向污染");
+    ok(dayKeys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_NEG) > 0), "21/21 白天系仍含 BG_NEG（场景专用负向）");
+    ok(typeof S.NO_QING === "string" && keys.every((k) => S.BG_CATALOG[k].prompt.slice(-(S.NO_QING || "").length) === S.NO_QING), "22/22 以 NO_QING 收尾（v172-C：BG_NEG 之后追加去清代）");
+    ok(keys.every((k) => !/hanfu/i.test(S.BG_CATALOG[k].prompt)), "22/22 无 hanfu 人物向污染");
+    ok(typeof S.NIGHT_NEG === "string" && S.BG_CATALOG["BG-22"].prompt.indexOf(S.NIGHT_NEG) > 0 && S.BG_CATALOG["BG-22"].prompt.indexOf(S.BG_NEG) < 0,
+      "BG-22 走夜话专用 NIGHT_NEG（⛔ 不串用 BG_NEG）");
     ok(!/gentle neutral expressions/.test(S.BG_NEG), "⛔ BG_NEG 已剔除 gentle neutral expressions");
     ok(/horror/.test(S.BG_NEG) && /eerie/.test(S.BG_NEG) && /creepy/.test(S.BG_NEG) && /ominous/.test(S.BG_NEG),
       "BG_NEG 含 horror/eerie/creepy/ominous 全集（去诡异感）");
@@ -298,10 +302,12 @@ const readApp = () => fs.readFileSync(path.join(ROOT, APP_SRC), "utf8");
   {
     const { S } = newS();
     const keys = Object.keys(S.BG_CATALOG || {});
+    // v180：BG-22 夜话不随包（src:"" ⇒ 走 BG 管线出图+永久缓存）—— 「静态内置」口径一律用 dayK。
+    const dayK = keys.filter((k) => k !== "BG-22");
     ok(S.BG_STATIC_DIR === "assets/bg/", "BG_STATIC_DIR === \"assets/bg/\"（实际 " + JSON.stringify(S.BG_STATIC_DIR) + "）");
-    ok(keys.length === 21 && keys.every((k) => S.BG_CATALOG[k].src === S.BG_STATIC_DIR + k + ".jpg"),
-      "21/21 条都有 src = assets/bg/<key>.jpg");
-    ok(keys.every((k) => S.bgGet(k) === "assets/bg/" + k + ".jpg"), "bgGet 21/21 回落到静态 src（视为已出好）");
+    ok(keys.length === 22 && dayK.length === 21 && dayK.every((k) => S.BG_CATALOG[k].src === S.BG_STATIC_DIR + k + ".jpg"),
+      "21 张白天系都有 src = assets/bg/<key>.jpg（BG-22 夜话例外）");
+    ok(dayK.every((k) => S.bgGet(k) === "assets/bg/" + k + ".jpg"), "bgGet 21/21 白天系回落到静态 src（视为已出好）");
     // ensureBg 命中静态 ⇒ 绝不调 deps.generate（⛔ 必须 await，否则断言会晚于汇总输出）
     let gen = 0, wrote = 0;
     const deps = {
@@ -325,10 +331,17 @@ const readApp = () => fs.readFileSync(path.join(ROOT, APP_SRC), "utf8");
     ok(/Spirits\.bgByKey\(k\) \|\| \{\}\)\.src/.test(app8), "C2：设置页按「有 src」统计已内置张数");
     ok(/已随版本内置，无需出图/.test(app8), "C2：全都有静态图时提示「已随版本内置，无需出图」");
     ok(/还差 ' \+ bgTodo \+ ' 张/.test(app8), "C2：待出张数与金额按实际待出数动态算");
-    // 静态图文件确实在仓库里
+    // v180：设置页统计必须把 BG-22 算进「待出 1 张」（否则一键出全套永远出不了照夜鉴）
+    const stStatic = keys.filter((k) => !!(S.bgByKey(k) || {}).src).length;
+    const stDone = keys.filter((k) => !!S.bgGet(k)).length;
+    ok(keys.length === 22 && stStatic === 21 && stDone === 21 && keys.length - stDone === 1,
+      "设置页统计：22 张 / 21 已内置 / 待出 1（BG-22；还差 1 张 · 约 ¥0.03）");
+    // 静态图文件确实在仓库里（v180：BG-22 夜话是唯一例外 —— src:"" 走 BG 管线，⛔ 不随包）
     const fsx = require("fs");
-    const missing = keys.filter((k) => !fsx.existsSync(path.join(ROOT, "assets", "bg", k + ".jpg")));
+    const missing = dayK.filter((k) => !fsx.existsSync(path.join(ROOT, "assets", "bg", k + ".jpg")));
     ok(missing.length === 0, "assets/bg/ 下 21 张静态图全部存在（缺 " + missing.length + " 张）");
+    ok(!fsx.existsSync(path.join(ROOT, "assets", "bg", "BG-22.jpg")) && S.BG_CATALOG["BG-22"].src === "",
+      "BG-22 无静态图（src:'' ⇒ 计入「待出」1 张，设置页一键出全套可出）");
   }
 
   console.log("\n----------------------------------------");

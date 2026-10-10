@@ -62,21 +62,26 @@ const J = JSON.parse(fs.readFileSync(path.join(ROOT, "docs", "_bg_prompts.json")
   {
     const { S } = newS();
     const keys = Object.keys(S.BG_CATALOG || {});
-    ok(keys.length === 21, "BG_CATALOG 恰好 21 条（实得 " + keys.length + "）");
+    // v180：BG-22「照夜鉴 · 夜话」不属此契约 —— 它的图**不随包**（src:""，走 BG 管线出图+永久缓存），
+    //   且前缀/负向走夜话专用常量（BG_NIGHT_STYLE / NIGHT_NEG），故 21 张的「逐字一致」口径对它不适用。
+    const dayKeys = keys.filter((k) => k !== "BG-22");
+    ok(keys.length === 22, "BG_CATALOG 共 22 条 = 21 张白天系 + BG-22 夜话（实得 " + keys.length + "）");
+    ok(dayKeys.length === 21, "其中随包静态图仍恰好 21 条");
     let mismatch = [];
     J.items.forEach((it) => {
       const p = (S.BG_CATALOG[it.key] || {}).prompt || "";
       if (p !== it.prompt) mismatch.push(it.key);
     });
     ok(mismatch.length === 0, "21/21 prompt 与 json 逐字一致（不一致：" + mismatch.join(",") + "）");
-    ok(keys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_STYLE) === 0), "21/21 以 BG_STYLE 开头");
-    ok(keys.every((k) => S.BG_CATALOG[k].prompt.slice(-(S.NO_QING || "").length) === S.NO_QING), "21/21 以 NO_QING 收尾（去清代最高权重）");
-    ok(keys.every((k) => (S.BG_CATALOG[k].prompt.split(S.BG_NEG || "\u0000").length - 1) === 1), "BG_NEG 每条恰出现 1 次");
+    ok(dayKeys.every((k) => S.BG_CATALOG[k].prompt.indexOf(S.BG_STYLE) === 0), "21/21 白天系以 BG_STYLE 开头");
+    ok(keys.every((k) => S.BG_CATALOG[k].prompt.slice(-(S.NO_QING || "").length) === S.NO_QING), "22/22 以 NO_QING 收尾（去清代最高权重）");
+    ok(dayKeys.every((k) => (S.BG_CATALOG[k].prompt.split(S.BG_NEG || "\u0000").length - 1) === 1), "BG_NEG 每条恰出现 1 次（白天系）");
     ok(keys.every((k) => (S.BG_CATALOG[k].prompt.split(S.NO_QING || "\u0001").length - 1) === 1), "NO_QING 每条恰出现 1 次");
-    ok(keys.every((k) => /no people, empty scene/.test(S.BG_CATALOG[k].prompt)), "21/21 含 no people, empty scene（空镜无人）");
+    ok(keys.every((k) => /no people, empty scene/.test(S.BG_CATALOG[k].prompt)), "22/22 含 no people, empty scene（空镜无人）");
     ok(keys.every((k) => !/[\u4e00-\u9fff]/.test(S.BG_CATALOG[k].prompt)), "prompt 正文无中文残留");
     ok(keys.every((k) => !/cinematic directional lighting|atmospheric depth and haze/.test(S.BG_CATALOG[k].prompt)), "⛔ 无旧版阴森向锚");
-    ok(keys.every((k) => S.BG_CATALOG[k].src === "assets/bg/" + k + ".jpg"), "src 指向 assets/bg/BG-XX.jpg（21 张竖版静态图）");
+    ok(dayKeys.every((k) => S.BG_CATALOG[k].src === "assets/bg/" + k + ".jpg"), "src 指向 assets/bg/BG-XX.jpg（21 张竖版静态图）");
+    ok(S.BG_CATALOG["BG-22"].src === "", "BG-22 src 留空（⛔ 不落静态资源，主理人裁定走 BG 管线）");
   }
 
   /* ============ 3. ensureBg 真跑：竖版出图入参 ============ */

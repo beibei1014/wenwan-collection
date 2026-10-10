@@ -4244,9 +4244,10 @@
   /* =========================================================
    * v165 · BG 场景背景系统（新全局系统）
    * ---------------------------------------------------------
-   * · BG_CATALOG：BG-01 ~ BG-21，共 21 条（name/画面来自大纲 §八 8.1）。
+   * · BG_CATALOG：BG-01 ~ BG-22，共 22 条（name/画面来自大纲 §八 8.1；BG-22 为 v180 夜话专用，见下方独立常量）。
    *   每条 prompt = **BG_STYLE 前缀 + 该 BG 的英文正文**，正文取自
    *   docs/v165-BG与CG出图规范.md §1.1 / §2.2（纯英文、无中文残留、无 emoji）。
+   *   ⚠️ BG-22 是唯一例外：前缀走 BG_NIGHT_STYLE、负向走 NIGHT_NEG（夜戏口径），且无静态图（src:""）。
    *   ⛔ 不含「密集恐惧 / DENSITY LOCK」类约束（主理人已删该硬约束；
    *      成排门灯 BG-11、密点纹样 BG-19 都照常画）。
    * · ww_bg（localStorage，新键）：{ "BG-01": { url, at }, ... }
@@ -4286,6 +4287,60 @@
     + "no fog swallowing the frame, no dark horror atmosphere, no low-key lighting), "
     + "strictly no abandoned or decayed ruin look, strictly no desolate bleak emptiness, no text, no letters, "
     + "no words, no numbers, no watermark, no signature, no logo";
+
+  /* ---------------------------------------------------------
+     v180 · 夜话背景「照夜鉴」专用常量（BG-22）
+     ⛔ BG_STYLE / BG_NEG 本体**一个字不改**（那两条被 BG-01~BG-21 共 21 张图共用）。
+     规范源：docs/v180-夜话背景-UI设计.md §3.2 / §3.3（以下三段逐字抄录，⛔ 不许改词）。
+     为什么要另开 NIGHT_NEG：BG_NEG 里有 "no dark horror atmosphere, no low-key lighting"，
+     与「夜话＝夜景」直接冲突。裁定 = 不删裸词、改口径 ⇒「一盏暖灯＝唯一强光，其余柔和可读」。
+     拼装顺序与 21 张完全一致：BG_NIGHT_STYLE + ", " + 正文 + ", " + NIGHT_NEG + ", " + NO_QING
+     --------------------------------------------------------- */
+  const BG_NIGHT_STYLE = "2D hand-drawn background key art in traditional Chinese gufeng style, "
+    + "xianxia immortal-cultivation setting, "
+    + "a quiet ancient Chinese scholar's chamber at deep night, "
+    + "painterly flat-color illustration with soft cel shading, "
+    + "aged bronze, silk, lacquer and weathered-wood material texture, "
+    + "classical Chinese color palette of misty blue-grey and old bronze with one warm lamp accent, "
+    + "one small oil lamp as the single warm light source, "
+    + "calm serene and reassuring night, quiet and safe rather than eerie, "
+    + "soft even illumination with no crushing shadow, "
+    + "VERTICAL PORTRAIT COMPOSITION, 9:16 vertical framing, "
+    + "the scene fills the whole frame from top to bottom, not a landscape, not a horizontal banner, "
+    + "empty scene, no people, no figures, no characters, "
+    + "generous clean negative space, no text, no letters, no watermark, no logo, "
+    + "single continuous scene, no split panels, no collage, no modern elements, no Western elements, no Japanese elements";
+
+  // 正文（English body）—— 照夜鉴构图：悬索+铜链 / 鉴面雾面净面 / 商周云雷纹+错金 / 柿蒂钮座 / 案几+油灯+道册+香烟+朱印
+  const BG_NIGHT_BODY = "an ancient Chinese round bronze mirror disc (an antique \"jian\" mirror) hanging from a braided cord and a short section of bronze chain at the top of the frame, "
+    + "the mirror's face turned toward the viewer and covered by a smooth misty blue-grey haze, "
+    + "the central disc of the mirror stays a smooth near-featureless misty plane with no pattern, no ornament and no lettering, only two or three faint concentric ripples, "
+    + "the outer ring of the mirror is cast with ancient Chinese Shang and Zhou style cloud-and-thunder scroll pattern and simplified coiled-dragon motifs, inlaid with two thin gold-wire lines, "
+    + "the knob boss formed as a Han-dynasty persimmon-calyx four-leaf motif, "
+    + "heavy patina gathered only along the outer ring and the lower rim, both green bronze rust and brown rust present, "
+    + "the bronze warm and well-kept rather than dirty, "
+    + "below the mirror in the lower third of the frame a corner of a wooden desk, "
+    + "on the right a single small oil lamp with a warm orange flame as the only warm light source in the whole image, "
+    + "on the left a half-open ancient Chinese ledger book reduced to a dark silhouette, "
+    + "a single thin thread of pale incense smoke rising diagonally from below and passing across the lower rim of the mirror, "
+    + "a single small vermilion seal mark on the upper outer ring, abstract ornament only and not readable characters, "
+    + "vertical composition with the cord and chain entering from the top edge and the desk filling the lower frame, the mirror disc centred with its centre at about 38% of the frame height, "
+    + "the central disc of the mirror stays a smooth near-featureless misty plane, "
+    + "generous clean empty haze across the middle for interface text overlay, "
+    + "no people, empty scene";
+
+  // 夜话专用负向（⛔ 与 BG_NEG 并列而存，互不串用）。相对 BG_NEG 的三处裁定（见规范 §3.3 差异表）：
+  //   ① 反物化加码 —— 逐词禁 beads / bracelet / rosary / shelf / display cabinet（防模型把「文玩」画成手串）
+  //   ② 反现代通讯加码 —— 禁 phone / screen / chat interface / speech bubbles / UI panels（防把「群聊」画成聊天软件）
+  //   ③ 反日式镜纹加码 —— 铜镜中日同形，必须锚死「商周—汉式」，另禁 sakura / crane-and-tortoise / torii / andon
+  const NIGHT_NEG = "traditional Chinese styling only, ancient Chinese Shang-Zhou and Han dynasty bronze mirror motifs only, "
+    + "strictly no Japanese elements and no Japanese mirror motifs (no Japanese flag, no rising sun motif, no sakura mirror, no crane-and-tortoise mirror, no shinto imagery, no torii gate, no andon lantern, no kimono, no yukata, no paper fan with red circle), "
+    + "strictly no modern or Western elements (no phone, no smartphone, no screen, no monitor, no tablet, no chat interface, no speech bubbles, no message boxes, no UI panels, no neon, no glowing glass, no jacket, no hoodie, no T-shirt, no jeans, no denim, no sneakers, no suit and tie, no zipper coat, no ornate Western mirror frame, no hand mirror, no rococo carving), "
+    + "strictly no objectification of characters (no beads, no bracelet, no prayer beads, no string of beads, no rosary, no jewels, no trinkets, no shelf, no display cabinet, no collectible display), "
+    + "strictly no horror atmosphere (no horror, no scary, no eerie, no creepy, no sinister, no ominous, no haunted, no unsettling, no gloomy, no murky, no desaturated, no heavy vignette, no fog swallowing the frame), "
+    + "no horror or low-key mood, a single warm lamp is the only strong light source while the rest of the scene stays softly legible, "
+    + "strictly no abandoned or decayed ruin look, strictly no desolate bleak emptiness, "
+    + "no readable letters, no readable Chinese characters, no seal script text, no text, no letters, no words, no numbers, no watermark, no signature, no logo";
 
   // 逐条 prompt = BG_STYLE + ", " + 英文正文 + ", " + BG_NEG + ", " + NO_QING（正文均含 "no people, empty scene"）
   // v172-C：出图档 = 竖版 9:16（BG_SIZE=1440x2560，回落 1728x3072）；渲染端 .scenebg 用 cover 铺满。
@@ -4450,7 +4505,16 @@
       + "soft moonlight through the snowfall and a warm glow seeping from under the doors, "
       + "vertical composition with the gate centred and towering through the upper frame under the falling snow, "
       + "the snowy ground filling the lower third as clear open snow for a standing figure, the snow clean and beautiful, "
-      + "the warm line of light under the door the emotional focus, poetic rather than sinister, no people, empty scene" + ", " + BG_NEG + ", " + NO_QING }
+      + "the warm line of light under the door the emotional focus, poetic rather than sinister, no people, empty scene" + ", " + BG_NEG + ", " + NO_QING },
+    // v180 · BG-22「照夜鉴 · 夜话」—— 夜话页唯一的背景（全家 / 房间 / 双人组 / 私聊共用这一张）
+    //   ⚠️ src 显式留空（⛔ **不是** assets/bg/BG-22.jpg）：
+    //      · 主理人裁定「图的来源＝BG 管线」（规范 §2.1 / §4.2 / §4.4）——出一次永久存 ww_bg / Supabase；
+    //      · 若照抄 21 张的 src 写法，bgGet 会立刻返回一个**不存在的静态路径** ⇒ 每进一次夜话打一个 404；
+    //        且「一键出全套」用 !bgUrlOf(k) 过滤待出清单 ⇒ 该 key 会被永久跳过、再也出不了图。
+    //      · src:"" ⇒ 未出图时 bgGet 返回 "" ⇒ 渲染端走 .noimg 纯色兜底（#141019，规范 §4.4「已可上线」），
+    //        同时仍留在「一键出全套」的待出清单里。出图档同 21 张：size=1440x2560 / landscape:false / toStore(1280,.88,768,.86)。
+    "BG-22": { key: "BG-22", name: "照夜鉴 · 夜话", src: "",
+      prompt: BG_NIGHT_STYLE + ", " + BG_NIGHT_BODY + ", " + NIGHT_NEG + ", " + NO_QING }
   };
   // v172-C：BG 竖版出图尺寸（严格 9:16，手机全屏）。= 2560x1440 的转置，像素数同为 3,686,400（方舟 ≥3,686,400 门槛取等可用）。
   //   ⛔ 不塞进 CG_SIZE_BY_PROVIDER.ark（那是 CG 横版档，塞进去会把 CG 也带成竖版）。
@@ -7676,8 +7740,10 @@
     GIFT_REACTIONS, GIFT_REACTION_FALLBACK, giftReactionOf, GIFT_COPY,
     GIFT_LOG_KEY, loadGiftDay, saveGiftDay, giftGivenToday, noteGiftGiven,
     GIFT_SRC, reconcileGiftSources,   // v179：礼物来源发放（节令/破阶/章末/签）+ 幂等对账
-    // v165：BG 场景背景系统（全局 21 张；ww_bg 永久 URL；ensureBg 并发去重）
+    // v165：BG 场景背景系统（全局 22 张；ww_bg 永久 URL；ensureBg 并发去重）
+    // v180：BG-22 夜话专用 —— 另导出 BG_NIGHT_STYLE / BG_NIGHT_BODY / NIGHT_NEG 供自测逐字比对
     BG_KEY, BG_CATALOG, BG_CHAPTER_MAP, BG_STYLE, BG_NEG, BG_STATIC_DIR, BG_SIZE, BG_SIZE_LADDER, NEG_STYLE, bgByKey, bgSeedKey, bgForChapter, bgLoadAll, bgGet, bgPut, ensureBg,
+    BG_NIGHT_STYLE, BG_NIGHT_BODY, NIGHT_NEG,
     HEART_MARKS, HEART_LV_NAMES, heartLevel, addHeart,
     harmedOf, setHarmed, starMarkOf, setStarMark,
     fmt, greetVars,
