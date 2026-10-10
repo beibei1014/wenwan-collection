@@ -125,6 +125,22 @@ function run(src) {
     !!echo && !JSON.stringify(echo).includes("抱出来给人看看") && !JSON.stringify(echo).includes("让我在灯下站一站")]);
   A.push(["A9 · ECHO_LETTER 不再把沁灵写成「还在那一串里」（物件位）",
     !!echo && !JSON.stringify(echo).includes("还在那一串")]);
+  /* v180 · 批K-1：回响（日子信）人本位改写 —— 新增断言（基线必红） */
+  A.push(["A10 · ECHO_LETTER 结构 = 6 池；y 池 3 候选、其余各 2",
+    !!echo && Object.keys(echo).length === 6 &&
+      Object.keys(echo).every((k) => Array.isArray(echo[k]) && echo[k].length === (k === "y" ? 3 : 2))]);
+  A.push(["A11 · ECHO_LETTER ⛔ 弃用 {bead}（手串名当人名＝物化硬伤）",
+    !!echo && !JSON.stringify(echo).includes("{bead}")]);
+  A.push(["A12 · ECHO_LETTER 落款无所有格（仅「—— {name}」，无「你的」）",
+    !!echo && !JSON.stringify(echo).includes("你的{name}") && Object.keys(echo).every((k) => echo[k].every((s) => s.indexOf("—— 你的") < 0))]);
+  A.push(["A13 · ECHO_LETTER 占位符全为 ASCII 且 {call}/{name}/{stage}/{plays}/{year} 都在",
+    !!echo && ["{call}", "{name}", "{stage}", "{plays}", "{year}"]
+      .every((p) => JSON.stringify(echo).includes(p))]);
+  A.push(["A14 · ECHO_LETTER 的 {year} 只出现在 y 池（其余池不赋值 ⇒ ⛔ 不会原样打出）",
+    !!echo && Object.keys(echo).filter((k) => JSON.stringify(echo[k]).includes("{year}")).join(",") === "y"]);
+  A.push(["A15 · y 池三条均含 {year}，且⛔ 不写死年数（无「一周年/两年/三年/五年」）",
+    !!echo && Array.isArray(echo.y) && echo.y.every((s) => s.indexOf("{year}") >= 0) &&
+      !/(一周年|两周年|三周年|五周年|两年|三年|五年)/.test(JSON.stringify(echo.y))]);
 
   /* ===== B 组：回归护栏（结构不许改坏） ===== */
   B.push(["B1 · diaryLocal 池仍是 8 条", !!pool && pool.length === 8]);
@@ -136,11 +152,8 @@ function run(src) {
   B.push(["B7 · 保留 rep 回复引用（4 条）", !!dl && (dl.match(/rep/g) || []).length >= 4]);
   B.push(["B8 · diaryLocal 池内无「它」", !!pool && pool.every((s) => s.indexOf("它") < 0)]);
   B.push(["B9 · ECHO_LETTER 内无「它」", !!echo && Object.keys(echo).every((k) => echo[k].every((s) => s.indexOf("它") < 0))]);
-  B.push(["B10 · ECHO_LETTER 仍是 6 组 × 2 候选",
-    !!echo && Object.keys(echo).length === 6 && Object.keys(echo).every((k) => Array.isArray(echo[k]) && echo[k].length === 2)]);
-  B.push(["B11 · ECHO_LETTER 占位符全为 ASCII 且 7 个都在",
-    !!echo && ["{call}", "{name}", "{color}", "{bead}", "{stage}", "{plays}", "{year}"]
-      .every((p) => JSON.stringify(echo).includes(p))]);
+  // v180 · 批K-1：原 B10（6 组 × 2）、B11（含 {bead}/{color}）已被回响人本位改写取代 ⇒
+  //   结构 / 占位符口径移入 A10–A15（新契约），此处不再重复断言。
   B.push(["B12 · diaryWrite 保留 60-140 字约束", !!dw && dw.indexOf("60-140") >= 0]);
   B.push(["B13 · diaryWrite 保留 ownerLine() 注入", !!dw && dw.indexOf("ownerLine()") >= 0]);
   B.push(["B14 · diaryWrite 保留「这位沁灵平时叫主人」措辞", !!dw && dw.indexOf("；这位沁灵平时叫主人") >= 0]);
