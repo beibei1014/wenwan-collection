@@ -3530,8 +3530,11 @@
       html += '<div class="diary-hint echo" id="echoHint">✦ ' + echoWho + " <b>" + echoN + "</b> 封回响信 · 点它进去看</div>";
     }
 
+    // v180-zip：常驻入口 —— #/spirits（全部沁灵页）此前只有「有日记时」才渲染的 #diaryHint 一条路，
+    //   没写日记的用户等于完全没有入口 ⇒ 这里无条件挂一个「全部沁灵 →」（⛔ 不许做成条件渲染）
     html += '<div class="section-title">🍡 我的沁灵（' + list.length + '）' +
-      '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点他们进详情页</small></div>';
+      '<small style="color:var(--text-2);font-weight:400;font-size:11px"> 点他们进详情页</small>' +
+      '<button type="button" class="link-btn" id="spAllSpirits" style="margin-left:auto;font-size:11px;color:var(--wood);font-weight:700">全部沁灵 →</button></div>';
     // v163b：先进「所有沁灵」网格（复用 #/spirits 卡片结构）
     html += '<div class="spirit-grid">';
     list.forEach((it) => {
@@ -3586,6 +3589,8 @@
     if (msBtn) msBtn.onclick = () => { location.hash = "#/book"; };
     const dh = $("#diaryHint");
     if (dh) dh.onclick = () => location.hash = "#/spirits";
+    const allBtn = $("#spAllSpirits");   // v180-zip：常驻入口（⛔ 不依赖 diaryHint 是否存在）
+    if (allBtn) allBtn.onclick = () => location.hash = "#/spirits";
     const eh = $("#echoHint");
     // v163d：只有一尊写了回响信 → 直接进它详情页（详情页有「✦ 回响」卡片，一步到位）；多尊 → 回列表
     if (eh) eh.onclick = () => {
@@ -5920,6 +5925,134 @@
     if (!t) t = fallback || "unnamed";
     return t.slice(0, 60);
   }
+  /* ---------- v180-zip：最小 ZIP 打包器（STORE / method 0，零依赖，⛔ 不引 CDN） ----------
+   * 起因（用户原话）：「点了导出它是一页一页的下载…怎么不是之前那样打包下载？」
+   *   旧实现逐张 createObjectURL + a.click() ⇒ 100+ 次保存弹窗，浏览器直接卡死。
+   * 选型：PNG/JPG 本身已是压缩格式，deflate 收益极低却必须引第三方库（⛔ 无构建、⛔ CDN）
+   *   ⇒ 自写 STORE(method 0) + CRC32 表：本地头 ×N → 中央目录 ×N → EOCD，文件名 UTF-8（通用位 11）。
+   * 防卡死三件套：① 并发上限（不打满浏览器连接）② 可见进度「已打包 12/96」
+   *             ③ 单张失败跳过、末尾只汇总，⛔ 不中断整体。 */
+  const ZIP_FETCH_CONCURRENCY = 5;                 // 并发上限（4~6 区间取 5）
+  const ZIP_SIZE_WARN_BYTES = 200 * 1024 * 1024;   // 体积提示阈值：超过只提示，⛔ 不中断
+  const ZIP_METHOD_STORE = 0;                      // STORE：不压缩
+  const ZIP_FLAG_UTF8 = 0x0800;                    // 通用位 bit11：文件名按 UTF-8 解
+  let _zipExporting = false;                       // 防连点：一次打包没结束前不重复启动
+
+  /* UTF-8 编码：自己写（不依赖 TextEncoder 在旧 WebView 的可用性）；单遍 O(n)，正确处理代理对 */
+  function utf8Bytes(str) {
+    const s = String(str == null ? "" : str);
+    const out = [];
+    for (let i = 0; i < s.length; i++) {
+      let c = s.charCodeAt(i);
+      if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
+        const c2 = s.charCodeAt(i + 1);
+        if (c2 >= 0xdc00 && c2 <= 0xdfff) { c = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00); i++; }
+      }
+      if (c < 0x80) out.push(c);
+      else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+      else if (c < 0x10000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+      else out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 0x3f), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+    }
+    return new Uint8Array(out);
+  }
+  let _crcTab = null;
+  function crc32Table() {
+    if (_crcTab) return _crcTab;
+    const t = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+      t[i] = c >>> 0;
+    }
+    _crcTab = t;
+    return t;
+  }
+  function crc32(u8) {
+    const t = crc32Table();
+    let c = 0xffffffff;
+    for (let i = 0; i < u8.length; i++) c = t[(c ^ u8[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+  function zipDateStr() {
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function zipSizeTxt(n) {
+    const b = Number(n) || 0;
+    if (b >= 1073741824) return (b / 1073741824).toFixed(2) + " GB";
+    if (b >= 1048576) return (b / 1048576).toFixed(1) + " MB";
+    return Math.max(1, Math.round(b / 1024)) + " KB";
+  }
+  /* 把 [{name, bytes}] 拼成一个 STORE 的 zip，返回 Uint8Array */
+  function zipStore(files) {
+    const items = [];
+    (files || []).forEach((f) => {
+      const data = (f && f.bytes) ? f.bytes : new Uint8Array(0);
+      items.push({ name: utf8Bytes(f && f.name != null ? f.name : "file"), data: data, size: data.length, crc: crc32(data) });
+    });
+    let localSize = 0, centralSize = 0;
+    items.forEach((it) => { localSize += 30 + it.name.length + it.size; centralSize += 46 + it.name.length; });
+    const buf = new Uint8Array(localSize + centralSize + 22);
+    const dv = new DataView(buf.buffer);
+    let p = 0;
+    const u16 = (v) => { dv.setUint16(p, v, true); p += 2; };
+    const u32 = (v) => { dv.setUint32(p, v >>> 0, true); p += 4; };
+    // DOS 时间戳固定（2026-01-01 00:00）：同一批内容导出的字节稳定，便于比对；也免得每文件算一遍
+    const dosTime = 0, dosDate = ((2026 - 1980) << 9) | (1 << 5) | 1;
+    const offs = [];
+    items.forEach((it) => {
+      offs.push(p);
+      u32(0x04034b50); u16(20); u16(ZIP_FLAG_UTF8); u16(ZIP_METHOD_STORE); u16(dosTime); u16(dosDate);
+      u32(it.crc); u32(it.size); u32(it.size); u16(it.name.length); u16(0);
+      buf.set(it.name, p); p += it.name.length;
+      buf.set(it.data, p); p += it.size;
+    });
+    const cdStart = p;
+    items.forEach((it, i) => {
+      u32(0x02014b50); u16(20); u16(20); u16(ZIP_FLAG_UTF8); u16(ZIP_METHOD_STORE); u16(dosTime); u16(dosDate);
+      u32(it.crc); u32(it.size); u32(it.size);
+      u16(it.name.length); u16(0); u16(0); u16(0); u16(0); u32(0); u32(offs[i]);
+      buf.set(it.name, p); p += it.name.length;
+    });
+    // ⚠️ cdSize 必须先算：下面写 EOCD 头时 p 会继续前进，边写边读 p 会算错
+    const cdSize = p - cdStart;
+    u32(0x06054b50); u16(0); u16(0); u16(items.length); u16(items.length);
+    u32(cdSize); u32(cdStart); u16(0);
+    return buf;
+  }
+  /* 受限并发 map：worker 抛错只记 null，⛔ 不让单张失败拖垮整体；单遍 O(n) */
+  async function mapLimit(list, limit, worker) {
+    const arr = list || [];
+    const n = Math.max(1, Math.min(8, Number(limit) || 1));
+    const out = new Array(arr.length);
+    let i = 0;
+    const runOne = async () => {
+      while (i < arr.length) {
+        const idx = i++;
+        try { out[idx] = await worker(arr[idx], idx); } catch (e) { out[idx] = null; }
+      }
+    };
+    const runners = [];
+    for (let k = 0; k < Math.min(n, arr.length); k++) runners.push(runOne());
+    await Promise.all(runners);
+    return out;
+  }
+  /* 打包进度盒：固定定位的小条，on=false 时移除 */
+  function zipProgressBox(on) {
+    let el = document.getElementById("zipProgress");
+    if (!on) { if (el && el.parentNode) el.parentNode.removeChild(el); return null; }
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "zipProgress";
+      el.style.cssText = "position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9999;" +
+        "background:rgba(48,38,30,.94);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;" +
+        "line-height:1.6;max-width:80vw;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.28)";
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+
+  /* v180-zip：单 zip 打包下载（⛔ 不再逐张弹保存框） */
   async function exportAllSpiritImages() {
     try {
       const store = Spirits.load();
@@ -5972,29 +6105,67 @@
         return { url: e[0], file: fn, i: i + 1 };
       });
       if (!list.length) { toast("还没有可导出的立绘"); return; }
-      const yes = await confirmModal("导出全部立绘？",
-        "将下载 " + list.length + " 张高清原图到本地（每张一次下载，浏览器可能依次弹出保存框）。\n\n文件名按沁灵名字命名，例如：\n星月菩提·蜕形_进阶CG.png\n星月菩提·蜕形_立绘.png",
-        "开始下载", true);
+      if (_zipExporting) { toast("正在打包中，请稍候…"); return; }   // 防连点：同开两次会把内存打爆
+      const zipName = "沁灵立绘_" + zipDateStr() + ".zip";
+      const estBytes = list.length * 1024 * 1024;   // 粗估：单张按 1MB 计（PNG 立绘常见 0.5~2MB）
+      const yes = await confirmModal("导出全部立绘（打包成一个 zip）",
+        "共 " + list.length + " 张高清原图，打包成\n" + zipName +
+        "\n一次性下载（⛔ 不会再一张一张弹保存框）。\n\n粗估体积约 " + zipSizeTxt(estBytes) +
+        "；实际超过 " + zipSizeTxt(ZIP_SIZE_WARN_BYTES) + " 会在打包过程中提示，但不中断。\n\n" +
+        "文件名按沁灵名字命名，例如：\n星月菩提·蜕形_进阶CG.png\n星月菩提·蜕形_立绘.png",
+        "开始打包", true);
       if (!yes) return;
-      toast("开始下载 " + list.length + " 张…");
-      let ok = 0;
-      for (let i = 0; i < list.length; i++) {
-        const it = list[i];
-        try {
+      _zipExporting = true;
+      const box = zipProgressBox(true);
+      const stat = { n: 0, bytes: 0, warned: false };
+      if (box) box.textContent = "准备打包 " + list.length + " 张…";
+      let parts = [];
+      try {
+        // 受限并发：一次最多 ZIP_FETCH_CONCURRENCY 个请求；单张失败只记 null，⛔ 不中断
+        parts = await mapLimit(list, ZIP_FETCH_CONCURRENCY, async (it) => {
           const res = await fetch(it.url, { mode: "cors" });
-          const blob = await res.blob();
-          const obj = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = obj;
-          a.download = it.file;
-          document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(obj), 4000);
-          ok++;
-        } catch (e2) { console.warn("下载失败", it.url, e2); }
-        if (i % 8 === 7) await new Promise((r) => setTimeout(r, 400));   // 轻微节流，降低被浏览器拦截概率
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const bytes = new Uint8Array(await res.arrayBuffer());
+          stat.n++; stat.bytes += bytes.length;
+          if (!stat.warned && stat.bytes > ZIP_SIZE_WARN_BYTES) {
+            stat.warned = true;
+            toast("已超过 " + zipSizeTxt(ZIP_SIZE_WARN_BYTES) + "，仍继续打包…");
+          }
+          if (box) box.textContent = "已打包 " + stat.n + "/" + list.length + "（" + zipSizeTxt(stat.bytes) + "）";
+          return { name: it.file, bytes: bytes };
+        });
+      } catch (e0) { console.warn("打包流程异常", e0); }
+      const good = parts.filter((p) => p && p.bytes);
+      const failN = list.length - good.length;
+      if (!good.length) {
+        zipProgressBox(false); _zipExporting = false;
+        toast("打包失败：一张都没下载成功（详见浏览器控制台）");
+        return;
       }
-      toast("下载完成：成功 " + ok + " / " + list.length + " 张（失败的见浏览器控制台）");
-    } catch (e) { toast("导出失败：" + ((e && e.message) || "")); }
+      if (box) box.textContent = "正在合成 zip…";
+      let zipBytes = null;
+      try {
+        zipBytes = zipStore(good);
+      } catch (e1) {
+        console.warn("zip 合成失败", e1);
+        zipProgressBox(false); _zipExporting = false;
+        toast("zip 合成失败：" + ((e1 && e1.message) || ""));
+        return;
+      }
+      try {
+        const blob = new Blob([zipBytes], { type: "application/zip" });
+        const obj = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = obj;
+        a.download = zipName;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(obj), 30000);
+      } catch (e2) { console.warn("触发下载失败", e2); }
+      zipProgressBox(false);
+      _zipExporting = false;
+      toast("导出完成：" + zipName + " · " + good.length + "/" + list.length + " 张 · " +
+        zipSizeTxt(zipBytes.length) + (failN ? "（失败 " + failN + " 张，见控制台）" : ""));
+    } catch (e) { zipProgressBox(false); _zipExporting = false; toast("导出失败：" + ((e && e.message) || "")); }
   }
   function base2(fname, k) {
     const dot = fname.lastIndexOf(".");
