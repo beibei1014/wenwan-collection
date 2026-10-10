@@ -8079,13 +8079,30 @@
    * ============================================================ */
   const BOOK_ID = "jieqi";
 
+  /* v180-L4 · 引擎侧「真名兜底」—— 名牌 / 立绘一律优先**真名**，拿不到真名才回落描述词。
+     优先级（用户显式要求：对话显示真名）：
+       ① role      ：抽取器按身份表给的正式姓名（最权威，脚本自带）
+       ② 身份表反查：who 是手串名 / 旧名 / 别名时，spiritIdentityOf 反查真名（兜底）
+       ③ who       ：仍解不出 ⇒ 原样显示描述词（如「有人」这类正文刻意压名的）
+     ⛔ 只改**显示层口径**：who 字段一字不动（护 _test_v180_book 的数据断言与抽取器围栏）。 */
+  function bookSpeakerName(L) {
+    const who = String((L && L.who) || "").trim();
+    const role = String((L && L.role) || "").trim();
+    if (role) return role;                                        // ① 真名（脚本自带）
+    if (who && typeof spiritIdentityOf === "function") {
+      const idc = spiritIdentityOf(who);                          // ② 身份表反查（手串名/旧名 → 真名）
+      if (idc && idc.name) return idc.name;
+    }
+    return who;                                                   // ③ 回落描述词
+  }
   // 段 → 演出消息：旁白/场景 ⇒ sys；对白 ⇒ sp（带说话人）；玩家行 ⇒ me
   function bookMsgOf(L, seg) {
     const t = String((L && L.t) || "");
     if (L && L.k === "me") return { w: "me", text: t, seg: seg };
     if (L && L.k === "d") {
       const who = String(L.who || "");
-      return { w: "sp", name: who, castName: who, speaker: String(L.role || who), text: t, slot: "C", seg: seg };
+      const nm = bookSpeakerName(L);                              // v180-L4：真名优先（role / 身份表 / 描述词）
+      return { w: "sp", name: who, castName: nm, speaker: nm, text: t, slot: "C", seg: seg };
     }
     return { w: "sys", text: t, seg: seg };
   }

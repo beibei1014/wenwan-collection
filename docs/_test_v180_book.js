@@ -167,8 +167,10 @@ NEW4.forEach((i) => {
 });
 const TOTAL_SEG = CHS.reduce((s, c) => s + ((c && c.lines) || []).length, 0);
 ok(TOTAL_SEG > 400, "全篇段数 > 400（实得 " + TOTAL_SEG + "）");
-/* 真名点破的先后：第 1–4 章名牌**不得**用正式姓名（会剧透「认人·中/下」的揭名）；
-   第 5–8 章名牌**一律**正式姓名。 */
+/* 真名点破的先后（本节只锁**数据层** who，不锁渲染）：
+   第 1–4 章 who 用描述词、第 5–8 章 who 用正式姓名。
+   v180-L4 起**显示层**另有「真名兜底」（app.js bookSpeakerName：role ＞ 身份表 ＞ who）
+   ⇒ 运行时名牌一律真名；第 1–4 章的数据侧 who 是否改真名由 L5 重抽取定，届时同步本节。 */
 const FORMAL = Object.keys(IDENT);        // 16 位正式姓名（身份表真源，⛔ 不手写名单）
 ok(FORMAL.length >= 16, "身份表抽出 ≥16 个正式姓名（实得 " + FORMAL.length + "）");
 let earlyFormal = 0, lateDescriptive = 0;
