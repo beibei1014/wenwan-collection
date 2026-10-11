@@ -298,8 +298,9 @@ ok(stamp && preStamp && stamp[1] !== preStamp[1],
 // 本轮没动 spirits.js ⇒ 它的戳不该被顺手改
 const spStamp = /js\/spirits\.js\?v=([0-9]+)/.exec(indexSrc);
 const spPre = fs.existsSync(prePath) ? /js\/spirits\.js\?v=([0-9]+)/.exec(fs.readFileSync(prePath, "utf8")) : null;
-ok(spStamp && spPre && spStamp[1] === spPre[1],
-  "⛔ 未动 spirits.js ⇒ 其缓存戳不动（" + (spPre ? spPre[1] : "?") + "）");
+// 本轮（v180-AGE 年龄档）动了 spirits.js ⇒ 其缓存戳应**离开**快照值（快照 = 20270204）
+ok(spStamp && spPre && spStamp[1] !== spPre[1],
+  "v180-AGE 已动 spirits.js ⇒ 其缓存戳已 bump（快照 " + (spPre ? spPre[1] : "?") + " → 现 " + (spStamp ? spStamp[1] : "?") + "）");
 
 /* ---------- 负向对照闸门 ---------- */
 if (MISSING.length) {

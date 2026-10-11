@@ -1058,6 +1058,82 @@
   ];
   function proportionZhFor(stage) { return PROPORTION_ZH[Math.min(4, Math.max(1, Number(stage) || 1))] || ""; }
   /* ============================================================
+   * 🔴 v180-AGE · 化形年龄口径「主人写年龄，头身比跟年龄走」（2026-10-12 用户裁定）
+   *   病灶（用户实测截图打回）：化形整条链写死「成年人」—— 开场锚 a young adult man,
+   *   handsome mature face / 形态 a fully grown adult / prop 的 mature majestic /
+   *   中文锚「成年形态…成年人」⇒ 人设里「十七八岁的少年」被四层前后夹击，化形画出 27、8 岁的脸。
+   *   新口径：主人在设定向导 / 出图单里**写了数字年龄** ⇒ 按年龄档出对应的头身比与脸锚
+   *   （十七八岁 → 7 头身清秀少年脸；二十来岁 → 8 头身青年脸）；**不写数字年龄 → 维持旧行为（9 头身成年）**。
+   *   ⛔ STAGES 本体（look/prop）一字不改 —— 覆盖只在**非 legacy 出图装配时**动态生效；
+   *      legacy（恢复旧立绘）路径必须逐字节复刻旧 prompt，绝不受年龄档影响。
+   *   扫描源 = 主人亲口确认过的文本（lk.base / lk.profile / lk.persona + 出图单 extraZh / featsText）；
+   *   ⛔ 绝不扫 rec.personaZh —— 那是 AI 扩写正文（:1459 同款纪律），扫它等于让 AI 编的年龄改比例。
+   *   蜕形档联动：化形档数字 −0.5（十七八→6.5 / 二十来岁→7.5），并注明「比最终形态年幼几岁」。
+   * ============================================================ */
+  const AGE_BANDS = [
+    { zh: "三十岁往后", ratio: 9,
+      faceBoy: "a mature man of thirty and above, clearly male, mature handsome face",
+      faceGirl: "a mature woman of thirty and above, clearly female, mature beautiful face" },
+    { zh: "二十来岁", ratio: 8,
+      faceBoy: "a young man in his early twenties, clearly male, handsome youthful face",
+      faceGirl: "a young woman in her early twenties, clearly female, beautiful youthful face" },
+    { zh: "十四五岁", ratio: 6.5,
+      faceBoy: "a boy of about fourteen or fifteen, clearly male, youthful boyish face",
+      faceGirl: "a girl of about fourteen or fifteen, clearly female, youthful pretty face" },
+    { zh: "十七八岁", ratio: 7,
+      faceBoy: "a tall youth of about seventeen or eighteen, clearly male, youthful handsome face",
+      faceGirl: "a tall young maiden of about seventeen or eighteen, clearly female, youthful pretty face" },
+  ];
+  // ⛔ 顺序即优先级：先摘高位（三十/二十X），再猜低位——否则「二十八岁」里的「十八」会被误命中成 7 头身。
+  //   只认**数字年龄**；只写「少年」这类泛称不触发（泛称太常见，误伤面太大），想控比例请写具体岁数。
+  function finalAgeBandOf(text) {
+    const t = String(text || "");
+    if (!t) return null;
+    if (/三十|四十|五十|六十|中年|而立|不惑/.test(t)) return AGE_BANDS[0];
+    if (/二十/.test(t)) return AGE_BANDS[1];
+    if (/十[一二三四]|十二三|十三四|十四五/.test(t)) return AGE_BANDS[2];
+    if (/十[五六七八九]|十六七|十七八|十八九/.test(t)) return AGE_BANDS[3];
+    return null;
+  }
+  // 覆盖三件套：形态描述 / 比例锁定块 / 中文比例锚（⛔ 只做**精确子串替换**，改不动的原文原样保留）
+  const HUAL_LEAD = "a fully grown adult version of the same character, about 9 heads tall, elegantly tall adult proportions, ";
+  function bandStageLook(sN, look, band) {
+    if (sN === 4) {
+      return String(look).replace(HUAL_LEAD,
+        "the final, tallest form of the same character, about " + band.ratio + " heads tall, " +
+        ((band.faceBoy || band.faceGirl)) + ", ");
+    }
+    return String(look).replace("a teenage version of the character, about 8 heads tall",
+      "a teenage version of the character, about " + (band.ratio - 0.5) +
+      " heads tall (a few years younger than the final form)");
+  }
+  function bandPropLock(sN, prop, band) {
+    if (sN === 4) {
+      const p = String(prop)
+        .replace("PROPORTION LOCK: a fully grown tall adult, a 9-heads-tall figure " +
+          "(the head's height is about one ninth of the total figure height)",
+          "PROPORTION LOCK: a " + band.ratio + "-heads-tall figure (the head's height times " +
+          band.ratio + " equals the total figure height)")
+        .replace("mature majestic standing pose", "youthful elegant standing pose")
+        .replace("the face may be mature and beautiful, but the head is small in proportion to the body",
+          "the face is a youthful " + band.zh + " face, and the head is small in proportion to the body");
+      return p + ", AGE LOCK: the owner's design states this character is 「" + band.zh + "」; " +
+        "the face must stay a youthful " + band.zh + " face — young and clear, NOT a middle-aged adult face";
+    }
+    return String(prop).replace(
+      "an 8-heads-tall figure (the head's height is about one eighth of the total figure height)",
+      "a " + (band.ratio - 0.5) + "-heads-tall figure (the head's height times " + (band.ratio - 0.5) +
+      " equals the total figure height)");
+  }
+  function bandZhAnchor(sN, zh, band) {
+    if (sN === 4) {
+      return "画面比例要求：" + band.zh + "的最终形态，全身站姿，全身高度约为头高的" + band.ratio +
+        "倍，腿部要占身高的一半左右，整体是" + band.zh + "挺拔清秀的比例，脸要年轻清秀，就是" + band.zh +
+        "的样子，绝不是中年成年人的脸，也绝不是大头短腿的可爱风格。";
+    }
+    return String(zh).replace("约为头高的八倍", "约为头高的" + (band.ratio - 0.5) + "倍");
+  }
+  /* ============================================================
    * 🔴 v167-B · 服装去清代 + 仙侠基调 + 中文指令锚
    *   用户是汉服爱好者/汉族，**强烈反感清朝服饰特征**（点名了几类清制官服形制：立式高领、对襟排扣、蜈蚣扣、厂字领），
    *   声明「不接受清朝的服饰，我宁愿是仙侠风格」；并问「方舟（ark）中文理解更好，prompt 能中文化吗」。
@@ -2398,13 +2474,21 @@
     // legacy：恢复 v164c 之前的旧立绘时才用旧版写死的成长描述（且末尾不挂比例锁定块）
     const growth = (opts && opts.legacy) ? LEGACY_GROWTH_LINE : growthLine(stage == null ? 1 : stage);
     const propLock = (opts && opts.legacy) ? "" : (stageObj.prop ? (", " + stageObj.prop) : "");
+    // v180-AGE：主人写了数字年龄 ⇒ 蜕形/化形档按年龄档动态覆盖（⛔ legacy 不覆盖：恢复旧图必须逐字节复刻旧 prompt）
+    const _sNage = Math.min(4, Math.max(1, Number(stage) || 1));
+    const _band = (!(opts && opts.legacy) && isChar && _sNage >= 3)
+      ? finalAgeBandOf([lk.base, lk.profile, lk.persona,
+          lk.brief && lk.brief.extraZh, lk.brief && lk.brief.featsText].filter(Boolean).join(" "))
+      : null;
+    const stageLookEff = _band ? bandStageLook(_sNage, stageLook, _band) : stageLook;
+    const propLockEff = _band ? bandPropLock(_sNage, propLock, _band) : propLock;
     let cmp;
     if (isChar) {
       // 先写死"这个人是谁"（外观锚点），再写"他现在多大"（形态描述）→ 深沁只会长大，不会换人
       // 注意：这里始终是**立绘**（全身角色图、干净背景），四个阶段都有立绘；
       //      蜕形/化形**额外**再出一张 CG（场景插画），见 promptForCg（v125）。
       cmp = appearancePrompt(ap) + ", with " + color + " hair and " + outfitColor + " themed outfit" + colorHint +
-        lookExtra(lk) + ", " + stageLook + ", " +
+        lookExtra(lk) + ", " + stageLookEff + ", " +
         "full body character illustration, standing pose, whole body visible from head to toe, " +
         "detailed outfit and shoes, vertical composition, " +
         // v165-F：非 legacy 立绘一律"占满画幅"（旧的"舒适留白"把人物画小 → 比例被视觉压矮）
@@ -2416,6 +2500,10 @@
         const _sN = Math.min(4, Math.max(1, Number(stage) || 1));
         if (_sN >= 3) {
           cmp = cmp.replace(AGE_OPEN_BOY_OLD, AGE_OPEN[_sN].boy).replace(AGE_OPEN_GIRL_OLD, AGE_OPEN[_sN].girl);
+          // v180-AGE：主人写了数字年龄 ⇒ 开场脸锚也换成年齡档的（压掉化形档写死的 handsome mature face）
+          if (_band && _sN === 4) {
+            cmp = cmp.replace(AGE_OPEN[4].boy, _band.faceBoy + ":").replace(AGE_OPEN[4].girl, _band.faceGirl + ":");
+          }
         }
       }
     } else {
@@ -2463,13 +2551,15 @@
     // v167-B：再加中文服装锚（COSTUME_ZH），同一开关 zhAnchorEnabled()。
     const _nonLegacy = !(opts && opts.legacy);
     const _zh = (isChar && _nonLegacy && zhAnchorEnabled());
-    const zhAnchor = _zh ? (", " + proportionZhFor(stage == null ? 1 : stage)) : "";
+    const zhAnchor = _zh ? (", " + (_band
+      ? bandZhAnchor(_sNage, proportionZhFor(_sNage), _band)
+      : proportionZhFor(stage == null ? 1 : stage))) : "";
     // v180：中文灵韵锚 —— 仅蜕形(3)/化形(4)两阶追加（装配照规范 §3.7 两行；插在中文服装锚之前）
     const zhAura = _zh ? (", " + (stage >= 3 ? AURA_ZH : "")) : "";
     const zhCostume = _zh ? (", " + COSTUME_ZH) : "";
     // v167-B：清代服饰强禁挂**整条 prompt 最末尾**（最高权重）
     const noQing = _nonLegacy ? (", " + NO_QING) : "";
-    return bits.join(", ") + ", " + st + propLock + zhAnchor + zhAura + zhCostume + noQing;
+    return bits.join(", ") + ", " + st + propLockEff + zhAnchor + zhAura + zhCostume + noQing;
   }
   // 用「v164c 之前的旧 prompt」精确还原当时的出图 URL —— 用于「恢复旧立绘」，把被 prompt 改动洗掉的旧图找回来。
   // 与旧版显示路径一致：不传 appearance / stage（旧显示走的就是默认外观 + 第 1 阶），才能精确复刻当时浏览器请求的那个 URL。
@@ -7935,6 +8025,8 @@
     STAGES, stageDef, stageInfo, growthOf, STAGE_DAYS, STAGE_PLAYS, HEAD_COUNT, stageOf, headCountOf, stageOrnate, stageProgress,
     // v165-F：立绘比例执行手段 v2（占满画幅 / 中文比例锚[仅 ark] / 阶段开场身份锚）——供自测断言
     FRAME_FILL, FRAME_FILL_OLD, PROPORTION_ZH, proportionZhFor, AGE_OPEN, AGE_OPEN_BOY_OLD, AGE_OPEN_GIRL_OLD,
+    // v180-AGE：年龄档（主人写年龄 ⇒ 头身比跟年龄走）——供自测断言
+    AGE_BANDS, finalAgeBandOf, bandStageLook, bandPropLock, bandZhAnchor, HUAL_LEAD,
     // v167-B：服装去清代（正向汉服/仙侠 + 清代强禁 + 中文服装锚）——供自测断言
     NO_QING, XIANXIA_LOOK, COSTUME_ZH, CG_COMPOSE_ZH, CG_COSTUME_GUARD, ZH_ANCHOR_ON, zhAnchorEnabled, LEGACY_OUTFIT_EN,
     // v180：反「化形同质化」—— CONSISTENCY（cut 收紧）/ 立绘专用负向锚 NO_UNIFORM_ORNATE / 中文灵韵锚 AURA_ZH —— 供自测断言
