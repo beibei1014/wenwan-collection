@@ -1203,8 +1203,9 @@ body.talk-open .view { padding: 0; max-width: none; min-height: 0; animation: no
   min-height: 132px; padding: 16px 18px 22px; border-radius: var(--r-lg);
   background: rgba(24,18,14,.72); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255,238,214,.16); box-shadow: 0 10px 30px rgba(0,0,0,.45);
-  color: #fdf6ea; font-size: 17.5px; line-height: 1.78; }
-.talk-box.narration { text-align: center; color: #efe6d6; opacity: .94; }
+  color: #fdf6ea; font-size: 15.5px; line-height: 1.75; text-align: justify; }
+/* v180-UI：主线对话框文字**两端对齐、不居中**，字号收小（用户 2026-10-12 打回）——旁白/对白统一 justify */
+.talk-box.narration { color: #efe6d6; opacity: .94; }
 .talk-name { position: absolute; top: -15px; right: 20px; z-index: 5;
   padding: 3px 14px; border-radius: 99px; font-size: 13px; letter-spacing: 1px; color: #fff8ec;
   background: linear-gradient(180deg, #8a6136, #6b4a2c); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
