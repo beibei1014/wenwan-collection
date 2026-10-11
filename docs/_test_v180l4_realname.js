@@ -142,7 +142,9 @@ if (BOOK && typeof bookFn === "function") {
   ok(dCount > 0, "全篇统计到对白 " + dCount + " 条");
   ok(bad.length === 0, "★ 全篇名牌 0 描述词残留（真名 " + formalCount + " 条 / 豁免 " + allowCount + " 条；残留：" + (bad.join("；") || "无") + "）");
   ok(anonN === 1, "豁免「有人」恰 1 条（第 1 章正文压名，实得 " + anonN + "）");
-  ok(outerN === 24, "豁免「岑照野」24 条（第 9/12 章域外记数人，⛔ 非沁灵，实得 " + outerN + "）");
+  // v180-PORTRAIT/删提示语后：原 24 条里有 2 条（「这一格，」+「是谁。」、「你们这样记，」+「记到劫来那天…」）
+  //   因提示语删除后两句引文合并成一句 ⇒ SPEAKER 那 2 条变冗余、不产出对白行 ⇒ **22 才是正确数**（⛔ 已核实不是丢台词）。
+  ok(outerN === 22, "豁免「岑照野」22 条（第 9/12 章域外记数人，⛔ 非沁灵；实得 " + outerN + "）");
   ok(formalCount + allowCount === dCount, "全部对白名牌 = 真名 + 两类豁免（" + (formalCount + allowCount) + "/" + dCount + "）");
   // 描述词词表负向：任何落地的 who 若带「的那位/的那只/的那一个」且无 role，必须已被拦（上面 bad 已覆盖）
   const dirty = Object.keys(seen).filter((k) => /的(那位|那只|这位|这只|那一个|这一个|一位|一个)$/.test(k));

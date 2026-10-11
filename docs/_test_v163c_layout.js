@@ -217,10 +217,14 @@ function checkPage(name, label) {
   const metas = opens.filter((o) => classesOf(o.cls).indexOf("spirit-meta") >= 0).length;
   ok(metas === LIST.length, ".spirit-meta 数量 = 数据条数（" + metas + " / " + LIST.length + "）");
 
-  ["spirit-title", "spirit-prog", "spirit-tags", "spirit-stage"].forEach((c) => {
+  // v180-CARD：人均描述整行下线（用户拍板「微糯老珠 带瑕小仙 这类描述删掉」）⇒ .spirit-title 不再产出，
+  //   ⛔ 故从「必须在 .spirit-meta 内」清单里移除，改为断言 0 残留（⛔ 不是回滚产品代码）。
+  ["spirit-prog", "spirit-tags", "spirit-stage"].forEach((c) => {
     const r = isInside(opens, c, "spirit-meta");
     ok(r.n > 0 && r.okAll, "." + c + " 全部位于 .spirit-meta 内部（命中 " + r.n + " 个）");
   });
+  const titleN = opens.filter((o) => classesOf(o.cls).indexOf("spirit-title") >= 0).length;
+  ok(titleN === 0, "v180-CARD 人均描述整行下线：.spirit-title 产出 0 个（实测 " + titleN + "）");
   const st = isInside(opens, "sp-stars", "spirit-name");
   if (name === "renderSpiritPage") ok(st.n > 0 && st.okAll, ".sp-stars 全部位于 .spirit-name 内部（命中 " + st.n + " 个）");
   else ok(st.n === 0 || st.okAll, ".sp-stars 若存在则位于 .spirit-name 内部（命中 " + st.n + " 个）");

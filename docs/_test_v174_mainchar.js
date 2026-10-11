@@ -24,7 +24,8 @@ const ROOT = path.join(__dirname, "..");
 const APP = fs.readFileSync(path.join(ROOT, "js/app.js"), "utf8");
 const CSS = fs.readFileSync(path.join(ROOT, "css/skin.css"), "utf8");
 
-const NAMES = ["咸法酪", "柿宝", "沈青舒", "粉黛熊", "苏栖盏", "谢凝渲", "金算盘", "陆临崖", "顾时笙"];
+const NAMES = ["咸法酪", "柿宝", "沈青舒", "粉黛熊", "苏栖盏", "谢凝渲", "金算盘", "陆临崖", "顾时笙",
+  "江冽茗", "乔纹栗", "俞酥棠", "季未晚", "戚衔蝉", "邵盈牧", "燕逐沙"];
 
 /* 从 app.js 源码里抽出 MAINCHAR_ART 对象字面量（app.js 是 IIFE、不导出，故文本抽取后 eval） */
 function extractArt(src) {
@@ -55,22 +56,22 @@ function markers(appSrc, cssSrc) {
 }
 
 /* ============ 1. 素材入库 ============ */
-section("1. assets/mainchars/ 恰好 9 个 PNG（ASCII 名）");
+section("1. assets/mainchars/ 恰好 16 个 PNG（ASCII 名）");
 {
   let pngs = [];
   try { pngs = fs.readdirSync(path.join(ROOT, "assets/mainchars")).filter((f) => /\.png$/i.test(f)); } catch (e) { pngs = []; }
-  ok(pngs.length === 9, "1 · 恰 9 个 .png（实测 " + pngs.length + "：" + pngs.sort().join(", ") + "）");
+  ok(pngs.length === 16, "1 · 恰 16 个 .png（实测 " + pngs.length + "：" + pngs.sort().join(", ") + "）");
   ok(pngs.every((f) => /^[\x20-\x7e]+$/.test(f)), "1 · 文件名全为 ASCII");
 }
 
 /* ============ 2. MAINCHAR_ART ============ */
-section("2. MAINCHAR_ART：9 名 + 文件存在 + h/t 区间");
+section("2. MAINCHAR_ART：16 名 + 文件存在 + h/t 区间");
 const ART = extractArt(APP);
 ok(!!ART, "2 · app.js 含 MAINCHAR_ART 对象");
 if (ART) {
   const keys = Object.keys(ART);
-  ok(keys.length === 9, "2 · key 数 = 9（实测 " + keys.length + "）");
-  ok(NAMES.every((n) => keys.indexOf(n) >= 0), "2 · key 覆盖全部 9 名：" + NAMES.join("、"));
+  ok(keys.length === 16, "2 · key 数 = 16（实测 " + keys.length + "）");
+  ok(NAMES.every((n) => keys.indexOf(n) >= 0), "2 · key 覆盖全部 16 名：" + NAMES.join("、"));
   NAMES.forEach((n) => {
     const e = ART[n];
     if (!e) { ok(false, "2 · " + n + " 缺失"); return; }
@@ -78,12 +79,11 @@ if (ART) {
     ok(typeof e.h === "number" && e.h >= 125 && e.h <= 170, "2 · " + n + " h=" + e.h + " ∈ [125,170]");
     ok(typeof e.t === "number" && e.t >= -30 && e.t <= 12, "2 · " + n + " t=" + e.t + " ∈ [-30,12]");
   });
-  // 谢凝渲（撑伞，本体小 20%）应显著异于其余 8 位 —— h 最大、t 为负
-  if (ART["谢凝渲"]) {
-    ok(ART["谢凝渲"].t < 0, "2 · 谢凝渲 t<0（本体头顶低、图片需上移出画）");
-    const others = NAMES.filter((n) => n !== "谢凝渲").map((n) => ART[n] && ART[n].h);
-    ok(ART["谢凝渲"].h > Math.max.apply(null, others), "2 · 谢凝渲 h 为最大值（本体小 → 放大最多）");
-  }
+  // v180-PORTRAIT：新图统一 1536×2048 ⇒ h/t 统一 131/7（谢凝渲不再特殊，⛔ 旧的「t<0 / h 最大」已失效）
+  const hs = NAMES.map((n) => ART[n] && ART[n].h);
+  const ts = NAMES.map((n) => ART[n] && ART[n].t);
+  ok(hs.every((h) => h === hs[0]), "2 · v180-PORTRAIT h 统一（实得 " + hs[0] + "）");
+  ok(ts.every((t) => t === ts[0]), "2 · v180-PORTRAIT t 统一（实得 " + ts[0] + "）");
 } else {
   ok(false, "2 · 未能抽取 MAINCHAR_ART");
 }

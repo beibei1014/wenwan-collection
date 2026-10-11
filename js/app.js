@@ -3533,15 +3533,14 @@
         '<div class="spirit-meta">' +
         '<div class="spirit-name">' + esc(spiritName(it, store)) +
         '<span class="sp-stars">' + stars + "</span></div>" +
-        '<span class="spirit-stage">' + si.icon + " " + esc(si.name) + " · " + Spirits.headCountOf(si.stage) + "头身</span>" +
+        '<span class="spirit-stage">' + si.icon + " " + esc(si.name) + "</span>" +
         (needSetup ? '<span class="look-setup-tag" data-setup="' + esc(it.id) + '">✨ 定设定</span>' : "") +
         (wroteToday ? '<span class="spirit-break-tag" style="background:#e8f0ff;color:#3b5b9a">📔 写日记了</span>' : "") +
-        '<div class="spirit-title">' + esc((p && p.title) || "正在酝酿性格…") + "</div>" +
-        (si.isMax ? '<div class="spirit-prog max">已是化形 · 巅峰形态 👑</div>'
+        (si.isMax ? ""
           : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
             '<span class="spirit-prog-txt">距下一阶：再盘 ' + si.toNext + " 次</span></div>") +
         '<div class="spirit-tags">' + ((p && p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
-        (idle != null ? '<span class="spirit-trait idle">' + idle + " 天没盘</span>" : "") + "</div>" +
+        (idle != null ? '<span class="spirit-trait idle">' + idle + " 天没见</span>" : "") + "</div>" +
         "</div></div>";
     });
     html += "</div>";
@@ -4328,7 +4327,6 @@
       const p = rec.persona || null;
       const idle = it.lastPlayedAt ? Math.floor((Date.now() - it.lastPlayedAt) / 86400000) : null;
       const si = Spirits.stageInfo(it, rec.stage, DB.daysWith(it));
-      const room = rec.roomId ? Rooms.getRoom(rec.roomId) : null;
       const wroteToday = (rec.diary || []).some((e) => e && e.date === tk) && (rec.diarySeenAt || 0) < ((rec.diary || []).slice(-1)[0] || {}).at;
       const needSetup = spiritNeedsSetup(rec);
       html += '<div class="spirit-card' + (si.canBreak ? " can-break" : "") + '" data-spirit="' + esc(it.id) + '">' +
@@ -4339,13 +4337,11 @@
         (needSetup ? '<span class="look-setup-tag" data-setup="' + esc(it.id) + '">✨ 定设定</span>' : "") +
         (si.canBreak ? '<span class="spirit-break-tag">✨ 可深沁</span>' : "") +
         (wroteToday ? '<span class="spirit-break-tag" style="background:#e8f0ff;color:#3b5b9a">📔 写日记了</span>' : "") + "</div>" +
-        '<div class="spirit-title">' + esc((p && p.title) || "正在酝酿性格…") +
-        (room ? ' · <span style="color:var(--text-2)">' + esc((room.emoji || "🏠") + room.name) + "</span>" : "") + "</div>" +
-        (si.isMax ? '<div class="spirit-prog max">已是化形 · 巅峰形态 👑</div>'
+        (si.isMax ? ""
           : '<div class="spirit-prog"><span class="spirit-prog-track"><span class="spirit-prog-fill" style="width:' + si.pct + '%"></span></span>' +
             '<span class="spirit-prog-txt">再盘 ' + si.toNext + " 次 → " + esc(si.next) + "</span></div>") +
         '<div class="spirit-tags">' + ((p && p.traits) || []).map((t) => '<span class="spirit-trait">' + esc(t) + "</span>").join("") +
-        (idle != null ? '<span class="spirit-trait idle">' + idle + " 天没盘</span>" : "") + "</div>" +
+        (idle != null ? '<span class="spirit-trait idle">' + idle + " 天没见</span>" : "") + "</div>" +
         "</div></div>";
     });
     html += "</div>";
@@ -6356,7 +6352,7 @@
       //   ⛔ 卡片页（沁灵页 / 全部沁灵页）的 .spirit-tags 性格标签**保留**（列表仍要看），
       //      故 .spirit-tags / .spirit-trait 样式不是死代码，一并保留。
       '<div class="spirit-tags" style="justify-content:center">' +
-      '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没盘" : "") + "</span></div>" +
+      '<span class="spirit-trait idle">' + esc(colorName) + " · " + esc(softName) + (idle != null ? " · " + idle + " 天没见" : "") + "</span></div>" +
       // v180-NO-CP：「改口」交互原挂在「🎐 今天」卡里，整卡删掉会连带没了 ⇒ 挪到名字/阶段徽章下方，
       //   压成紧凑一行（三态与按钮 id 一字未改，绑定原样保住）。
       callRowHtml(rec, bond) +
@@ -8091,11 +8087,46 @@
     //   v176：非沉浸 ⛔ HTML 里压根不输出这两层 → pEl/boxEl = null → present 静默返回，气泡流照旧
     const pEl = IMM ? $("#talkPortrait") : null, boxEl = IMM ? $("#talkBox") : null;
     const nameEl = $("#talkName"), txtEl = $("#talkText"), cueEl = $("#talkCue");
+    // v180-PF：立绘呈现抽成一处 —— 角色行（sp/me）与「带立绘的旁白」（sys 且有 speaker）共用。
+    //   ⛔ 普通 sys（无 speaker）不走这里，保持「隐藏 + 清 url」旧行为一字不变。
+    const paintPortrait = (m) => {
+      let url = "", cut = false;
+      try { url = o.portrait ? (o.portrait(m) || "") : ""; } catch (e) { url = ""; }   // 其它调用点不传 → 无立绘
+      try { cut = o.portraitCut ? !!o.portraitCut(m) : false; } catch (e) { cut = false; }   // v170：是否透明抠图
+      const side = m.slot || "C";
+      if (url) {
+        if (pEl.dataset.url !== url) {
+          pEl.dataset.url = url; pEl.classList.remove("hide");
+          pEl.innerHTML = '<img src="' + esc(url) + '" alt="" decoding="async">';
+          const im = pEl.querySelector ? pEl.querySelector("img") : null;
+          if (im) im.onerror = () => { im.style.display = "none"; };
+          pEl.classList.add("enter"); void pEl.offsetWidth; pEl.classList.remove("enter");   // 260ms 上浮
+        } else { pEl.classList.remove("hide"); }
+        pEl.dataset.slot = side;                                   // slot(L/C/R/B) → 站位
+        pEl.dataset.cut = cut ? "1" : "0";                         // v170：透明立绘 → contain/站底（见 CSS）
+        // v174：手抠立绘 → 膝上取景（h/t 由 JS 按每张图的人体比例注入 CSS 变量）
+        let fr = null;
+        try { fr = o.frame ? o.frame(m) : null; } catch (e) { fr = null; }
+        if (fr && fr.mode === "knee") {
+          pEl.dataset.frame = "knee";
+          try {
+            pEl.style.setProperty("--knee-h", (Number(fr.h) || 131) + "%");
+            pEl.style.setProperty("--knee-t", (Number(fr.t) || 6.7) + "%");
+          } catch (e) { /* 忽略 */ }
+        } else {
+          pEl.dataset.frame = "";
+          try { pEl.style.removeProperty("--knee-h"); pEl.style.removeProperty("--knee-t"); } catch (e) { /* 忽略 */ }
+        }
+      } else { pEl.classList.add("hide"); pEl.innerHTML = ""; pEl.dataset.url = ""; pEl.dataset.slot = ""; pEl.dataset.cut = ""; pEl.dataset.frame = ""; }
+    };
     const present = (m) => {
       if (!m || !pEl || !boxEl) return;
       if (m.w === "sys") {
-        pEl.classList.add("hide"); pEl.innerHTML = ""; pEl.dataset.url = "";
         boxEl.classList.add("narration"); if (nameEl) nameEl.hidden = true;
+        // v180-PF：旁白/场景段「提到谁出谁」—— 命中某人 ⇒ 刷立绘，但仍是旁白（⛔ 不出名牌）。
+        //   ⛔ 普通 sys（无 speaker）保持旧行为：只隐藏 + 清 url。
+        if (m.speaker) paintPortrait(m);
+        else { pEl.classList.add("hide"); pEl.innerHTML = ""; pEl.dataset.url = ""; }
       } else {
         boxEl.classList.remove("narration");
         // v175：名牌大字显示**真实姓名**（castName），不再是行当设定名；拿不到真名才回落 m.name
@@ -8114,34 +8145,7 @@
             } catch (e) { /* 抽函数单测无 document → 忽略 */ }
           }
         }
-        let url = "", cut = false;
-        try { url = o.portrait ? (o.portrait(m) || "") : ""; } catch (e) { url = ""; }   // 其它调用点不传 → 无立绘
-        try { cut = o.portraitCut ? !!o.portraitCut(m) : false; } catch (e) { cut = false; }   // v170：是否透明抠图
-        const side = m.slot || "C";
-        if (url) {
-          if (pEl.dataset.url !== url) {
-            pEl.dataset.url = url; pEl.classList.remove("hide");
-            pEl.innerHTML = '<img src="' + esc(url) + '" alt="" decoding="async">';
-            const im = pEl.querySelector ? pEl.querySelector("img") : null;
-            if (im) im.onerror = () => { im.style.display = "none"; };
-            pEl.classList.add("enter"); void pEl.offsetWidth; pEl.classList.remove("enter");   // 260ms 上浮
-          } else { pEl.classList.remove("hide"); }
-          pEl.dataset.slot = side;                                   // slot(L/C/R/B) → 站位
-          pEl.dataset.cut = cut ? "1" : "0";                         // v170：透明立绘 → contain/站底（见 CSS）
-          // v174：手抠立绘 → 膝上取景（h/t 由 JS 按每张图的人体比例注入 CSS 变量）
-          let fr = null;
-          try { fr = o.frame ? o.frame(m) : null; } catch (e) { fr = null; }
-          if (fr && fr.mode === "knee") {
-            pEl.dataset.frame = "knee";
-            try {
-              pEl.style.setProperty("--knee-h", (Number(fr.h) || 131) + "%");
-              pEl.style.setProperty("--knee-t", (Number(fr.t) || 6.7) + "%");
-            } catch (e) { /* 忽略 */ }
-          } else {
-            pEl.dataset.frame = "";
-            try { pEl.style.removeProperty("--knee-h"); pEl.style.removeProperty("--knee-t"); } catch (e) { /* 忽略 */ }
-          }
-        } else { pEl.classList.add("hide"); pEl.innerHTML = ""; pEl.dataset.url = ""; pEl.dataset.slot = ""; pEl.dataset.cut = ""; pEl.dataset.frame = ""; }
+        paintPortrait(m);
       }
       if (txtEl) txtEl.textContent = String(m.text || "");
       if (cueEl) cueEl.hidden = false;
@@ -8325,8 +8329,34 @@
     }
     return who;                                                   // ③ 回落描述词
   }
+  /* v180-PF · 旁白/场景段「提到谁出谁」—— 用户：「剧情里提到谁要动作或者要说话了，也应该出现他的立绘」。
+     口径：拿正文文本匹配身份表的 name / bead / alias（identityKeysOf）
+       · 一段里可能提到好几个人 ⇒ 取**文本中位置最小**的（最先提到的）
+       · 同一位置长短键冲突 ⇒ 取**最长**的键（防「茶茶」先把「江冽茗」之类长名咬掉一截）
+       实现：整章只建一次「长键优先」的合并正则，每段一次 exec —— leftmost + 长键优先 = leftmost-longest
+     ⛔ 玩家「我」不在身份表 ⇒ 永不参与匹配；命中不到就无立绘（第 1 章坡头身影刻意无名，⛔ 不特判、不补角色）
+     ⛔ 性能：只对「段」做单遍扫描，绝不对「段 × 角色」两两枚举 */
+  function escRe(s) { return String(s == null ? "" : s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+  function bookMentionMatcher() {
+    const keys = [];
+    const byKey = {};
+    (SPIRIT_IDENTITIES || []).forEach((idn) => {
+      identityKeysOf(idn).forEach((k) => {
+        if (byKey[k] === undefined) { byKey[k] = idn.name; keys.push(k); }
+      });
+    });
+    keys.sort((a, b) => b.length - a.length);       // 长键优先：同位置上长名不被短别名咬掉
+    const re = keys.length ? new RegExp(keys.map(escRe).join("|")) : null;
+    return { keys: keys, byKey: byKey, re: re };
+  }
+  function bookMentionOf(text, matcher) {
+    const s = String(text == null ? "" : text);
+    if (!matcher || !matcher.re || !s) return "";
+    const m = s.match(matcher.re);                  // 单遍：leftmost；同位置因长键优先 ⇒ longest
+    return (m && matcher.byKey[m[0]]) || "";
+  }
   // 段 → 演出消息：旁白/场景 ⇒ sys；对白 ⇒ sp（带说话人）；玩家行 ⇒ me
-  function bookMsgOf(L, seg) {
+  function bookMsgOf(L, seg, matcher) {
     const t = String((L && L.t) || "");
     if (L && L.k === "me") return { w: "me", text: t, seg: seg };
     if (L && L.k === "d") {
@@ -8334,6 +8364,9 @@
       const nm = bookSpeakerName(L);                              // v180-L4：真名优先（role / 身份表 / 描述词）
       return { w: "sp", name: who, castName: nm, speaker: nm, text: t, slot: "C", seg: seg };
     }
+    // v180-PF：旁白/场景段命中某人 ⇒ 挂该人立绘（⛔ 不出名牌：旁白不是在说话，只是画面里出现了这个人）
+    const pfWho = matcher ? bookMentionOf(t, matcher) : "";
+    if (pfWho) return { w: "sys", text: t, seg: seg, pf: true, speaker: pfWho };
     return { w: "sys", text: t, seg: seg };
   }
   /* v174 / v180-L1：主线手抠立绘（主理人自己抠的 9 张，按沁灵本名自动挂）
@@ -8482,7 +8515,9 @@
     if (!ch || !ch.unlocked) { location.hash = "#/book"; return; }
     const lines = Spirits.bookLines(BOOK_ID, i) || [];
     const total = lines.length;
-    const msgs = lines.map(bookMsgOf);
+    // v180-PF：整章只建一次「提到谁」匹配结构，随后每段单遍扫描（⛔ 不做段×角色两两枚举）
+    const mentionMatcher = bookMentionMatcher();
+    const msgs = lines.map((L, seg) => bookMsgOf(L, seg, mentionMatcher));
     const artCache = {};
     const artOf = (m) => {
       const key = String((m && (m.speaker || m.name)) || "");

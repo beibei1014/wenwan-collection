@@ -247,12 +247,12 @@ ok(CG.filter((x) => Number(x.ch) >= 5).length === 8, "其中第 5–12 章 8 条
 ok(CG.filter((x) => Number(x.ch) >= 9).length === 4, "其中第 9–12 章 4 条也登记了（实得 " + CG.filter((x) => Number(x.ch) >= 9).length + "）");
 
 /* ---------- (5) 立绘口径 ---------- */
-section("5 · 立绘口径（核心 10 位走 MAINCHAR_ART · ⛔ 未新增键 / 未加错别名）");
+section("5 · 立绘口径（v180-PORTRAIT：〈结契篇〉16 位全员走 MAINCHAR_ART · 别名仍 4 条）");
 const mArt = /var MAINCHAR_ART = \{([\s\S]*?)\n  \};/.exec(APP);
 const mAlias = /var MAINCHAR_ART_ALIAS = \{([\s\S]*?)\n  \};/.exec(APP);
 ok(!!mArt, "能抽出 MAINCHAR_ART");
 const artKeys = mArt ? (mArt[1].match(/"[^"]+"\s*:/g) || []).map((s) => s.replace(/[":\s]/g, "")) : [];
-ok(artKeys.length === 9, "⛔ MAINCHAR_ART 仍是 9 个键（本批未新增；实得 " + artKeys.length + "）");
+ok(artKeys.length === 16, "v180-PORTRAIT：MAINCHAR_ART 扩到 16 键（〈结契篇〉全员手抠立绘；实得 " + artKeys.length + "）");
 const aliasKeys = mAlias ? (mAlias[1].match(/"[^"]+"\s*:/g) || []).map((s) => s.replace(/[":\s]/g, "")) : [];
 ok(aliasKeys.length === 4, "⛔ MAINCHAR_ART_ALIAS 仍是 4 条（未加错别名；实得 " + aliasKeys.length + "）");
 ok(/function bookArtOf\(speaker, who\)/.test(APP), "存在 bookArtOf（① MAINCHAR_ART → ② rec.imgCut||rec.imgUrl）");
@@ -273,11 +273,10 @@ const anonN = CHS.reduce((s, c) => s + (c.lines || []).filter((l) => l.k === "d"
 ok(anonN > 0 && anonN <= 6, "无名台词「有人」共 " + anonN + " 条（≤6，⛔ 多了说明说话人表漏配）");
 roleKeys.filter((r) => NON_SPIRIT.indexOf(r) < 0).forEach((r) => ok(!!IDENT[r], "⛔ 对白「" + r + "」在身份表里有正式姓名（立绘可反查）"));
 ok(roleKeys.indexOf("岑照野") >= 0, "第 9–12 章的域外记数人「岑照野」已作为说话人登记（⛔ 不进身份表）");
-/* 第 5–8 章新上场的乔纹栗 / 戚衔蝉：⛔ 无专属立绘键 ⇒ 走 rec.imgCut||rec.imgUrl（A 批口径），
-   且**不许**给它们新加 MAINCHAR_ART 键或别名（上面已断言 9 键 / 4 别名不变） */
+/* 第 5–8 章新上场的乔纹栗 / 戚衔蝉：v180-PORTRAIT 起已有专属手抠立绘 ⇒ 走 MAINCHAR_ART 键（⛔ 不再回落 rec） */
 ["乔纹栗", "戚衔蝉"].forEach((n) => {
-  ok(!!IDENT[n], "新角色「" + n + "」在身份表里（立绘走 rec 回落）");
-  ok(artKeys.indexOf(n) < 0 && aliasKeys.indexOf(n) < 0, "⛔「" + n + "」未新增立绘键 / 别名");
+  ok(!!IDENT[n], "新角色「" + n + "」在身份表里");
+  ok(artKeys.indexOf(n) >= 0, "v180-PORTRAIT「" + n + "」已有专属立绘键（⛔ 不再走 rec 回落）");
 });
 
 /* ---------- (6) 引擎与界面接线 ---------- */

@@ -110,7 +110,7 @@ section("D · 共享立绘 MAINCHAR_ART 保留（⛔ 没跟着老主线一起删
 const artBlock = /var MAINCHAR_ART = \{([\s\S]*?)\};/.exec(appSrc);
 const artKeys = artBlock ? (artBlock[1].match(/"[^"]+":\s*\{ f:/g) || []).length : 0;
 ok(!!artBlock, "app.js 仍有 var MAINCHAR_ART = {");
-ok(artKeys === 9, "MAINCHAR_ART 恰 9 键（实得 " + artKeys + "）");
+ok(artKeys === 16, "MAINCHAR_ART 恰 16 键（v180-PORTRAIT 全量换图后；实得 " + artKeys + "）");
 const aliasBlock = /var MAINCHAR_ART_ALIAS = \{([\s\S]*?)\};/.exec(appSrc);
 const aliasKeys = aliasBlock ? (aliasBlock[1].match(/"[^"]+":/g) || []).length : 0;
 ok(aliasKeys === 4, "MAINCHAR_ART_ALIAS 4 别名（实得 " + aliasKeys + "）");

@@ -793,10 +793,40 @@
   const CONSISTENCY = "same character across all ages, keep exactly the same gender, same hair style and hair color, " +
     "same eye color, same accessory and same overall design, only grow older, " +
     // v165-Q：服饰一致性 —— 进阶「服饰更精细更华丽」但**基色与纹样母题不变**（用户要求的一致性口径）。
+    // v180：再收紧 —— 旧版 "only the cut, layering and ornamentation become richer with age" 把
+    //   **版型(cut)** 也列进了"可变项"，等于给了化形换版型的合法口子（用户实测「劲装怎么变成这样了」）。
+    //   新版：**基色 / 纹样母题 / 版型** 三样全阶段锁死；随龄变精的只有"工艺 + 灵韵"（B 层 + C 层）。
+    //   ⚠️ 本常量被 CG 多条路径复用（:5191/:7265/:7379）⇒ 只改这组服饰句，前两句（性别/发/瞳/配饰）一字不动 ⇒ CG 侧行为不变。
+    "the outfit keeps the same garment type, the same cut, the same base colour and the same pattern motif across all stages, " +
+    "only the craft of the fabric, the fineness of the embroidery, the quality of the trim and the cultivation aura " +
+    "around the figure become richer with age, " +
+    "do not change the outfit's garment type, cut, sleeve width, colour family or pattern motif, " +
+    "consistent character design, do not change gender, do not change identity";
+  // v180：CONSISTENCY 收紧（版型 cut 由「可变项」改为「不可变项」）后 —— **legacy（恢复旧立绘）必须仍用旧串**：
+  //   CONSISTENCY 也出现在 legacy 立绘 prompt 里（bits 不区分 legacy），若跟着改，旧图 URL 会漂、旧图找不回
+  //   （_test_v165f_portrait.js F 段 / _test_v167_costume.js D 段的 legacy 逐字节对照会红）。
+  //   ⇒ legacy 分支改用下面这份**冻结旧串**（逐字节复刻改动前的 CONSISTENCY）。
+  const LEGACY_CONSISTENCY = "same character across all ages, keep exactly the same gender, same hair style and hair color, " +
+    "same eye color, same accessory and same overall design, only grow older, " +
     "same outfit base colour and the same pattern motif across all stages, " +
     "only the cut, layering and ornamentation become richer with age, " +
     "do not change the outfit's colour family or its pattern motif, " +
     "consistent character design, do not change gender, do not change identity";
+  // v180 · 反「化形同质化」负向锚（⛔ 立绘专用；CG 路径不用 —— CG 是叙事画，形制由画面描述决定）：
+  //   用户反馈「所有角色变华丽都是增加大袖衫」「每次到化形每个人都是差不多的头发样式、差不多的配饰」
+  //   「所有人都长得差不多，甚至失去了原来的角色特色」。
+  //   写法口径（规范 §4.2）：① 禁物逐个枚举（模型只认具体名词）② 每个禁令后紧跟「除非……」（否则宽袍角色被误杀）
+  //   ③ 禁 + 给出路必须成对（只禁不给路 ⇒ 模型退回默认先验＝又是大袖）④ 禁「改」而非禁「有」（避免误伤本就没有辫子的角色）。
+  //   位置：挂在 bits 里 CONSISTENCY 之后、getLookTags/lookHard/briefHard 之前（人设硬约束更靠后 ⇒ 角色自带设定能压住本禁令）。
+  //   ⛔ 不进全局 NEG_STYLE（同 NO_QING / PROPORTION LOCK 口径：全局禁令会污染 CG 与 legacy 路径）。
+  const NO_UNIFORM_ORNATE = "do not give every character the same ornate upgrade: " +
+    "no wide-sleeved robe, no layered silk gown, no trailing court dress, no long cape, no floating ribbons, " +
+    "unless the character's own outfit description above is a robe, " +
+    "no forehead ornament, no forehead gem, no forehead chain, no tiara, no crown, no jade crown, no hair crown, " +
+    "no added hair ornament that the character's own design does not already have, " +
+    "do not change the hairstyle silhouette, do not change the hair color, do not change the eye color, " +
+    "do not restyle the outfit into a different garment type, " +
+    "the elaborate feeling must come from finer craft and from the aura around the figure, not from a bigger outfit";
   // 只画一个人 + 不许有文字
   // ⚠️ 连 "character sheet" / "turnaround" 这种词都别出现（哪怕写成 "no character sheet"）——
   //    实测这两个词一出现，模型就容易画成多格图鉴，所以整句里干脆不出现它们。
@@ -849,11 +879,19 @@
       n: 3, name: "蜕形", icon: "⚡", need: 90, sizeZh: "约 8 头身（少年，变高变帅）",
       // v165-Q：⛔ 删掉 "environment behind" —— 它与风格预设 anime 的 "plain solid soft background" 打架，
       //   模型在"场景图"与"素底立绘"之间摇摆，比例随之失控。华丽感改用**服饰**表达，不用场景表达。
+      // v180：化「同一套签名外观 + 只升级工艺与灵韵」——⛔ 删掉 "one proper ornament (a sash or a hairpin)" 那套
+      //   「给所有角色发同一件配饰」，改用角色**自己已有的**那件；末句 a faint wisp of spirit light along the hems
+      //   = 蜕形 C1「微沁」极淡灵光（用户裁定「要，极淡」）。
       look: "a teenage version of the character, about 8 heads tall, " +
         "slim teenage proportions, longer limbs than the child form, a more defined jawline, " +
         "confident pose, " +
-        "well-tailored outfit with a clear fabric pattern and one proper ornament (a sash or a hairpin), " +
-        "noticeably more elaborate than the child form",
+        "the SAME signature outfit from the earlier forms: the same garment type, the same cut, the same colour family, " +
+        "the same pattern motif and the same hairstyle silhouette, " +
+        "upgraded only in craft: a clearly readable woven fabric texture, crisp tailored seams, " +
+        "neat narrow piping along the collar, cuffs and hem, " +
+        "one ornament that the character already wears in its own design, " +
+        "a faint wisp of spirit light along the hems, " +
+        "noticeably finer in craft than the child form, not a different outfit and not a wider silhouette",
       // v165-R1：数字回到 8 头身（用户裁定：7 不好看，8/9 才帅气）。
       //   上一版（v165-Q）把数字降到 7 的初衷是"8/9 超模"，但实测蜕形只画出 5–5.5 头身 ——
       //   **卡点不是数字高低，是执行手段**：① 宽大黄袍把腰腿全遮死，轮廓不可读，比例无从谈起；
@@ -871,15 +909,32 @@
         "the face may be mature and beautiful, but the head is small in proportion to the body " +
         "(realistic adult head-to-body ratio), NOT a large head on a small body; " +
         "no chibi, no big head, no oversized head, no short legs, no small body, no stubby limbs, no toddler body, " +
-        "no baby proportions, not a small child",
+        "no baby proportions, not a small child" +
+        // v180：反「化形同质化」—— 与化形同口径的**弱化版**（⛔ 原 PROPORTION LOCK 全文一字不改，仅在其末尾追加）
+        ", IDENTITY LOCK: the hairstyle silhouette, hair color, eye color, the outfit's garment type and cut, " +
+        "the pattern motif and every signature accessory stay exactly as the character's own design describes above, " +
+        "OUTFIT ARCHETYPE LOCK: do not replace the character's outfit with a wide-sleeved robe or a layered gown; " +
+        "the wide sleeves and floating ribbons described earlier apply only if the character's own outfit is a robe, " +
+        "NO DEFAULT ORNAMENT: no forehead ornament, no crown, no hair crown, " +
+        "unless the character's own design explicitly includes one",
     },
     {
       n: 4, name: "化形", icon: "👑", need: 180, sizeZh: "约 9 头身（化形 · 华丽服饰）",
       // v165-Q：⛔ 同上，删掉 "rich cinematic scene behind"（场景感只属于 CG 线，立绘一律素底）。
+      // v180：化「同一套签名外观 + 只升级工艺与灵韵」——⛔ 删掉 "magnificent ceremonial outfit with layered silk,
+      //   embroidery and jade ornaments"（给所有角色发同一套"大典服"，且它排在 appearancePrompt 之后 ⇒ 直接压过角色设定）。
+      //   末段 = 化形 C2「明沁」灵韵（云气 + 灵光 + 流光 + 淡沁纹），⛔ 但只贴人物，不铺满画面（见 prop 的 AURA SCOPE）。
       look: "a fully grown adult version of the same character, about 9 heads tall, " +
         "elegantly tall adult proportions, " +
-        "magnificent ceremonial outfit with layered silk, embroidery and jade ornaments, " +
-        "the most elaborate of all four forms, elegant and beautiful, masterpiece quality",
+        "the SAME signature outfit from the earlier forms: its garment type, cut, sleeve width, colour family, " +
+        "pattern motif and hairstyle silhouette are completely unchanged, " +
+        "upgraded only in craft and material: a dense brocade ground with the same motif woven into the fabric, " +
+        "multi-layer embroidery built on that same motif, fine piped edging along every seam, " +
+        "sharply finished cuffs and hem, polished metal fittings and translucent jade pieces, " +
+        "a refined moving sheen across the fabric, " +
+        "a visible cultivation aura around the figure: a soft halo of pale spirit light rising along the hems and sleeve edges, " +
+        "a thin ring of cloud-qi at the feet, faint glowing lines along the hair tips, " +
+        "the most refined of all four forms, achieved through craft and aura, never through a new or larger outfit",
       // v165-R1：数字回到 9 头身（同蜕形，用户裁定）。华丽服饰最容易把轮廓糊掉，
       //   所以化形这阶的**轮廓保护句与头发体积句必须比蜕形更硬**（层叠丝绸/刺绣/玉饰 = 典型遮形元素）。
       prop: "PROPORTION LOCK: a fully grown tall adult, a 9-heads-tall figure " +
@@ -895,7 +950,20 @@
         "the face may be mature and beautiful, but the head is small in proportion to the body " +
         "(realistic adult head-to-body ratio), NOT a large head on a small body; " +
         "no chibi, no big head, no oversized head, no short legs, no small body, no stubby limbs, no toddler body, " +
-        "no baby proportions, no childlike face",
+        "no baby proportions, no childlike face" +
+        // v180：反「化形同质化」—— ⛔ 原 PROPORTION LOCK 全文一字不改（8/9 头身、腿长、肩宽、轮廓句、头发体积句全保留），
+        //   仅在其**末尾追加**：IDENTITY LOCK / OUTFIT ARCHETYPE LOCK / NO DEFAULT ORNAMENT / AURA SCOPE。
+        //   末尾权重最高 ⇒ 能压住前面 XIANXIA_LOOK 的"宽袖 / 飘带 / 玉冠"（XIANXIA_LOOK 本体不动，供 CG 共用）。
+        //   AURA SCOPE 兜住 SINGLE 的 plain simple background（灵韵只贴人物，⛔ 不许铺满画面）。
+        ", IDENTITY LOCK: the hairstyle silhouette, hair color, eye color, the outfit's garment type and cut, " +
+        "the pattern motif and every signature accessory stay exactly as the character's own design describes above, " +
+        "OUTFIT ARCHETYPE LOCK: do not replace the character's outfit with a wide-sleeved robe, a layered gown, " +
+        "a trailing court dress, a long cape or any other garment type; the wide sleeves and floating ribbons " +
+        "described earlier apply only if the character's own outfit is a robe, " +
+        "NO DEFAULT ORNAMENT: no forehead ornament, no forehead gem, no forehead chain, no tiara, no crown, " +
+        "no jade crown, no hair crown, unless the character's own design explicitly includes one, " +
+        "AURA SCOPE: the cultivation aura stays as a thin halo hugging the figure's body and a small ring at the feet, " +
+        "it never fills the frame, the background stays plain",
     },
   ];
   // 🔴 v164c：这句原来是**恒定**的，原文为
@@ -1005,8 +1073,22 @@
     "long floating silk ribbons, immortal-robed drapery, jade crown or hairpin, layered silk sashes; " +
     "never a standing collar, never a buttoned placket";
   // (f) 中文服装锚（仅 ark（豆包 Seedream）且非 legacy；与 PROPORTION_ZH 同一开关）
-  const COSTUME_ZH = "服装要求：请画中国古代汉服（先秦至明代形制），必须交领右衽、宽袍大袖，可加飘带与广袖仙袂；" +
-    "绝对不要清朝服饰：不要立领、不要盘扣、不要蜈蚣扣、不要对襟褂、不要马褂、不要旗袍、不要长衫、不要官帽、不要辫子。整体气质偏仙侠仙气。";
+  //   v180：删掉「必须交领右衽、宽袍大袖，可加飘带与广袖仙袂」那半句 —— 它是"所有人都变宽袍"的直接来源
+  //   （中文锚挂整条 prompt 最末尾 + ark 对中文执行力最强 ⇒ 等于给每个角色下死命令"画宽袍大袖"）。
+  //   ⚠️ 去清代那半句**逐字保留、一字不改** —— 它来自 v167-B，是用户的强烈诉求，⛔ 别当 bug 删。
+  //   （_test_v167_costume.js E 段会全库扫描那类词，只豁免本常量本体；故这里不复述具体词，避免误伤。）
+  const COSTUME_ZH = "服装要求：请画中国古代汉服（先秦至明代形制），气质偏仙侠；" +
+    "绝对不要清朝服饰：不要立领、不要盘扣、不要蜈蚣扣、不要对襟褂、不要马褂、不要旗袍、不要长衫、不要官帽、不要辫子。" +
+    "但服装的款式、剪裁、袖型、衣长必须严格遵循该角色自身的服装设定：角色设定是劲装短打就画劲装短打，是裤装靴装就画裤装靴装，" +
+    "不要把所有角色都改成宽袍大袖、层叠长裙或拖地长袍，也不要给它额外增加外披、大袖和披帛。" +
+    "化形只是让同一件衣服变得做工更精：织纹更密、刺绣更有层次、镶边更细、面料更有光泽、金属与玉件更精致；" +
+    "不要更换衣服的款式与版型，不要改发型轮廓，不要改瞳色。" +
+    "不要添加角色设定里没有的额饰、额心坠、发冠、玉冠、步摇。";
+  // v180 · 中文灵韵锚（仅 ark 且非 legacy；插在中文服装锚**之前**）：用"做工更精 + 身周灵韵"表达进阶，
+  //   ⛔ 不许用"换衣服款式"表达。装配见 promptFor 的 zhAura（仅蜕形(3)/化形(4)两阶追加，凝形/开窍不追加）。
+  const AURA_ZH = "进阶表现要求：进阶变强请通过「做工更精」和「身周灵韵」来表现，" +
+    "不要通过换衣服款式来表现：蜕形时衣摆袖口有一层极淡的灵光；化形时足下有一薄层云气、衣摆灵光上浮、发梢有流光、身周有淡纹；" +
+    "灵韵只贴着人物身体与脚下一点点范围，背景保持干净，不要画成场景。";
   // v172-A：CG **构图锚**（中文，仅 ark；与 COSTUME_ZH 同开关 zhAnchorEnabled()）
   //   目的：沁灵列表缩略图已改用「固定几何框」（头在上方 1/3、水平居中、顶端留 2%），
   //   这条锚让**将来新出的 CG 天然落进那个框** —— 固定框的可靠性从「经验」变成「规格保证」。
@@ -2347,9 +2429,14 @@
         cmp = cmp.split(LEGACY_OUTFIT_EN[_li].now).join(LEGACY_OUTFIT_EN[_li].old);
       }
     }
-    const bits = [cmp, GUOFENG, ANATOMY, soft, SINGLE, CONSISTENCY, growth, NEG_STYLE];
+    // v180：legacy（恢复旧立绘）冻结 CONSISTENCY 旧串 —— 保证旧图 URL 逐字节复刻；非 legacy 一律用收紧后的新版 CONSISTENCY。
+    const bits = [cmp, GUOFENG, ANATOMY, soft, SINGLE, ((opts && opts.legacy) ? LEGACY_CONSISTENCY : CONSISTENCY), growth, NEG_STYLE];
     // v167-B：仙侠/汉服正向形制 —— 非 legacy 紧跟 GUOFENG 之后
     if (!(opts && opts.legacy)) bits.splice(2, 0, XIANXIA_LOOK);
+    // v180：反「化形同质化」负向锚 —— 非 legacy 立绘专用，紧跟 CONSISTENCY 之后、getLookTags/lookHard/briefHard 之前。
+    //   ⛔ legacy 一律不加：恢复旧立绘必须逐字节复刻旧 prompt（本改动只影响之后**新画**的立绘）。
+    //   ⛔ CG 路径不走这里（CG 是叙事画，形制由画面描述决定，由 CG_COSTUME_GUARD 负责）。
+    if (!(opts && opts.legacy)) bits.splice(bits.indexOf(CONSISTENCY) + 1, 0, NO_UNIFORM_ORNATE);
     // v112：把「人物设定 → 形象细节关键词」也拼进去，立绘不再"只有颜色"
     const tags = getLookTags(item);
     if (tags) bits.push(lk.chosen
@@ -2377,10 +2464,12 @@
     const _nonLegacy = !(opts && opts.legacy);
     const _zh = (isChar && _nonLegacy && zhAnchorEnabled());
     const zhAnchor = _zh ? (", " + proportionZhFor(stage == null ? 1 : stage)) : "";
+    // v180：中文灵韵锚 —— 仅蜕形(3)/化形(4)两阶追加（装配照规范 §3.7 两行；插在中文服装锚之前）
+    const zhAura = _zh ? (", " + (stage >= 3 ? AURA_ZH : "")) : "";
     const zhCostume = _zh ? (", " + COSTUME_ZH) : "";
     // v167-B：清代服饰强禁挂**整条 prompt 最末尾**（最高权重）
     const noQing = _nonLegacy ? (", " + NO_QING) : "";
-    return bits.join(", ") + ", " + st + propLock + zhAnchor + zhCostume + noQing;
+    return bits.join(", ") + ", " + st + propLock + zhAnchor + zhAura + zhCostume + noQing;
   }
   // 用「v164c 之前的旧 prompt」精确还原当时的出图 URL —— 用于「恢复旧立绘」，把被 prompt 改动洗掉的旧图找回来。
   // 与旧版显示路径一致：不传 appearance / stage（旧显示走的就是默认外观 + 第 1 阶），才能精确复刻当时浏览器请求的那个 URL。
@@ -7166,6 +7255,11 @@
       s = s.replace(/PROPORTION LOCK:[^A-Za-z]*SILHOUETTE RULE:/i,
         "PROPORTION LOCK: the head stays small in proportion to the body; SILHOUETTE RULE:");
     }
+    // v180：STAGES[].prop 末尾新追加的**立绘专用**反同质化块（IDENTITY LOCK / OUTFIT ARCHETYPE LOCK /
+    //   NO DEFAULT ORNAMENT / AURA SCOPE）⛔ 不进 CG —— 规范 §1.3 称 prop「仅立绘路径」，实测它同时被 cgPropFor 复用；
+    //   CG 是叙事画，宽袍 / 场景背景由画面描述与 CG_COSTUME_GUARD 决定，尤其 AURA SCOPE 的
+    //   "the background stays plain" 与 CG 的场景背景**直接冲突** ⇒ 在此为 CG 剔除该追加块（实现「只影响立绘」）。
+    { const _uni = s.indexOf(", IDENTITY LOCK:"); if (_uni >= 0) s = s.slice(0, _uni); }
     return cgTidy(s);
   }
 
@@ -7843,6 +7937,8 @@
     FRAME_FILL, FRAME_FILL_OLD, PROPORTION_ZH, proportionZhFor, AGE_OPEN, AGE_OPEN_BOY_OLD, AGE_OPEN_GIRL_OLD,
     // v167-B：服装去清代（正向汉服/仙侠 + 清代强禁 + 中文服装锚）——供自测断言
     NO_QING, XIANXIA_LOOK, COSTUME_ZH, CG_COMPOSE_ZH, CG_COSTUME_GUARD, ZH_ANCHOR_ON, zhAnchorEnabled, LEGACY_OUTFIT_EN,
+    // v180：反「化形同质化」—— CONSISTENCY（cut 收紧）/ 立绘专用负向锚 NO_UNIFORM_ORNATE / 中文灵韵锚 AURA_ZH —— 供自测断言
+    CONSISTENCY, NO_UNIFORM_ORNATE, AURA_ZH,
     appearanceOf, appearanceText, appearancePrompt, HAIR_STYLES, BOY_HAIR, GIRL_HAIR, EYE_COLORS, ACCESSORIES,
     // v127：设定向导（发色/特征/性格可确认可修改；一句基础设定 → 扩写成详细设定）
     HAIR_COLORS, HAIR_PALETTE, hexToCnTrad, FEATURES, PERSONAS_PICK, lookOf, lookText, lookExtra, hairWordFromInput, expandProfile, profileLocal, genderFromText,
